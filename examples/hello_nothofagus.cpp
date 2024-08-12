@@ -6,10 +6,11 @@
 #include <ciso646>
 
 #include "../source/texture.h"
+#include "../source/canvas.h"
 
 int main()
 {
-    //Nothofagus::Canvas canvas;
+    Nothofagus::Canvas canvas;
 
     Nothofagus::ColorPallete pallete1{
         {0.0, 0.0, 0.0, 1.0},
@@ -30,8 +31,8 @@ int main()
     };
 
     Nothofagus::Texture texture1({ 4, 4 }, { 0.5, 0.5, 0.5, 1.0 });
-    texture1.setPallete(pallete1);
-    texture1.setPixels(
+    texture1.setPallete(pallete1)
+    .setPixels(
         {
             0,1,2,3,
             4,5,6,7,
@@ -39,11 +40,11 @@ int main()
             4,5,6,7
         }
     );    
-    //Nothofagus::TextureId textureId1 = canvas.addTexture(texture1);
+    Nothofagus::TextureId textureId1 = canvas.addTexture(texture1);
     
     Nothofagus::Texture texture2({8, 8}, {0.5, 0.5, 0.5, 1.0 });
-    texture2.setPallete(pallete2);
-    texture2.setPixels(
+    texture2.setPallete(pallete2)
+        .setPixels(
         {
             2,1,3,0,0,3,2,1,
             2,1,1,0,0,0,2,1,
@@ -55,14 +56,14 @@ int main()
             2,1,3,0,0,3,2,1,
         }
     );
-    /*Nothofagus::TextureId textureId2 = canvas.addTexture(texture2);
+    Nothofagus::TextureId textureId2 = canvas.addTexture(texture2);
 
-    Nothofagus::BellotaId bellotaId1 = canvas.addBellota({ {0.0f, 0.0f}, textureId1 });
-    Nothofagus::BellotaId bellotaId2 = canvas.addBellota({ {0.0f, 0.75f}, textureId1 });
-    Nothofagus::BellotaId bellotaId3 = canvas.addBellota({ {-0.5f, -0.5f}, textureId2 });
-    Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {0.0f, 0.0f}, textureId2 });
+    Nothofagus::BellotaId bellotaId1 = canvas.addBellota({{{0.0f, 0.0f}}, textureId1});
+    Nothofagus::BellotaId bellotaId2 = canvas.addBellota({ {{0.0f, 0.75f}}, textureId1 });
+    Nothofagus::BellotaId bellotaId3 = canvas.addBellota({ {{-0.5f, -0.5f}}, textureId2 });
+    Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {{0.0f, 0.0f}}, textureId2 });
 
-    bool movingRight = true;
+    /*bool movingRight = true;
     float speed = 0.0001;
 
     auto update = [&](float dt)

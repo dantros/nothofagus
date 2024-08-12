@@ -77,11 +77,12 @@ public:
         return mPixels.at(index);
     }
 
-    void setPixel(const std::size_t i, const std::size_t j, const Pixel pixel)
+    Texture& setPixel(const std::size_t i, const std::size_t j, const Pixel pixel)
     {
         debugCheck(pixel.colorId < mPallete.size(), "colorId is not present in color pallete.");
         const std::size_t index = indexOf(i, j);
         mPixels.at(index) = pixel;
+        return *this;
     }
 
     const glm::vec3& color(const std::size_t i, const std::size_t j) const
@@ -96,10 +97,11 @@ public:
         return mPallete;
     }
 
-    void setPallete(const ColorPallete& pallete)
+    Texture& setPallete(const ColorPallete& pallete)
     {
         assert(pallete.size() < mPallete.size());
         mPallete = pallete;
+        return *this;
     }
 
 private:
