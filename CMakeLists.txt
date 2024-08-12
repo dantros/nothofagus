@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 set(CMAKE_LEGACY_CYGWIN_WIN32 OFF)
 
-project(cpp_opengl_app_project CXX)
+project(nothofagus_project CXX)
 
 # Setting up build options for GLFW
 option(GLFW_INSTALL "Disabling installation of GLFW" OFF)
@@ -16,9 +16,9 @@ add_subdirectory("third_party/whereami2cpp")
 add_subdirectory("third_party/glad")
 add_subdirectory("third_party/imgui_cmake")
 
-add_executable(cpp_opengl_app "source/main.cpp")
-set_property(TARGET cpp_opengl_app PROPERTY CXX_STANDARD 20)
-target_include_directories(cpp_opengl_app PRIVATE
+add_executable(hello_nothofagus "examples/hello_nothofagus.cpp")
+set_property(TARGET hello_nothofagus PROPERTY CXX_STANDARD 20)
+target_include_directories(hello_nothofagus PRIVATE
     "third_party/argparse/include"
     "third_party/whereami2cpp/source"
     "third_party/spdlog/include"
@@ -28,16 +28,15 @@ target_include_directories(cpp_opengl_app PRIVATE
     "third_party/glm"
     "third_party/imgui"
 )
-target_link_libraries(cpp_opengl_app PRIVATE whereami2cpp glad glfw imgui)
+target_link_libraries(hello_nothofagus PRIVATE whereami2cpp glad glfw imgui)
 
 include(GNUInstallDirs)
-
-install(TARGETS cpp_opengl_app
+install(TARGETS hello_nothofagus
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        COMPONENT CppOpenGLApp_Runtime
+        COMPONENT HelloNothofagus_Runtime
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        COMPONENT CppOpenGLApp_Runtime
-        NAMELINK_COMPONENT CppOpenGLApp_Development
+        COMPONENT HelloNothofagus_Runtime
+        NAMELINK_COMPONENT HelloNothofagus_Development
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        COMPONENT CppOpenGLApp_Development
+        COMPONENT HelloNothofagus_Development
 )
