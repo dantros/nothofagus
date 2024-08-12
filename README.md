@@ -1,46 +1,28 @@
-# C++ OpenGL App Template
+# Nothofagus
 
-Basic C++ project configuration to start a simple OpenGL based application.
+Sandbox C++ real time renderer using OpenGL 3.3 under the hood.
+You define some textures in your code, some dynamic locations and you are redy to quick start your game.
+Nothofagus also gives you access to ImGui and other third party libs to speed up your development journey.
 
-It includes a minimal setup with the following libraries:
-- OpenGL 3.3 via glad
-- GLFW3
-- glm
-- Dear ImGui
-- argparse
-- json
-- spdlog
-- whereami2cpp
+```
 
-CMake is used as build system and it should work out of the box.
-
-[`main.cpp`](source/main.cpp) includes demo code using all mentioned libraries.
+```
 
 ![screenshot](assets/screenshot.webp "screenshot")
 
 ## Quick start
 
-You can start by clicking 'Use this template' at the upper right corner of the Github website. You will get a clone of this repo in your repositories to start working.
-
-After making a local clone, you need to initialize and update the git submodules by executing at the root of the repository:
 ```
+git clone https://github.com/dantros/nothofagus.git
+cd nothofagus
 git submodule update --init --recursive
-```
-Once you are done, you can generate the build files with cmake presets.
-```
 cmake --presets ninja-release
-```
-And then, just go to `../build_cmake/ninja-release/` and execute
-```
+cd ../build_cmake/ninja-release/
 ninja
-```
-and you will get your binary file in the build directory. To install the target just execute
-```
 ninja install
+cd ../install_cmake/ninja-release/
 ```
-your binary will be copied to `../install_cmake/ninja-release/`. It will be free from every other build dependency or CMake artifact.
-
-You can also get a Visual Studio solution file for your convenience, check [CMakePresets.json](CMakePresets.json) file.
+There you will fing the nothofagus static library and some demos.
 
 ## Dependencies
 

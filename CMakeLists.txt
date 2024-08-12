@@ -1,5 +1,4 @@
 cmake_minimum_required(VERSION 3.20)
-set(CMAKE_LEGACY_CYGWIN_WIN32 OFF)
 
 project(nothofagus_project CXX)
 
@@ -16,9 +15,13 @@ add_subdirectory("third_party/whereami2cpp")
 add_subdirectory("third_party/glad")
 add_subdirectory("third_party/imgui_cmake")
 
-add_executable(hello_nothofagus "examples/hello_nothofagus.cpp")
+add_executable(hello_nothofagus
+    "examples/hello_nothofagus.cpp"
+    "source/canvas.cpp"
+)
 set_property(TARGET hello_nothofagus PROPERTY CXX_STANDARD 20)
 target_include_directories(hello_nothofagus PRIVATE
+    "include"
     "third_party/argparse/include"
     "third_party/whereami2cpp/source"
     "third_party/spdlog/include"

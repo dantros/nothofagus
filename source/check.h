@@ -1,3 +1,5 @@
+#pragma once
+
 #include <ciso646>
 #include <string>
 #include <spdlog/spdlog.h>
