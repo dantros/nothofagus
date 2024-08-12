@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <algorithm>
+#include <initializer_list>
 #include <glm/glm.hpp>
 #include "check.h"
 
@@ -10,12 +11,21 @@ namespace Nothofagus
 
 struct Pixel
 {
-    std::uint8_t colorId;
+    using ColorId = std::uint8_t;
+    ColorId colorId;
+
+    Pixel& operator=(const ColorId colorId_)
+    {
+        colorId = colorId_;
+        return *this;
+    }
 };
 
 struct ColorPallete
 {
     std::vector<glm::vec4> colors;
+
+    ColorPallete(std::initializer_list<glm::vec4> colors_) : colors(colors_) {}
 
     std::size_t size() const
     {
@@ -35,10 +45,10 @@ private:
     }
 
 public:
-    Texture(const glm::ivec2 size, const glm::vec3 defaultColor):
+    Texture(const glm::ivec2 size, const glm::vec4 defaultColor):
         mSize(size),
-        mPixels(size.x * size.y, 0),
-    	mPallete{{defaultColor}}
+        mPixels(size.x* size.y, { 0 }),
+        mPallete({ defaultColor })
     {
     }
 
@@ -47,17 +57,32 @@ public:
         return mPixels;
     }
 
-    void setPixels(const std::vector<Pixel>& pixels) const
+    /*void setPixels(std::vector<Pixel>& pixels)
     {
-        debugCheck(mPixels.size() == pixels, "Invalid number of pixels for this texture.");
-        debugCheck(std::any_of(pixels.cbegin(), pixels.cend(),
-            [&mPallete](const Pixel& pixel)
+        debugCheck(mPixels.size() == pixels.size(), "Invalid number of pixels for this texture.");
+        const auto& pallete = mPallete;
+        debugCheck(std::all_of(pixels.cbegin(), pixels.cend(),
+            [&pallete](const Pixel& pixel)
             {
-                return pixel.id >= mPallete.size();
+                return pixel.colorId >= pallete.size();
             }
         ), "At least one of the pixels does not fit within the color pallete.");
 
         mPixels.swap(pixels);
+    }*/
+
+    void setPixels(std::initializer_list<Pixel::ColorId> pixelColors)
+    {
+        debugCheck(mPixels.size() == pixelColors.size(), "Invalid number of pixels for this texture.");
+        const auto& pallete = mPallete;
+        debugCheck(std::all_of(pixelColors.begin(), pixelColors.end(),
+            [&pallete](const Pixel::ColorId colorId)
+            {
+                return static_cast<std::size_t>(colorId) >= pallete.size();
+            }
+        ), "At least one of the pixels does not fit within the color pallete.");
+
+        mPixels.assign(pixelColors.begin(), pixelColors.end());
     }
 
     const Pixel& pixel(const std::size_t i, const std::size_t j) const
