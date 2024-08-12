@@ -57,20 +57,6 @@ public:
         return mPixels;
     }
 
-    /*void setPixels(std::vector<Pixel>& pixels)
-    {
-        debugCheck(mPixels.size() == pixels.size(), "Invalid number of pixels for this texture.");
-        const auto& pallete = mPallete;
-        debugCheck(std::all_of(pixels.cbegin(), pixels.cend(),
-            [&pallete](const Pixel& pixel)
-            {
-                return pixel.colorId >= pallete.size();
-            }
-        ), "At least one of the pixels does not fit within the color pallete.");
-
-        mPixels.swap(pixels);
-    }*/
-
     void setPixels(std::initializer_list<Pixel::ColorId> pixelColors)
     {
         debugCheck(mPixels.size() == pixelColors.size(), "Invalid number of pixels for this texture.");
