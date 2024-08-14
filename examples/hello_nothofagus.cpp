@@ -63,6 +63,8 @@ int main()
     Nothofagus::BellotaId bellotaId3 = canvas.addBellota({ {{-0.5f, -0.5f}}, textureId2 });
     Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {{0.0f, 0.0f}}, textureId2 });
 
+    canvas.run();
+
     /*bool movingRight = true;
     float speed = 0.0001;
 

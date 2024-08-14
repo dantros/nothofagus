@@ -5,6 +5,7 @@
 #endif*/
 
 #include "canvas.h"
+#include "check.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -17,6 +18,12 @@
 
 namespace Nothofagus
 {
+
+// Wrapper class forward declared in the .h to avoid including GLFW dependecies in the header file.
+/*struct Canvas::Window
+{
+    GLFWwindow* glfwWindow;
+};*/
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
 void processInput(GLFWwindow* window)
@@ -31,7 +38,10 @@ void framebufferSizeCallback(GLFWwindow* window, int width, int height)
     glViewport(0, 0, width, height);
 }
 
-void Canvas::init()
+Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm::vec3 clearColor):
+    mScreenSize(screenSize),
+    mTitle(title),
+    mClearColor(clearColor)
 {
     // glfw: initialize and configure
     glfwInit();
@@ -40,15 +50,18 @@ void Canvas::init()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // glfw window creation
-    GLFWwindow* window = glfwCreateWindow(DEFAULT_SCREEN_SIZE.width, DEFAULT_SCREEN_SIZE.height, DEFAULT_TITLE.c_str(), NULL, NULL);
-    if (window == nullptr)
+    mWindow = glfwCreateWindow(DEFAULT_SCREEN_SIZE.width, DEFAULT_SCREEN_SIZE.height, DEFAULT_TITLE.c_str(), NULL, NULL);
+    if (mWindow == nullptr)
     {
         spdlog::error("Failed to create GLFW window");
         glfwTerminate();
         throw;
     }
-    glfwMakeContextCurrent(window);
-    glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
+
+    //mWindow = std::make_unique<Window>(glfwWindow);
+
+    glfwMakeContextCurrent(mWindow);
+    glfwSetFramebufferSizeCallback(mWindow, framebufferSizeCallback);
 
     // glad: load all OpenGL function pointers
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -109,18 +122,76 @@ void Canvas::init()
         throw;
     }
     // link shaders
-    unsigned int shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
+    mShaderProgram = glCreateProgram();
+    glAttachShader(mShaderProgram, vertexShader);
+    glAttachShader(mShaderProgram, fragmentShader);
+    glLinkProgram(mShaderProgram);
     // check for linking errors
-    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+    glGetProgramiv(mShaderProgram, GL_LINK_STATUS, &success);
     if (!success) {
-        glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
+        glGetProgramInfoLog(mShaderProgram, 512, NULL, infoLog);
         spdlog::error("Shader program linking failed {}", infoLog);
     }
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
+
+    // ImGui setup
+    ImGui::CreateContext();
+    ImGui::StyleColorsDark();
+    ImGui_ImplGlfw_InitForOpenGL(mWindow, true);
+    const char* glsl_version = "#version 330";
+    ImGui_ImplOpenGL3_Init(glsl_version);
+}
+
+void Canvas::run()
+{
+    //debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
+
+    // state variable
+    bool fillPolygons = true;
+
+    while (!glfwWindowShouldClose(mWindow))
+    {
+        processInput(mWindow);
+
+        glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        // Start the Dear ImGui frame
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        ImGui::Begin("Hi ImGui");
+        ImGui::Text("Prepare your colors...");
+        ImGui::Checkbox("Fill Polygons?", &fillPolygons);
+        glPolygonMode(GL_FRONT_AND_BACK, fillPolygons ? GL_FILL : GL_LINE);
+        ImGui::End();
+
+        // drawing with OpenGL
+        glUseProgram(mShaderProgram);
+
+        /*glBindVertexArray(VAO);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        glBindVertexArray(0);*/
+
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        glfwSwapBuffers(mWindow);
+        glfwPollEvents();
+    }
+}
+
+Canvas::~Canvas()
+{
+    // freeing GPU memorygpuShape.clear();
+    glfwTerminate();
+}
+
+void Canvas::close()
+{
+    glfwSetWindowShouldClose(mWindow, true);
 }
 
 }

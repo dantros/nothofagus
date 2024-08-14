@@ -7,6 +7,9 @@
 #include "index_factory.h"
 #include "indexed_container.h"
 
+// Forward declaration to interface with third party libs
+struct GLFWwindow;
+
 namespace Nothofagus
 {
 
@@ -26,21 +29,14 @@ const glm::vec3 DEFAULT_CLEAR_COLOR{0.0f, 0.0f, 0.0f};
 
 class Canvas
 {
-private:
-    void init();
-
 public:
     Canvas(
         const ScreenSize& screenSize = DEFAULT_SCREEN_SIZE,
         const std::string& title = DEFAULT_TITLE,
         const glm::vec3 clearColor = DEFAULT_CLEAR_COLOR
-    ):
-        mScreenSize(screenSize),
-        mTitle(title),
-        mClearColor(clearColor)
-    {}
+    );
 
-    ~Canvas() = default;
+    ~Canvas();
 
     BellotaId addBellota(const Bellota& bellota)
     {
@@ -84,6 +80,8 @@ public:
 
     //void tick(Controller& controller, std::function<void(float deltaTime)> updateFunction);
 
+    void run();
+
     void close();
 
 private:
@@ -97,9 +95,10 @@ private:
     TextureContainer mTextures;
     BellotaContainer mBellotas;
 
-    // Forward declaration to interface with third party libs
-    /*struct Window;
-    std::unique_ptr<Window> mWindow;*/
+    unsigned int mShaderProgram;
+
+    
+    GLFWwindow* mWindow;
 };
 
 }

@@ -64,7 +64,7 @@ public:
         debugCheck(std::all_of(pixelColors.begin(), pixelColors.end(),
             [&pallete](const Pixel::ColorId colorId)
             {
-                return static_cast<std::size_t>(colorId) >= pallete.size();
+                return static_cast<std::size_t>(colorId) <= pallete.size();
             }
         ), "At least one of the pixels does not fit within the color pallete.");
 
@@ -99,7 +99,7 @@ public:
 
     Texture& setPallete(const ColorPallete& pallete)
     {
-        assert(pallete.size() < mPallete.size());
+        debugCheck(mPallete.size() <= pallete.size(), "");
         mPallete = pallete;
         return *this;
     }
