@@ -52,6 +52,11 @@ public:
     {
     }
 
+    glm::ivec2 size() const
+    {
+        return mSize;
+    }
+
     const std::vector<Pixel>& pixels() const
     {
         return mPixels;
@@ -85,7 +90,7 @@ public:
         return *this;
     }
 
-    const glm::vec3& color(const std::size_t i, const std::size_t j) const
+    const glm::vec4& color(const std::size_t i, const std::size_t j) const
     {
         const std::size_t index = indexOf(i, j);
         const Pixel& pixel = mPixels[index];

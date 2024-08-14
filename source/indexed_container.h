@@ -6,6 +6,7 @@
 namespace Nothofagus
 {
 
+// TODO convert key from size_t to something castable to size_t via concepts
 template <typename ElementType>
 class IndexedContainer
 {
@@ -35,6 +36,11 @@ public:
     {
         debugCheck(mElements.contains(elementId), "elementId is not included in IndexedContainer");
         return mElements.at(elementId);
+    }
+
+    bool contains(const std::size_t elementId) const
+    {
+        return mElements.contains(elementId);
     }
 
 private:

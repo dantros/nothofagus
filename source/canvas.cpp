@@ -6,6 +6,8 @@
 
 #include "canvas.h"
 #include "check.h"
+#include "bellota_to_mesh.h"
+#include "dmesh.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -143,18 +145,70 @@ Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm
     ImGui_ImplOpenGL3_Init(glsl_version);
 }
 
+/*void setupVAO(DMesh& dMesh, GPUID shaderProgram)
+{
+    // Binding VAO to setup
+    glBindVertexArray(dMesh.vao);
+
+    // Binding buffers to the current VAO
+    glBindBuffer(GL_ARRAY_BUFFER, dMesh.vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dMesh.ebo);
+
+    unsigned int offset = 0;
+
+    for (auto& vertexDataAttribute : dMesh.dvertex)
+    {
+        const auto& attributeName = vertexDataAttribute.attributeName.c_str();
+        const auto attributeLocation = glGetAttribLocation(shaderProgram, attributeName);
+
+        const unsigned int numberOfFloats = vertexDataAttribute.arity();
+
+        glVertexAttribPointer(attributeLocation, numberOfFloats, GL_FLOAT, GL_FALSE, numberOfFloats * sizeof(GLfloat), (void*)(offset * sizeof(GLfloat)));
+        glEnableVertexAttribArray(attributeLocation);
+
+        offset += numberOfFloats;
+    }
+
+    // Unbinding current VAO
+    glBindVertexArray(0);
+}*/
+
 void Canvas::run()
 {
     //debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
+    using MeshContainer = IndexedContainer<Mesh>;
+    using DMeshContainer = IndexedContainer<DMesh>;
+    MeshContainer meshes;
+    DMeshContainer dmeshes;
+    
+    /*for (const auto& pair : mBellotas)
+    {
+        const BellotaId& bellotaId = pair.first;
+        const Bellota& bellota = pair.second;
+
+        const Mesh mesh = generateMesh(bellota);
+        dmeshes.emplace({bellotaId, mesh});
+
+        DMesh dMesh;
+        dMesh.dvertex = dvertex;
+        dMesh.initBuffers();
+        setupVAO(dMesh, mShaderProgram);
+        dMesh.fillBuffers(mesh, GL_STATIC_DRAW);
+
+        dmeshes.emplace({bellotaId, dMesh});
+    }*/
 
     // state variable
     bool fillPolygons = true;
 
+    glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
+
+    const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
+
     while (!glfwWindowShouldClose(mWindow))
     {
         processInput(mWindow);
-
-        glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
+        
         glClear(GL_COLOR_BUFFER_BIT);
 
         // Start the Dear ImGui frame
@@ -170,6 +224,15 @@ void Canvas::run()
 
         // drawing with OpenGL
         glUseProgram(mShaderProgram);
+
+        /*for (const auto& pair : dmeshes)
+        {
+            const DMesh& dmesh = pair.second;
+            const glm::mat3& transform = dmesh.transform;
+
+            glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(transform));
+            dMesh.drawCall();
+        }*/
 
         /*glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
