@@ -11,10 +11,10 @@ Mesh& Mesh::operator<<(const Mesh& mesh)
     // TODO: resize before pushing new elements
 
     for (auto const& vertex : mesh.vertices)
-        mesh.vertices.push_back(vertex);
+        vertices.push_back(vertex);
     
     for (auto const& index : mesh.indices)
-        mesh.indices.push_back(offset + index);
+        indices.push_back(offset + index);
 
     return *this;
 }
@@ -52,17 +52,17 @@ namespace
 
 }
 
-std::ostream& operator<<(std::ostream& os, const Vertices& vertices)
+std::ostream& operator<<(std::ostream& os, const Nothofagus::Vertices& vertices)
 {
-    return to_ostream(os, vertices);
+    return Nothofagus::to_ostream(os, vertices);
 }
 
-std::ostream& operator<<(std::ostream& os, const Indices& indices)
+std::ostream& operator<<(std::ostream& os, const Nothofagus::Indices& indices)
 {
-    return to_ostream(os, indices);
+    return Nothofagus::to_ostream(os, indices);
 }
 
-std::ostream& operator<<(std::ostream& os, const Mesh& mesh)
+std::ostream& operator<<(std::ostream& os, const Nothofagus::Mesh& mesh)
 {
     os << "{ vertices: " << mesh.vertices
        << ", indices: " << mesh.indices
