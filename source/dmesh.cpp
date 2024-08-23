@@ -12,8 +12,9 @@ void DMesh::initBuffers()
     glGenBuffers(1, &vbo);
     glGenBuffers(1, &ebo);
 }
-#if 0
-void DMesh::fillBuffers(const Mesh& mesh, GPUID usage)
+
+//void DMesh::fillBuffers(const Mesh& mesh, GPUID usage)
+void DMesh::fillBuffers(const Mesh& mesh, unsigned int usage)
 {
     size = mesh.indices.size();
 
@@ -23,7 +24,7 @@ void DMesh::fillBuffers(const Mesh& mesh, GPUID usage)
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh.indices.size() * SIZE_IN_BYTES, mesh.indices.data(), usage);
 }
-
+#if 0
 void DMesh::drawCall()
 {
     // Binding the VAO and executing the draw call

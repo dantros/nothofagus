@@ -186,7 +186,7 @@ void Canvas::run()
         DMesh& dmesh = bellotaPack.dmeshOpt.value();
         dmesh.initBuffers();
         setupVAO(dmesh, mShaderProgram);
-        //bellotaPack.dmeshOpt.fillBuffers(bellotaPack.meshOpt, GL_STATIC_DRAW);
+        dmesh.fillBuffers(bellotaPack.meshOpt.value(), GL_STATIC_DRAW);
     }
 
     // state variable

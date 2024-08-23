@@ -25,7 +25,7 @@ struct DMesh
     void initBuffers();
 
     //void fillBuffers(const Mesh& mesh, GPUID usage);
-    //void fillBuffers(const Mesh& mesh, unsigned int usage);
+    void fillBuffers(const Mesh& mesh, unsigned int usage);
 
     //void drawCall();
 
