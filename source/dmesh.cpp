@@ -3,16 +3,16 @@
 #include "dmesh.h"
 #include <glad/glad.h>
 
-namespace BoxRenderer{
+namespace Nothofagus{
 
-#if 0
-DMesh::initBuffers()
+
+void DMesh::initBuffers()
 {
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
     glGenBuffers(1, &ebo);
 }
-
+#if 0
 void DMesh::fillBuffers(const Mesh& mesh, GPUID usage)
 {
     size = mesh.indices.size();

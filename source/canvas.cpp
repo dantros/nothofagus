@@ -187,8 +187,8 @@ void Canvas::run()
         bellotaPack.meshOpt = generateMesh(mTextures, bellotaPack.bellota);
 
         bellotaPack.dmeshOpt = DMesh();
-        //bellotaPack.dmeshOpt.dvertex = dvertex;
-        //bellotaPack.dmeshOpt.initBuffers();
+        DMesh& dmesh = bellotaPack.dmeshOpt.value();
+        dmesh.initBuffers();
         //setupVAO(dMesh, mShaderProgram);
         //bellotaPack.dmeshOpt.fillBuffers(bellotaPack.meshOpt, GL_STATIC_DRAW);
     }

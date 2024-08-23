@@ -3,7 +3,6 @@
 #include <vector>
 #include <string>
 #include <iostream>
-#include "dvertex.h"
 
 namespace Nothofagus
 {
@@ -18,7 +17,6 @@ struct Mesh
 {
     Vertices vertices;
     Indices indices;
-    DVertex dvertex;
 
     Mesh& operator<<(const Mesh& mesh);
 };
