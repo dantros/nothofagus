@@ -10,6 +10,7 @@
 #include "dmesh.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <glm/ext.hpp>
 #include <imgui.h>
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
@@ -74,22 +75,25 @@ Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm
 
     const std::string vertexShaderSource = R"(
         #version 330 core
-        in vec3 position;
-        in vec3 color;
-        out vec3 fragColor;
+        in vec2 position;
+        in vec2 texture;
+        out vec2 outTextureCoordinates;
+        uniform mat3 transform; 
         void main()
         {
-            fragColor = color;
-            gl_Position = vec4(position.x, position.y, position.z, 1.0);
+            outTextureCoordinates = texture;
+            vec3 world2dPosition = transform * vec3(position.x, position.y, 1.0);
+            gl_Position = vec4(world2dPosition.x, world2dPosition.y, 0.0, 1.0);
         }
     )";
     const std::string fragmentShaderSource = R"(
         #version 330 core
-        in vec3 fragColor;
+        in vec2 outTextureCoordinates;
         out vec4 outColor;
+        uniform sampler2D textureSampler;
         void main()
         {
-           outColor = vec4(fragColor, 1.0f);
+           outColor = texture(textureSampler, outTextureCoordinates);
         }
     )";
 
@@ -216,14 +220,20 @@ void Canvas::run()
         // drawing with OpenGL
         glUseProgram(mShaderProgram);
 
-        /*for (const auto& pair : dmeshes)
+        for (auto& pair : mBellotas.map())
         {
-            const DMesh& dmesh = pair.second;
-            const glm::mat3& transform = dmesh.transform;
+            const BellotaId bellotaId{ pair.first };
+            BellotaPack& bellotaPack = pair.second;
+
+            debugCheck(bellotaPack.dmeshOpt.has_value(), "DMesh has not been initialized.");
+
+            const Bellota& bellota = bellotaPack.bellota;
+            const DMesh& dmesh = bellotaPack.dmeshOpt.value();
+            const glm::mat3 transform = bellota.transform().toMat3();
 
             glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(transform));
-            dMesh.drawCall();
-        }*/
+            //dmesh.drawCall();
+        }
 
         /*glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
