@@ -33,6 +33,17 @@ struct ColorPallete
     }
 };
 
+struct TextureData
+{
+    std::vector<std::uint8_t> data;
+    std::size_t width, height;
+
+    const std::uint8_t* getData() const
+    {
+        return data.data();
+    }
+};
+
 /* Basic texture represented as a matrix with indices and a color pallete.
  * Each index is associated to a color in the pallete. */
 class Texture
@@ -107,6 +118,28 @@ public:
         debugCheck(mPallete.size() <= pallete.size(), "");
         mPallete = pallete;
         return *this;
+    }
+
+    TextureData generateTextureData() const
+    {
+        TextureData out;
+        out.width = mSize.x;
+        out.height = mSize.y;
+        unsigned int colorDepth = 4;
+
+        out.data.reserve(out.width * out.height * colorDepth);
+
+        for (std::size_t index = 0; index < out.width * out.height; ++index)
+        {
+            const Pixel& pixel = mPixels[index];
+            const glm::vec4& color = mPallete.colors.at(pixel.colorId);
+            out.data.push_back(color.r);
+            out.data.push_back(color.g);
+            out.data.push_back(color.b);
+            out.data.push_back(color.a);
+        }
+
+        return out;
     }
 
 private:

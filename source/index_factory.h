@@ -6,12 +6,13 @@ namespace Nothofagus
 class IndexFactory
 {
 public:
-    IndexFactory() = default;
+    IndexFactory() : mLastIndex{0}
+    {}
 
     std::size_t generateIndex()
     {
         ++mLastIndex;
-        return mLastIndex;
+        return mLastIndex-1;
     }
 
 private:

@@ -9,7 +9,8 @@ namespace Nothofagus
 glm::ivec2 getTextureSize(const TextureContainer& textures, const Bellota& bellota)
 {
     const TextureId& textureId = bellota.texture();
-    const Texture& texture = textures.at(textureId.id);
+    const TexturePack& texturePack = textures.at(textureId.id);
+    const Texture& texture = texturePack.texture;
     return texture.size();
 }
 

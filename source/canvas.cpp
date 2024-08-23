@@ -173,6 +173,33 @@ void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
     glBindVertexArray(0);
 }
 
+GLuint textureSimpleSetup(const TextureData& textureData)
+{
+    // wrapMode: GL_REPEAT, GL_CLAMP_TO_EDGE
+    // filterMode: GL_LINEAR, GL_NEAREST
+
+    GLuint gpuTexture;
+    glGenTextures(1, &gpuTexture);
+    glBindTexture(GL_TEXTURE_2D, gpuTexture);
+
+    // texture wrapping params
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    // texture filtering params
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    //unsigned char* data = stbi_load(imgPath.string().c_str(), &width, &height, &nrChannels, 0);
+
+    GLuint internalFormat = GL_RGBA;
+    GLuint format = GL_RGBA;
+
+    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, textureData.width, textureData.height, 0, format, GL_UNSIGNED_BYTE, textureData.getData());
+
+    return gpuTexture;
+}
+
 
 void Canvas::run()
 {
@@ -191,6 +218,17 @@ void Canvas::run()
         dmesh.initBuffers();
         setupVAO(dmesh, mShaderProgram);
         dmesh.fillBuffers(bellotaPack.meshOpt.value(), GL_STATIC_DRAW);
+    }
+
+    for (auto& pair : mTextures.map())
+    {
+        const TextureId textureId{ pair.first };
+        TexturePack& texturePack = pair.second;
+
+        const Texture& texture = texturePack.texture;
+        TextureData textureData = texture.generateTextureData();
+
+        texturePack.dtextureOpt = DTexture{ textureSimpleSetup(textureData) };
     }
 
     // state variable

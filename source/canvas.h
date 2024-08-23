@@ -51,7 +51,7 @@ public:
 
     TextureId addTexture(const Texture& texture)
     {
-        return {mTextures.add(texture)};
+        return { mTextures.add({texture, std::nullopt}) };
     }
 
     void removeTexture(const TextureId textureId)
@@ -71,12 +71,12 @@ public:
 
     Texture& texture(TextureId textureId)
     {
-        return mTextures.at(textureId.id);
+        return mTextures.at(textureId.id).texture;
     }
 
     const Texture& texture(TextureId textureId) const
     {
-        return mTextures.at(textureId.id);
+        return mTextures.at(textureId.id).texture;
     }
 
     //void tick(Controller& controller, std::function<void(float deltaTime)> updateFunction);

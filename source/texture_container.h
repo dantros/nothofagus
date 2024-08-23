@@ -2,10 +2,18 @@
 
 #include "texture.h"
 #include "indexed_container.h"
+#include "dtexture.h"
+#include <optional>
 
 namespace Nothofagus
 {
 
-using TextureContainer = IndexedContainer<Texture>;
+struct TexturePack
+{
+	Texture texture;
+	std::optional<DTexture> dtextureOpt;
+};
+
+using TextureContainer = IndexedContainer<TexturePack>;
 
 }
