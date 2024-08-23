@@ -145,33 +145,29 @@ Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm
     ImGui_ImplOpenGL3_Init(glsl_version);
 }
 
-/*void setupVAO(DMesh& dMesh, GPUID shaderProgram)
+//void setupVAO(DMesh& dMesh, GPUID shaderProgram)
+void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
 {
     // Binding VAO to setup
-    glBindVertexArray(dMesh.vao);
+    glBindVertexArray(dmesh.vao);
 
     // Binding buffers to the current VAO
-    glBindBuffer(GL_ARRAY_BUFFER, dMesh.vbo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dMesh.ebo);
+    glBindBuffer(GL_ARRAY_BUFFER, dmesh.vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dmesh.ebo);
 
-    unsigned int offset = 0;
+    const unsigned int positionAttribLength = 2;
+    const auto positionAttribLocation = glGetAttribLocation(shaderProgram, "position");
+    glVertexAttribPointer(positionAttribLocation, positionAttribLength, GL_FLOAT, GL_FALSE, positionAttribLength * sizeof(GLfloat), (void*)(0 * sizeof(GLfloat)));
+    glEnableVertexAttribArray(positionAttribLocation);
 
-    for (auto& vertexDataAttribute : dMesh.dvertex)
-    {
-        const auto& attributeName = vertexDataAttribute.attributeName.c_str();
-        const auto attributeLocation = glGetAttribLocation(shaderProgram, attributeName);
-
-        const unsigned int numberOfFloats = vertexDataAttribute.arity();
-
-        glVertexAttribPointer(attributeLocation, numberOfFloats, GL_FLOAT, GL_FALSE, numberOfFloats * sizeof(GLfloat), (void*)(offset * sizeof(GLfloat)));
-        glEnableVertexAttribArray(attributeLocation);
-
-        offset += numberOfFloats;
-    }
+    const unsigned int textureAttribLength = 2;
+    const auto textureAttribLocation = glGetAttribLocation(shaderProgram, "texture");
+    glVertexAttribPointer(textureAttribLocation, textureAttribLength, GL_FLOAT, GL_FALSE, textureAttribLength * sizeof(GLfloat), (void*)(positionAttribLength * sizeof(GLfloat)));
+    glEnableVertexAttribArray(textureAttribLocation);
 
     // Unbinding current VAO
     glBindVertexArray(0);
-}*/
+}
 
 
 void Canvas::run()
@@ -189,7 +185,7 @@ void Canvas::run()
         bellotaPack.dmeshOpt = DMesh();
         DMesh& dmesh = bellotaPack.dmeshOpt.value();
         dmesh.initBuffers();
-        //setupVAO(dMesh, mShaderProgram);
+        setupVAO(dmesh, mShaderProgram);
         //bellotaPack.dmeshOpt.fillBuffers(bellotaPack.meshOpt, GL_STATIC_DRAW);
     }
 
