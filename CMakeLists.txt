@@ -15,9 +15,14 @@ add_subdirectory("third_party/whereami2cpp")
 add_subdirectory("third_party/glad")
 add_subdirectory("third_party/imgui_cmake")
 
+file(GLOB_RECURSE HEADERS "source/*.h")
+
 add_executable(hello_nothofagus
     "examples/hello_nothofagus.cpp"
     "source/canvas.cpp"
+
+    # This is only required to show header files in the Visual Studio IDE solution browser
+    ${HEADERS}
 )
 set_property(TARGET hello_nothofagus PROPERTY CXX_STANDARD 20)
 target_include_directories(hello_nothofagus PRIVATE
