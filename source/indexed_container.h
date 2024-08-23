@@ -44,7 +44,12 @@ public:
         return mElements.contains(elementId);
     }
 
-    std::unordered_map<std::size_t, ElementType> map() const
+    const std::unordered_map<std::size_t, ElementType>& map() const
+    {
+        return mElements;
+    }
+
+    std::unordered_map<std::size_t, ElementType>& map()
     {
         return mElements;
     }

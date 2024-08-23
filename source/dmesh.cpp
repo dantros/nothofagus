@@ -37,7 +37,7 @@ void DMesh::drawCall() const
     glBindVertexArray(0);
 }
 
-void DMesh::clear()
+void DMesh::clear() const
 {
     glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);

@@ -30,7 +30,7 @@ struct DMesh
     void drawCall() const;
 
     /* Freeing GPU memory */
-    void clear();
+    void clear() const;
 };
 
 std::ostream& operator<<(std::ostream& os, const DMesh& dMesh);

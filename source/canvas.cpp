@@ -220,10 +220,10 @@ void Canvas::run()
         // drawing with OpenGL
         glUseProgram(mShaderProgram);
 
-        for (auto& pair : mBellotas.map())
+        for (const auto& pair : mBellotas.map())
         {
             const BellotaId bellotaId{ pair.first };
-            BellotaPack& bellotaPack = pair.second;
+            const BellotaPack& bellotaPack = pair.second;
 
             debugCheck(bellotaPack.dmeshOpt.has_value(), "DMesh has not been initialized.");
 
