@@ -22,10 +22,10 @@ namespace Nothofagus
 {
 
 // Wrapper class forward declared in the .h to avoid including GLFW dependecies in the header file.
-/*struct Canvas::Window
+struct Canvas::Window
 {
     GLFWwindow* glfwWindow;
-};*/
+};
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
 void processInput(GLFWwindow* window)
@@ -52,18 +52,18 @@ Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // glfw window creation
-    mWindow = glfwCreateWindow(DEFAULT_SCREEN_SIZE.width, DEFAULT_SCREEN_SIZE.height, DEFAULT_TITLE.c_str(), NULL, NULL);
-    if (mWindow == nullptr)
+    GLFWwindow* glfwWindow = glfwCreateWindow(DEFAULT_SCREEN_SIZE.width, DEFAULT_SCREEN_SIZE.height, DEFAULT_TITLE.c_str(), NULL, NULL);
+    if (glfwWindow == nullptr)
     {
         spdlog::error("Failed to create GLFW window");
         glfwTerminate();
         throw;
     }
 
-    //mWindow = std::make_unique<Window>(glfwWindow);
+    mWindow = std::make_unique<Window>(glfwWindow);
 
-    glfwMakeContextCurrent(mWindow);
-    glfwSetFramebufferSizeCallback(mWindow, framebufferSizeCallback);
+    glfwMakeContextCurrent(mWindow->glfwWindow);
+    glfwSetFramebufferSizeCallback(mWindow->glfwWindow, framebufferSizeCallback);
 
     // glad: load all OpenGL function pointers
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -140,7 +140,7 @@ Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm
     // ImGui setup
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
-    ImGui_ImplGlfw_InitForOpenGL(mWindow, true);
+    ImGui_ImplGlfw_InitForOpenGL(mWindow->glfwWindow, true);
     const char* glsl_version = "#version 330";
     ImGui_ImplOpenGL3_Init(glsl_version);
 }
@@ -205,9 +205,9 @@ void Canvas::run()
 
     const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
 
-    while (!glfwWindowShouldClose(mWindow))
+    while (!glfwWindowShouldClose(mWindow->glfwWindow))
     {
-        processInput(mWindow);
+        processInput(mWindow->glfwWindow);
         
         glClear(GL_COLOR_BUFFER_BIT);
 
@@ -241,7 +241,7 @@ void Canvas::run()
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-        glfwSwapBuffers(mWindow);
+        glfwSwapBuffers(mWindow->glfwWindow);
         glfwPollEvents();
     }
 }
@@ -250,11 +250,13 @@ Canvas::~Canvas()
 {
     // freeing GPU memorygpuShape.clear();
     glfwTerminate();
+
+    // Needs to be defined in the cpp file to avoid incomplete type errors due to the pimpl idiom for struct Window
 }
 
 void Canvas::close()
 {
-    glfwSetWindowShouldClose(mWindow, true);
+    glfwSetWindowShouldClose(mWindow->glfwWindow, true);
 }
 
 }

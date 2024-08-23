@@ -6,9 +6,7 @@
 #include "texture.h"
 #include "index_factory.h"
 #include "indexed_container.h"
-
-// Forward declaration to interface with third party libs
-struct GLFWwindow;
+#include <memory>
 
 namespace Nothofagus
 {
@@ -97,8 +95,9 @@ private:
 
     unsigned int mShaderProgram;
 
-    
-    GLFWwindow* mWindow;
+    // Forward declaration to interface with third party libs
+    struct Window;
+    std::unique_ptr<Window> mWindow;
 };
 
 }
