@@ -9,7 +9,7 @@ namespace Nothofagus
 glm::ivec2 getTextureSize(const TextureContainer& textures, const Bellota& bellota)
 {
     const TextureId& textureId = bellota.texture();
-    const Texture& texture = textures.at(textureId);
+    const Texture& texture = textures.at(textureId.id);
     return texture.size();
 }
 
@@ -47,7 +47,7 @@ Mesh generateMesh(const TextureContainer& textures, const Bellota& bellota)
         mesh.vertices.push_back(vertex.ty);
     };
 
-    const glm::ivec2 size = getTextureSize(textures, bellota)
+    const glm::ivec2 size = getTextureSize(textures, bellota);
     
     addVertex(bottomLeft(size));  // vertex 0
     addVertex(bottomRight(size)); // vertex 1

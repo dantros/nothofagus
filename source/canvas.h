@@ -2,10 +2,13 @@
 
 #include <vector>
 #include <glm/glm.hpp>
+#include <optional>
 #include "bellota.h"
 #include "texture.h"
 #include "index_factory.h"
 #include "indexed_container.h"
+#include "bellota_container.h"
+#include "texture_container.h"
 #include <memory>
 
 namespace Nothofagus
@@ -38,7 +41,7 @@ public:
 
     BellotaId addBellota(const Bellota& bellota)
     {
-        return {mBellotas.add(bellota)};
+        return {mBellotas.add({bellota, std::nullopt, std::nullopt})};
     }
 
     void removeBellota(const BellotaId bellotaId)
@@ -58,12 +61,12 @@ public:
 
     Bellota& bellota(BellotaId bellotaId)
     {
-        return mBellotas.at(bellotaId.id);
+        return mBellotas.at(bellotaId.id).bellota;
     }
 
     const Bellota& bellota(BellotaId bellotaId) const
     {
-        return mBellotas.at(bellotaId.id);
+        return mBellotas.at(bellotaId.id).bellota;
     }
 
     Texture& texture(TextureId textureId)
@@ -86,9 +89,6 @@ private:
     ScreenSize mScreenSize;
     std::string mTitle;
     glm::vec3 mClearColor;
-
-    using BellotaContainer = IndexedContainer<Bellota>;
-    using TextureContainer = IndexedContainer<Texture>;
 
     TextureContainer mTextures;
     BellotaContainer mBellotas;

@@ -20,6 +20,7 @@ file(GLOB_RECURSE HEADERS "source/*.h")
 add_executable(hello_nothofagus
     "examples/hello_nothofagus.cpp"
     "source/canvas.cpp"
+    "source/bellota_to_mesh.cpp"
 
     # This is only required to show header files in the Visual Studio IDE solution browser
     ${HEADERS}

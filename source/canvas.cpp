@@ -173,30 +173,27 @@ Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm
     glBindVertexArray(0);
 }*/
 
+
 void Canvas::run()
 {
     //debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
-    using MeshContainer = IndexedContainer<Mesh>;
-    using DMeshContainer = IndexedContainer<DMesh>;
-    MeshContainer meshes;
-    DMeshContainer dmeshes;
     
-    /*for (const auto& pair : mBellotas)
+    // TODO: create IndexedContainerIterator
+    for (auto& pair : mBellotas.map())
     {
-        const BellotaId& bellotaId = pair.first;
-        const Bellota& bellota = pair.second;
+        const BellotaId bellotaId{ pair.first };
+        BellotaPack& bellotaPack = pair.second;
 
-        const Mesh mesh = generateMesh(bellota);
-        dmeshes.emplace({bellotaId, mesh});
+        bellotaPack.meshOpt = generateMesh(mTextures, bellotaPack.bellota);
 
-        DMesh dMesh;
+        /*DMesh dMesh;
         dMesh.dvertex = dvertex;
         dMesh.initBuffers();
         setupVAO(dMesh, mShaderProgram);
         dMesh.fillBuffers(mesh, GL_STATIC_DRAW);
 
-        dmeshes.emplace({bellotaId, dMesh});
-    }*/
+        dmeshes.emplace({bellotaId, dMesh});*/
+    }
 
     // state variable
     bool fillPolygons = true;

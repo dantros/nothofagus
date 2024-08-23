@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include "check.h"
+#include "index_factory.h"
 
 namespace Nothofagus
 {
@@ -41,6 +42,11 @@ public:
     bool contains(const std::size_t elementId) const
     {
         return mElements.contains(elementId);
+    }
+
+    std::unordered_map<std::size_t, ElementType> map() const
+    {
+        return mElements;
     }
 
 private:
