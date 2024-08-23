@@ -206,20 +206,6 @@ void Canvas::run()
     //debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
     
     // TODO: create IndexedContainerIterator
-    for (auto& pair : mBellotas.map())
-    {
-        const BellotaId bellotaId{ pair.first };
-        BellotaPack& bellotaPack = pair.second;
-
-        bellotaPack.meshOpt = generateMesh(mTextures, bellotaPack.bellota);
-
-        bellotaPack.dmeshOpt = DMesh();
-        DMesh& dmesh = bellotaPack.dmeshOpt.value();
-        dmesh.initBuffers();
-        setupVAO(dmesh, mShaderProgram);
-        dmesh.fillBuffers(bellotaPack.meshOpt.value(), GL_STATIC_DRAW);
-    }
-
     for (auto& pair : mTextures.map())
     {
         const TextureId textureId{ pair.first };
@@ -229,6 +215,29 @@ void Canvas::run()
         TextureData textureData = texture.generateTextureData();
 
         texturePack.dtextureOpt = DTexture{ textureSimpleSetup(textureData) };
+    }
+    
+    for (auto& pair : mBellotas.map())
+    {
+        const BellotaId bellotaId{ pair.first };
+        BellotaPack& bellotaPack = pair.second;
+        const Bellota& bellota = bellotaPack.bellota;
+
+        bellotaPack.meshOpt = generateMesh(mTextures, bellota);
+
+        bellotaPack.dmeshOpt = DMesh();
+        DMesh& dmesh = bellotaPack.dmeshOpt.value();
+        dmesh.initBuffers();
+        setupVAO(dmesh, mShaderProgram);
+        dmesh.fillBuffers(bellotaPack.meshOpt.value(), GL_STATIC_DRAW);
+
+        TextureId textureId = bellota.texture();
+        const TexturePack& texturePack = mTextures.at(textureId.id);
+
+        debugCheck(texturePack.dtextureOpt.has_value(), "Texture has not been initializad on GPU.");
+
+        const DTexture dtexture = texturePack.dtextureOpt.value();
+        dmesh.texture = dtexture.texture;
     }
 
     // state variable

@@ -6,6 +6,7 @@
 
 namespace Nothofagus
 {
+    /* Check for the given condition to be valid on debug builds, throws otherwise. */
     inline void debugCheck(bool condition, const std::string& errorMessage)
     {
         #ifdef _DEBUG
@@ -17,6 +18,7 @@ namespace Nothofagus
         #endif
     }
 
+    /* Check for the given condition to be valid on all runtime builds, throws otherwise. */
     inline void runtimeCheck(bool condition, const std::string& errorMessage)
     {
         if (not condition)
