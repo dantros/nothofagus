@@ -24,14 +24,13 @@ void DMesh::fillBuffers(const Mesh& mesh, unsigned int usage)
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh.indices.size() * SIZE_IN_BYTES, mesh.indices.data(), usage);
 }
-#if 0
-void DMesh::drawCall()
+
+void DMesh::drawCall() const
 {
     // Binding the VAO and executing the draw call
     glBindVertexArray(vao);
 
-    /* TODO bind textures if any! */
-
+    glBindTexture(GL_TEXTURE_2D, texture);
     glDrawElements(GL_TRIANGLES, size, GL_UNSIGNED_INT, nullptr);
 
     // Unbind the current VAO
@@ -43,6 +42,7 @@ void DMesh::clear()
     glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);
     glDeleteBuffers(1, &ebo);
+    /* TODO: clear texture memory */
 }
 
 std::ostream& operator<<(std::ostream& os, const DMesh& dMesh)
@@ -54,5 +54,5 @@ std::ostream& operator<<(std::ostream& os, const DMesh& dMesh)
 
     return os;
 }
-#endif
+
 } // namespace BoxRenderer

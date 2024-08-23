@@ -27,10 +27,10 @@ struct DMesh
     //void fillBuffers(const Mesh& mesh, GPUID usage);
     void fillBuffers(const Mesh& mesh, unsigned int usage);
 
-    //void drawCall();
+    void drawCall() const;
 
     /* Freeing GPU memory */
-    //void clear();
+    void clear();
 };
 
 std::ostream& operator<<(std::ostream& os, const DMesh& dMesh);

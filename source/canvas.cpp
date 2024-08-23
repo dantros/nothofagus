@@ -232,18 +232,21 @@ void Canvas::run()
             const glm::mat3 transform = bellota.transform().toMat3();
 
             glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(transform));
-            //dmesh.drawCall();
+            dmesh.drawCall();
         }
-
-        /*glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-        glBindVertexArray(0);*/
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(mWindow->glfwWindow);
         glfwPollEvents();
+    }
+
+    for (auto& pair : mBellotas.map())
+    {
+        BellotaPack& bellotaPack = pair.second;
+        DMesh& dmesh = bellotaPack.dmeshOpt.value();
+        dmesh.clear();
     }
 }
 
