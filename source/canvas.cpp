@@ -141,6 +141,10 @@ Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
+    // Enabling transparency
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_BLEND);
+
     // ImGui setup
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
