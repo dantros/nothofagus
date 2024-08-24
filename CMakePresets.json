@@ -12,10 +12,11 @@
             "hidden": true,
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/../build_cmake/${presetName}",
+            "installDir": "${sourceDir}/../install_cmake/${presetName}",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "Yes",
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../install_cmake/${presetName}"
+                "CMAKE_CXX_COMPILER": "cl"
             }
         },
         {
@@ -25,6 +26,16 @@
             "generator": "Ninja",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "ninja-release-examples",
+            "inherits": "base",
+            "hidden": false,
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "NOTHOFAGUS_BUILD_EXAMPLES": "ON"
             }
         },
         {

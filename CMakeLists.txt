@@ -50,17 +50,31 @@ set(NOTHOFAGUS_INCLUDE
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glm"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui"
 )
-add_subdirectory("examples")
 
-#[[
 include(GNUInstallDirs)
-install(TARGETS hello_nothofagus
+install(TARGETS nothofagus
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        COMPONENT HelloNothofagus_Runtime
+        COMPONENT Nothofagus_Runtime
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        COMPONENT HelloNothofagus_Runtime
-        NAMELINK_COMPONENT HelloNothofagus_Development
+        COMPONENT Nothofagus_Runtime
+        NAMELINK_COMPONENT Nothofagus_Development
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        COMPONENT HelloNothofagus_Development
+        COMPONENT Nothofagus_Development
 )
-#]]
+
+option(NOTHOFAGUS_BUILD_EXAMPLES "Build Nothofagus examples?" OFF)
+if (${NOTHOFAGUS_BUILD_EXAMPLES})
+    add_subdirectory("examples")
+
+    if (${NOTHOFAGUS_BUILD_EXAMPLES})
+        install(TARGETS hello_nothofagus
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+                COMPONENT NothofagusExamples_Runtime
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                COMPONENT NothofagusExamples_Runtime
+                NAMELINK_COMPONENT NothofagusExamples_Development
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                COMPONENT NothofagusExamples_Development
+        )
+    endif()
+endif()
