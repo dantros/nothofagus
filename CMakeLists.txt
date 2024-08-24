@@ -44,18 +44,14 @@ target_include_directories(nothofagus PRIVATE
 )
 target_link_libraries(nothofagus PRIVATE whereami2cpp glad glfw imgui)
 
+set(NOTHOFAGUS_INCLUDE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glfw/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glm"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui"
+)
+add_subdirectory("examples")
 
-add_executable(hello_nothofagus
-    "examples/hello_nothofagus.cpp"
-)
-set_property(TARGET hello_nothofagus PROPERTY CXX_STANDARD 20)
-target_include_directories(hello_nothofagus PRIVATE
-    "include"
-    "third_party/glfw/include"
-    "third_party/glm"
-    "third_party/imgui"
-)
-target_link_libraries(hello_nothofagus PRIVATE glfw imgui nothofagus)
 #[[
 include(GNUInstallDirs)
 install(TARGETS hello_nothofagus
