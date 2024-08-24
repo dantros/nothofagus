@@ -34,6 +34,7 @@ int main()
     Nothofagus::BellotaId bellotaId = canvas.addBellota({{{75.0f, 75.0f}}, textureId});
 
     float time = 0.0f;
+    constexpr float angularSpeed = 0.1;
     bool rotate = true;
 
     auto update = [&](float dt)
@@ -46,6 +47,9 @@ int main()
         ImGui::Begin("Hello there!");
         ImGui::Text("May ImGui be with you...");
         ImGui::End();
+
+        if (rotate)
+            bellota.transform().angle() += angularSpeed * dt;
     };
 
     Nothofagus::Controller controller;
@@ -56,6 +60,10 @@ int main()
     controller.onKeyPress(Nothofagus::Key::S, [&]()
     {
         canvas.bellota(bellotaId).transform().location().y -= 10.0f;
+    });
+    controller.onKeyPress(Nothofagus::Key::SPACE, [&]()
+    {
+        rotate = not rotate;
     });
     //controller.onKeyPress(Nothofagus::Key::ESCAPE, [&]() { canvas.close(); });
     
