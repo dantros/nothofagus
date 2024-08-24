@@ -10,7 +10,7 @@
 
 int main()
 {
-    Nothofagus::Canvas canvas({800,800}, "Hello Nothofagus", {0.5,0.5,0.5});
+    Nothofagus::Canvas canvas({150, 100}, "Hello Nothofagus", {0.7, 0.7, 0.7}, 6);
 
     Nothofagus::ColorPallete pallete1{
         {0.0, 0.0, 0.0, 1.0},
@@ -58,10 +58,10 @@ int main()
     );
     Nothofagus::TextureId textureId2 = canvas.addTexture(texture2);
 
-    Nothofagus::BellotaId bellotaId1 = canvas.addBellota({{{0.0f, 0.0f}, 0.125, 15.0}, textureId1});
-    Nothofagus::BellotaId bellotaId2 = canvas.addBellota({{{0.0f, 0.75f}, 0.125}, textureId1});
-    Nothofagus::BellotaId bellotaId3 = canvas.addBellota({ {{-0.5f, -0.5f}, 0.125}, textureId2 });
-    Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {{0.5f, 0.52f}, 0.025}, textureId2 });
+    Nothofagus::BellotaId bellotaId1 = canvas.addBellota({{{10.0f, 10.0f}}, textureId1});
+    Nothofagus::BellotaId bellotaId2 = canvas.addBellota({{{20.0f, 10.0f}}, textureId1});
+    Nothofagus::BellotaId bellotaId3 = canvas.addBellota({ {{50.0f, 50.0f}}, textureId2 });
+    Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {{100.0f, 50.0f}, 2.0, 15.0}, textureId2 });
     
     canvas.run();
 

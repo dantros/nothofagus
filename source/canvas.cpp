@@ -10,6 +10,8 @@
 #include "dmesh.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/matrix_transform_2d.hpp>
 #include <glm/ext.hpp>
 #include <imgui.h>
 #include <backends/imgui_impl_glfw.h>
@@ -41,10 +43,11 @@ void framebufferSizeCallback(GLFWwindow* window, int width, int height)
     glViewport(0, 0, width, height);
 }
 
-Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm::vec3 clearColor):
+Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm::vec3 clearColor, const unsigned int pixelSize):
     mScreenSize(screenSize),
     mTitle(title),
-    mClearColor(clearColor)
+    mClearColor(clearColor),
+    mPixelSize(pixelSize)
 {
     // glfw: initialize and configure
     glfwInit();
@@ -53,7 +56,7 @@ Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // glfw window creation
-    GLFWwindow* glfwWindow = glfwCreateWindow(mScreenSize.width, mScreenSize.height, mTitle.c_str(), NULL, NULL);
+    GLFWwindow* glfwWindow = glfwCreateWindow(mScreenSize.width * mPixelSize, mScreenSize.height * mPixelSize, mTitle.c_str(), NULL, NULL);
     if (glfwWindow == nullptr)
     {
         spdlog::error("Failed to create GLFW window");
@@ -250,6 +253,14 @@ void Canvas::run()
 
     glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
 
+    glm::mat3 worldTransformMat(1.0);
+    worldTransformMat = glm::translate(worldTransformMat, glm::vec2(-1.0, -1.0));
+    const glm::vec2 worldScale(
+        2.0f / mScreenSize.width,
+        2.0f / mScreenSize.height
+    );
+    worldTransformMat = glm::scale(worldTransformMat, worldScale);
+
     const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
 
     while (!glfwWindowShouldClose(mWindow->glfwWindow))
@@ -281,10 +292,11 @@ void Canvas::run()
 
             const Bellota& bellota = bellotaPack.bellota;
             const DMesh& dmesh = bellotaPack.dmeshOpt.value();
-            const Transform& transform = bellota.transform();
-            const glm::mat3 transformMat = transform.toMat3();
+            const Transform& modelTransform = bellota.transform();
+            const glm::mat3 modelTransformMat = modelTransform.toMat3();
+            const glm::mat3 totalTransformMat = worldTransformMat * modelTransformMat;
 
-            glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(transformMat));
+            glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
             dmesh.drawCall();
         }
 

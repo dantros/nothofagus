@@ -24,9 +24,10 @@ struct BellotaId
     std::size_t id;
 };
 
-constexpr static ScreenSize DEFAULT_SCREEN_SIZE{800, 600};
+constexpr static ScreenSize DEFAULT_SCREEN_SIZE{256, 240};
 const std::string DEFAULT_TITLE{"Nothofagus App"};
 const glm::vec3 DEFAULT_CLEAR_COLOR{0.0f, 0.0f, 0.0f};
+constexpr static unsigned int DEFAULT_PIXEL_SIZE{ 4 }; // Each pixel is represented by this quantity of screen pixels
 
 class Canvas
 {
@@ -34,7 +35,8 @@ public:
     Canvas(
         const ScreenSize& screenSize = DEFAULT_SCREEN_SIZE,
         const std::string& title = DEFAULT_TITLE,
-        const glm::vec3 clearColor = DEFAULT_CLEAR_COLOR
+        const glm::vec3 clearColor = DEFAULT_CLEAR_COLOR,
+        const unsigned int pixelSize = DEFAULT_PIXEL_SIZE
     );
 
     ~Canvas();
@@ -89,6 +91,7 @@ private:
     ScreenSize mScreenSize;
     std::string mTitle;
     glm::vec3 mClearColor;
+    unsigned int mPixelSize;
 
     TextureContainer mTextures;
     BellotaContainer mBellotas;

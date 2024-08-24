@@ -14,11 +14,11 @@ class Transform
 {
 public:
     Transform() :
-        mLocation(0), mScale(0), mAngle(0)
+        mLocation(0), mScale(1.0), mAngle(0)
     {}
 
     Transform(glm::vec2 location) :
-        mLocation(location), mScale(0), mAngle(0)
+        mLocation(location), mScale(1.0), mAngle(0)
     {}
 
     Transform(glm::vec2 location, float uniformScale) :
