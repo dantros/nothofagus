@@ -93,8 +93,7 @@ Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm
         uniform sampler2D textureSampler;
         void main()
         {
-            outColor = (texture(textureSampler, outTextureCoordinates) * 0.0001) + vec4(1.0,0.0,0.0,1.0);
-            //outColor = texture(textureSampler, outTextureCoordinates);
+            outColor = texture(textureSampler, outTextureCoordinates);
         }
     )";
 

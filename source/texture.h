@@ -132,7 +132,7 @@ public:
         for (std::size_t index = 0; index < out.width * out.height; ++index)
         {
             const Pixel& pixel = mPixels[index];
-            const glm::vec4& color = mPallete.colors.at(pixel.colorId);
+            const glm::vec4 color = 255.0f * mPallete.colors.at(pixel.colorId);
             out.data.push_back(color.r);
             out.data.push_back(color.g);
             out.data.push_back(color.b);
