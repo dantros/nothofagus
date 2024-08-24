@@ -267,8 +267,6 @@ void Canvas::run(std::function<void(float deltaTime)> update)
 
         performanceMonitor.update(glfwGetTime());
         const float deltaTimeMS = performanceMonitor.getMS();
-
-        update(deltaTimeMS);
         
         glClear(GL_COLOR_BUFFER_BIT);
 
@@ -277,11 +275,7 @@ void Canvas::run(std::function<void(float deltaTime)> update)
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        ImGui::Begin("Hi ImGui");
-        ImGui::Text("Prepare your colors...");
-        ImGui::Checkbox("Fill Polygons?", &fillPolygons);
-        glPolygonMode(GL_FRONT_AND_BACK, fillPolygons ? GL_FILL : GL_LINE);
-        ImGui::End();
+        update(deltaTimeMS);
 
         // drawing with OpenGL
         glUseProgram(mShaderProgram);

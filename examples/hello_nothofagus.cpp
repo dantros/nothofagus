@@ -5,7 +5,7 @@
 #include <vector>
 #include <ciso646>
 #include <cmath>
-
+#include <imgui.h>
 #include "../source/texture.h"
 #include "../source/canvas.h"
 
@@ -65,14 +65,23 @@ int main()
     Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {{100.0f, 50.0f}, 2.0, 15.0}, textureId2 });
 
     float time = 0.0f;
+    bool rotate = true;
     auto update = [&](float dt)
     {
         time += dt;
         Nothofagus::Bellota& bellota2 = canvas.bellota(bellotaId2);
         bellota2.transform().location().x = 75.0f + 60.0f * std::sin(0.0005f * time);
 
-        Nothofagus::Bellota& bellota3 = canvas.bellota(bellotaId3);
-        bellota3.transform().angle() = 0.1f * time;
+
+        ImGui::Begin("Hello there!");
+        ImGui::Text("May ImGui be with you...");
+        ImGui::Checkbox("Rotate?", &rotate);
+        if (rotate)
+        {
+            Nothofagus::Bellota& bellota3 = canvas.bellota(bellotaId3);
+            bellota3.transform().angle() = 0.1f * time;
+        }
+        ImGui::End();
     };
     
     canvas.run(update);
