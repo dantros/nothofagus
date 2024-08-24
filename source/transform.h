@@ -14,23 +14,23 @@ class Transform
 {
 public:
     Transform() :
-        mLocation(0), mAngle(0), mScale(0)
+        mLocation(0), mScale(0), mAngle(0)
     {}
 
     Transform(glm::vec2 location) :
-        mLocation(location), mAngle(0), mScale(0)
+        mLocation(location), mScale(0), mAngle(0)
     {}
 
-    Transform(glm::vec2 location, float angle) :
-        mLocation(location), mAngle(angle), mScale(0)
+    Transform(glm::vec2 location, float uniformScale) :
+        mLocation(location), mScale(uniformScale, uniformScale), mAngle(0.0)
     {}
 
-    Transform(glm::vec2 location, float angle, float uniformScale) :
-        mLocation(location), mAngle(angle), mScale(uniformScale, uniformScale)
+    Transform(glm::vec2 location, float uniformScale, float angle) :
+        mLocation(location), mScale(uniformScale, uniformScale), mAngle(angle)
     {}
 
-    Transform(glm::vec2 location, float angle, glm::vec2 scale) :
-        mLocation(location), mAngle(angle), mScale(scale)
+    Transform(glm::vec2 location, glm::vec2 scale, float angle) :
+        mLocation(location), mScale(scale), mAngle(angle)
     {}
 
     Transform(const glm::mat3& mat)
@@ -68,8 +68,8 @@ private:
     }
 
     glm::vec2 mLocation;
-    float mAngle;
     glm::vec2 mScale;
+    float mAngle;
 };
 
 }
