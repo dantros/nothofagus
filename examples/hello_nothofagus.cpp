@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <ciso646>
+#include <cmath>
 
 #include "../source/texture.h"
 #include "../source/canvas.h"
@@ -60,35 +61,21 @@ int main()
 
     Nothofagus::BellotaId bellotaId1 = canvas.addBellota({{{10.0f, 10.0f}}, textureId1});
     Nothofagus::BellotaId bellotaId2 = canvas.addBellota({{{20.0f, 10.0f}}, textureId1});
-    Nothofagus::BellotaId bellotaId3 = canvas.addBellota({ {{50.0f, 50.0f}}, textureId2 });
+    Nothofagus::BellotaId bellotaId3 = canvas.addBellota({ {{50.0f, 50.0f}, 4.0}, textureId2 });
     Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {{100.0f, 50.0f}, 2.0, 15.0}, textureId2 });
-    
-    canvas.run();
 
-    /*bool movingRight = true;
-    float speed = 0.0001;
-
+    float time = 0.0f;
     auto update = [&](float dt)
     {
-        Nothofagus::Bellota& bellota = canvas.bellota(bellotaId2);
+        time += dt;
+        Nothofagus::Bellota& bellota2 = canvas.bellota(bellotaId2);
+        bellota2.transform().location().x = 75.0f + 60.0f * std::sin(0.0005f * time);
 
-        if (movingRight)
-            bellota.transform().tx() += speed * dt;
-        else
-            bellota.transform().tx() -= speed * dt;
-
-        if (bellota.transform().tx() > 0.5)
-            movingRight = false;
-        else if (bellota.transform().tx() < -0.5)
-            movingRight = true;
+        Nothofagus::Bellota& bellota3 = canvas.bellota(bellotaId3);
+        bellota3.transform().angle() = 0.1f * time;
     };
-
-    Nothofagus::Controller controller;
-    controller.onKeyPress(Nothofagus::Key::W, [&]() { speed *= 2.0f; });
-    controller.onKeyPress(Nothofagus::Key::S, [&]() { speed /= 2.0f; });
-    controller.onKeyPress(Nothofagus::Key::ESCAPE, [&]() { canvas.close(); });
     
-    canvas.run(controller, update);*/
+    canvas.run(update);
     
     return 0;
 }

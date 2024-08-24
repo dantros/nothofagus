@@ -1,13 +1,9 @@
-/*#ifdef _WIN32
-#include <windows.h>
-#else
-#define APIENTRY
-#endif*/
 
 #include "canvas.h"
 #include "check.h"
 #include "bellota_to_mesh.h"
 #include "dmesh.h"
+#include "performance_monitor.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #define GLM_ENABLE_EXPERIMENTAL
@@ -209,7 +205,7 @@ GLuint textureSimpleSetup(const TextureData& textureData)
 }
 
 
-void Canvas::run()
+void Canvas::run(std::function<void(float deltaTime)> update)
 {
     debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
     
@@ -263,9 +259,16 @@ void Canvas::run()
 
     const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
 
+    PerformanceMonitor performanceMonitor(glfwGetTime(), 0.5f);
+
     while (!glfwWindowShouldClose(mWindow->glfwWindow))
     {
         processInput(mWindow->glfwWindow);
+
+        performanceMonitor.update(glfwGetTime());
+        const float deltaTimeMS = performanceMonitor.getMS();
+
+        update(deltaTimeMS);
         
         glClear(GL_COLOR_BUFFER_BIT);
 

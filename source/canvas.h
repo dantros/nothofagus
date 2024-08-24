@@ -10,6 +10,7 @@
 #include "bellota_container.h"
 #include "texture_container.h"
 #include <memory>
+#include <functional>
 
 namespace Nothofagus
 {
@@ -83,7 +84,7 @@ public:
 
     //void tick(Controller& controller, std::function<void(float deltaTime)> updateFunction);
 
-    void run();
+    void run(std::function<void(float deltaTime)> update);
 
     void close();
 

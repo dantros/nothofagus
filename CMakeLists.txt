@@ -23,6 +23,7 @@ add_executable(hello_nothofagus
     "source/bellota_to_mesh.cpp"
     "source/mesh.cpp"
     "source/dmesh.cpp"
+    "source/performance_monitor.cpp"
 
     # This is only required to show header files in the Visual Studio IDE solution browser
     ${HEADERS}
