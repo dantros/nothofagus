@@ -30,11 +30,8 @@
         },
         {
             "name": "ninja-release-examples",
-            "inherits": "base",
-            "hidden": false,
-            "generator": "Ninja",
+            "inherits": "ninja-release",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release",
                 "NOTHOFAGUS_BUILD_EXAMPLES": "ON"
             }
         },
@@ -45,6 +42,13 @@
             "generator": "Visual Studio 17 2022",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vs-debug-examples",
+            "inherits": "vs-debug",
+            "cacheVariables": {
+                "NOTHOFAGUS_BUILD_EXAMPLES": "ON"
             }
         }
     ]
