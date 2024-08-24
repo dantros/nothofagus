@@ -26,6 +26,8 @@ add_library(nothofagus
     "source/transform.cpp"
     "source/texture.cpp"
     "source/performance_monitor.cpp"
+    "source/controller.cpp"
+    "source/keyboard.cpp"
 
     # This is only required to show header files in the Visual Studio IDE solution browser
     ${HEADERS}
