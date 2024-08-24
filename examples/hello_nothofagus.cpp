@@ -1,13 +1,9 @@
-//#include <nothofagus.h>
-
 #include <iostream>
 #include <string>
 #include <vector>
 #include <ciso646>
 #include <cmath>
-#include <imgui.h>
-#include "../source/texture.h"
-#include "../source/canvas.h"
+#include <nothofagus.h>
 
 int main()
 {
@@ -62,7 +58,7 @@ int main()
     Nothofagus::BellotaId bellotaId1 = canvas.addBellota({{{10.0f, 10.0f}}, textureId1});
     Nothofagus::BellotaId bellotaId2 = canvas.addBellota({{{20.0f, 10.0f}}, textureId1});
     Nothofagus::BellotaId bellotaId3 = canvas.addBellota({ {{50.0f, 50.0f}, 4.0}, textureId2 });
-    Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {{100.0f, 50.0f}, 2.0, 15.0}, textureId2 });
+    Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {{100.0f, 50.0f}, 2.0}, textureId2 });
 
     float time = 0.0f;
     bool rotate = true;

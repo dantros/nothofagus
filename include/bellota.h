@@ -21,25 +21,13 @@ public:
     {
     }
 
-    const Transform& transform() const
-    {
-        return mTransform;
-    }
+    const Transform& transform() const { return mTransform; }
 
-    Transform& transform()
-    {
-        return mTransform;
-    }
+    Transform& transform() { return mTransform; }
 
-    const TextureId& texture() const
-    {
-        return mTextureId;
-    }
+    const TextureId& texture() const { return mTextureId; }
 
-    TextureId& texture()
-    {
-        return mTextureId;
-    }
+    TextureId& texture() { return mTextureId; }
 
 private:
     Transform mTransform;

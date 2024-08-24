@@ -2,9 +2,6 @@
 
 #include <cstddef>
 #include <glm/glm.hpp>
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/matrix_transform_2d.hpp>
-#include <numbers>
 
 namespace Nothofagus
 {
@@ -33,24 +30,7 @@ public:
         mLocation(location), mScale(scale), mAngle(angle)
     {}
 
-    Transform(const glm::mat3& mat)
-    {
-        throw;
-        /*mTx = mat[];
-        mTy = ;
-        mRx = ;
-        mSx = ;
-        mSy = ;*/
-    }
-
-    glm::mat3 toMat3() const
-    {
-        glm::mat3 out(1.0);
-        out = glm::translate(out, mLocation);
-        out = glm::rotate(out, degreesToRadians(mAngle));
-        out = glm::scale(out, mScale);
-        return out;
-    }
+    glm::mat3 toMat3() const;
 
     glm::vec2& location(){ return mLocation; }
     const glm::vec2& location() const{ return mLocation; }
@@ -62,11 +42,6 @@ public:
     const glm::vec2& scale() const{ return mScale; }
 
 private:
-    static float degreesToRadians(float degrees)
-    {
-        return degrees * std::numbers::pi_v<float> / 180.0f;
-    }
-
     glm::vec2 mLocation;
     glm::vec2 mScale;
     float mAngle;
