@@ -53,7 +53,7 @@ Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // glfw window creation
-    GLFWwindow* glfwWindow = glfwCreateWindow(DEFAULT_SCREEN_SIZE.width, DEFAULT_SCREEN_SIZE.height, DEFAULT_TITLE.c_str(), NULL, NULL);
+    GLFWwindow* glfwWindow = glfwCreateWindow(mScreenSize.width, mScreenSize.height, mTitle.c_str(), NULL, NULL);
     if (glfwWindow == nullptr)
     {
         spdlog::error("Failed to create GLFW window");
@@ -194,8 +194,6 @@ GLuint textureSimpleSetup(const TextureData& textureData)
     // texture filtering params
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    //unsigned char* data = stbi_load(imgPath.string().c_str(), &width, &height, &nrChannels, 0);
 
     GLuint internalFormat = GL_RGBA;
     GLuint format = GL_RGBA;
