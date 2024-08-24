@@ -6,6 +6,8 @@
 #include "performance_monitor.h"
 #include "texture_container.h"
 #include "bellota_container.h"
+#include "keyboard.h"
+#include "controller.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #define GLM_ENABLE_EXPERIMENTAL
@@ -254,10 +256,24 @@ GLuint textureSimpleSetup(const TextureData& textureData)
     return gpuTexture;
 }
 
+void keyCallback(GLFWwindow* window, int glfwKey, int scancode, int action, int mods)
+{
+    if (action != GLFW_PRESS)
+        return;
 
-void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update)
+    auto myUserPointer = glfwGetWindowUserPointer(window);
+    Controller* controller = static_cast<Controller*>(myUserPointer);
+
+    Key key = KeyboardImplementation::toKeyCode(glfwKey);
+    controller->press(key);
+}
+
+void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
     debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
+
+    glfwSetWindowUserPointer(mWindow->glfwWindow, &controller);
+    glfwSetKeyCallback(mWindow->glfwWindow, keyCallback);
     
     // TODO: create IndexedContainerIterator
     for (auto& pair : mTextures.map())
@@ -314,6 +330,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update)
     while (!glfwWindowShouldClose(mWindow->glfwWindow))
     {
         processInput(mWindow->glfwWindow);
+        controller.processInputs();
 
         performanceMonitor.update(glfwGetTime());
         const float deltaTimeMS = performanceMonitor.getMS();

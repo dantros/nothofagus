@@ -35,7 +35,7 @@ public:
 
     const Texture& texture(TextureId textureId) const;
 
-    void run(std::function<void(float deltaTime)> update);
+    void run(std::function<void(float deltaTime)> update, Controller& controller);
 
     void close();
 

@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include "bellota.h"
 #include "texture.h"
+#include "controller.h"
 #include <memory>
 #include <functional>
 #include <string>
@@ -53,7 +54,9 @@ public:
 
     const Texture& texture(TextureId textureId) const;
 
+    void run();
     void run(std::function<void(float deltaTime)> update);
+    void run(std::function<void(float deltaTime)> update, Controller& controller);
 
     void close();
 

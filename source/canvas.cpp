@@ -59,9 +59,22 @@ const Texture& Canvas::texture(TextureId textureId) const
     return mCanvasImpl->texture(textureId);
 }
 
+void Canvas::run()
+{
+    auto update = [](float deltaTime){};
+    Controller controller;
+    mCanvasImpl->run(update, controller);
+}
+
 void Canvas::run(std::function<void(float deltaTime)> update)
 {
-    mCanvasImpl->run(update);
+    Controller controller;
+    mCanvasImpl->run(update, controller);
+}
+
+void Canvas::run(std::function<void(float deltaTime)> update, Controller& controller)
+{
+    mCanvasImpl->run(update, controller);
 }
 
 }
