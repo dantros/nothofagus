@@ -58,7 +58,7 @@ int main()
     );
     Nothofagus::TextureId textureId2 = canvas.addTexture(texture2);*/
 
-    Nothofagus::BellotaId bellotaId1 = canvas.addBellota({{{0.0f, 0.0f}}, textureId1});
+    Nothofagus::BellotaId bellotaId1 = canvas.addBellota({{{0.0f, 0.0f}, 45.0, 0.125}, textureId1});
     /*Nothofagus::BellotaId bellotaId2 = canvas.addBellota({{{0.0f, 0.75f}}, textureId1});
     Nothofagus::BellotaId bellotaId3 = canvas.addBellota({ {{-0.5f, -0.5f}}, textureId2 });
     Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {{0.0f, 0.0f}}, textureId2 });

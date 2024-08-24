@@ -78,12 +78,11 @@ Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm
         in vec2 position;
         in vec2 texture;
         out vec2 outTextureCoordinates;
-        //uniform mat3 transform;
+        uniform mat3 transform;
         void main()
         {
             outTextureCoordinates = texture;
-            //vec3 world2dPosition = transform * vec3(position.x, position.y, 1.0);
-            vec3 world2dPosition = vec3(position.x, position.y, 1.0);
+            vec3 world2dPosition = transform * vec3(position.x, position.y, 1.0);
             gl_Position = vec4(world2dPosition.x, world2dPosition.y, 0.0, 1.0);
         }
     )";
@@ -206,7 +205,7 @@ GLuint textureSimpleSetup(const TextureData& textureData)
 
 void Canvas::run()
 {
-    //debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
+    debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
     
     // TODO: create IndexedContainerIterator
     for (auto& pair : mTextures.map())
@@ -248,7 +247,7 @@ void Canvas::run()
 
     glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
 
-    //const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
+    const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
 
     while (!glfwWindowShouldClose(mWindow->glfwWindow))
     {
@@ -277,13 +276,12 @@ void Canvas::run()
 
             debugCheck(bellotaPack.dmeshOpt.has_value(), "DMesh has not been initialized.");
 
-            //const Bellota& bellota = bellotaPack.bellota;
+            const Bellota& bellota = bellotaPack.bellota;
             const DMesh& dmesh = bellotaPack.dmeshOpt.value();
-            /*const Transform& transform = bellota.transform();
-            const glm::mat3 transformMat = transform.toMat3();*/
-            //const glm::mat3 transformMat(1.0);
+            const Transform& transform = bellota.transform();
+            const glm::mat3 transformMat = transform.toMat3();
 
-            //glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(transformMat));
+            glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(transformMat));
             dmesh.drawCall();
         }
 
