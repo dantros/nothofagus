@@ -82,7 +82,8 @@ Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm
         void main()
         {
             outTextureCoordinates = texture;
-            vec3 world2dPosition = transform * vec3(position.x, position.y, 1.0);
+            vec3 world2dPosition = (transform*0.001 + 1.0)* vec3(position.x, position.y, 1.0);
+            //vec3 world2dPosition = vec3(position.x, position.y, 1.0);
             gl_Position = vec4(world2dPosition.x, world2dPosition.y, 0.0, 1.0);
         }
     )";
@@ -276,9 +277,10 @@ void Canvas::run()
 
             const Bellota& bellota = bellotaPack.bellota;
             const DMesh& dmesh = bellotaPack.dmeshOpt.value();
-            const glm::mat3 transform = bellota.transform().toMat3();
+            const Transform& transform = bellota.transform();
+            const glm::mat3 transformMat = transform.toMat3();
 
-            glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(transform));
+            glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(transformMat));
             dmesh.drawCall();
         }
 

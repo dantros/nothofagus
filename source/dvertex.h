@@ -11,4 +11,4 @@ struct DVertex
     unsigned int arity() const { return 4; }
 };
 
-} // namespace BoxRenderer
+}

@@ -29,7 +29,7 @@ public:
 
     glm::mat3 toMat3() const
     {
-        glm::mat3 out;
+        glm::mat3 out(1.0);
         glm::translate(out, mLocation);
         glm::rotate(out, mAngle);
         glm::scale(out, mScale);
