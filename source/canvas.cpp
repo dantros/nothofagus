@@ -78,12 +78,12 @@ Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm
         in vec2 position;
         in vec2 texture;
         out vec2 outTextureCoordinates;
-        uniform mat3 transform; 
+        //uniform mat3 transform;
         void main()
         {
             outTextureCoordinates = texture;
-            vec3 world2dPosition = (transform*0.001 + 1.0)* vec3(position.x, position.y, 1.0);
-            //vec3 world2dPosition = vec3(position.x, position.y, 1.0);
+            //vec3 world2dPosition = transform * vec3(position.x, position.y, 1.0);
+            vec3 world2dPosition = vec3(position.x, position.y, 1.0);
             gl_Position = vec4(world2dPosition.x, world2dPosition.y, 0.0, 1.0);
         }
     )";
@@ -94,7 +94,8 @@ Canvas::Canvas(const ScreenSize& screenSize, const std::string& title, const glm
         uniform sampler2D textureSampler;
         void main()
         {
-           outColor = texture(textureSampler, outTextureCoordinates);
+            outColor = (texture(textureSampler, outTextureCoordinates) * 0.0001) + vec4(1.0,0.0,0.0,1.0);
+            //outColor = texture(textureSampler, outTextureCoordinates);
         }
     )";
 
@@ -160,14 +161,17 @@ void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
     glBindBuffer(GL_ARRAY_BUFFER, dmesh.vbo);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dmesh.ebo);
 
-    const unsigned int positionAttribLength = 2;
-    const auto positionAttribLocation = glGetAttribLocation(shaderProgram, "position");
-    glVertexAttribPointer(positionAttribLocation, positionAttribLength, GL_FLOAT, GL_FALSE, positionAttribLength * sizeof(GLfloat), (void*)(0 * sizeof(GLfloat)));
-    glEnableVertexAttribArray(positionAttribLocation);
+    constexpr unsigned int positionAttribLength = 2;
+    constexpr unsigned int textureAttribLength = 2;
+    constexpr unsigned int stride = positionAttribLength + textureAttribLength;
 
-    const unsigned int textureAttribLength = 2;
+    const auto positionAttribLocation = glGetAttribLocation(shaderProgram, "position");
     const auto textureAttribLocation = glGetAttribLocation(shaderProgram, "texture");
-    glVertexAttribPointer(textureAttribLocation, textureAttribLength, GL_FLOAT, GL_FALSE, textureAttribLength * sizeof(GLfloat), (void*)(positionAttribLength * sizeof(GLfloat)));
+
+    glVertexAttribPointer(positionAttribLocation, positionAttribLength, GL_FLOAT, GL_FALSE, stride * sizeof(GLfloat), (void*)(0 * sizeof(GLfloat)));
+    glEnableVertexAttribArray(positionAttribLocation);  
+    
+    glVertexAttribPointer(textureAttribLocation, textureAttribLength, GL_FLOAT, GL_FALSE, stride * sizeof(GLfloat), (void*)(positionAttribLength * sizeof(GLfloat)));
     glEnableVertexAttribArray(textureAttribLocation);
 
     // Unbinding current VAO
@@ -246,7 +250,7 @@ void Canvas::run()
 
     glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
 
-    const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
+    //const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
 
     while (!glfwWindowShouldClose(mWindow->glfwWindow))
     {
@@ -275,12 +279,13 @@ void Canvas::run()
 
             debugCheck(bellotaPack.dmeshOpt.has_value(), "DMesh has not been initialized.");
 
-            const Bellota& bellota = bellotaPack.bellota;
+            //const Bellota& bellota = bellotaPack.bellota;
             const DMesh& dmesh = bellotaPack.dmeshOpt.value();
-            const Transform& transform = bellota.transform();
-            const glm::mat3 transformMat = transform.toMat3();
+            /*const Transform& transform = bellota.transform();
+            const glm::mat3 transformMat = transform.toMat3();*/
+            //const glm::mat3 transformMat(1.0);
 
-            glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(transformMat));
+            //glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(transformMat));
             dmesh.drawCall();
         }
 
