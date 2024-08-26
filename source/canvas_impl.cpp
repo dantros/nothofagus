@@ -258,14 +258,16 @@ GLuint textureSimpleSetup(const TextureData& textureData)
 
 void keyCallback(GLFWwindow* window, int glfwKey, int scancode, int action, int mods)
 {
-    if (action != GLFW_PRESS)
+    if (not (action == GLFW_PRESS or action == GLFW_RELEASE))
         return;
 
     auto myUserPointer = glfwGetWindowUserPointer(window);
     Controller* controller = static_cast<Controller*>(myUserPointer);
 
     Key key = KeyboardImplementation::toKeyCode(glfwKey);
-    controller->press(key);
+
+    DiscreteTrigger trigger = action == GLFW_PRESS ? DiscreteTrigger::Press : DiscreteTrigger::Release;
+    controller->activate({ key, trigger });
 }
 
 void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)

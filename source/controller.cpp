@@ -4,44 +4,44 @@
 namespace Nothofagus
 {
 
-bool Controller::onKeyPress(Key key, Action action)
+bool Controller::registerAction(KeyboardTrigger keyboardTrigger, Action action)
 {
-    if (mKeyActions.count(key) == 1)
+    if (mTriggerActions.count(keyboardTrigger) == 1)
         return false;
 
-    mKeyActions.emplace(key, action);
+    mTriggerActions.emplace(keyboardTrigger, action);
     return true;
 }
 
-bool Controller::deleteAction(Key key)
+bool Controller::deleteAction(KeyboardTrigger keyboardTrigger)
 {
-    return mKeyActions.erase(key) == 1;
+    return mTriggerActions.erase(keyboardTrigger) == 1;
 }
 
 void Controller::processInputs()
 {
     // processing all the inputs since the last update
-    while (!mActiveKeys.empty())
+    while (!mActiveActions.empty())
     {
-        // extracting the first key in the queue
-        Key key = mActiveKeys.front();
-        mActiveKeys.pop_front();
+        // extracting the first trigger in the queue
+        KeyboardTrigger keyboardTrigger = mActiveActions.front();
+        mActiveActions.pop_front();
 
         // do we have an action for it?
-        if (mKeyActions.count(key) == 0)
+        if (mTriggerActions.count(keyboardTrigger) == 0)
             continue;
 
-        // At this point, we are sure we have an action for key.
-        auto& action = mKeyActions.at(key);
+        // At this point, we are sure we have an action.
+        auto& action = mTriggerActions.at(keyboardTrigger);
 
         // executing it
         action();
     }
 }
 
-void Controller::press(Key key)
+void Controller::activate(KeyboardTrigger keyboardTrigger)
 {
-    mActiveKeys.push_back(key);
+    mActiveActions.push_back(keyboardTrigger);
 }
 
 }
