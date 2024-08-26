@@ -69,6 +69,28 @@ canvas.run(update, controller);
 This is a screenshot of [examples/hello_nothofagus.cpp](examples/hello_nothofagus.cpp)
 ![screenshot](assets/screenshot.webp "screenshot")
 
+## Setting up your project
+
+You can use this repository as a git submodule
+```
+git submodule add https://github.com/dantros/nothofagus.git third_party/nothofagus
+```
+And then use `add_subdirectory` from your project's CMake file.
+```
+option(NOTHOFAGUS_INSTALL "Disabling installation of Nothofagus" OFF)
+add_subdirectory("third_party/nothofagus")
+
+add_executable(nothofagus_demo
+    "source/nothofagus_demo.cpp"
+)
+set_property(TARGET nothofagus_demo PROPERTY CXX_STANDARD 20)
+target_include_directories(nothofagus_demo PRIVATE ${NOTHOFAGUS_INCLUDE})
+target_link_libraries(nothofagus_demo PRIVATE nothofagus)
+```
+You can check the friend repo [nothofagus_demo](https://github.com/dantros/nothofagus_demo) with a full example.
+
+Of course there are other ways to work, choose whatever suits you best.
+
 ## Quick start
 
 ```
