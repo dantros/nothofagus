@@ -53,30 +53,33 @@ set(NOTHOFAGUS_INCLUDE
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui"
 )
 
-include(GNUInstallDirs)
-install(TARGETS nothofagus
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        COMPONENT Nothofagus_Runtime
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        COMPONENT Nothofagus_Runtime
-        NAMELINK_COMPONENT Nothofagus_Development
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        COMPONENT Nothofagus_Development
-)
+option(NOTHOFAGUS_INSTALL "Do you whish to install Nothofagus static library?" ON)
+if (${NOTHOFAGUS_INSTALL})
+    include(GNUInstallDirs)
+    install(TARGETS nothofagus
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+            COMPONENT Nothofagus_Runtime
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            COMPONENT Nothofagus_Runtime
+            NAMELINK_COMPONENT Nothofagus_Development
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            COMPONENT Nothofagus_Development
+    )
 
-option(NOTHOFAGUS_BUILD_EXAMPLES "Build Nothofagus examples?" OFF)
-if (${NOTHOFAGUS_BUILD_EXAMPLES})
-    add_subdirectory("examples")
-
+    option(NOTHOFAGUS_BUILD_EXAMPLES "Build Nothofagus examples?" OFF)
     if (${NOTHOFAGUS_BUILD_EXAMPLES})
-        install(TARGETS hello_nothofagus
-            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-                COMPONENT NothofagusExamples_Runtime
-            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-                COMPONENT NothofagusExamples_Runtime
-                NAMELINK_COMPONENT NothofagusExamples_Development
-            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-                COMPONENT NothofagusExamples_Development
-        )
+        add_subdirectory("examples")
+
+        if (${NOTHOFAGUS_BUILD_EXAMPLES})
+            install(TARGETS hello_nothofagus
+                RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+                    COMPONENT NothofagusExamples_Runtime
+                LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                    COMPONENT NothofagusExamples_Runtime
+                    NAMELINK_COMPONENT NothofagusExamples_Development
+                ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                    COMPONENT NothofagusExamples_Development
+            )
+        endif()
     endif()
 endif()
