@@ -4,6 +4,7 @@ Sandbox C++ pixel art real time renderer using OpenGL 3.3 under the hood.
 You define some textures in your code, some dynamic locations and you are ready to quick start your game.
 Nothofagus also gives you access to ImGui and other third party libs to speed up your development journey.
 
+Your code will look like this.
 ```
 Nothofagus::ColorPallete pallete{
     {0.0, 0.0, 0.0, 0.0},
@@ -31,6 +32,8 @@ Nothofagus::BellotaId bellotaId = canvas.addBellota({{{75.0f, 75.0f}}, textureId
 
 canvas.run(update);
 ```
+A `Bellota` is a drawable element. Each number is the texture, correspond to the index of the color specified in the `TexturePallete`. Yes, it is an indirect color scheme.
+
 You can make animations by providing an `update` function.
 ```
 float time = 0.0f;
