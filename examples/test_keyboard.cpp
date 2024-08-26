@@ -52,7 +52,8 @@ int main()
         bellota.transform().scale() = glm::vec2(scale, scale);
 
         ImGui::Begin("Hello there!");
-        ImGui::Text("May ImGui be with you...");
+        ImGui::Text("Discrete control keys: W, S, ESCAPE");
+        ImGui::Text("Continuous control keys: A, D");
         ImGui::End();
 
         if (rotate)
@@ -96,7 +97,7 @@ int main()
     {
         rotate = not rotate;
     });
-    //controller.onKeyPress(Nothofagus::Key::ESCAPE, [&]() { canvas.close(); });
+    controller.registerAction({Nothofagus::Key::ESCAPE, Nothofagus::DiscreteTrigger::Press}, [&]() { canvas.close(); });
     
     canvas.run(update, controller);
     

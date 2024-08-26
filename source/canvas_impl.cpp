@@ -344,6 +344,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
+        // executing user provided update
         update(deltaTimeMS);
 
         // drawing with OpenGL

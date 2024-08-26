@@ -77,4 +77,9 @@ void Canvas::run(std::function<void(float deltaTime)> update, Controller& contro
     mCanvasImpl->run(update, controller);
 }
 
+void Canvas::close()
+{
+    mCanvasImpl->close();
+}
+
 }
