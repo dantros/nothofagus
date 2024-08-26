@@ -51,6 +51,7 @@ set(NOTHOFAGUS_INCLUDE
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glfw/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glm"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui"
+    PARENT_SCOPE
 )
 
 include(GNUInstallDirs)
