@@ -32,7 +32,7 @@ Nothofagus::BellotaId bellotaId = canvas.addBellota({{{75.0f, 75.0f}}, textureId
 
 canvas.run(update);
 ```
-A `Bellota` is a drawable element. Each number is the texture, correspond to the index of the color specified in the `TexturePallete`. Yes, it is an indirect color scheme.
+A `Bellota` is a drawable element. Each number in the texture corresponds to the index of the color specified in the `TexturePallete`. Yes, it is an indirect color scheme.
 
 You can make animations by providing an `update` function.
 ```
