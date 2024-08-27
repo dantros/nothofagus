@@ -38,6 +38,8 @@ public:
 
     ~Canvas();
 
+    const ScreenSize& screenSize() const;
+
     BellotaId addBellota(const Bellota& bellota);
 
     void removeBellota(const BellotaId bellotaId);

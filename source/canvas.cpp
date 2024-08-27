@@ -19,6 +19,11 @@ Canvas::~Canvas()
 
 }
 
+const ScreenSize& Canvas::screenSize() const
+{
+    return mCanvasImpl->screenSize();
+}
+
 BellotaId Canvas::addBellota(const Bellota& bellota)
 {
     return mCanvasImpl->addBellota(bellota);

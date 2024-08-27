@@ -164,6 +164,11 @@ Canvas::CanvasImpl::~CanvasImpl()
     // Needs to be defined in the cpp file to avoid incomplete type errors due to the pimpl idiom for struct Window
 }
 
+const ScreenSize& Canvas::CanvasImpl::screenSize() const
+{
+    return mScreenSize;
+}
+
 BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)
 {
     return {mBellotas.add({bellota, std::nullopt, std::nullopt})};
