@@ -1,4 +1,4 @@
-# Nothofagus
+# Nothofagus Renderer
 
 Sandbox C++ pixel art real time renderer using OpenGL 3.3 under the hood.
 You define some textures in your code, some dynamic locations and you are ready to quick start your game.
