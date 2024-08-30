@@ -46,13 +46,24 @@ target_include_directories(nothofagus PRIVATE
 )
 target_link_libraries(nothofagus PRIVATE whereami2cpp glad glfw imgui)
 
-set(NOTHOFAGUS_INCLUDE
-    "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glfw/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glm"
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui"
-    PARENT_SCOPE
-)
+get_directory_property(hasParent PARENT_DIRECTORY)
+if(hasParent)
+    set(NOTHOFAGUS_INCLUDE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glfw/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glm"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui"
+        PARENT_SCOPE
+    )
+else()
+    set(NOTHOFAGUS_INCLUDE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glfw/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glm"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui"
+    )
+endif()
+
 
 option(NOTHOFAGUS_INSTALL "Do you whish to install Nothofagus static library?" ON)
 if (${NOTHOFAGUS_INSTALL})
