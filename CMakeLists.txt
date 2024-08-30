@@ -83,7 +83,7 @@ if (${NOTHOFAGUS_INSTALL})
         add_subdirectory("examples")
 
         if (${NOTHOFAGUS_BUILD_EXAMPLES})
-            install(TARGETS hello_nothofagus
+            install(TARGETS hello_nothofagus test_keyboard
                 RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                     COMPONENT NothofagusExamples_Runtime
                 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
