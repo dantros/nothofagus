@@ -20,34 +20,36 @@
 #include <ciso646>
 #include <optional>
 #include <vector>
+#include <format>
 
 namespace Nothofagus
 {
 
-// Wrapper class forward declared in the .h to avoid including GLFW dependecies in the header file.
-struct Canvas::CanvasImpl::Window
-{
-    GLFWwindow* glfwWindow;
-};
+    // Wrapper class forward declared in the .h to avoid including GLFW dependecies in the header file.
+    struct Canvas::CanvasImpl::Window
+    {
+        GLFWwindow* glfwWindow;
+    };
 
-// process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
-void processInput(GLFWwindow* window)
-{
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
-}
+    // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
+    void processInput(GLFWwindow* window)
+    {
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, true);
+    }
 
-// glfw: whenever the window size changed (by OS or user resize) this callback function executes
-void framebufferSizeCallback(GLFWwindow* window, int width, int height)
-{
-    glViewport(0, 0, width, height);
-}
+    // glfw: whenever the window size changed (by OS or user resize) this callback function executes
+    void framebufferSizeCallback(GLFWwindow* window, int width, int height)
+    {
+        glViewport(0, 0, width, height);
+    }
 
-Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& title, const glm::vec3 clearColor, const unsigned int pixelSize):
-    mScreenSize(screenSize),
-    mTitle(title),
-    mClearColor(clearColor),
-    mPixelSize(pixelSize)
+    Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& title, const glm::vec3 clearColor, const unsigned int pixelSize) :
+        mScreenSize(screenSize),
+        mTitle(title),
+        mClearColor(clearColor),
+        mPixelSize(pixelSize),
+        mStats(false)
 {
     // glfw: initialize and configure
     glfwInit();
@@ -209,6 +211,16 @@ const Texture& Canvas::CanvasImpl::texture(TextureId textureId) const
     return mTextures.at(textureId.id).texture;
 }
 
+bool& Canvas::CanvasImpl::stats()
+{
+    return mStats;
+}
+
+const bool& Canvas::CanvasImpl::stats() const
+{
+    return mStats;
+}
+
 //void setupVAO(DMesh& dMesh, GPUID shaderProgram)
 void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
 {
@@ -363,6 +375,10 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
             debugCheck(bellotaPack.dmeshOpt.has_value(), "DMesh has not been initialized.");
 
             const Bellota& bellota = bellotaPack.bellota;
+
+            if (not bellota.visible())
+                continue;
+
             const DMesh& dmesh = bellotaPack.dmeshOpt.value();
             const Transform& modelTransform = bellota.transform();
             const glm::mat3 modelTransformMat = modelTransform.toMat3();
@@ -370,6 +386,14 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
             glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
             dmesh.drawCall();
+        }
+
+        if (mStats)
+        {
+            ImGui::Begin("stats");
+            ImGui::Text(std::format("{:.2f} fps", performanceMonitor.getFPS()).c_str());
+            ImGui::Text(std::format("{:.2f} ms", performanceMonitor.getMS()).c_str());
+            ImGui::End();
         }
 
         ImGui::Render();

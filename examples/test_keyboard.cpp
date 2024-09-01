@@ -54,6 +54,7 @@ int main()
         ImGui::Begin("Hello there!");
         ImGui::Text("Discrete control keys: W, S, ESCAPE");
         ImGui::Text("Continuous control keys: A, D");
+        ImGui::Text("Show/hide performance stats: Q");
         ImGui::End();
 
         if (rotate)
@@ -92,6 +93,10 @@ int main()
     controller.registerAction({Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Release}, [&]()
     {
         rightKeyPressed = false;
+    });
+    controller.registerAction({ Nothofagus::Key::Q, Nothofagus::DiscreteTrigger::Press }, [&]()
+    {
+        canvas.stats() = not canvas.stats();
     });
     controller.registerAction({Nothofagus::Key::SPACE, Nothofagus::DiscreteTrigger::Press}, [&]()
     {

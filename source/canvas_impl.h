@@ -22,20 +22,22 @@ public:
     const ScreenSize& screenSize() const;
 
     BellotaId addBellota(const Bellota& bellota);
-
     void removeBellota(const BellotaId bellotaId);
 
     TextureId addTexture(const Texture& texture);
-
     void removeTexture(const TextureId textureId);
 
-    Bellota& bellota(BellotaId bellotaId);
+    void setTint(const BellotaId bellotaId, const Tint& tint);
+    void removeTint(const BellotaId bellotaId);
 
+    Bellota& bellota(BellotaId bellotaId);
     const Bellota& bellota(BellotaId bellotaId) const;
 
     Texture& texture(TextureId textureId);
-
     const Texture& texture(TextureId textureId) const;
+
+    bool& stats();
+    const bool& stats() const;
 
     void run(std::function<void(float deltaTime)> update, Controller& controller);
 
@@ -51,6 +53,8 @@ private:
     BellotaContainer mBellotas;
 
     unsigned int mShaderProgram;
+
+    bool mStats;
 
     // Forward declaration to interface with third party libs
     struct Window;

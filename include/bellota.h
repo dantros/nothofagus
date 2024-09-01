@@ -17,7 +17,8 @@ class Bellota
 public:
     Bellota(Transform transform, TextureId textureId):
         mTransform(transform),
-        mTextureId{textureId}
+        mTextureId{textureId},
+        mVisible{true}
     {
     }
 
@@ -29,9 +30,14 @@ public:
 
     TextureId& texture() { return mTextureId; }
 
+    const bool& visible() const { return mVisible; }
+
+    bool& visible() { return mVisible; }
+
 private:
     Transform mTransform;
     TextureId mTextureId;
+    bool mVisible;
 };
 
 }

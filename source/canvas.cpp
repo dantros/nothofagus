@@ -42,7 +42,17 @@ TextureId Canvas::addTexture(const Texture& texture)
 void Canvas::removeTexture(const TextureId textureId)
 {
     mCanvasImpl->removeTexture(textureId);
-    }
+}
+
+void Canvas::setTint(const BellotaId bellotaId, const Tint& tint)
+{
+    mCanvasImpl->setTint(bellotaId, tint);
+}
+
+void Canvas::removeTint(const BellotaId bellotaId)
+{
+    mCanvasImpl->removeTint(bellotaId);
+}
 
 Bellota& Canvas::bellota(BellotaId bellotaId)
 {
@@ -62,6 +72,16 @@ Texture& Canvas::texture(TextureId textureId)
 const Texture& Canvas::texture(TextureId textureId) const
 {
     return mCanvasImpl->texture(textureId);
+}
+
+bool& Canvas::stats()
+{
+    return mCanvasImpl->stats();
+}
+
+const bool& Canvas::stats() const
+{
+    return mCanvasImpl->stats();
 }
 
 void Canvas::run()
