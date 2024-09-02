@@ -7,3 +7,4 @@
 #include "canvas.h"
 #include "controller.h"
 #include "keyboard.h"
+#include "text.h"

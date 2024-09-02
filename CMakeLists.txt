@@ -28,6 +28,7 @@ add_library(nothofagus
     "source/performance_monitor.cpp"
     "source/controller.cpp"
     "source/keyboard.cpp"
+    "source/text.cpp"
 
     # This is only required to show header files in the Visual Studio IDE solution browser
     ${HEADERS}
@@ -43,6 +44,7 @@ target_include_directories(nothofagus PRIVATE
     "third_party/glfw/include"
     "third_party/glm"
     "third_party/imgui"
+    "third_party/font8x8"
 )
 target_link_libraries(nothofagus PRIVATE whereami2cpp glad glfw imgui)
 

@@ -3,6 +3,7 @@
 #include <vector>
 #include <initializer_list>
 #include <glm/glm.hpp>
+#include <iostream>
 
 namespace Nothofagus
 {
@@ -23,7 +24,69 @@ struct ColorPallete
 {
     std::vector<glm::vec4> colors;
 
+    ColorPallete(std::size_t size, glm::vec4 colors_) : colors(size, colors_) {}
+
     ColorPallete(std::initializer_list<glm::vec4> colors_) : colors(colors_) {}
+
+    ColorPallete& operator+=(float color)
+    {
+        for (auto& currentColor : colors)
+        {
+            currentColor += glm::vec4(color, color, color, 0.0);
+        }
+
+        return *this;
+    }
+
+    ColorPallete& operator*=(float color)
+    {
+        for (auto& currentColor : colors)
+        {
+            currentColor *= glm::vec4(color, color, color, 1.0);
+        }
+
+        return *this;
+    }
+
+    ColorPallete& operator+=(glm::vec3 color)
+    {
+        for (auto& currentColor : colors)
+        {
+            currentColor += glm::vec4(color, 0.0);
+        }
+
+        return *this;
+    }
+
+    ColorPallete& operator*=(glm::vec3 color)
+    {
+        for (auto& currentColor : colors)
+        {
+            currentColor *= glm::vec4(color, 1.0);
+        }
+
+        return *this;
+    }
+
+    ColorPallete& operator+=(glm::vec4 color)
+    {
+        for (auto& currentColor : colors)
+        {
+            currentColor += color;
+        }
+
+        return *this;
+    }
+
+    ColorPallete& operator*=(glm::vec4 color)
+    {
+        for (auto& currentColor : colors)
+        {
+            currentColor *= color;
+        }
+
+        return *this;
+    }
 
     std::size_t size() const
     {
@@ -77,5 +140,7 @@ private:
     std::vector<Pixel> mPixels;
     ColorPallete mPallete;
 };
+
+std::ostream& operator<<(std::ostream& os, const Texture& texture);
 
 }

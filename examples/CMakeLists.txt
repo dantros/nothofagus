@@ -5,6 +5,13 @@ set_property(TARGET hello_nothofagus PROPERTY CXX_STANDARD 20)
 target_include_directories(hello_nothofagus PRIVATE ${NOTHOFAGUS_INCLUDE})
 target_link_libraries(hello_nothofagus PRIVATE nothofagus)
 
+add_executable(hello_text
+    "hello_text.cpp"
+)
+set_property(TARGET hello_text PROPERTY CXX_STANDARD 20)
+target_include_directories(hello_text PRIVATE ${NOTHOFAGUS_INCLUDE})
+target_link_libraries(hello_text PRIVATE nothofagus)
+
 add_executable(test_keyboard
     "test_keyboard.cpp"
 )

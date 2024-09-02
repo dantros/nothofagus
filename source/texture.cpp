@@ -8,7 +8,7 @@ namespace Nothofagus
 std::size_t indexOf(const glm::ivec2 size, const std::size_t i, const std::size_t j)
 {
     debugCheck(i < size.x and j < size.y, "Invalid indices for this texture.");
-    return size.y * j + i;
+    return size.x * j + i;
 }
 
 void Texture::setPixels(std::initializer_list<Pixel::ColorId> pixelColors)
@@ -73,6 +73,19 @@ TextureData Texture::generateTextureData() const
     }
 
     return out;
+}
+
+std::ostream& operator<<(std::ostream& os, const Texture& texture)
+{
+    for (int j= 0; j < texture.size().y; ++j)
+    {
+        for (int i = 0; i < texture.size().x; ++i)
+        {
+            os << static_cast<bool>(texture.pixel(i,j).colorId) << " ";
+        }
+        os << std::endl;
+    }
+    return os;
 }
 
 }
