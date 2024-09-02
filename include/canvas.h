@@ -4,6 +4,7 @@
 #include "bellota.h"
 #include "texture.h"
 #include "controller.h"
+#include "tint.h"
 #include <memory>
 #include <functional>
 #include <string>
@@ -14,11 +15,6 @@ namespace Nothofagus
 struct ScreenSize
 {
     unsigned int width, height;
-};
-
-struct BellotaId
-{
-    std::size_t id;
 };
 
 constexpr static ScreenSize DEFAULT_SCREEN_SIZE{256, 240};
@@ -45,6 +41,9 @@ public:
 
     TextureId addTexture(const Texture& texture);
     void removeTexture(const TextureId textureId);
+
+    void setTint(const BellotaId bellotaId, const Tint& tint);
+    void removeTint(const BellotaId bellotaId);
 
     Bellota& bellota(BellotaId bellotaId);
     const Bellota& bellota(BellotaId bellotaId) const;

@@ -96,9 +96,15 @@ namespace Nothofagus
         in vec2 outTextureCoordinates;
         out vec4 outColor;
         uniform sampler2D textureSampler;
+        uniform vec3 tintColor;
+        uniform float tintIntensity;
         void main()
         {
-            outColor = texture(textureSampler, outTextureCoordinates);
+            vec4 textureSample = texture(textureSampler, outTextureCoordinates);
+            vec3 textureColor = textureSample.xyz;
+            float textureOpacity = textureSample.w;
+            vec3 blendColor = (tintColor * tintIntensity) + (textureColor * (1 - tintIntensity));
+            outColor = vec4(blendColor, textureOpacity);
         }
     )";
 
@@ -189,6 +195,22 @@ TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
 void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 {
     mTextures.remove(textureId.id);
+}
+
+void Canvas::CanvasImpl::setTint(const BellotaId bellotaId, const Tint& tint)
+{
+    debugCheck(mBellotas.contains(bellotaId.id), "There is no Bellota associated with the BellotaId provided");
+
+    BellotaPack& bellotaPack = mBellotas.at(bellotaId.id);
+    bellotaPack.tintOpt = tint;
+}
+
+void Canvas::CanvasImpl::removeTint(const BellotaId bellotaId)
+{
+    debugCheck(mBellotas.contains(bellotaId.id), "There is no Bellota associated with the BellotaId provided");
+
+    BellotaPack& bellotaPack = mBellotas.at(bellotaId.id);
+    bellotaPack.tintOpt = std::nullopt;
 }
 
 Bellota& Canvas::CanvasImpl::bellota(BellotaId bellotaId)
@@ -343,6 +365,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     worldTransformMat = glm::scale(worldTransformMat, worldScale);
 
     const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
+    const auto dTintColorLocation = glGetUniformLocation(mShaderProgram, "tintColor");
+    const auto dTintIntensityLocation = glGetUniformLocation(mShaderProgram, "tintIntensity");
 
     PerformanceMonitor performanceMonitor(glfwGetTime(), 0.5f);
 
@@ -384,7 +408,19 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
             const glm::mat3 modelTransformMat = modelTransform.toMat3();
             const glm::mat3 totalTransformMat = worldTransformMat * modelTransformMat;
 
+            if (bellotaPack.tintOpt != std::nullopt)
+            {
+                const Tint& tint = bellotaPack.tintOpt.value();
+                glUniform3f(dTintColorLocation, tint.color.r, tint.color.g, tint.color.b);
+                glUniform1f(dTintIntensityLocation, tint.intensity);
+            }
+            else
+            {
+                glUniform3f(dTintColorLocation, 1.0f, 1.0f, 1.0f);
+                glUniform1f(dTintIntensityLocation, 0.0f);
+            }
             glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
+            
             dmesh.drawCall();
         }
 

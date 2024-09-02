@@ -11,6 +11,11 @@ struct TextureId
     std::size_t id;
 };
 
+struct BellotaId
+{
+    std::size_t id;
+};
+
 /* Drawable element */
 class Bellota
 {
