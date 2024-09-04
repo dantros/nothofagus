@@ -365,24 +365,24 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     PerformanceMonitor performanceMonitor(glfwGetTime(), 0.5f);
 
     // Dirty fix to sort bellotas by depth as required by transparent objects.
-    std::vector<BellotaPack*> sortedBellotaPacks;
+    std::vector<const BellotaPack*> sortedBellotaPacks;
 
     // Leaving some room in case more bellotas are created during runtime.
     sortedBellotaPacks.reserve(mBellotas.size()*2);
 
-    auto sortByDepthOffset = [](BellotaContainer& bellotas, std::vector<BellotaPack*>& sortedBellotas)
+    auto sortByDepthOffset = [](const BellotaContainer& bellotas, std::vector<const BellotaPack*>& sortedBellotas)
     {
         // Per spec, clear does not change the underlaying memory allocation (capacity)
         sortedBellotas.clear();
 
-        for (auto& pair : bellotas.map())
+        for (const auto& pair : bellotas.map())
         {
-            BellotaPack& bellotaPack = pair.second;
+            const BellotaPack& bellotaPack = pair.second;
             sortedBellotas.push_back(&bellotaPack);
         }
 
         std::sort(sortedBellotas.begin(), sortedBellotas.end(),
-            [](BellotaPack* lhs, BellotaPack* rhs)
+            [](const BellotaPack* lhs, const BellotaPack* rhs)
             {
                 debugCheck(lhs != nullptr and rhs != nullptr, "invalid pointers");
                 const auto lhsDepthOffset = lhs->bellota.depthOffset();
