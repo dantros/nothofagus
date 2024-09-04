@@ -1,4 +1,3 @@
-#pragma once
 
 #include "text.h"
 #include "check.h"
@@ -76,7 +75,6 @@ void writeChar(Texture& texture, std::uint8_t character, std::size_t i0, std::si
             const bool fillPixel = ((row >> i) & 1) != 0;
             texture.setPixel(i0 + i, j0 + j, { fillPixel });
         }
-        std::cout << std::endl;
     }
 }
 

@@ -21,6 +21,7 @@
 #include <optional>
 #include <vector>
 #include <format>
+#include <algorithm>
 
 namespace Nothofagus
 {
@@ -375,6 +376,33 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
     PerformanceMonitor performanceMonitor(glfwGetTime(), 0.5f);
 
+    // Dirty fix to sort bellotas by depth as required by transparent objects.
+    std::vector<BellotaPack*> sortedBellotaPacks;
+
+    // Leaving some room in case more bellotas are created during runtime.
+    sortedBellotaPacks.reserve(mBellotas.size()*2);
+
+    auto sortByDepthOffset = [](BellotaContainer& bellotas, std::vector<BellotaPack*>& sortedBellotas)
+    {
+        // Per spec, clear does not change the underlaying memory allocation (capacity)
+        sortedBellotas.clear();
+
+        for (auto& pair : bellotas.map())
+        {
+            BellotaPack& bellotaPack = pair.second;
+            sortedBellotas.push_back(&bellotaPack);
+        }
+
+        std::sort(sortedBellotas.begin(), sortedBellotas.end(),
+            [](BellotaPack* lhs, BellotaPack* rhs)
+            {
+                debugCheck(lhs != nullptr and rhs != nullptr, "invalid pointers");
+                const auto lhsDepthOffset = lhs->bellota.depthOffset();
+                const auto rhsDepthOffset = rhs->bellota.depthOffset();
+                return lhsDepthOffset < rhsDepthOffset;
+            });
+    };
+
     while (!glfwWindowShouldClose(mWindow->glfwWindow))
     {
         processInput(mWindow->glfwWindow);
@@ -393,14 +421,20 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         // executing user provided update
         update(deltaTimeMS);
 
+        sortByDepthOffset(mBellotas, sortedBellotaPacks);
+
         // drawing with OpenGL
         glUseProgram(mShaderProgram);
 
-        for (const auto& pair : mBellotas.map())
+        /*for (const auto& pair : mBellotas.map())
         {
             const BellotaId bellotaId{ pair.first };
             const BellotaPack& bellotaPack = pair.second;
-
+        */
+        for (auto& bellotaPackPtr : sortedBellotaPacks)
+        {
+            debugCheck(bellotaPackPtr != nullptr, "invalid pointer to bellota pack.");
+            auto& bellotaPack = *bellotaPackPtr;
             debugCheck(bellotaPack.dmeshOpt.has_value(), "DMesh has not been initialized.");
 
             const Bellota& bellota = bellotaPack.bellota;
@@ -436,8 +470,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         if (mStats)
         {
             ImGui::Begin("stats");
-            ImGui::Text(std::format("{:.2f} fps", performanceMonitor.getFPS()).c_str());
-            ImGui::Text(std::format("{:.2f} ms", performanceMonitor.getMS()).c_str());
+            ImGui::Text("%.2f fps", performanceMonitor.getFPS());
+            ImGui::Text("%.2f ms", performanceMonitor.getMS());
             ImGui::End();
         }
 
