@@ -62,7 +62,10 @@ int main()
     Nothofagus::writeText(texture3, text);
     Nothofagus::TextureId textureId3 = canvas.addTexture(texture3);
 
-    Nothofagus::BellotaId bellotaId1 = canvas.addBellota({{{75.0f, 50.0f}, 10.0}, textureId1});
+    // -1 will set the bellota at the back, so it does not draw over the other bellotas.
+    Nothofagus::BellotaId bellotaId1 = canvas.addBellota({{{75.0f, 50.0f}, 10.0}, textureId1, -1});
+
+    // if you don't specify the offset, it is 0, the drawing order will be implementation defined.
     Nothofagus::BellotaId bellotaId2 = canvas.addBellota({{{75.0f, 90.0f}}, textureId2});
     Nothofagus::BellotaId bellotaId3 = canvas.addBellota({{{75.0f, 50.0f}}, textureId3});
 

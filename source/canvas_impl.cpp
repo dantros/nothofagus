@@ -84,11 +84,12 @@ namespace Nothofagus
         in vec2 texture;
         out vec2 outTextureCoordinates;
         uniform mat3 transform;
+        uniform float z;
         void main()
         {
             outTextureCoordinates = texture;
             vec3 world2dPosition = transform * vec3(position.x, position.y, 1.0);
-            gl_Position = vec4(world2dPosition.x, world2dPosition.y, 0.0, 1.0);
+            gl_Position = vec4(world2dPosition.x, world2dPosition.y, z, 1.0);
         }
     )";
     const std::string fragmentShaderSource = R"(
@@ -155,6 +156,9 @@ namespace Nothofagus
     // Enabling transparency
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_BLEND);
+
+    // Enabling depth to solve overlapping issues.
+    glEnable(GL_DEPTH_TEST);
 
     // ImGui setup
     ImGui::CreateContext();
@@ -365,6 +369,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     worldTransformMat = glm::scale(worldTransformMat, worldScale);
 
     const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
+    const auto dZLocation = glGetUniformLocation(mShaderProgram, "z");
     const auto dTintColorLocation = glGetUniformLocation(mShaderProgram, "tintColor");
     const auto dTintIntensityLocation = glGetUniformLocation(mShaderProgram, "tintIntensity");
 
@@ -378,7 +383,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         performanceMonitor.update(glfwGetTime());
         const float deltaTimeMS = performanceMonitor.getMS();
         
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
@@ -420,6 +425,10 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
                 glUniform1f(dTintIntensityLocation, 0.0f);
             }
             glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
+
+            // greater & positive values means closer to the viewer.
+            float z = static_cast<float>(-bellota.depthOffset()) / std::numeric_limits<std::int8_t>::max();
+            glUniform1f(dZLocation, z);
             
             dmesh.drawCall();
         }
