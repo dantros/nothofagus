@@ -5,6 +5,7 @@
 #include <deque>
 #include <bitset>
 #include <tuple>
+#include <cstdint>
 #include "keyboard.h"
 
 namespace Nothofagus

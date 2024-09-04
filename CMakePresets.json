@@ -50,6 +50,26 @@
             "cacheVariables": {
                 "NOTHOFAGUS_BUILD_EXAMPLES": "ON"
             }
+        },
+        {
+            "name": "linux-debug",
+            "inherits": "base",
+            "hidden": false,
+            "generator": "Unix Makefiles",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_COMPILER": "g++"
+            }
+        },
+        {
+            "name": "linux-release",
+            "inherits": "base",
+            "hidden": false,
+            "generator": "Unix Makefiles",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_CXX_COMPILER": "g++"
+            }
         }
     ]
 }
