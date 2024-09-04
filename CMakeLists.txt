@@ -48,22 +48,17 @@ target_include_directories(nothofagus PRIVATE
 )
 target_link_libraries(nothofagus PRIVATE whereami2cpp glad glfw imgui)
 
+set(NOTHOFAGUS_HEADERS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glm"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui"
+)
+
 get_directory_property(hasParent PARENT_DIRECTORY)
 if(hasParent)
-    set(NOTHOFAGUS_INCLUDE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glfw/include"
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glm"
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui"
-        PARENT_SCOPE
-    )
+    set(NOTHOFAGUS_INCLUDE ${NOTHOFAGUS_HEADERS} PARENT_SCOPE)
 else()
-    set(NOTHOFAGUS_INCLUDE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glfw/include"
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glm"
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui"
-    )
+    set(NOTHOFAGUS_INCLUDE ${NOTHOFAGUS_HEADERS})
 endif()
 
 

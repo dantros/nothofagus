@@ -26,31 +26,24 @@
 namespace Nothofagus
 {
 
-    // Wrapper class forward declared in the .h to avoid including GLFW dependecies in the header file.
-    struct Canvas::CanvasImpl::Window
-    {
-        GLFWwindow* glfwWindow;
-    };
+// Wrapper class forward declared in the .h to avoid including GLFW dependecies in the header file.
+struct Canvas::CanvasImpl::Window
+{
+    GLFWwindow* glfwWindow;
+};
 
-    // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
-    void processInput(GLFWwindow* window)
-    {
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-            glfwSetWindowShouldClose(window, true);
-    }
+// glfw: whenever the window size changed (by OS or user resize) this callback function executes
+void framebufferSizeCallback(GLFWwindow* window, int width, int height)
+{
+    glViewport(0, 0, width, height);
+}
 
-    // glfw: whenever the window size changed (by OS or user resize) this callback function executes
-    void framebufferSizeCallback(GLFWwindow* window, int width, int height)
-    {
-        glViewport(0, 0, width, height);
-    }
-
-    Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& title, const glm::vec3 clearColor, const unsigned int pixelSize) :
-        mScreenSize(screenSize),
-        mTitle(title),
-        mClearColor(clearColor),
-        mPixelSize(pixelSize),
-        mStats(false)
+Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& title, const glm::vec3 clearColor, const unsigned int pixelSize) :
+    mScreenSize(screenSize),
+    mTitle(title),
+    mClearColor(clearColor),
+    mPixelSize(pixelSize),
+    mStats(false)
 {
     // glfw: initialize and configure
     glfwInit();
@@ -405,7 +398,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
     while (!glfwWindowShouldClose(mWindow->glfwWindow))
     {
-        processInput(mWindow->glfwWindow);
         controller.processInputs();
 
         performanceMonitor.update(glfwGetTime());

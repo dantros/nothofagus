@@ -1,6 +1,7 @@
 
 #include "keyboard.h"
 #include <GLFW/glfw3.h>
+#include <spdlog/spdlog.h>
 
 namespace Nothofagus
 {
@@ -29,7 +30,9 @@ namespace Nothofagus
             case Key::SPACE: return GLFW_KEY_SPACE;
             case Key::ESCAPE: return GLFW_KEY_ESCAPE;
             case Key::ENTER: return GLFW_KEY_ENTER;
-            default: throw;
+            default:
+                spdlog::error("Undefined Key {}", static_cast<int>(key));
+                return GLFW_KEY_UNKNOWN;
             };
         }
 
@@ -54,7 +57,9 @@ namespace Nothofagus
             case GLFW_KEY_SPACE: return Key::SPACE;
             case GLFW_KEY_ESCAPE: return Key::ESCAPE;
             case GLFW_KEY_ENTER: return Key::ENTER;
-            default: throw;
+            default:
+                spdlog::error("Undefined Key {}", static_cast<int>(glfwKeyCode));
+                return Key::SIZEOF;
             };
         }
 
