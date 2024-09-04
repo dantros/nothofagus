@@ -58,7 +58,8 @@
             "generator": "Unix Makefiles",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_CXX_COMPILER": "g++"
+                "CMAKE_CXX_COMPILER": "g++",
+                "CMAKE_CXX_FLAGS": "-Wno-narrowing"
             }
         },
         {
@@ -68,7 +69,32 @@
             "generator": "Unix Makefiles",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
-                "CMAKE_CXX_COMPILER": "g++"
+                "CMAKE_CXX_COMPILER": "g++",
+                "CMAKE_CXX_FLAGS": "-Wno-narrowing"
+            }
+        },
+        {
+            "name": "linux-debug-examples",
+            "inherits": "base",
+            "hidden": false,
+            "generator": "Unix Makefiles",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_COMPILER": "g++",
+                "CMAKE_CXX_FLAGS": "-Wno-narrowing",
+                "NOTHOFAGUS_BUILD_EXAMPLES": "ON"
+            }
+        },
+        {
+            "name": "linux-release-examples",
+            "inherits": "base",
+            "hidden": false,
+            "generator": "Unix Makefiles",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_CXX_COMPILER": "g++",
+                "CMAKE_CXX_FLAGS": "-Wno-narrowing",
+                "NOTHOFAGUS_BUILD_EXAMPLES": "ON"
             }
         }
     ]

@@ -5,7 +5,7 @@
 #include <cmath>
 #include <numbers>
 #include <nothofagus.h>
-#include <glm/gtc/type_ptr.hpp>b
+#include <glm/gtc/type_ptr.hpp>
 
 int main()
 {
