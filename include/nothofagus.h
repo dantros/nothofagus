@@ -1,6 +1,7 @@
 #pragma once
 
 #include <imgui.h>
+#include <spdlog/spdlog.h>
 #include "texture.h"
 #include "transform.h"
 #include "bellota.h"

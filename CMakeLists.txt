@@ -11,7 +11,6 @@ option(GLFW_BUILD_DOCS "Build the GLFW documentation" OFF)
 option(GLFW_INSTALL "Generate installation target" OFF)
 add_subdirectory("third_party/glfw")
 
-add_subdirectory("third_party/whereami2cpp")
 add_subdirectory("third_party/glad")
 add_subdirectory("third_party/imgui_cmake")
 
@@ -38,22 +37,20 @@ add_library(nothofagus
 set_property(TARGET nothofagus PROPERTY CXX_STANDARD 20)
 target_include_directories(nothofagus PRIVATE
     "include"
-    "third_party/argparse/include"
-    "third_party/whereami2cpp/source"
     "third_party/spdlog/include"
-    "third_party/json/include"
     "third_party/glad/include"
     "third_party/glfw/include"
     "third_party/glm"
     "third_party/imgui"
     "third_party/font8x8"
 )
-target_link_libraries(nothofagus PRIVATE whereami2cpp glad glfw imgui)
+target_link_libraries(nothofagus PRIVATE glad glfw imgui)
 
 set(NOTHOFAGUS_HEADERS
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glm"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include"
 )
 
 get_directory_property(hasParent PARENT_DIRECTORY)

@@ -7,6 +7,9 @@
 
 int main()
 {
+    // You can directly use spdlog to ease your logging
+    spdlog::info("Hello Nothofagus!");
+
     Nothofagus::Canvas canvas({150, 100}, "Hello Nothofagus", {0.7, 0.7, 0.7}, 6);
 
     Nothofagus::ColorPallete pallete1{
@@ -73,6 +76,7 @@ int main()
 
         Nothofagus::Bellota& bellota3 = canvas.bellota(bellotaId3);
 
+        // you can directly use ImGui
         ImGui::Begin("Hello there!");
         ImGui::Text("May ImGui be with you...");
         ImGui::Checkbox("Rotate?", &rotate);
