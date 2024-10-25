@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.26)
 
 project(nothofagus_project CXX)
 
@@ -15,7 +15,8 @@ add_subdirectory("third_party/whereami2cpp")
 add_subdirectory("third_party/glad")
 add_subdirectory("third_party/imgui_cmake")
 
-file(GLOB_RECURSE HEADERS "source/*.h" "include/*.h")
+file(GLOB_RECURSE NOTHOFAGUS_SOURCE_HEADERS "source/*.h")
+file(GLOB_RECURSE NOTHOFAGUS_PUBLIC_HEADERS "include/*.h")
 
 add_library(nothofagus
     "source/canvas.cpp"
@@ -31,7 +32,8 @@ add_library(nothofagus
     "source/text.cpp"
 
     # This is only required to show header files in the Visual Studio IDE solution browser
-    ${HEADERS}
+    ${NOTHOFAGUS_SOURCE_HEADERS}
+    ${NOTHOFAGUS_PUBLIC_HEADERS}
 )
 set_property(TARGET nothofagus PROPERTY CXX_STANDARD 20)
 target_include_directories(nothofagus PRIVATE
@@ -61,10 +63,16 @@ else()
     set(NOTHOFAGUS_INCLUDE ${NOTHOFAGUS_HEADERS})
 endif()
 
+option(NOTHOFAGUS_BUILD_EXAMPLES "Build Nothofagus examples?" OFF)
+if (${NOTHOFAGUS_BUILD_EXAMPLES})
+    add_subdirectory("examples")
+endif()
 
-option(NOTHOFAGUS_INSTALL "Do you whish to install Nothofagus static library?" ON)
+option(NOTHOFAGUS_INSTALL "Do you whish to install Nothofagus static library?" OFF)
 if (${NOTHOFAGUS_INSTALL})
     include(GNUInstallDirs)
+
+    # Installing binaries: executables and static libraries
     install(TARGETS nothofagus
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
             COMPONENT Nothofagus_Runtime
@@ -75,20 +83,29 @@ if (${NOTHOFAGUS_INSTALL})
             COMPONENT Nothofagus_Development
     )
 
-    option(NOTHOFAGUS_BUILD_EXAMPLES "Build Nothofagus examples?" OFF)
+    # Installing public headers
+    target_sources(nothofagus PUBLIC
+        FILE_SET nothofagus_Headers
+        TYPE HEADERS
+        BASE_DIRS include
+        FILES ${NOTHOFAGUS_PUBLIC_HEADERS}
+    )
+    install(TARGETS nothofagus FILE_SET nothofagus_Headers)
+    
+    # Installing examples
     if (${NOTHOFAGUS_BUILD_EXAMPLES})
-        add_subdirectory("examples")
-
-        if (${NOTHOFAGUS_BUILD_EXAMPLES})
-            install(TARGETS hello_nothofagus test_keyboard
-                RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-                    COMPONENT NothofagusExamples_Runtime
-                LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-                    COMPONENT NothofagusExamples_Runtime
-                    NAMELINK_COMPONENT NothofagusExamples_Development
-                ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-                    COMPONENT NothofagusExamples_Development
-            )
-        endif()
+        install(TARGETS
+            hello_nothofagus
+            hello_text
+            hello_tint
+            test_keyboard
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+                COMPONENT NothofagusExamples_Runtime
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                COMPONENT NothofagusExamples_Runtime
+                NAMELINK_COMPONENT NothofagusExamples_Development
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                COMPONENT NothofagusExamples_Development
+        )
     endif()
 endif()

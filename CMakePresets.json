@@ -11,12 +11,13 @@
             "description": "Default setting",
             "hidden": true,
             "generator": "Ninja",
-            "binaryDir": "${sourceDir}/../build_cmake/${presetName}",
-            "installDir": "${sourceDir}/../install_cmake/${presetName}",
+            "binaryDir": "${sourceDir}/../build/${presetName}",
+            "installDir": "${sourceDir}/../install/${presetName}",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "Yes",
-                "CMAKE_CXX_COMPILER": "cl"
+                "CMAKE_CXX_COMPILER": "cl",
+                "NOTHOFAGUS_INSTALL": "ON"
             }
         },
         {
