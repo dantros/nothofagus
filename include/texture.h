@@ -123,6 +123,12 @@ public:
 
     void setPixels(std::initializer_list<Pixel::ColorId> pixelColors);
 
+    template <typename PixelIt>
+    void setPixels(const PixelIt& begin, const PixelIt& end)
+    {
+        mPixels.assign(begin, end);
+    }
+
     const Pixel& pixel(const std::size_t i, const std::size_t j) const;
 
     Texture& setPixel(const std::size_t i, const std::size_t j, const Pixel pixel);
