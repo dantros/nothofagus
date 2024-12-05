@@ -12,6 +12,7 @@ option(GLFW_INSTALL "Generate installation target" OFF)
 add_subdirectory("third_party/glfw")
 
 add_subdirectory("third_party/glad")
+add_subdirectory("third_party/graaf")
 add_subdirectory("third_party/imgui_cmake")
 
 file(GLOB_RECURSE NOTHOFAGUS_SOURCE_HEADERS "source/*.h")
@@ -29,6 +30,8 @@ add_library(nothofagus
     "source/controller.cpp"
     "source/keyboard.cpp"
     "source/text.cpp"
+    "source/animation_state_machine.cpp"
+    "source/animation_state.cpp"
 
     # This is only required to show header files in the Visual Studio IDE solution browser
     ${NOTHOFAGUS_SOURCE_HEADERS}
@@ -43,6 +46,7 @@ target_include_directories(nothofagus PRIVATE
     "third_party/glm"
     "third_party/imgui"
     "third_party/font8x8"
+    "third_party/graaf/include"
 )
 target_link_libraries(nothofagus PRIVATE glad glfw imgui)
 
