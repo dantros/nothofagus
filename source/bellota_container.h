@@ -3,6 +3,7 @@
 #include "bellota.h"
 #include "mesh.h"
 #include "dmesh.h"
+// #include "dmesh3D.h"
 #include "tint.h"
 #include "indexed_container.h"
 #include <optional>
@@ -19,5 +20,15 @@ struct BellotaPack
 };
 
 using BellotaContainer = IndexedContainer<BellotaPack>;
+
+struct AnimatedBellotaPack
+{
+    AnimatedBellota animatedBellota;
+    std::optional<Mesh> meshOpt;
+    std::optional<DMesh3D> dmeshOpt;
+    std::optional<Tint> tintOpt;
+};
+
+using AnimatedBellotaContainer = IndexedContainer<AnimatedBellotaPack>;
 
 }

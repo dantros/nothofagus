@@ -38,18 +38,30 @@ public:
 
     BellotaId addBellota(const Bellota& bellota);
     void removeBellota(const BellotaId bellotaId);
+    
+    AnimatedBellotaId addAnimatedBellota(const AnimatedBellota& animatedBellota);
+    void removeAnimatedBellota(const AnimatedBellotaId animatedBellotaId);
 
     TextureId addTexture(const Texture& texture);
     void removeTexture(const TextureId textureId);
+    
+    TextureArrayId addTextureArray(const TextureArray& textureArray);
+    void removeTextureArray(const TextureArrayId textureArrayId);
 
     void setTint(const BellotaId bellotaId, const Tint& tint);
     void removeTint(const BellotaId bellotaId);
 
     Bellota& bellota(BellotaId bellotaId);
     const Bellota& bellota(BellotaId bellotaId) const;
+    
+    AnimatedBellota& animatedBellota(AnimatedBellotaId animatedBellotaId);
+    const AnimatedBellota& animatedBellota(AnimatedBellotaId animatedBellotaId) const;
 
     Texture& texture(TextureId textureId);
     const Texture& texture(TextureId textureId) const;
+    
+    TextureArray& textureArray(TextureArrayId textureArrayId);
+    const TextureArray& textureArray(TextureArrayId textureArrayId) const;
 
     bool& stats();
     const bool& stats() const;

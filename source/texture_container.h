@@ -16,4 +16,11 @@ struct TexturePack
 
 using TextureContainer = IndexedContainer<TexturePack>;
 
+struct TextureArrayPack
+{
+	TextureArray textureArray;
+	std::optional<DTextureArray> dtextureOpt;
+};
+using TextureArrayContainer = IndexedContainer<TextureArrayPack>;
+
 }

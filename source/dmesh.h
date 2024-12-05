@@ -35,4 +35,26 @@ struct DMesh
 
 std::ostream& operator<<(std::ostream& os, const DMesh& dMesh);
 
+struct DMesh3D
+{
+    //GPUID 
+    unsigned int vao, vbo, ebo, textureArray;
+    std::size_t size;
+
+    // uniform
+    glm::mat3 transform;
+
+    void initBuffers();
+
+    //void fillBuffers(const Mesh& mesh, GPUID usage);
+    void fillBuffers(const Mesh& mesh, unsigned int usage);
+
+    void drawCall() const;
+
+    /* Freeing GPU memory */
+    void clear() const;
+};
+
+std::ostream& operator<<(std::ostream& os, const DMesh3D& dMesh);
+
 }

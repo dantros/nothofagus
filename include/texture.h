@@ -149,4 +149,75 @@ private:
 
 std::ostream& operator<<(std::ostream& os, const Texture& texture);
 
+
+struct TextureArrayData
+{
+    std::vector<std::uint8_t> data;
+    std::size_t width, height, layers;
+
+    const std::uint8_t* getData() const
+    {
+        return data.data();
+    }
+};
+
+class TextureArray
+{
+public:
+    TextureArray(const glm::ivec2 size, const size_t layers, const std::vector<glm::vec4> defaultColors):
+        mSize(size),
+        mLayers(layers),
+        mPixels(size.x* size.y* layers, { 0 })
+    {
+        // debugCheck(defaultColors.size() != layers, "Different amount of palletes and layers.");
+        mPalletes.resize(layers);
+        // for (size_t i = 0; i < defaultColors.size(); ++i) {
+        //     mPalletes[i] = { defaultColors[i] };
+        // }
+    }
+
+    glm::ivec2 size() const { return mSize; }
+    
+    size_t layers() const { return mLayers; }
+
+    const std::vector<Pixel>& pixels() const { return mPixels; }
+
+    void setPixelsInLayer(std::initializer_list<Pixel::ColorId> pixelColors, size_t layer);
+
+    template <typename PixelIt>
+    void setPixelsInLayer(const PixelIt& begin, const PixelIt& end, size_t layer)
+    {
+        // debugCheck(mLayers > layer, "Invalid number of layer.");
+        // Calcular el inicio y fin de los píxeles para este layer
+        size_t startIdx = layer * mPixels.size() / mLayers;
+        size_t endIdx = (layer + 1) * mPixels.size() / mLayers;
+
+        // Actualizar solo los píxeles correspondientes al layer indicado
+        auto pixelIt = begin;
+        for (size_t idx = startIdx; idx < endIdx && pixelIt != end; ++idx, ++pixelIt)
+        {
+            mPixels[idx].colorId = static_cast<std::size_t>(pixelIt);  // Asignar el colorId desde los iteradores
+        }
+    }
+
+    const Pixel& pixelInLayer(const std::size_t i, const std::size_t j, size_t layer) const;
+
+    TextureArray& setPixelInLayer(const std::size_t i, const std::size_t j, const Pixel pixel, size_t layer);
+
+    const glm::vec4& colorInLayer(const std::size_t i, const std::size_t j, const size_t layer) const;
+
+    const ColorPallete& layerPallete(const size_t layer) const { return *mPalletes[layer]; }
+
+    TextureArray& setLayerPallete(ColorPallete& pallete, const size_t layer);
+
+    TextureArrayData generateTextureArrayData() const;
+
+private:
+    size_t mLayers;
+    glm::ivec2 mSize;
+    std::vector<Pixel> mPixels;
+    std::vector<ColorPallete*> mPalletes;
+};
+
+std::ostream& operator<<(std::ostream& os, const TextureArray& texture);
 }
