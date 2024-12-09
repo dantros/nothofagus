@@ -164,16 +164,13 @@ struct TextureArrayData
 class TextureArray
 {
 public:
-    TextureArray(const glm::ivec2 size, const size_t layers, const std::vector<glm::vec4> defaultColors):
+    TextureArray(const glm::ivec2 size, const size_t layers):
         mSize(size),
         mLayers(layers),
         mPixels(size.x* size.y* layers, { 0 })
     {
-        // debugCheck(defaultColors.size() != layers, "Different amount of palletes and layers.");
         mPalletes.resize(layers);
-        // for (size_t i = 0; i < defaultColors.size(); ++i) {
-        //     mPalletes[i] = { defaultColors[i] };
-        // }
+        
     }
 
     glm::ivec2 size() const { return mSize; }

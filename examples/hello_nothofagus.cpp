@@ -32,7 +32,7 @@ int main()
 
     //// test de texture arrays
     spdlog::info("textureArray");
-    Nothofagus::TextureArray textureArray({ 4, 4 }, 5, {{ 0.5, 0.5, 0.5, 1.0 }, { 1.0, 1.0, 1.0, 1.0 }});
+    Nothofagus::TextureArray textureArray({ 4, 4 }, 5);
     textureArray.setLayerPallete(pallete1, 0)
         .setPixelsInLayer({
             0,0,0,0,
@@ -129,21 +129,8 @@ int main()
     
     textureArrayAnimationTree.setState(anim1name);
 
-    //// fin de test de texture arrays
+    //// fin de test de texture arrays   
 
-    Nothofagus::Texture texture1({ 4, 4 }, { 0.5, 0.5, 0.5, 1.0 });
-    texture1.setPallete(pallete1)
-    .setPixels(
-        {
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0
-        }
-    );    
-    Nothofagus::TextureId textureId1 = canvas.addTexture(texture1);
-
-    Nothofagus::BellotaId bellotaId2 = canvas.addBellota({{{20.0f, 10.0f}}, textureId1});
 
     float time = 0.0f;
 
@@ -152,10 +139,9 @@ int main()
     {
         time += dt;
 
-        Nothofagus::Bellota& bellota2 = canvas.bellota(bellotaId2);
-        bellota2.transform().location().x = 75.0f + 60.0f * std::sin(0.0005f * time);
 
         Nothofagus::AnimatedBellota& animatedbellota = canvas.animatedBellota(animatedBellotaId);
+        animatedbellota.transform().scale() = glm::vec2(10.0f, 10.0f);
         textureArrayAnimationTree.update(dt);
         
         // std::cout << animatedbellota.textureArray().id << std::endl;

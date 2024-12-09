@@ -12,7 +12,6 @@ option(GLFW_INSTALL "Generate installation target" OFF)
 add_subdirectory("third_party/glfw")
 
 add_subdirectory("third_party/glad")
-add_subdirectory("third_party/graaf")
 add_subdirectory("third_party/imgui_cmake")
 
 file(GLOB_RECURSE NOTHOFAGUS_SOURCE_HEADERS "source/*.h")
@@ -46,7 +45,6 @@ target_include_directories(nothofagus PRIVATE
     "third_party/glm"
     "third_party/imgui"
     "third_party/font8x8"
-    "third_party/graaf/include"
 )
 target_link_libraries(nothofagus PRIVATE glad glfw imgui)
 
@@ -100,6 +98,9 @@ if (${NOTHOFAGUS_INSTALL})
             hello_text
             hello_tint
             test_keyboard
+            set_layer
+            animation_state
+            animation_state_machine
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT NothofagusExamples_Runtime
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
