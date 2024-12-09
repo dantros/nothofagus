@@ -226,3 +226,35 @@ Purpose:
 6. update(float deltaTime): Updates the animation of the current state and adjusts the texture layer of the associated AnimatedBellota.
 
 7. getCurrentLayer() const: Retrieves the current texture layer of the active animation state.
+
+## Creating Documentation
+
+This project uses Doxygen to create documentation, so you need to have Doxygen installed (https://www.doxygen.nl/manual/install.html) and once in this directory you should run the next command:
+
+```bash
+    doxygen Doxyfile
+```
+
+You can also use ninja to generate documentation at installation. In this directory you should run the following command:
+
+```bash
+    cmake --preset ninja-release-examples
+```
+
+Then change directory to:
+
+```bash
+    ../build/ninja-release-examples
+```
+
+Here you can install with
+
+```bash
+    ninja install
+```
+
+And generate documentation with
+
+```bash
+    ninja doc_doxygen
+```

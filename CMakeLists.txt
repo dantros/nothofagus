@@ -111,3 +111,16 @@ if (${NOTHOFAGUS_INSTALL})
         )
     endif()
 endif()
+
+find_package(Doxygen QUIET)
+
+if(DOXYGEN_FOUND)
+    add_custom_target(
+        doc_doxygen ALL
+        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_SOURCE_DIR}/Doxyfile
+        COMMENT "Generando la documentación con Doxygen"
+        VERBATIM
+    )
+else()
+    message(STATUS "Doxygen no encontrado. No se generará la documentación.")
+endif()
