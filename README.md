@@ -126,9 +126,9 @@ Nothofagus was a single-sprite-per-object engine, thus for representing movement
 
 Motivated by this, a feature to improve was the ability to animate characters by accumulating frames in a texture array, and creating a way to manage transitions between different animations.
 
-For this assignment, an animation method was implemented in a class called AnimatedBellota, which uses array textures (also known as texture atlases, see more at https://www.khronos.org/opengl/wiki/Array_Texture) to send information about the sprites that could be shown for the character. These sprites are distributed on the layers of the texture.
+For this assignment, an animation method was implemented in a class called AnimatedBellota, which uses array textures (also known as texture atlases, see more at https://www.khronos.org/opengl/wiki/Array_Texture) to send information about the sprites that could be shown for the character. These sprites are distributed on the layers of the texture. This tool aligns with the actual code in Nothofagus for Bellotas and Textures.
 
-A state machine was created for animation transitions. It's nodes are animation states, associated with the layers of an animation and the time intervals each has to be shown. It also has a transition map, which allows to move from one state to another along the edges of the departing node.
+A state machine was created for animation transitions. It's nodes are animation states, associated with the layers of an animation and the time intervals each has to be shown. It also has a transition map, which allows to move from one state to another along the edges of the departing node. It was made this way resembling the Godot animation tree and its a compact and intuitive way to do it.
 
 ### Animated Bellota
 
