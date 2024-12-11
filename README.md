@@ -258,3 +258,15 @@ And generate documentation with
 ```bash
     ninja doc_doxygen
 ```
+
+## Examples
+
+"Set Layer GIF!
+
+![Cambio simple entre Layers (distintos colores)](media/set_layer_gif.gif "Set Layer GIF!")
+
+Animation state: looping diferent patterns!
+
+![Animation state loop: patterns](media/animation_state_gif.gif "Animation state loop!")
+
+For an animation state machine example you can check te video on "medi" folder.
