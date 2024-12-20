@@ -29,6 +29,8 @@ add_library(nothofagus
     "source/controller.cpp"
     "source/keyboard.cpp"
     "source/text.cpp"
+    "source/animation_state_machine.cpp"
+    "source/animation_state.cpp"
 
     # This is only required to show header files in the Visual Studio IDE solution browser
     ${NOTHOFAGUS_SOURCE_HEADERS}
@@ -96,6 +98,9 @@ if (${NOTHOFAGUS_INSTALL})
             hello_text
             hello_tint
             test_keyboard
+            set_layer
+            animation_state
+            animation_state_machine
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT NothofagusExamples_Runtime
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -105,4 +110,17 @@ if (${NOTHOFAGUS_INSTALL})
                 COMPONENT NothofagusExamples_Development
         )
     endif()
+endif()
+
+find_package(Doxygen QUIET)
+
+if(DOXYGEN_FOUND)
+    add_custom_target(
+        doc_doxygen ALL
+        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_SOURCE_DIR}/Doxyfile
+        COMMENT "Generando la documentación con Doxygen"
+        VERBATIM
+    )
+else()
+    message(STATUS "Doxygen no encontrado. No se generará la documentación.")
 endif()
