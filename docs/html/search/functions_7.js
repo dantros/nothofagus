@@ -1,8 +1,0 @@
-var searchData=
-[
-  ['operator_28_29_0',['operator()',['../struct_nothofagus_1_1_keyboard_trigger_hash.html#a3068afaccd56e80da3915c0cd11c78c2',1,'Nothofagus::KeyboardTriggerHash::operator()()'],['../struct_nothofagus_1_1_keyboard_trigger_equal.html#a513c13beb32d7e272255180c8cb6a155',1,'Nothofagus::KeyboardTriggerEqual::operator()()']]],
-  ['operator_2a_3d_1',['operator*=',['../struct_nothofagus_1_1_color_pallete.html#aec363e93ef86f35733b35743daeca37b',1,'Nothofagus::ColorPallete::operator*=(float color)'],['../struct_nothofagus_1_1_color_pallete.html#a32c9e910230d7b877c5213147ba4f777',1,'Nothofagus::ColorPallete::operator*=(glm::vec3 color)'],['../struct_nothofagus_1_1_color_pallete.html#a869dcab6e1d861e02735d0b481eb04b9',1,'Nothofagus::ColorPallete::operator*=(glm::vec4 color)']]],
-  ['operator_2b_3d_2',['operator+=',['../struct_nothofagus_1_1_color_pallete.html#a6517341358ba54f0d5c5e14eee15bc04',1,'Nothofagus::ColorPallete::operator+=(float color)'],['../struct_nothofagus_1_1_color_pallete.html#af16ca04f046b67ecf6d719a77357508a',1,'Nothofagus::ColorPallete::operator+=(glm::vec3 color)'],['../struct_nothofagus_1_1_color_pallete.html#a9db1243036d0294ca78f85c38cadda34',1,'Nothofagus::ColorPallete::operator+=(glm::vec4 color)']]],
-  ['operator_3c_3c_3',['operator&lt;&lt;',['../namespace_nothofagus.html#ad6775b5301899fc4fe9951e5a15fcc81',1,'Nothofagus::operator&lt;&lt;(std::ostream &amp;os, const Texture &amp;texture)'],['../namespace_nothofagus.html#a7dfc82477856fba15461ec88f3f8b4da',1,'Nothofagus::operator&lt;&lt;(std::ostream &amp;os, const TextureArray &amp;texture)']]],
-  ['operator_3d_4',['operator=',['../struct_nothofagus_1_1_pixel.html#a1686d5d42563ea8bc8611bc7ad295691',1,'Nothofagus::Pixel']]]
-];
