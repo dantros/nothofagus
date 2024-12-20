@@ -25,59 +25,81 @@ int main()
     };
   
     // Create a TextureArray with 4x4 textures and 7 layers
-    Nothofagus::TextureArray textureArray({4, 4}, 7);
+    Nothofagus::TextureArray textureArray({4, 4}, 10);
 
     // Initialize each layer in the texture array with specific color indices
     textureArray.setLayerPallete(pallete, 0)
         .setPixelsInLayer({
-            0,0,0,0, // Layer 0: All black
-            0,0,0,0,
+            0,1,1,0, // Layer 0
+            0,1,1,0,
             0,0,0,0,
             0,0,0,0
         }, 0);
     textureArray.setLayerPallete(pallete, 1)
         .setPixelsInLayer({
-            1,1,1,1, // Layer 1: All red
-            1,1,1,1,
-            1,1,1,1,
-            1,1,1,1
+            0,0,0,0, // Layer 1
+            0,0,0,0,
+            0,1,1,0,
+            0,1,1,0
         }, 1);
+
     textureArray.setLayerPallete(pallete, 2)
         .setPixelsInLayer({
-            2,2,2,2, // Layer 2: All green
-            2,2,2,2,
-            2,2,2,2,
-            2,2,2,2
+            3,3,0,0, // Layer 2
+            3,3,0,0,
+            0,0,0,0,
+            0,0,0,0
         }, 2);
     textureArray.setLayerPallete(pallete, 3)
         .setPixelsInLayer({
-            3,3,3,3, // Layer 3: All blue
-            3,3,3,3,
-            3,3,3,3,
-            3,3,3,3
-        }, 3);
-    // Similar initialization for layers 4, 5, 6...
+            4,4,0,0, // Layer 3
+            4,4,0,0,
+            0,0,0,0,
+            0,0,0,0
+            }, 3);
     textureArray.setLayerPallete(pallete, 4)
         .setPixelsInLayer({
-            4,4,4,4, // Layer 4: All yellow
-            4,4,4,4,
-            4,4,4,4,
-            4,4,4,4
+            0,0,3,3, // Layer 4
+            0,0,3,3,
+            0,0,0,0,
+            0,0,0,0
         }, 4);
+    // Similar initialization for layers 4, 5, 6...
     textureArray.setLayerPallete(pallete, 5)
         .setPixelsInLayer({
-            5,5,5,5, // Layer 5: All magenta
-            5,5,5,5,
-            5,5,5,5,
-            5,5,5,5
+            0,0,4,4, // Layer 5
+            0,0,4,4,
+            0,0,0,0,
+            0,0,0,0
         }, 5);
     textureArray.setLayerPallete(pallete, 6)
         .setPixelsInLayer({
-            6,6,6,6, // Layer 6: All white
-            6,6,6,6,
-            6,6,6,6,
-            6,6,6,6
+            0,0,0,0, // Layer 6
+            0,0,0,0,
+            5,5,0,0,
+            5,5,0,0
         }, 6);
+    textureArray.setLayerPallete(pallete, 7)
+        .setPixelsInLayer({
+            0,0,0,0, // Layer 7
+            0,0,0,0,
+            6,6,0,0,
+            6,6,0,0
+        }, 7);
+    textureArray.setLayerPallete(pallete, 8)
+        .setPixelsInLayer({
+            0,0,0,0, // Layer 6
+            0,0,0,0,
+            0,0,5,5,
+            0,0,5,5
+            }, 8);
+    textureArray.setLayerPallete(pallete, 9)
+        .setPixelsInLayer({
+            0,0,0,0, // Layer 7
+            0,0,0,0,
+            0,0,6,6,
+            0,0,6,6
+            }, 9);
 
     // Add the TextureArray to the canvas and create an AnimatedBellota using it
     Nothofagus::TextureArrayId textureArrayId = canvas.addTextureArray(textureArray);
@@ -86,11 +108,10 @@ int main()
     // Define animation states (layers, times, names)
     Nothofagus::AnimationState animation1({0}, {500.0f}, "W");
     Nothofagus::AnimationState animation2({1}, {500.0f}, "S");
-    Nothofagus::AnimationState animation3({2}, {500.0f}, "D");
-    Nothofagus::AnimationState animation4({3}, {500.0f}, "Wleft");
-    Nothofagus::AnimationState animation5({4}, {500.0f}, "Wright");
-    Nothofagus::AnimationState animation6({5}, {500.0f}, "Sleft");
-    Nothofagus::AnimationState animation7({6}, {500.0f}, "Sright");
+    Nothofagus::AnimationState animation4({2, 3}, { 500.0f, 500.0f }, "Wleft");
+    Nothofagus::AnimationState animation5({4, 5}, { 500.0f, 500.0f }, "Wright");
+    Nothofagus::AnimationState animation6({6, 7}, { 500.0f, 500.0f }, "Sleft");
+    Nothofagus::AnimationState animation7({8, 9}, { 500.0f, 500.0f }, "Sright");
 
     // Create an AnimationStateMachine associated with the AnimatedBellota
     Nothofagus::AnimationStateMachine textureArrayAnimationTree(canvas.animatedBellota(animatedBellotaId));
@@ -98,7 +119,6 @@ int main()
     // Add animation states to the state machine
     textureArrayAnimationTree.addState("W", &animation1);
     textureArrayAnimationTree.addState("S", &animation2);
-    textureArrayAnimationTree.addState("D", &animation3);
     textureArrayAnimationTree.addState("Wleft", &animation4);
     textureArrayAnimationTree.addState("Wright", &animation5);
     textureArrayAnimationTree.addState("Sleft", &animation6);
