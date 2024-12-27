@@ -47,6 +47,12 @@ target_include_directories(nothofagus PRIVATE
     "third_party/font8x8"
 )
 target_link_libraries(nothofagus PRIVATE glad glfw imgui)
+# spdlog uses fmt to format string, this library requires /utf-8 when using MSVC
+# The issue has not been fixed. More info at: https://github.com/gabime/spdlog/issues/3251
+# diabling FMT_UNICODE is a workaround.
+if(MSVC)
+    target_compile_definitions(nothofagus PRIVATE FMT_UNICODE=0)
+endif()
 
 set(NOTHOFAGUS_HEADERS
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
