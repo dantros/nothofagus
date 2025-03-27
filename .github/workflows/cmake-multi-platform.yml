@@ -47,9 +47,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Installing wayland and xkbcommon
+    - name: Installing wayland, xkbcommon and x11
       run: |
-          sudo apt-get install libwayland-dev wayland-protocols libxkbcommon-dev
+          sudo apt-get install libwayland-dev wayland-protocols libxkbcommon-dev libx11-dev
 
     - name: Set reusable strings
       # Turn repeated input strings (such as the build output directory) into step outputs. These step outputs can be used throughout the workflow file.
