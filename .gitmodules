@@ -10,9 +10,6 @@
 [submodule "third_party/imgui"]
 	path = third_party/imgui
 	url = https://github.com/ocornut/imgui.git
-[submodule "third_party/font8x8"]
-	path = third_party/font8x8
-	url = https://github.com/dhepper/font8x8.git
 [submodule "third_party/graaf"]
 	path = third_party/graaf
 	url = https://github.com/bobluppes/graaf.git
