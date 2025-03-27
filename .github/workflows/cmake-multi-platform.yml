@@ -55,6 +55,7 @@ jobs:
           sudo apt-get install libx11-dev
           sudo apt-get install libxrandr-dev
           sudo apt-get install libxinerama-dev 
+          sudo apt-get install libxcursor -dev
     
     - name: Set reusable strings
       # Turn repeated input strings (such as the build output directory) into step outputs. These step outputs can be used throughout the workflow file.
