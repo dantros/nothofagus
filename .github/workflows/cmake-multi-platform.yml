@@ -47,15 +47,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Installing linux dependencies
+    - name: Installing GLFW linux dependencies
       if: runner.os == 'Linux'
       run: |
-          sudo apt-get install libwayland-dev wayland-protocols 
-          sudo apt-get install libxkbcommon-dev
-          sudo apt-get install libx11-dev
-          sudo apt-get install libxrandr-dev
-          sudo apt-get install libxinerama-dev 
-          sudo apt-get install libxcursor -dev
+          sudo apt install libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev libwayland-dev libxkbcommon-dev
     
     - name: Set reusable strings
       # Turn repeated input strings (such as the build output directory) into step outputs. These step outputs can be used throughout the workflow file.
