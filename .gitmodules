@@ -13,3 +13,6 @@
 [submodule "third_party/graaf"]
 	path = third_party/graaf
 	url = https://github.com/bobluppes/graaf.git
+[submodule "font8x8_unsigned_char_mod"]
+	path = third_party/font8x8
+	url = https://github.com/dantros/font8x8.git

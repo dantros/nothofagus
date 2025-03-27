@@ -13,7 +13,7 @@ void writeChar(Texture& texture, std::uint8_t character, std::size_t i0, std::si
     debugCheck(i0 + 8 <= texture.size().x and j0 + 8 <= texture.size().y, "Character does not fit inside the texture.");
 
     std::uint8_t size = 0;
-    char* fontPtr = nullptr;
+    unsigned char* fontPtr = nullptr;
 
     switch (fontType)
     {
