@@ -109,7 +109,7 @@ Of course there are other ways to work, choose whatever suits you best.
 git clone https://github.com/dantros/nothofagus.git
 cd nothofagus
 git submodule update --init --recursive
-cmake --presets ninja-release
+cmake --preset ninja-release
 cd ../build_cmake/ninja-release/
 ninja
 ninja install
@@ -128,7 +128,7 @@ You should have [cmake](https://cmake.org/), [ninja](https://ninja-build.org/) a
 
 ## Doxygen Documentation
 
-*Disclaimer: Doxygen documentation is work in progress...*
+_Disclaimer: Doxygen documentation is work in progress..._
 
 This project uses Doxygen to create documentation, so you need to have Doxygen installed (https://www.doxygen.nl/manual/install.html) and once in this directory you should run the next command:
 
