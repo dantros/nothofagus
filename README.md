@@ -128,7 +128,7 @@ You should have [cmake](https://cmake.org/), [ninja](https://ninja-build.org/) a
 
 ## Doxygen Documentation
 
-_Disclaimer: Doxygen documentation is work in progress..._
+*Disclaimer: Doxygen documentation is work in progress...*
 
 This project uses Doxygen to create documentation, so you need to have Doxygen installed (https://www.doxygen.nl/manual/install.html) and once in this directory you should run the next command:
 
