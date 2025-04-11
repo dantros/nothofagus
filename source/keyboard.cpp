@@ -19,6 +19,9 @@ namespace Nothofagus
             case Key::D: return GLFW_KEY_D;
             case Key::Q: return GLFW_KEY_Q;
             case Key::E: return GLFW_KEY_E;
+            case Key::F: return GLFW_KEY_F;
+            case Key::G: return GLFW_KEY_G;
+            case Key::H: return GLFW_KEY_H;
             case Key::_1: return GLFW_KEY_1;
             case Key::_2: return GLFW_KEY_2;
             case Key::_3: return GLFW_KEY_3;
@@ -46,6 +49,9 @@ namespace Nothofagus
             case GLFW_KEY_D: return Key::D;
             case GLFW_KEY_Q: return Key::Q;
             case GLFW_KEY_E: return Key::E;
+            case GLFW_KEY_F: return Key::F;
+            case GLFW_KEY_G: return Key::G;
+            case GLFW_KEY_H: return Key::H;
             case GLFW_KEY_1: return Key::_1;
             case GLFW_KEY_2: return Key::_2;
             case GLFW_KEY_3: return Key::_3;
