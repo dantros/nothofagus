@@ -6,7 +6,7 @@ namespace Nothofagus
 
 enum class Key : unsigned int
 {
-    W = 0, A, S, D, Q, E,
+    W = 0, A, S, D, Q, E, F, G, H
     _1, _2, _3, _4,
     LEFT, RIGHT, UP, DOWN,
     SPACE, ESCAPE, ENTER,
