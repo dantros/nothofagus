@@ -73,6 +73,21 @@ if (${NOTHOFAGUS_BUILD_EXAMPLES})
     add_subdirectory("examples")
 endif()
 
+option(NOTHOFAGUS_BUILD_DOCS "Build Nothofagus documentation? [WIP]" OFF)
+if (${NOTHOFAGUS_BUILD_DOCS})
+    find_package(Doxygen QUIET)
+    if(DOXYGEN_FOUND)
+        add_custom_target(
+            doc_doxygen ALL
+            COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile
+            COMMENT "Generating Doxygen documentation"
+            VERBATIM
+        )
+    else()
+        message(STATUS "Doxygen not found. Unable to generate doxygen documentation.")
+    endif()
+endif()
+
 option(NOTHOFAGUS_INSTALL "Do you whish to install Nothofagus static library?" OFF)
 if (${NOTHOFAGUS_INSTALL})
     include(GNUInstallDirs)
@@ -116,17 +131,9 @@ if (${NOTHOFAGUS_INSTALL})
                 COMPONENT NothofagusExamples_Development
         )
     endif()
-endif()
 
-find_package(Doxygen QUIET)
-
-if(DOXYGEN_FOUND)
-    add_custom_target(
-        doc_doxygen ALL
-        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_SOURCE_DIR}/Doxyfile
-        COMMENT "Generando la documentación con Doxygen"
-        VERBATIM
-    )
-else()
-    message(STATUS "Doxygen no encontrado. No se generará la documentación.")
+    # Installing documentation
+    if (${NOTHOFAGUS_BUILD_DOCS})
+        # TODO
+    endif()
 endif()
