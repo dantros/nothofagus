@@ -319,6 +319,67 @@ private:
 
 std::ostream& operator<<(std::ostream& os, const Texture& texture);
 
+class DirectTexture
+{
+public:
+
+    /**
+     * @brief Constructs a texture with a specified size and a default color.
+     * 
+     * This constructor initializes the texture with the given size and a default color for all pixels.
+     * 
+     * @param size The size of the texture (width and height).
+     * @param defaultColor The default color for all pixels.
+     */
+    DirectTexture(const glm::ivec2 size, const glm::vec4 defaultColor):
+        mSize(size),
+        mPixels(size.x* size.y, { defaultColor })
+    {
+    }
+
+    /**
+     * @brief Returns the size of the texture.
+     * 
+     * @return The size of the texture (width and height).
+     */
+    glm::ivec2 size() const { return mSize; }
+
+    /**
+     * @brief Returns a reference to the list of pixels in the texture.
+     * 
+     * @return A reference to the `std::vector<Pixel>` containing the pixel data.
+     */
+    const std::vector<glm::vec4>& pixels() const { return mPixels; }
+
+    /**
+     * @brief Returns the color of the pixel at the specified position.
+     * 
+     * @param i The x-coordinate of the pixel.
+     * @param j The y-coordinate of the pixel.
+     * @return The `glm::vec4` color of the pixel.
+     */
+    glm::vec4& color(const std::size_t i, const std::size_t j);
+
+    /**
+     * @brief Returns the color of the pixel at the specified position.
+     * 
+     * @param i The x-coordinate of the pixel.
+     * @param j The y-coordinate of the pixel.
+     * @return The `glm::vec4` color of the pixel.
+     */
+    const glm::vec4& color(const std::size_t i, const std::size_t j) const;
+
+    /**
+     * @brief Generates the raw texture data for the texture.
+     * 
+     * @return A `TextureData` object containing the raw texture data.
+     */
+    TextureData generateTextureData() const;
+
+private:
+    glm::ivec2 mSize; /**< The size of the texture (width and height). */
+    std::vector<glm::vec4> mPixels; /**< The color data of the texture. */
+};
 
 /**
  * @struct TextureArrayData

@@ -58,7 +58,7 @@ TextureData Texture::generateTextureData() const
     TextureData out;
     out.width = mSize.x;
     out.height = mSize.y;
-    unsigned int colorDepth = 4;
+    static unsigned int colorDepth = 4;
 
     out.data.reserve(out.width * out.height * colorDepth);
 
@@ -193,6 +193,36 @@ std::ostream& operator<<(std::ostream& os, const TextureArray& texture)
     return os;
 }
 
+glm::vec4 &DirectTexture::color(const std::size_t i, const std::size_t j)
+{
+    const std::size_t index = indexOf(mSize, i, j);
+    return mPixels[index];
+}
 
+const glm::vec4 &DirectTexture::color(const std::size_t i, const std::size_t j) const
+{
+    const std::size_t index = indexOf(mSize, i, j);
+    return mPixels[index];
+}
+
+TextureData DirectTexture::generateTextureData() const
+{
+    TextureData out;
+    out.width = mSize.x;
+    out.height = mSize.y;
+    static unsigned int colorDepth = 4;
+
+    out.data.reserve(out.width * out.height * colorDepth);
+
+    for (const auto& color : mPixels)
+    {
+        out.data.push_back(color.r);
+        out.data.push_back(color.g);
+        out.data.push_back(color.b);
+        out.data.push_back(color.a);
+    }
+
+    return out;
+}
 
 }
