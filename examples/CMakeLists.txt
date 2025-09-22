@@ -5,6 +5,13 @@ set_property(TARGET hello_nothofagus PROPERTY CXX_STANDARD 20)
 target_include_directories(hello_nothofagus PRIVATE ${NOTHOFAGUS_INCLUDE})
 target_link_libraries(hello_nothofagus PRIVATE nothofagus)
 
+add_executable(hello_animated_bellota
+    "hello_animated_bellota.cpp"
+)
+set_property(TARGET hello_animated_bellota PROPERTY CXX_STANDARD 20)
+target_include_directories(hello_animated_bellota PRIVATE ${NOTHOFAGUS_INCLUDE})
+target_link_libraries(hello_animated_bellota PRIVATE nothofagus)
+
 add_executable(hello_text
     "hello_text.cpp"
 )
