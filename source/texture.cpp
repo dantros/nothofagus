@@ -11,9 +11,10 @@ std::size_t indexOf(const glm::ivec2 size, const std::size_t i, const std::size_
     return size.x * j + i;
 }
 
-void Texture::setPixels(std::initializer_list<Pixel::ColorId> pixelColors)
+void Texture::setPixels(std::initializer_list<Pixel::ColorId> pixelColors, std::size_t layer)
 {
-    debugCheck(mPixels.size() == pixelColors.size(), "Invalid number of pixels for this texture.");
+    debugCheck(mPixels.size() / mLayers == pixelColors.size(), "Invalid number of pixels for this texture.");
+    debugCheck(mLayers > layer, "Invalid layer.");
     const auto& pallete = mPallete;
     debugCheck(std::all_of(pixelColors.begin(), pixelColors.end(),
         [&pallete](const Pixel::ColorId colorId)
@@ -22,27 +23,46 @@ void Texture::setPixels(std::initializer_list<Pixel::ColorId> pixelColors)
         }
     ), "At least one of the pixels does not fit within the color pallete.");
 
-    mPixels.assign(pixelColors.begin(), pixelColors.end());
+    //mPixels.assign(pixelColors.begin(), pixelColors.end());
+
+    // Calcular el inicio y fin de los píxeles para este layer
+    std::size_t startIdx = layer * mPixels.size() / mLayers;
+    std::size_t endIdx = (layer + 1) * mPixels.size() / mLayers;
+
+    // Actualizar solo los píxeles correspondientes al layer indicado
+    auto pixelIt = pixelColors.begin();
+    for (std::size_t idx = startIdx; idx < endIdx; ++idx, ++pixelIt)
+    {
+        const Pixel::ColorId& colorId = *pixelIt;
+        mPixels[idx].colorId = colorId;  // Asignar el colorId desde el inicializador
+    }
 }
 
-const Pixel& Texture::pixel(const std::size_t i, const std::size_t j) const
+const Pixel& Texture::pixel(const std::size_t i, const std::size_t j, std::size_t layer) const
 {
+    debugCheck(mLayers > layer, "Invalid layer.");
+    const std::size_t layerIndexStart = layer * mPixels.size() / mLayers;
     const std::size_t index = indexOf(mSize, i, j);
-    return mPixels.at(index);
+    return mPixels.at(layerIndexStart + index);
 }
 
-Texture& Texture::setPixel(const std::size_t i, const std::size_t j, const Pixel pixel)
+Texture& Texture::setPixel(const std::size_t i, const std::size_t j, const Pixel pixel, std::size_t layer)
 {
+    debugCheck(mLayers > layer, "Invalid layer.");
     debugCheck(pixel.colorId < mPallete.size(), "colorId is not present in color pallete.");
+    std::size_t layerIndexStart = layer * mPixels.size() / mLayers;
     const std::size_t index = indexOf(mSize, i, j);
-    mPixels.at(index) = pixel;
+    mPixels.at(layerIndexStart + index) = pixel;
     return *this;
+
 }
 
-const glm::vec4& Texture::color(const std::size_t i, const std::size_t j) const
+const glm::vec4& Texture::color(const std::size_t i, const std::size_t j, std::size_t layer) const
 {
+    debugCheck(mLayers > layer, "Invalid layer.");
+    std::size_t layerIndexStart = layer * mPixels.size() / mLayers;
     const std::size_t index = indexOf(mSize, i, j);
-    const Pixel& pixel = mPixels[index];
+    const Pixel& pixel = mPixels[layerIndexStart + index];
     return mPallete.colors.at(pixel.colorId);
 }
 
@@ -56,20 +76,25 @@ Texture& Texture::setPallete(const ColorPallete& pallete)
 TextureData Texture::generateTextureData() const
 {
     TextureData out;
+    out.layers = mLayers;
     out.width = mSize.x;
     out.height = mSize.y;
     static unsigned int colorDepth = 4;
 
-    out.data.reserve(out.width * out.height * colorDepth);
+    out.data.reserve(out.layers * out.width * out.height * colorDepth);
 
-    for (std::size_t index = 0; index < out.width * out.height; ++index)
+    for (std::size_t layer = 0; layer < mLayers; ++layer)
     {
-        const Pixel& pixel = mPixels[index];
-        const glm::vec4 color = 255.0f * mPallete.colors.at(pixel.colorId);
-        out.data.push_back(color.r);
-        out.data.push_back(color.g);
-        out.data.push_back(color.b);
-        out.data.push_back(color.a);
+        std::size_t layerIndexStart = layer * mPixels.size() / mLayers;
+        for (std::size_t index = 0; index < out.width * out.height; ++index)
+        {
+            const Pixel& pixel = mPixels[layerIndexStart + index];
+            const glm::vec4 color = 255.0f * mPallete.colors.at(pixel.colorId);
+            out.data.push_back(color.r);
+            out.data.push_back(color.g);
+            out.data.push_back(color.b);
+            out.data.push_back(color.a);
+        }
     }
 
     return out;
@@ -77,13 +102,16 @@ TextureData Texture::generateTextureData() const
 
 std::ostream& operator<<(std::ostream& os, const Texture& texture)
 {
-    for (int j= 0; j < texture.size().y; ++j)
+    for (std::size_t layer = 0; layer < texture.layers(); ++layer) 
     {
-        for (int i = 0; i < texture.size().x; ++i)
+        for (int j= 0; j < texture.size().y; ++j)
         {
-            os << static_cast<bool>(texture.pixel(i,j).colorId) << " ";
+            for (int i = 0; i < texture.size().x; ++i)
+            {
+                os << static_cast<bool>(texture.pixel(i, j, layer).colorId) << " ";
+            }
+            os << std::endl;
         }
-        os << std::endl;
     }
     return os;
 }
@@ -150,9 +178,9 @@ TextureArray& TextureArray::setLayerPallete(ColorPallete& pallete, const size_t 
     return *this;
 }
 
-TextureArrayData TextureArray::generateTextureArrayData() const
+TextureData TextureArray::generateTextureData() const
 {
-    TextureArrayData out;
+    TextureData out;
     out.layers = mLayers;
     out.width = mSize.x;
     out.height = mSize.y;
@@ -171,7 +199,6 @@ TextureArrayData TextureArray::generateTextureArrayData() const
             out.data.push_back(color.b);
             out.data.push_back(color.a);
         }
-
     }
 
     return out;

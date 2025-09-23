@@ -43,7 +43,7 @@ struct AnimatedBellotaPack
 {
     AnimatedBellota animatedBellota;
     std::optional<Mesh> meshOpt;
-    std::optional<DMesh3D> dmeshOpt;
+    std::optional<DMesh> dmeshOpt;
     std::optional<Tint> tintOpt;
 };
 

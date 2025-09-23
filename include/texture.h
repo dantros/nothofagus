@@ -181,14 +181,14 @@ struct ColorPallete
 
 /**
  * @struct TextureData
- * @brief Represents the raw texture data including pixel colors.
+ * @brief Represents the raw texture data including pixel colors for every layer.
  * 
- * This structure holds the raw texture data, width, and height, and provides a function to retrieve the data.
+ * This structure holds the raw texture data of every layer, width, and height, and provides a function to retrieve the data.
  */
 struct TextureData
 {
     std::vector<std::uint8_t> data; /**< Raw texture data in RGBA format. */
-    std::size_t width, height; /**< The dimensions of the texture. */
+    std::size_t width, height, layers = 1; /**< The dimensions of the texture. */
 
     /**
      * @brief Returns a pointer to the raw texture data.
@@ -220,12 +220,21 @@ public:
      * @param size The size of the texture (width and height).
      * @param defaultColor The default color for all pixels.
      */
-    Texture(const glm::ivec2 size, const glm::vec4 defaultColor):
+    Texture(const glm::ivec2 size, const glm::vec4 defaultColor, const std::size_t layers = 1):
+        mLayers(layers),
         mSize(size),
-        mPixels(size.x* size.y, { 0 }),
+        mPixels(size.x * size.y, { 0 }),
         mPallete({ defaultColor })
     {
+        //debugCheck(layers > 0);
     }
+
+    /**
+     * @brief Returns the number of layers in the texture.
+     * 
+     * @return The number of layers.
+     */
+    size_t layers() const { return mLayers; }
 
     /**
      * @brief Returns the size of the texture.
@@ -246,7 +255,7 @@ public:
      * 
      * @param pixelColors The list of color IDs to assign to the pixels.
      */
-    void setPixels(std::initializer_list<Pixel::ColorId> pixelColors);
+    void setPixels(std::initializer_list<Pixel::ColorId> pixelColors, std::size_t layer = 0);
 
     /**
      * @brief Sets the pixel colors using an iterator range.
@@ -266,9 +275,10 @@ public:
      * 
      * @param i The x-coordinate of the pixel.
      * @param j The y-coordinate of the pixel.
+     * @param layer The layer of interest for this query
      * @return The `Pixel` at the specified position.
      */
-    const Pixel& pixel(const std::size_t i, const std::size_t j) const;
+    const Pixel& pixel(const std::size_t i, const std::size_t j, std::size_t layer = 0) const;
 
     /**
      * @brief Sets the pixel at the specified position.
@@ -278,7 +288,7 @@ public:
      * @param pixel The pixel to set at the specified position.
      * @return A reference to this texture.
      */
-    Texture& setPixel(const std::size_t i, const std::size_t j, const Pixel pixel);
+    Texture& setPixel(const std::size_t i, const std::size_t j, const Pixel pixel, std::size_t layer = 0);
 
     /**
      * @brief Returns the color of the pixel at the specified position.
@@ -287,7 +297,7 @@ public:
      * @param j The y-coordinate of the pixel.
      * @return The `glm::vec4` color of the pixel.
      */
-    const glm::vec4& color(const std::size_t i, const std::size_t j) const;
+    const glm::vec4& color(const std::size_t i, const std::size_t j, std::size_t layer = 0) const;
 
     /**
      * @brief Returns the color palette of the texture.
@@ -312,6 +322,7 @@ public:
     TextureData generateTextureData() const;
 
 private:
+    std::size_t mLayers; /**< The number of layers in the texture. */
     glm::ivec2 mSize; /**< The size of the texture (width and height). */
     std::vector<Pixel> mPixels; /**< The pixel data of the texture. */
     ColorPallete mPallete; /**< The color palette used by the texture. */
@@ -382,23 +393,6 @@ private:
 };
 
 /**
- * @struct TextureArrayData
- * @brief Represents the raw texture data including pixel colors for every layer.
- * 
- * This structure holds the raw texture data of every layer, width, and height, and provides a function to retrieve the data.
- */
-struct TextureArrayData
-{
-    std::vector<std::uint8_t> data;
-    std::size_t width, height, layers;
-
-    const std::uint8_t* getData() const
-    {
-        return data.data();
-    }
-};
-
-/**
  * @class TextureArray
  * @brief Represents a texture array consisting of multiple layers of textures.
  * 
@@ -421,7 +415,6 @@ public:
         mPixels(size.x* size.y* layers, { 0 })
     {
         mPalletes.resize(layers);
-        
     }
 
     /**
@@ -530,7 +523,7 @@ public:
      * 
      * @return A `TextureArrayData` object containing the raw texture data.
      */
-    TextureArrayData generateTextureArrayData() const;
+    TextureData generateTextureData() const;
 
 private:
     size_t mLayers; /**< The number of layers in the texture array. */

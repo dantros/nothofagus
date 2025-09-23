@@ -133,11 +133,12 @@ Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& 
         in vec2 outTextureCoordinates;
         out vec4 outColor;
         uniform sampler2D textureSampler;
+        uniform int layerIndex;
         uniform vec3 tintColor;
         uniform float tintIntensity;
         void main()
         {
-            vec4 textureSample = texture(textureSampler, outTextureCoordinates);
+            vec4 textureSample = texture(textureSampler, outTextureCoordinates + layerIndex);
             vec3 textureColor = textureSample.xyz;
             float textureOpacity = textureSample.w;
             vec3 blendColor = (tintColor * tintIntensity) + (textureColor * (1 - tintIntensity));
@@ -334,33 +335,6 @@ void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
     glBindVertexArray(0);
 }
 
-//void setupVAO(DMesh3D& dMesh, GPUID shaderProgram)
-void setupVAO(DMesh3D& dmesh, unsigned int shaderProgram)
-{
-    // Binding VAO to setup
-    glBindVertexArray(dmesh.vao);
-
-    // Binding buffers to the current VAO
-    glBindBuffer(GL_ARRAY_BUFFER, dmesh.vbo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dmesh.ebo);
-
-    constexpr unsigned int positionAttribLength = 2;
-    constexpr unsigned int textureAttribLength = 2;
-    constexpr unsigned int stride = positionAttribLength + textureAttribLength;
-
-    const auto positionAttribLocation = glGetAttribLocation(shaderProgram, "position");
-    const auto textureAttribLocation = glGetAttribLocation(shaderProgram, "texture");
-
-    glVertexAttribPointer(positionAttribLocation, positionAttribLength, GL_FLOAT, GL_FALSE, stride * sizeof(GLfloat), (void*)(0 * sizeof(GLfloat)));
-    glEnableVertexAttribArray(positionAttribLocation);  
-    
-    glVertexAttribPointer(textureAttribLocation, textureAttribLength, GL_FLOAT, GL_FALSE, stride * sizeof(GLfloat), (void*)(positionAttribLength * sizeof(GLfloat)));
-    glEnableVertexAttribArray(textureAttribLocation);
-
-    // Unbinding current VAO
-    glBindVertexArray(0);
-}
-
 GLuint textureSimpleSetup(const TextureData& textureData)
 {
     // wrapMode: GL_REPEAT, GL_CLAMP_TO_EDGE
@@ -386,7 +360,7 @@ GLuint textureSimpleSetup(const TextureData& textureData)
     return gpuTexture;
 }
 
-GLuint textureArraySimpleSetup(const TextureArrayData& textureData)
+GLuint textureArraySimpleSetup(const TextureData& textureData)
 {
     // wrapMode: GL_REPEAT, GL_CLAMP_TO_EDGE
     // filterMode: GL_LINEAR, GL_NEAREST
@@ -453,7 +427,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         TextureArrayPack& texturePack = pair.second;
 
         const TextureArray& texture = texturePack.textureArray;
-        TextureArrayData textureData = texture.generateTextureArrayData();
+        TextureData textureData = texture.generateTextureData();
 
         texturePack.dtextureOpt = DTextureArray{ textureArraySimpleSetup(textureData) };
     }
@@ -490,8 +464,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         animatedBellotaPack.meshOpt = generateMesh(mTexturesArrays, animatedBellota);
 
-        animatedBellotaPack.dmeshOpt = DMesh3D();
-        DMesh3D& dmesh = animatedBellotaPack.dmeshOpt.value();
+        animatedBellotaPack.dmeshOpt = DMesh();
+        DMesh& dmesh = animatedBellotaPack.dmeshOpt.value();
         dmesh.initBuffers();
         setupVAO(dmesh, mAnimatedShaderProgram);
         dmesh.fillBuffers(animatedBellotaPack.meshOpt.value(), GL_STATIC_DRAW);
@@ -502,7 +476,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         const DTextureArray dtexture = textureArrayPack.dtextureOpt.value();
 
-        dmesh.textureArray = dtexture.textureArray;
+        dmesh.texture = dtexture.textureArray;
     }
 
     // state variable
@@ -518,6 +492,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     );
     worldTransformMat = glm::scale(worldTransformMat, worldScale);
 
+    const auto dLayerIndexLocation0 = glGetUniformLocation(mShaderProgram, "layerIndex");
     const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
     const auto dTintColorLocation = glGetUniformLocation(mShaderProgram, "tintColor");
     const auto dTintIntensityLocation = glGetUniformLocation(mShaderProgram, "tintIntensity");
@@ -631,6 +606,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
                 glUniform1f(dTintIntensityLocation, 0.0f);
             }
             glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
+            glUniform1i(dLayerIndexLocation0, bellota.currentLayer());
             
             dmesh.drawCall();
         }
@@ -649,7 +625,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
             if (not animatedBellota.visible())
                 continue;
 
-            const DMesh3D& dmesh3d = animatedBellotaPack.dmeshOpt.value();
+            const DMesh& dmesh = animatedBellotaPack.dmeshOpt.value();
             const Transform& modelTransform = animatedBellota.transform();
             const glm::mat3 modelTransformMat = modelTransform.toMat3();
             const glm::mat3 totalTransformMat = worldTransformMat * modelTransformMat;
@@ -668,9 +644,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
             glUniformMatrix3fv(dTATransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
             glUniform1i(dLayerIndexLocation, animatedBellota.actualLayer());
             
-            dmesh3d.drawCall();
+            dmesh.drawCall();
         }
-
 
         if (mStats)
         {
