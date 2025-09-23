@@ -43,7 +43,7 @@ int main()
         {
             for (std::size_t j = 0; j < texture1.size().y; ++j)
             {
-                const Nothofagus::Pixel randomColor{ dist(rng) };
+                const Nothofagus::Pixel randomColor{ static_cast<std::uint8_t>(dist(rng)) };
                 texture1.setPixel(i, j, randomColor);
             }
         }
