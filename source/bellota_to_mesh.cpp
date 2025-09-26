@@ -30,8 +30,8 @@ glm::ivec2 getTextureSize(const TextureContainer& textures, const Bellota& bello
  */
 glm::ivec2 getTextureSize(const TextureArrayContainer& texturesArrays, const AnimatedBellota& animatedBellota)
 {
-    const TextureArrayId& textureArrayId = animatedBellota.textureArray();
-    const TextureArrayPack& textureArrayPack = texturesArrays.at(textureArrayId.id);
+    const TextureId& textureId = animatedBellota.textureArray();
+    const TextureArrayPack& textureArrayPack = texturesArrays.at(textureId.id);
     const TextureArray& textureArray = textureArrayPack.textureArray;
     return textureArray.size();
 }

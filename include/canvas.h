@@ -110,13 +110,13 @@ public:
      * @param textureArray The TextureArray object to add.
      * @return The ID of the added TextureArray.
      */
-    TextureArrayId addTextureArray(const TextureArray& textureArray);
+    TextureId addTextureArray(const TextureArray& textureArray);
 
     /**
      * @brief Remove a TextureArray from the canvas.
-     * @param textureArrayId The ID of the TextureArray to remove.
+     * @param textureId The ID of the TextureArray to remove.
      */
-    void removeTextureArray(const TextureArrayId textureArrayId);
+    void removeTextureArray(const TextureId textureId);
 
     /**
      * @brief Set a tint color for a Bellota.
@@ -175,17 +175,17 @@ public:
     
     /**
      * @brief Get a TextureArray by its ID.
-     * @param textureArrayId The ID of the TextureArray.
+     * @param textureId The ID of the TextureArray.
      * @return A reference to the TextureArray.
      */
-    TextureArray& textureArray(TextureArrayId textureArrayId);
+    TextureArray& textureArray(TextureId textureId);
 
     /**
      * @brief Get a const TextureArray by its ID.
-     * @param textureArrayId The ID of the TextureArray.
+     * @param textureId The ID of the TextureArray.
      * @return A const reference to the TextureArray.
      */
-    const TextureArray& textureArray(TextureArrayId textureArrayId) const;
+    const TextureArray& textureArray(TextureId textureId) const;
 
     /**
      * @brief Access or modify the stats of the canvas.

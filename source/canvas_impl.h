@@ -85,13 +85,13 @@ public:
      * @param textureArray The TextureArray object to add.
      * @return The ID of the added TextureArray.
      */
-    TextureArrayId addTextureArray(const TextureArray& textureArray);
+    TextureId addTextureArray(const TextureArray& textureArray);
 
     /**
      * @brief Removes a TextureArray object from the canvas.
-     * @param textureArrayId The ID of the TextureArray to remove.
+     * @param textureId The ID of the TextureArray to remove.
      */
-    void removeTextureArray(const TextureArrayId textureArrayId);
+    void removeTextureArray(const TextureId textureId);
 
     /**
      * @brief Sets a tint color for a Bellota.
@@ -150,17 +150,17 @@ public:
     
     /**
      * @brief Retrieves a TextureArray by its ID.
-     * @param textureArrayId The ID of the TextureArray.
+     * @param textureId The ID of the TextureArray.
      * @return A reference to the TextureArray object.
      */
-    TextureArray& textureArray(TextureArrayId textureArrayId);
+    TextureArray& textureArray(TextureId textureId);
 
     /**
      * @brief Retrieves a const TextureArray by its ID.
-     * @param textureArrayId The ID of the TextureArray.
+     * @param textureId The ID of the TextureArray.
      * @return A const reference to the TextureArray object.
      */
-    const TextureArray& textureArray(TextureArrayId textureArrayId) const;
+    const TextureArray& textureArray(TextureId textureId) const;
 
     /**
      * @brief Accesses or modifies the stats flag.

@@ -54,14 +54,14 @@ void Canvas::removeTexture(const TextureId textureId)
     mCanvasImpl->removeTexture(textureId);
 }
 
-TextureArrayId Canvas::addTextureArray(const TextureArray& textureArray)
+TextureId Canvas::addTextureArray(const TextureArray& textureArray)
 {
     return mCanvasImpl->addTextureArray(textureArray);
 }
 
-void Canvas::removeTextureArray(const TextureArrayId textureArrayId)
+void Canvas::removeTextureArray(const TextureId textureId)
 {
-    mCanvasImpl->removeTextureArray(textureArrayId);
+    mCanvasImpl->removeTextureArray(textureId);
 }
 
 void Canvas::setTint(const BellotaId bellotaId, const Tint& tint)
@@ -104,14 +104,14 @@ const Texture& Canvas::texture(TextureId textureId) const
     return mCanvasImpl->texture(textureId);
 }
 
-TextureArray& Canvas::textureArray(TextureArrayId textureArrayId)
+TextureArray& Canvas::textureArray(TextureId textureId)
 {
-    return mCanvasImpl->textureArray(textureArrayId);
+    return mCanvasImpl->textureArray(textureId);
 }
 
-const TextureArray& Canvas::textureArray(TextureArrayId textureArrayId) const
+const TextureArray& Canvas::textureArray(TextureId textureId) const
 {
-    return mCanvasImpl->textureArray(textureArrayId);
+    return mCanvasImpl->textureArray(textureId);
 }
 
 bool& Canvas::stats()

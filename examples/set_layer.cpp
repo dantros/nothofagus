@@ -68,12 +68,12 @@ int main()
         }, 4);
 
     // Add the TextureArray to the canvas
-    Nothofagus::TextureArrayId textureArrayId = canvas.addTextureArray(textureArray);
+    Nothofagus::TextureId textureId = canvas.addTextureArray(textureArray);
 
     // Create an AnimatedBellota using the TextureArray
     // - Position: (75, 50)
     // - Layer count: 5
-    Nothofagus::AnimatedBellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureArrayId, 5});
+    Nothofagus::AnimatedBellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});
 
     // Access the AnimatedBellota object to modify its properties
     Nothofagus::AnimatedBellota& animatedbellota = canvas.animatedBellota(animatedBellotaId);

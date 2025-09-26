@@ -69,8 +69,8 @@ int main()
             0,0,0,0
         }, 4);
 
-    Nothofagus::TextureArrayId textureArrayId = canvas.addTextureArray(textureArray);
-    Nothofagus::AnimatedBellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureArrayId, 5});
+    Nothofagus::TextureId textureId = canvas.addTextureArray(textureArray);
+    Nothofagus::AnimatedBellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});
 
     std::vector<int> anim1Layers = {0, 1};
     std::vector<float> anim1LayersTimes = {500.0f, 1000.0f};

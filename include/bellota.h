@@ -12,11 +12,6 @@ struct TextureId
     std::size_t id;
 };
 
-struct TextureArrayId
-{
-    std::size_t id;
-};
-
 struct BellotaId
 {
     std::size_t id;
@@ -94,16 +89,16 @@ public:
     /**
      * @brief Constructs an AnimatedBellota with specified transform, texture array, and layers.
      * 
-     * This constructor initializes the `AnimatedBellota` with a `Transform`, a `TextureArrayId` to link the
+     * This constructor initializes the `AnimatedBellota` with a `Transform`, a `TextureId` to link the
      * texture array, the number of layers, and sets the default values for depth offset and visibility.
      * 
      * @param transform The transformation to apply to the object (position, scale, etc.).
-     * @param textureArrayId The ID of the texture array to be used by the object.
+     * @param textureId The ID of the texture array to be used by the object.
      * @param layers The number of layers in the texture array.
      */
-    AnimatedBellota(Transform transform, TextureArrayId textureArrayId, size_t layers):
+    AnimatedBellota(Transform transform, TextureId textureId, size_t layers):
         mTransform( transform ),
-        mTextureArrayId{ textureArrayId },
+        mTextureId{ textureId },
         mDepthOffset{ 0 },
         mLayers( layers ),
         mVisible{ true }
@@ -117,13 +112,13 @@ public:
      * This constructor is similar to the previous one, but it allows specifying a custom depth offset.
      * 
      * @param transform The transformation to apply to the object (position, scale, etc.).
-     * @param textureArrayId The ID of the texture array to be used by the object.
+     * @param textureId The ID of the texture array to be used by the object.
      * @param layers The number of layers in the texture array.
      * @param depthOffset The depth offset for the object, where higher values bring the object closer to the viewer.
      */
-    AnimatedBellota(Transform transform, TextureArrayId textureArrayId, size_t layers, std::int8_t depthOffset) :
+    AnimatedBellota(Transform transform, TextureId textureId, size_t layers, std::int8_t depthOffset) :
         mTransform( transform ),
-        mTextureArrayId{ textureArrayId },
+        mTextureId{ textureId },
         mLayers( layers ),
         mDepthOffset{ depthOffset },
         mVisible{ true }
@@ -154,16 +149,16 @@ public:
      * 
      * @return A reference to the `Transform` object representing the transformation.
      */
-    const TextureArrayId& textureArray() const { return mTextureArrayId; }
+    const TextureId& textureArray() const { return mTextureId; }
 
     /**
      * @brief Returns a reference to the ID of the texture array used by the object.
      * 
      * This function allows modification of the texture array ID, which could be used to switch texture arrays.
      * 
-     * @return A reference to the `TextureArrayId` representing the texture array ID.
+     * @return A reference to the `TextureId` representing the texture array ID.
      */
-    TextureArrayId& textureArray() { return mTextureArrayId; }
+    TextureId& textureArray() { return mTextureId; }
 
     /**
      * @brief Returns the depth offset value for the object.
@@ -228,7 +223,7 @@ public:
 
 private:
     Transform mTransform;           /**< The transformation applied to the object (position, scale, rotation) */
-    TextureArrayId mTextureArrayId; /**< The ID of the texture array used by the object */
+    TextureId mTextureId; /**< The ID of the texture array used by the object */
     size_t mLayers;                 /**< The number of layers in the texture array */
     size_t mActualLayer = 0;        /**< The current layer being displayed */
     std::int8_t mDepthOffset;       /**< The depth offset (higher values bring the object closer) */

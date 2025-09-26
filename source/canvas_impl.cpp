@@ -232,14 +232,14 @@ void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
     mTextures.remove(textureId.id);
 }
 
-TextureArrayId Canvas::CanvasImpl::addTextureArray(const TextureArray& textureArray)
+TextureId Canvas::CanvasImpl::addTextureArray(const TextureArray& textureArray)
 {
     return { mTexturesArrays.add({textureArray, std::nullopt}) };
 }
 
-void Canvas::CanvasImpl::removeTextureArray(const TextureArrayId textureArrayId)
+void Canvas::CanvasImpl::removeTextureArray(const TextureId textureId)
 {
-    mTexturesArrays.remove(textureArrayId.id);
+    mTexturesArrays.remove(textureId.id);
 }
 
 void Canvas::CanvasImpl::setTint(const BellotaId bellotaId, const Tint& tint)
@@ -288,14 +288,14 @@ const Texture& Canvas::CanvasImpl::texture(TextureId textureId) const
     return mTextures.at(textureId.id).texture;
 }
 
-TextureArray& Canvas::CanvasImpl::textureArray(TextureArrayId textureArrayId)
+TextureArray& Canvas::CanvasImpl::textureArray(TextureId textureId)
 {
-    return mTexturesArrays.at(textureArrayId.id).textureArray;
+    return mTexturesArrays.at(textureId.id).textureArray;
 }
 
-const TextureArray& Canvas::CanvasImpl::textureArray(TextureArrayId textureArrayId) const
+const TextureArray& Canvas::CanvasImpl::textureArray(TextureId textureId) const
 {
-    return mTexturesArrays.at(textureArrayId.id).textureArray;
+    return mTexturesArrays.at(textureId.id).textureArray;
 }
 
 bool& Canvas::CanvasImpl::stats()
@@ -423,7 +423,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
     for (auto& pair : mTexturesArrays.map())
     {
-        const TextureArrayId textureArrayId{ pair.first };
+        const TextureId textureId{ pair.first };
         TextureArrayPack& texturePack = pair.second;
 
         const TextureArray& texture = texturePack.textureArray;
@@ -469,8 +469,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         dmesh.initBuffers();
         setupVAO(dmesh, mAnimatedShaderProgram);
         dmesh.fillBuffers(animatedBellotaPack.meshOpt.value(), GL_STATIC_DRAW);
-        TextureArrayId textureArrayId = animatedBellota.textureArray();
-        const TextureArrayPack& textureArrayPack = mTexturesArrays.at(textureArrayId.id);
+        TextureId textureId = animatedBellota.textureArray();
+        const TextureArrayPack& textureArrayPack = mTexturesArrays.at(textureId.id);
 
         debugCheck(textureArrayPack.dtextureOpt.has_value(), "Texture array has not been initializad on GPU.");
 
