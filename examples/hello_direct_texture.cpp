@@ -7,6 +7,8 @@
 
 int main()
 {
+
+#if 0
     // You can directly use spdlog to ease your logging
     spdlog::info("Hello Direct Texture!");
 
@@ -46,5 +48,7 @@ int main()
     
     canvas.run(update);
     
+#endif
+
     return 0;
 }
