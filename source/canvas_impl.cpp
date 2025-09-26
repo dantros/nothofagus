@@ -647,6 +647,13 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         DMesh& dmesh = bellotaPack.dmeshOpt.value();
         dmesh.clear();
     }
+
+    for (auto& pair : mAnimatedBellotas.map())
+    {
+        BellotaPack& bellotaPack = pair.second;
+        DMesh& dmesh = bellotaPack.dmeshOpt.value();
+        dmesh.clear();
+    }
 }
 
 
