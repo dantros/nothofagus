@@ -469,7 +469,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         dmesh.initBuffers();
         setupVAO(dmesh, mAnimatedShaderProgram);
         dmesh.fillBuffers(animatedBellotaPack.meshOpt.value(), GL_STATIC_DRAW);
-        TextureId textureId = animatedBellota.textureArray();
+        TextureId textureId = animatedBellota.texture();
         const TextureArrayPack& textureArrayPack = mTexturesArrays.at(textureId.id);
 
         debugCheck(textureArrayPack.dtextureOpt.has_value(), "Texture array has not been initializad on GPU.");
@@ -642,7 +642,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
                 glUniform1f(dTATintIntensityLocation, 0.0f);
             }
             glUniformMatrix3fv(dTATransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
-            glUniform1i(dLayerIndexLocation, animatedBellota.actualLayer());
+            glUniform1i(dLayerIndexLocation, animatedBellota.currentLayer());
             
             dmesh.drawCall();
         }

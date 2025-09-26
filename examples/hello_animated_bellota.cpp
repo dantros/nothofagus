@@ -144,7 +144,7 @@ int main()
         animatedbellota.transform().scale() = glm::vec2(10.0f, 10.0f);
         textureArrayAnimationTree.update(dt);
         
-        // std::cout << animatedbellota.textureArray().id << std::endl;
+        // std::cout << animatedbellota.texture().id << std::endl;
 
         // you can directly use ImGui
         // ImGui::Begin("Hello there!");
