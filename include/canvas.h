@@ -110,7 +110,7 @@ public:
      * @param textureArray The TextureArray object to add.
      * @return The ID of the added TextureArray.
      */
-    TextureId addTextureArray(const TextureArray& textureArray);
+    TextureId addTextureArray(const Texture& textureArray);
 
     /**
      * @brief Remove a TextureArray from the canvas.
@@ -178,14 +178,14 @@ public:
      * @param textureId The ID of the TextureArray.
      * @return A reference to the TextureArray.
      */
-    TextureArray& textureArray(TextureId textureId);
+    Texture& textureArray(TextureId textureId);
 
     /**
      * @brief Get a const TextureArray by its ID.
      * @param textureId The ID of the TextureArray.
      * @return A const reference to the TextureArray.
      */
-    const TextureArray& textureArray(TextureId textureId) const;
+    const Texture& textureArray(TextureId textureId) const;
 
     /**
      * @brief Access or modify the stats of the canvas.

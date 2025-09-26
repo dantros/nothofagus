@@ -392,6 +392,4 @@ private:
     std::vector<glm::vec4> mPixels; /**< The color data of the texture. */
 };
 
-using TextureArray = Texture;
-
 }

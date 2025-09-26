@@ -24,10 +24,10 @@ int main()
         {1.0, 1.0, 0.0, 1.0}   // Yellow
     };
 
-    // Create a TextureArray with dimensions 4x4 and 5 layers
-    Nothofagus::TextureArray textureArray({4, 4}, glm::vec4(0,0,0,1), 5);
+    // Create a Texture with dimensions 4x4 and 5 layers
+    Nothofagus::Texture textureArray({4, 4}, glm::vec4(0,0,0,1), 5);
 
-    // Populate each layer of the TextureArray with pixel indices corresponding to the palette
+    // Populate each layer of the Texture with pixel indices corresponding to the palette
     textureArray
         .setPallete(pallete)
         .setPixels({
@@ -61,10 +61,10 @@ int main()
             3,4,0,1
         }, 4);
 
-    // Add the TextureArray to the canvas
+    // Add the Texture to the canvas
     Nothofagus::TextureId textureId = canvas.addTextureArray(textureArray);
 
-    // Create an Bellota using the TextureArray
+    // Create an Bellota using the Texture
     // Position: (75, 50)
     // Layer count: 5
     Nothofagus::BellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});

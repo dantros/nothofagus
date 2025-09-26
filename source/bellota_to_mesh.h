@@ -9,6 +9,5 @@ namespace Nothofagus
 
 Mesh generateMesh2(const glm::ivec2& size);
 Mesh generateMesh(const TextureContainer& textures, const Bellota& bellota);
-Mesh generateMesh(const TextureArrayContainer& textures, const Bellota& bellota);
 
 }

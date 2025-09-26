@@ -85,7 +85,7 @@ public:
      * @param textureArray The TextureArray object to add.
      * @return The ID of the added TextureArray.
      */
-    TextureId addTextureArray(const TextureArray& textureArray);
+    TextureId addTextureArray(const Texture& textureArray);
 
     /**
      * @brief Removes a TextureArray object from the canvas.
@@ -153,14 +153,14 @@ public:
      * @param textureId The ID of the TextureArray.
      * @return A reference to the TextureArray object.
      */
-    TextureArray& textureArray(TextureId textureId);
+    Texture& textureArray(TextureId textureId);
 
     /**
      * @brief Retrieves a const TextureArray by its ID.
      * @param textureId The ID of the TextureArray.
      * @return A const reference to the TextureArray object.
      */
-    const TextureArray& textureArray(TextureId textureId) const;
+    const Texture& textureArray(TextureId textureId) const;
 
     /**
      * @brief Accesses or modifies the stats flag.
@@ -191,7 +191,7 @@ private:
     unsigned int mPixelSize; ///< The pixel size on the canvas.
 
     TextureContainer mTextures; ///< Container for Texture objects.
-    TextureArrayContainer mTexturesArrays; ///< Container for TextureArray objects.
+    TextureContainer mTexturesArrays; ///< Container for TextureArray objects.
 
     BellotaContainer mBellotas; ///< Container for Bellota objects.
     BellotaContainer mAnimatedBellotas; ///< Container for Bellota objects.

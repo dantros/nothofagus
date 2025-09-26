@@ -14,15 +14,4 @@ struct DTexture
     unsigned int texture; ///< The OpenGL texture handle for a 2D texture in GPU memory.
 };
 
-/**
- * @brief A structure representing a texture array in the GPU.
- * 
- * The `DTextureArray` structure holds a handle to a texture array, which is a collection of textures stored in GPU memory.
- * Texture arrays are often used for multi-texture operations or for accessing different texture layers in a single draw call.
- */
-struct DTextureArray
-{
-    unsigned int textureArray; ///< The OpenGL texture array handle for a collection of textures stored in GPU memory.
-};
-
 }

@@ -22,21 +22,6 @@ glm::ivec2 getTextureSize(const TextureContainer& textures, const Bellota& bello
 }
 
 /**
- * @brief Retrieves the size of the texture for a given Bellota object from the TextureArrayContainer.
- * 
- * @param texturesArrays The TextureArrayContainer holding all texture arrays.
- * @param animatedBellota The Bellota object whose texture array size is to be retrieved.
- * @return The size of the texture array (width and height) for the given Bellota.
- */
-glm::ivec2 getTextureSize(const TextureArrayContainer& texturesArrays, const Bellota& animatedBellota)
-{
-    const TextureId& textureId = animatedBellota.texture();
-    const TextureArrayPack& textureArrayPack = texturesArrays.at(textureId.id);
-    const TextureArray& textureArray = textureArrayPack.textureArray;
-    return textureArray.size();
-}
-
-/**
  * @brief Creates a DVertex object corresponding to the bottom-left corner of the texture.
  * 
  * @param size The size of the texture (width and height).
@@ -126,21 +111,6 @@ Mesh generateMesh2(const glm::ivec2 &size)
 Mesh generateMesh(const TextureContainer& textures, const Bellota& bellota)
 {
     const glm::ivec2 size = getTextureSize(textures, bellota);
-    return generateMesh2(size);
-}
-
-/**
- * @brief Generates a mesh for an Bellota object, using the textures provided by the TextureArrayContainer.
- * 
- * This function generates a 2D mesh with texture coordinates, vertices, and indices for an Bellota object.
- * 
- * @param texturesArrays The TextureArrayContainer holding the texture arrays to be used for generating the mesh.
- * @param animatedBellota The Bellota object for which the mesh is to be generated.
- * @return The generated mesh.
- */
-Mesh generateMesh(const TextureArrayContainer& texturesArrays, const Bellota& animatedBellota)
-{
-    const glm::ivec2 size = getTextureSize(texturesArrays, animatedBellota);
     return generateMesh2(size);
 }
 

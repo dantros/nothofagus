@@ -54,7 +54,7 @@ void Canvas::removeTexture(const TextureId textureId)
     mCanvasImpl->removeTexture(textureId);
 }
 
-TextureId Canvas::addTextureArray(const TextureArray& textureArray)
+TextureId Canvas::addTextureArray(const Texture& textureArray)
 {
     return mCanvasImpl->addTextureArray(textureArray);
 }
@@ -104,12 +104,12 @@ const Texture& Canvas::texture(TextureId textureId) const
     return mCanvasImpl->texture(textureId);
 }
 
-TextureArray& Canvas::textureArray(TextureId textureId)
+Texture& Canvas::textureArray(TextureId textureId)
 {
     return mCanvasImpl->textureArray(textureId);
 }
 
-const TextureArray& Canvas::textureArray(TextureId textureId) const
+const Texture& Canvas::textureArray(TextureId textureId) const
 {
     return mCanvasImpl->textureArray(textureId);
 }
