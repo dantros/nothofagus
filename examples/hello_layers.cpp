@@ -61,15 +61,15 @@ int main()
         }, 4);
 
     // Add the Texture to the canvas
-    Nothofagus::TextureId textureId = canvas.addTextureArray(textureArray);
+    Nothofagus::TextureId textureId = canvas.addTexture(textureArray);
 
     // Create an Bellota using the Texture
     // - Position: (75, 50)
     // - Layer count: 5
-    Nothofagus::BellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});
+    Nothofagus::BellotaId animatedBellotaId = canvas.addBellota({{{75.0f, 50.0f}}, textureId, 5});
 
     // Access the Bellota object to modify its properties
-    Nothofagus::Bellota& animatedbellota = canvas.animatedBellota(animatedBellotaId);
+    Nothofagus::Bellota& animatedbellota = canvas.bellota(animatedBellotaId);
 
     // Scale the Bellota to 10x10 units
     animatedbellota.transform().scale() = glm::vec2(10.0f, 10.0f);

@@ -84,32 +84,12 @@ const Bellota& Canvas::bellota(BellotaId bellotaId) const
     return mCanvasImpl->bellota(bellotaId);
 }
 
-Bellota& Canvas::animatedBellota(BellotaId animatedBellotaId)
-{
-    return mCanvasImpl->bellota(animatedBellotaId);
-}
-
-const Bellota& Canvas::animatedBellota(BellotaId animatedBellotaId) const
-{
-    return mCanvasImpl->bellota(animatedBellotaId);
-}
-
 Texture& Canvas::texture(TextureId textureId)
 {
     return mCanvasImpl->texture(textureId);
 }
 
 const Texture& Canvas::texture(TextureId textureId) const
-{
-    return mCanvasImpl->texture(textureId);
-}
-
-Texture& Canvas::textureArray(TextureId textureId)
-{
-    return mCanvasImpl->texture(textureId);
-}
-
-const Texture& Canvas::textureArray(TextureId textureId) const
 {
     return mCanvasImpl->texture(textureId);
 }

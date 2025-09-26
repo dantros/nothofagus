@@ -62,15 +62,15 @@ int main()
         }, 4);
 
     // Add the Texture to the canvas
-    Nothofagus::TextureId textureId = canvas.addTextureArray(textureArray);
+    Nothofagus::TextureId textureId = canvas.addTexture(textureArray);
 
     // Create an Bellota using the Texture
     // Position: (75, 50)
     // Layer count: 5
-    Nothofagus::BellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});
+    Nothofagus::BellotaId animatedBellotaId = canvas.addBellota({{{75.0f, 50.0f}}, textureId, 5});
 
     // Access the Bellota from the canvas
-    Nothofagus::Bellota& animatedbellota = canvas.animatedBellota(animatedBellotaId);
+    Nothofagus::Bellota& animatedbellota = canvas.bellota(animatedBellotaId);
 
     // Define an animation state with 5 layers and equal time intervals
     std::vector<int> anim1Layers = {0, 1, 2, 3, 4};       // Layers to cycle through
@@ -79,7 +79,7 @@ int main()
     Nothofagus::AnimationState animation1(anim1Layers, anim1LayersTimes, anim1name);
 
     // Create an AnimationStateMachine associated with the Bellota
-    Nothofagus::AnimationStateMachine textureArrayAnimationTree(canvas.animatedBellota(animatedBellotaId));
+    Nothofagus::AnimationStateMachine textureArrayAnimationTree(canvas.bellota(animatedBellotaId));
 
     // Add the animation state to the state machine
     textureArrayAnimationTree.addState(anim1name, &animation1);

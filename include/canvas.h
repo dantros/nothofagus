@@ -144,20 +144,6 @@ public:
      * @return A const reference to the Bellota.
      */
     const Bellota& bellota(BellotaId bellotaId) const;
-    
-    /**
-     * @brief Get an Bellota by its ID.
-     * @param animatedBellotaId The ID of the Bellota.
-     * @return A reference to the Bellota.
-     */
-    Bellota& animatedBellota(BellotaId animatedBellotaId);
-
-    /**
-     * @brief Get a const Bellota by its ID.
-     * @param animatedBellotaId The ID of the Bellota.
-     * @return A const reference to the Bellota.
-     */
-    const Bellota& animatedBellota(BellotaId animatedBellotaId) const;
 
     /**
      * @brief Get a Texture by its ID.
@@ -172,20 +158,6 @@ public:
      * @return A const reference to the Texture.
      */
     const Texture& texture(TextureId textureId) const;
-    
-    /**
-     * @brief Get a TextureArray by its ID.
-     * @param textureId The ID of the TextureArray.
-     * @return A reference to the TextureArray.
-     */
-    Texture& textureArray(TextureId textureId);
-
-    /**
-     * @brief Get a const TextureArray by its ID.
-     * @param textureId The ID of the TextureArray.
-     * @return A const reference to the TextureArray.
-     */
-    const Texture& textureArray(TextureId textureId) const;
 
     /**
      * @brief Access or modify the stats of the canvas.
