@@ -533,27 +533,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
                 return lhsDepthOffset < rhsDepthOffset;
             });
     };
-    
-    auto sortTAByDepthOffset = [](const BellotaContainer& animatedBellotas, std::vector<const BellotaPack*>& sortedAnimatedBellotas)
-    {
-        // Per spec, clear does not change the underlaying memory allocation (capacity)
-        sortedAnimatedBellotas.clear();
-
-        for (const auto& pair : animatedBellotas.map())
-        {
-            const BellotaPack& bellotaPack = pair.second;
-            sortedAnimatedBellotas.push_back(&bellotaPack);
-        }
-
-        std::sort(sortedAnimatedBellotas.begin(), sortedAnimatedBellotas.end(),
-            [](const BellotaPack* lhs, const BellotaPack* rhs)
-            {
-                debugCheck(lhs != nullptr and rhs != nullptr, "invalid pointers");
-                const auto lhsDepthOffset = lhs->bellota.depthOffset();
-                const auto rhsDepthOffset = rhs->bellota.depthOffset();
-                return lhsDepthOffset < rhsDepthOffset;
-            });
-    };
 
     while (!glfwWindowShouldClose(mWindow->glfwWindow))
     {
@@ -573,7 +552,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         update(deltaTimeMS);
 
         sortByDepthOffset(mBellotas, sortedBellotaPacks);
-        sortTAByDepthOffset(mAnimatedBellotas, sortedAnimatedBellotaPacks);
+        sortByDepthOffset(mAnimatedBellotas, sortedAnimatedBellotaPacks);
 
         // drawing with OpenGL
         glUseProgram(mShaderProgram);
