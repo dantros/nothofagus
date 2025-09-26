@@ -121,7 +121,6 @@ if (${NOTHOFAGUS_INSTALL})
             test_keyboard
             hello_layers
             hello_animation
-            hello_animation_state_machine0
             hello_animation_state_machine
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT NothofagusExamples_Runtime

@@ -47,13 +47,6 @@ set_property(TARGET hello_layers PROPERTY CXX_STANDARD 20)
 target_include_directories(hello_layers PRIVATE ${NOTHOFAGUS_INCLUDE})
 target_link_libraries(hello_layers PRIVATE nothofagus)
 
-add_executable(hello_animation_state_machine0
-    "hello_animation_state_machine0.cpp"
-)
-set_property(TARGET hello_animation_state_machine0 PROPERTY CXX_STANDARD 20)
-target_include_directories(hello_animation_state_machine0 PRIVATE ${NOTHOFAGUS_INCLUDE})
-target_link_libraries(hello_animation_state_machine0 PRIVATE nothofagus)
-
 add_executable(hello_animation_state_machine
     "hello_animation_state_machine.cpp"
 )
