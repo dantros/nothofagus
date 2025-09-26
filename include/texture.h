@@ -412,7 +412,7 @@ public:
     TextureArray(const glm::ivec2 size, const size_t layers):
         mSize(size),
         mLayers(layers),
-        mPixels(size.x* size.y* layers, { 0 })
+        mPixels(size.x * size.y * layers, { 0 })
     {
         mPalletes.resize(layers);
     }
