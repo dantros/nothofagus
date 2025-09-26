@@ -286,8 +286,7 @@ GLuint textureArraySimpleSetup(const TextureData& textureData)
 
     GLuint internalFormat = GL_RGBA;
     GLuint format = GL_RGBA;
-
-    std::cout << "layers: " << textureData.layers << std::endl;
+    
     glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, internalFormat, textureData.width, textureData.height, textureData.layers, 0, format, GL_UNSIGNED_BYTE, textureData.getData());
 
     // texture wrapping params

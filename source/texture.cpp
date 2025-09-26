@@ -118,6 +118,18 @@ std::ostream& operator<<(std::ostream& os, const IndirectTexture& texture)
     return os;
 }
 
+glm::vec4 &DirectTexture::color(const std::size_t i, const std::size_t j)
+{
+    const std::size_t index = indexOf(mSize, i, j);
+    return mPixels[index];
+}
+
+const glm::vec4 &DirectTexture::color(const std::size_t i, const std::size_t j) const
+{
+    const std::size_t index = indexOf(mSize, i, j);
+    return mPixels[index];
+}
+
 TextureData DirectTexture::generateTextureData() const
 {
     TextureData out;
@@ -129,7 +141,7 @@ TextureData DirectTexture::generateTextureData() const
 
     for (std::size_t index = 0; index < out.width * out.height; ++index)
     {
-        const glm::vec4 color = mPixels[index];
+        const glm::vec4 color = 255.0f * mPixels[index];
         out.data.push_back(color.r);
         out.data.push_back(color.g);
         out.data.push_back(color.b);

@@ -345,7 +345,7 @@ public:
      */
     DirectTexture(const glm::ivec2 size, const glm::vec4 defaultColor):
         mSize(size),
-        mPixels(size.x* size.y, { defaultColor })
+        mPixels(size.x * size.y, defaultColor)
     {
     }
 
