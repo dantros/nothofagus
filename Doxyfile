@@ -45,7 +45,7 @@ DOXYFILE_ENCODING      = UTF-8
 PROJECT_NAME           = "Nothofagus"
 
 # INPUT: Set the directories or files where the source code is located. This 
-# should point to the directory or files containing AnimatedBellota, 
+# should point to the directory or files containing Bellota, 
 # AnimationState, AnimationStateMachine, and their respective headers.
 INPUT = ./src ./include  # Adjust according to your project structure
 

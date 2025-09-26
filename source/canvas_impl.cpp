@@ -212,7 +212,7 @@ void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
     mBellotas.remove(bellotaId.id);
 }
 
-BellotaId Canvas::CanvasImpl::addAnimatedBellota(const AnimatedBellota& animatedBellota)
+BellotaId Canvas::CanvasImpl::addAnimatedBellota(const Bellota& animatedBellota)
 {
     return {mAnimatedBellotas.add({animatedBellota, std::nullopt, std::nullopt})};
 }
@@ -268,14 +268,14 @@ const Bellota& Canvas::CanvasImpl::bellota(BellotaId bellotaId) const
     return mBellotas.at(bellotaId.id).bellota;
 }
 
-AnimatedBellota& Canvas::CanvasImpl::animatedBellota(BellotaId animatedBellotaId)
+Bellota& Canvas::CanvasImpl::animatedBellota(BellotaId animatedBellotaId)
 {
-    return mAnimatedBellotas.at(animatedBellotaId.id).animatedBellota;
+    return mAnimatedBellotas.at(animatedBellotaId.id).bellota;
 }
 
-const AnimatedBellota& Canvas::CanvasImpl::animatedBellota(BellotaId animatedBellotaId) const
+const Bellota& Canvas::CanvasImpl::animatedBellota(BellotaId animatedBellotaId) const
 {
-    return mAnimatedBellotas.at(animatedBellotaId.id).animatedBellota;
+    return mAnimatedBellotas.at(animatedBellotaId.id).bellota;
 }
 
 Texture& Canvas::CanvasImpl::texture(TextureId textureId)
@@ -459,8 +459,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     for (auto& pair : mAnimatedBellotas.map())
     {
         const BellotaId animatedBellotaId{ pair.first };
-        AnimatedBellotaPack& animatedBellotaPack = pair.second;
-        const AnimatedBellota& animatedBellota = animatedBellotaPack.animatedBellota;
+        BellotaPack& animatedBellotaPack = pair.second;
+        const Bellota& animatedBellota = animatedBellotaPack.bellota;
 
         animatedBellotaPack.meshOpt = generateMesh(mTexturesArrays, animatedBellota);
 
@@ -507,7 +507,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
     // Dirty fix to sort bellotas by depth as required by transparent objects.
     std::vector<const BellotaPack*> sortedBellotaPacks;
-    std::vector<const AnimatedBellotaPack*> sortedAnimatedBellotaPacks;
+    std::vector<const BellotaPack*> sortedAnimatedBellotaPacks;
 
     // Leaving some room in case more bellotas are created during runtime.
     sortedBellotaPacks.reserve(mBellotas.size()*2);
@@ -534,23 +534,23 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
             });
     };
     
-    auto sortTAByDepthOffset = [](const AnimatedBellotaContainer& animatedBellotas, std::vector<const AnimatedBellotaPack*>& sortedAnimatedBellotas)
+    auto sortTAByDepthOffset = [](const BellotaContainer& animatedBellotas, std::vector<const BellotaPack*>& sortedAnimatedBellotas)
     {
         // Per spec, clear does not change the underlaying memory allocation (capacity)
         sortedAnimatedBellotas.clear();
 
         for (const auto& pair : animatedBellotas.map())
         {
-            const AnimatedBellotaPack& bellotaPack = pair.second;
+            const BellotaPack& bellotaPack = pair.second;
             sortedAnimatedBellotas.push_back(&bellotaPack);
         }
 
         std::sort(sortedAnimatedBellotas.begin(), sortedAnimatedBellotas.end(),
-            [](const AnimatedBellotaPack* lhs, const AnimatedBellotaPack* rhs)
+            [](const BellotaPack* lhs, const BellotaPack* rhs)
             {
                 debugCheck(lhs != nullptr and rhs != nullptr, "invalid pointers");
-                const auto lhsDepthOffset = lhs->animatedBellota.depthOffset();
-                const auto rhsDepthOffset = rhs->animatedBellota.depthOffset();
+                const auto lhsDepthOffset = lhs->bellota.depthOffset();
+                const auto rhsDepthOffset = rhs->bellota.depthOffset();
                 return lhsDepthOffset < rhsDepthOffset;
             });
     };
@@ -620,7 +620,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
             auto& animatedBellotaPack = *animatedBellotaPackPtr;
             debugCheck(animatedBellotaPack.dmeshOpt.has_value(), "DMesh3D has not been initialized.");
 
-            const AnimatedBellota& animatedBellota = animatedBellotaPack.animatedBellota;
+            const Bellota& animatedBellota = animatedBellotaPack.bellota;
 
             if (not animatedBellota.visible())
                 continue;

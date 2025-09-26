@@ -68,6 +68,4 @@ private:
     bool mVisible;
 };
 
-using AnimatedBellota = Bellota;
-
 }

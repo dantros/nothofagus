@@ -35,9 +35,9 @@ constexpr static unsigned int DEFAULT_PIXEL_SIZE{ 4 };
 
 /**
  * @class Canvas
- * @brief A class representing the main drawing surface where objects like Bellotas, AnimatedBellotas, and textures are rendered.
+ * @brief A class representing the main drawing surface where objects like Bellotas, and textures are rendered.
  * 
- * The Canvas manages a variety of objects including textures, Bellotas, AnimatedBellotas, and handles user input.
+ * The Canvas manages a variety of objects including textures, Bellotas, and handles user input.
  */
 class Canvas
 {
@@ -80,15 +80,15 @@ public:
     void removeBellota(const BellotaId bellotaId);
     
     /**
-     * @brief Add an AnimatedBellota to the canvas.
-     * @param animatedBellota The AnimatedBellota object to add.
-     * @return The ID of the added AnimatedBellota.
+     * @brief Add an Bellota to the canvas.
+     * @param animatedBellota The Bellota object to add.
+     * @return The ID of the added Bellota.
      */
-    BellotaId addAnimatedBellota(const AnimatedBellota& animatedBellota);
+    BellotaId addAnimatedBellota(const Bellota& animatedBellota);
 
     /**
-     * @brief Remove an AnimatedBellota from the canvas.
-     * @param animatedBellotaId The ID of the AnimatedBellota to remove.
+     * @brief Remove an Bellota from the canvas.
+     * @param animatedBellotaId The ID of the Bellota to remove.
      */
     void removeAnimatedBellota(const BellotaId animatedBellotaId);
 
@@ -146,18 +146,18 @@ public:
     const Bellota& bellota(BellotaId bellotaId) const;
     
     /**
-     * @brief Get an AnimatedBellota by its ID.
-     * @param animatedBellotaId The ID of the AnimatedBellota.
-     * @return A reference to the AnimatedBellota.
+     * @brief Get an Bellota by its ID.
+     * @param animatedBellotaId The ID of the Bellota.
+     * @return A reference to the Bellota.
      */
-    AnimatedBellota& animatedBellota(BellotaId animatedBellotaId);
+    Bellota& animatedBellota(BellotaId animatedBellotaId);
 
     /**
-     * @brief Get a const AnimatedBellota by its ID.
-     * @param animatedBellotaId The ID of the AnimatedBellota.
-     * @return A const reference to the AnimatedBellota.
+     * @brief Get a const Bellota by its ID.
+     * @param animatedBellotaId The ID of the Bellota.
+     * @return A const reference to the Bellota.
      */
-    const AnimatedBellota& animatedBellota(BellotaId animatedBellotaId) const;
+    const Bellota& animatedBellota(BellotaId animatedBellotaId) const;
 
     /**
      * @brief Get a Texture by its ID.

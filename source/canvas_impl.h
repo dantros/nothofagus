@@ -55,15 +55,15 @@ public:
     void removeBellota(const BellotaId bellotaId);
     
     /**
-     * @brief Adds an AnimatedBellota object to the canvas.
-     * @param animatedBellota The AnimatedBellota object to add.
-     * @return The ID of the added AnimatedBellota.
+     * @brief Adds an Bellota object to the canvas.
+     * @param animatedBellota The Bellota object to add.
+     * @return The ID of the added Bellota.
      */
-    BellotaId addAnimatedBellota(const AnimatedBellota& animatedBellota);
+    BellotaId addAnimatedBellota(const Bellota& animatedBellota);
 
     /**
-     * @brief Removes an AnimatedBellota object from the canvas.
-     * @param animatedBellotaId The ID of the AnimatedBellota to remove.
+     * @brief Removes an Bellota object from the canvas.
+     * @param animatedBellotaId The ID of the Bellota to remove.
      */
     void removeAnimatedBellota(const BellotaId animatedBellotaId);
 
@@ -121,18 +121,18 @@ public:
     const Bellota& bellota(BellotaId bellotaId) const;
     
     /**
-     * @brief Retrieves an AnimatedBellota by its ID.
-     * @param animatedBellotaId The ID of the AnimatedBellota.
-     * @return A reference to the AnimatedBellota object.
+     * @brief Retrieves an Bellota by its ID.
+     * @param animatedBellotaId The ID of the Bellota.
+     * @return A reference to the Bellota object.
      */
-    AnimatedBellota& animatedBellota(BellotaId animatedBellotaId);
+    Bellota& animatedBellota(BellotaId animatedBellotaId);
 
     /**
-     * @brief Retrieves a const AnimatedBellota by its ID.
-     * @param animatedBellotaId The ID of the AnimatedBellota.
-     * @return A const reference to the AnimatedBellota object.
+     * @brief Retrieves a const Bellota by its ID.
+     * @param animatedBellotaId The ID of the Bellota.
+     * @return A const reference to the Bellota object.
      */
-    const AnimatedBellota& animatedBellota(BellotaId animatedBellotaId) const;
+    const Bellota& animatedBellota(BellotaId animatedBellotaId) const;
 
     /**
      * @brief Retrieves a Texture by its ID.
@@ -194,7 +194,7 @@ private:
     TextureArrayContainer mTexturesArrays; ///< Container for TextureArray objects.
 
     BellotaContainer mBellotas; ///< Container for Bellota objects.
-    AnimatedBellotaContainer mAnimatedBellotas; ///< Container for AnimatedBellota objects.
+    BellotaContainer mAnimatedBellotas; ///< Container for Bellota objects.
 
     unsigned int mShaderProgram; ///< The OpenGL shader program for rendering.
     unsigned int mAnimatedShaderProgram; ///< The OpenGL shader program for rendering animated textures.

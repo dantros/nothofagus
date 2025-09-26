@@ -101,7 +101,7 @@ int main()
             0,0,6,6
             }, 9);
 
-    // Add the TextureArray to the canvas and create an AnimatedBellota using it
+    // Add the TextureArray to the canvas and create an Bellota using it
     Nothofagus::TextureId textureId = canvas.addTextureArray(textureArray);
     Nothofagus::BellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});
 
@@ -113,7 +113,7 @@ int main()
     Nothofagus::AnimationState animation6({6, 7}, { 500.0f, 500.0f }, "Sleft");
     Nothofagus::AnimationState animation7({8, 9}, { 500.0f, 500.0f }, "Sright");
 
-    // Create an AnimationStateMachine associated with the AnimatedBellota
+    // Create an AnimationStateMachine associated with the Bellota
     Nothofagus::AnimationStateMachine textureArrayAnimationTree(canvas.animatedBellota(animatedBellotaId));
 
     // Add animation states to the state machine
@@ -153,7 +153,7 @@ int main()
     {
         time += dt;
 
-        // Update AnimatedBellota properties and AnimationStateMachine
+        // Update Bellota properties and AnimationStateMachine
         Nothofagus::Bellota& animatedbellota = canvas.animatedBellota(animatedBellotaId);
         animatedbellota.transform().scale() = glm::vec2(10.0f, 10.0f);
         textureArrayAnimationTree.update(dt);

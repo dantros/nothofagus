@@ -22,13 +22,13 @@ glm::ivec2 getTextureSize(const TextureContainer& textures, const Bellota& bello
 }
 
 /**
- * @brief Retrieves the size of the texture for a given AnimatedBellota object from the TextureArrayContainer.
+ * @brief Retrieves the size of the texture for a given Bellota object from the TextureArrayContainer.
  * 
  * @param texturesArrays The TextureArrayContainer holding all texture arrays.
- * @param animatedBellota The AnimatedBellota object whose texture array size is to be retrieved.
- * @return The size of the texture array (width and height) for the given AnimatedBellota.
+ * @param animatedBellota The Bellota object whose texture array size is to be retrieved.
+ * @return The size of the texture array (width and height) for the given Bellota.
  */
-glm::ivec2 getTextureSize(const TextureArrayContainer& texturesArrays, const AnimatedBellota& animatedBellota)
+glm::ivec2 getTextureSize(const TextureArrayContainer& texturesArrays, const Bellota& animatedBellota)
 {
     const TextureId& textureId = animatedBellota.texture();
     const TextureArrayPack& textureArrayPack = texturesArrays.at(textureId.id);
@@ -130,15 +130,15 @@ Mesh generateMesh(const TextureContainer& textures, const Bellota& bellota)
 }
 
 /**
- * @brief Generates a mesh for an AnimatedBellota object, using the textures provided by the TextureArrayContainer.
+ * @brief Generates a mesh for an Bellota object, using the textures provided by the TextureArrayContainer.
  * 
- * This function generates a 2D mesh with texture coordinates, vertices, and indices for an AnimatedBellota object.
+ * This function generates a 2D mesh with texture coordinates, vertices, and indices for an Bellota object.
  * 
  * @param texturesArrays The TextureArrayContainer holding the texture arrays to be used for generating the mesh.
- * @param animatedBellota The AnimatedBellota object for which the mesh is to be generated.
+ * @param animatedBellota The Bellota object for which the mesh is to be generated.
  * @return The generated mesh.
  */
-Mesh generateMesh(const TextureArrayContainer& texturesArrays, const AnimatedBellota& animatedBellota)
+Mesh generateMesh(const TextureArrayContainer& texturesArrays, const Bellota& animatedBellota)
 {
     const glm::ivec2 size = getTextureSize(texturesArrays, animatedBellota);
     return generateMesh2(size);
