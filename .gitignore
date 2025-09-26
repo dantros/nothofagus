@@ -40,3 +40,5 @@ docs
 
 # SCons cache file
 .sconsign.dblite
+
+imgui.ini
