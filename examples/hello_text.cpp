@@ -32,7 +32,7 @@ int main()
         {1.0, 1.0, 1.0, 1.0 }
     };
 
-    Nothofagus::Texture texture1({ 15, 10 }, { 0.5, 0.5, 0.5, 1.0 });
+    Nothofagus::IndirectTexture texture1({ 15, 10 }, { 0.5, 0.5, 0.5, 1.0 });
     texture1.setPallete(pallete1);
     {
         std::random_device dev;
@@ -51,13 +51,13 @@ int main()
 
     Nothofagus::TextureId textureId1 = canvas.addTexture(texture1);
 
-    Nothofagus::Texture texture2({ 8, 8 }, { 0.5, 0.5, 0.5, 1.0 });
+    Nothofagus::IndirectTexture texture2({ 8, 8 }, { 0.5, 0.5, 0.5, 1.0 });
     texture2.setPallete(pallete2);
     Nothofagus::writeChar(texture2, 0xD, 0,0, Nothofagus::FontType::Hiragana);
     Nothofagus::TextureId textureId2 = canvas.addTexture(texture2);
 
     std::string text = "- Nothofagus -";
-    Nothofagus::Texture texture3({8 * text.size(), 8}, {0.5, 0.5, 0.5, 1.0});
+    Nothofagus::IndirectTexture texture3({8 * text.size(), 8}, {0.5, 0.5, 0.5, 1.0});
     texture3.setPallete(pallete3);
     Nothofagus::writeText(texture3, text);
     Nothofagus::TextureId textureId3 = canvas.addTexture(texture3);

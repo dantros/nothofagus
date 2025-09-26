@@ -11,7 +11,7 @@ std::size_t indexOf(const glm::ivec2 size, const std::size_t i, const std::size_
     return size.x * j + i;
 }
 
-Texture& Texture::setPixels(std::initializer_list<Pixel::ColorId> pixelColors, std::size_t layer)
+IndirectTexture& IndirectTexture::setPixels(std::initializer_list<Pixel::ColorId> pixelColors, std::size_t layer)
 {
     debugCheck(mPixels.size() / mLayers == pixelColors.size(), "Invalid number of pixels for this texture.");
     debugCheck(mLayers > layer, "Invalid layer.");
@@ -40,7 +40,7 @@ Texture& Texture::setPixels(std::initializer_list<Pixel::ColorId> pixelColors, s
     return *this;
 }
 
-const Pixel& Texture::pixel(const std::size_t i, const std::size_t j, std::size_t layer) const
+const Pixel& IndirectTexture::pixel(const std::size_t i, const std::size_t j, std::size_t layer) const
 {
     debugCheck(mLayers > layer, "Invalid layer.");
     const std::size_t layerIndexStart = layer * mPixels.size() / mLayers;
@@ -48,7 +48,7 @@ const Pixel& Texture::pixel(const std::size_t i, const std::size_t j, std::size_
     return mPixels.at(layerIndexStart + index);
 }
 
-Texture& Texture::setPixel(const std::size_t i, const std::size_t j, const Pixel pixel, std::size_t layer)
+IndirectTexture& IndirectTexture::setPixel(const std::size_t i, const std::size_t j, const Pixel pixel, std::size_t layer)
 {
     debugCheck(mLayers > layer, "Invalid layer.");
     debugCheck(pixel.colorId < mPallete.size(), "colorId is not present in color pallete.");
@@ -59,7 +59,7 @@ Texture& Texture::setPixel(const std::size_t i, const std::size_t j, const Pixel
 
 }
 
-const glm::vec4& Texture::color(const std::size_t i, const std::size_t j, std::size_t layer) const
+const glm::vec4& IndirectTexture::color(const std::size_t i, const std::size_t j, std::size_t layer) const
 {
     debugCheck(mLayers > layer, "Invalid layer.");
     std::size_t layerIndexStart = layer * mPixels.size() / mLayers;
@@ -68,14 +68,14 @@ const glm::vec4& Texture::color(const std::size_t i, const std::size_t j, std::s
     return mPallete.colors.at(pixel.colorId);
 }
 
-Texture& Texture::setPallete(const ColorPallete& pallete)
+IndirectTexture& IndirectTexture::setPallete(const ColorPallete& pallete)
 {
     debugCheck(mPallete.size() <= pallete.size(), "");
     mPallete = pallete;
     return *this;
 }
 
-TextureData Texture::generateTextureData() const
+TextureData IndirectTexture::generateTextureData() const
 {
     TextureData out;
     out.layers = mLayers;
@@ -102,7 +102,7 @@ TextureData Texture::generateTextureData() const
     return out;
 }
 
-std::ostream& operator<<(std::ostream& os, const Texture& texture)
+std::ostream& operator<<(std::ostream& os, const IndirectTexture& texture)
 {
     for (std::size_t layer = 0; layer < texture.layers(); ++layer) 
     {
@@ -116,6 +116,27 @@ std::ostream& operator<<(std::ostream& os, const Texture& texture)
         }
     }
     return os;
+}
+
+TextureData DirectTexture::generateTextureData() const
+{
+    TextureData out;
+    out.width = mSize.x;
+    out.height = mSize.y;
+    static unsigned int colorDepth = 4;
+
+    out.data.reserve(out.layers * out.width * out.height * colorDepth);
+
+    for (std::size_t index = 0; index < out.width * out.height; ++index)
+    {
+        const glm::vec4 color = mPixels[index];
+        out.data.push_back(color.r);
+        out.data.push_back(color.g);
+        out.data.push_back(color.b);
+        out.data.push_back(color.a);
+    }
+
+    return out;
 }
 
 }

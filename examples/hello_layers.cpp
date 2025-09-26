@@ -23,7 +23,7 @@ int main()
     };
 
     // Create a Texture with dimensions 4x4 and 5 layers
-    Nothofagus::Texture textureArray({4, 4}, glm::vec4(0,0,0,1), 5);
+    Nothofagus::IndirectTexture textureArray({4, 4}, glm::vec4(0,0,0,1), 5);
 
     // Assign each color palette to a specific layer in the texture array
     // Each layer is filled with the corresponding palette color

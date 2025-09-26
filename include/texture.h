@@ -4,6 +4,7 @@
 #include <initializer_list>
 #include <glm/glm.hpp>
 #include <iostream>
+#include <variant>
 
 namespace Nothofagus
 {
@@ -208,7 +209,7 @@ struct TextureData
  * This class holds a texture as a matrix of pixels, each associated with an index of a color 
  * from the color palette.
  */
-class Texture
+class IndirectTexture
 {
 public:
 
@@ -220,7 +221,7 @@ public:
      * @param size The size of the texture (width and height).
      * @param defaultColor The default color for all pixels.
      */
-    Texture(const glm::ivec2 size, const glm::vec4 defaultColor, const std::size_t layers = 1):
+    IndirectTexture(const glm::ivec2 size, const glm::vec4 defaultColor, const std::size_t layers = 1):
         mLayers(layers),
         mSize(size),
         mPixels(size.x * size.y * mLayers, { 0 }),
@@ -255,7 +256,7 @@ public:
      * 
      * @param pixelColors The list of color IDs to assign to the pixels.
      */
-    Texture& setPixels(std::initializer_list<Pixel::ColorId> pixelColors, std::size_t layer = 0);
+    IndirectTexture& setPixels(std::initializer_list<Pixel::ColorId> pixelColors, std::size_t layer = 0);
 
     /**
      * @brief Sets the pixel colors using an iterator range.
@@ -288,7 +289,7 @@ public:
      * @param pixel The pixel to set at the specified position.
      * @return A reference to this texture.
      */
-    Texture& setPixel(const std::size_t i, const std::size_t j, const Pixel pixel, std::size_t layer = 0);
+    IndirectTexture& setPixel(const std::size_t i, const std::size_t j, const Pixel pixel, std::size_t layer = 0);
 
     /**
      * @brief Returns the color of the pixel at the specified position.
@@ -312,7 +313,7 @@ public:
      * @param pallete The new color palette to set.
      * @return A reference to this texture.
      */
-    Texture& setPallete(const ColorPallete& pallete);
+    IndirectTexture& setPallete(const ColorPallete& pallete);
 
     /**
      * @brief Generates the raw texture data for the texture.
@@ -328,7 +329,7 @@ private:
     ColorPallete mPallete; /**< The color palette used by the texture. */
 };
 
-std::ostream& operator<<(std::ostream& os, const Texture& texture);
+std::ostream& operator<<(std::ostream& os, const IndirectTexture& texture);
 
 class DirectTexture
 {
@@ -390,6 +391,22 @@ public:
 private:
     glm::ivec2 mSize; /**< The size of the texture (width and height). */
     std::vector<glm::vec4> mPixels; /**< The color data of the texture. */
+};
+
+std::ostream& operator<<(std::ostream& os, const DirectTexture& texture);
+
+using Texture = std::variant<IndirectTexture, DirectTexture>;
+
+struct GetTextureSizeVisitor
+{
+    glm::ivec2 operator()(const IndirectTexture& texture) const { return texture.size(); };
+    glm::ivec2 operator()(const DirectTexture& texture) const { return texture.size(); };
+};
+
+struct GenerateTextureDataVisitor
+{
+    TextureData operator()(const IndirectTexture& texture) const { return texture.generateTextureData(); };
+    TextureData operator()(const DirectTexture& texture) const { return texture.generateTextureData(); };
 };
 
 }

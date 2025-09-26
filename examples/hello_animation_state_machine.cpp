@@ -25,7 +25,7 @@ int main()
     };
   
     // Create a Texture with 4x4 textures and 7 layers
-    Nothofagus::Texture textureArray({4, 4}, glm::vec4(0,0,0,1), 10);
+    Nothofagus::IndirectTexture textureArray({4, 4}, glm::vec4(0,0,0,1), 10);
 
     // Initialize each layer in the texture array with specific color indices
     textureArray

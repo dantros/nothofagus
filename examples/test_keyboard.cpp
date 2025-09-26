@@ -18,7 +18,7 @@ int main()
         {0.5, 1.0, 0.5, 1.0},
     };
     
-    Nothofagus::Texture texture({8, 8}, {0.5, 0.5, 0.5, 1.0});
+    Nothofagus::IndirectTexture texture({8, 8}, {0.5, 0.5, 0.5, 1.0});
     texture.setPallete(pallete)
         .setPixels(
         {

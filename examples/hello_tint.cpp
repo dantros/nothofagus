@@ -30,7 +30,7 @@ int main()
         {0.5, 0.5, 1.0, 1.0},
     };
     
-    Nothofagus::Texture textureGreen({8, 8}, {0.5, 0.5, 0.5, 1.0});
+    Nothofagus::IndirectTexture textureGreen({8, 8}, {0.5, 0.5, 0.5, 1.0});
     textureGreen.setPallete(palleteGreen)
         .setPixels(
         {
@@ -45,10 +45,10 @@ int main()
         }
     );
 
-    Nothofagus::Texture textureRed = textureGreen;
+    Nothofagus::IndirectTexture textureRed = textureGreen;
     textureRed.setPallete(palleteRed);
 
-    Nothofagus::Texture textureBlue = textureGreen;
+    Nothofagus::IndirectTexture textureBlue = textureGreen;
     textureBlue.setPallete(palleteBlue);
 
     Nothofagus::TextureId textureIdGreen = canvas.addTexture(textureGreen);

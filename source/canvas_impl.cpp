@@ -329,7 +329,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         TexturePack& texturePack = pair.second;
 
         const Texture& texture = texturePack.texture;
-        TextureData textureData = texture.generateTextureData();
+        TextureData textureData = std::visit(GenerateTextureDataVisitor(), texture);
 
         texturePack.dtextureOpt = DTexture{ textureArraySimpleSetup(textureData) };
     }
