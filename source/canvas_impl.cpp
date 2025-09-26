@@ -192,16 +192,6 @@ void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
     mBellotas.remove(bellotaId.id);
 }
 
-BellotaId Canvas::CanvasImpl::addAnimatedBellota(const Bellota& animatedBellota)
-{
-    return {mAnimatedBellotas.add({animatedBellota, std::nullopt, std::nullopt})};
-}
-
-void Canvas::CanvasImpl::removeAnimatedBellota(const BellotaId animatedBellotaId)
-{
-    mAnimatedBellotas.remove(animatedBellotaId.id);
-}
-
 TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
 {
     return { mTextures.add({texture, std::nullopt}) };
@@ -210,16 +200,6 @@ TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
 void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 {
     mTextures.remove(textureId.id);
-}
-
-TextureId Canvas::CanvasImpl::addTextureArray(const Texture& textureArray)
-{
-    return { mTexturesArrays.add({textureArray, std::nullopt}) };
-}
-
-void Canvas::CanvasImpl::removeTextureArray(const TextureId textureId)
-{
-    mTexturesArrays.remove(textureId.id);
 }
 
 void Canvas::CanvasImpl::setTint(const BellotaId bellotaId, const Tint& tint)
@@ -248,16 +228,6 @@ const Bellota& Canvas::CanvasImpl::bellota(BellotaId bellotaId) const
     return mBellotas.at(bellotaId.id).bellota;
 }
 
-Bellota& Canvas::CanvasImpl::animatedBellota(BellotaId animatedBellotaId)
-{
-    return mAnimatedBellotas.at(animatedBellotaId.id).bellota;
-}
-
-const Bellota& Canvas::CanvasImpl::animatedBellota(BellotaId animatedBellotaId) const
-{
-    return mAnimatedBellotas.at(animatedBellotaId.id).bellota;
-}
-
 Texture& Canvas::CanvasImpl::texture(TextureId textureId)
 {
     return mTextures.at(textureId.id).texture;
@@ -266,16 +236,6 @@ Texture& Canvas::CanvasImpl::texture(TextureId textureId)
 const Texture& Canvas::CanvasImpl::texture(TextureId textureId) const
 {
     return mTextures.at(textureId.id).texture;
-}
-
-Texture& Canvas::CanvasImpl::textureArray(TextureId textureId)
-{
-    return mTexturesArrays.at(textureId.id).texture;
-}
-
-const Texture& Canvas::CanvasImpl::textureArray(TextureId textureId) const
-{
-    return mTexturesArrays.at(textureId.id).texture;
 }
 
 bool& Canvas::CanvasImpl::stats()
@@ -373,17 +333,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         texturePack.dtextureOpt = DTexture{ textureArraySimpleSetup(textureData) };
     }
-
-    for (auto& pair : mTexturesArrays.map())
-    {
-        const TextureId textureId{ pair.first };
-        TexturePack& texturePack = pair.second;
-
-        const Texture& texture = texturePack.texture;
-        TextureData textureData = texture.generateTextureData();
-
-        texturePack.dtextureOpt = DTexture{ textureArraySimpleSetup(textureData) };
-    }
     
     for (auto& pair : mBellotas.map())
     {
@@ -403,29 +352,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         const TexturePack& texturePack = mTextures.at(textureId.id);
 
         debugCheck(texturePack.dtextureOpt.has_value(), "Texture has not been initializad on GPU.");
-
-        const DTexture dtexture = texturePack.dtextureOpt.value();
-
-        dmesh.texture = dtexture.texture;
-    }
-    
-    for (auto& pair : mAnimatedBellotas.map())
-    {
-        const BellotaId animatedBellotaId{ pair.first };
-        BellotaPack& animatedBellotaPack = pair.second;
-        const Bellota& animatedBellota = animatedBellotaPack.bellota;
-
-        animatedBellotaPack.meshOpt = generateMesh(mTexturesArrays, animatedBellota);
-
-        animatedBellotaPack.dmeshOpt = DMesh();
-        DMesh& dmesh = animatedBellotaPack.dmeshOpt.value();
-        dmesh.initBuffers();
-        setupVAO(dmesh, mShaderProgram);
-        dmesh.fillBuffers(animatedBellotaPack.meshOpt.value(), GL_STATIC_DRAW);
-        TextureId textureId = animatedBellota.texture();
-        const TexturePack& texturePack = mTexturesArrays.at(textureId.id);
-
-        debugCheck(texturePack.dtextureOpt.has_value(), "Texture array has not been initializad on GPU.");
 
         const DTexture dtexture = texturePack.dtextureOpt.value();
 
@@ -458,7 +384,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
     // Leaving some room in case more bellotas are created during runtime.
     sortedBellotaPacks.reserve(mBellotas.size()*2);
-    sortedAnimatedBellotaPacks.reserve(mAnimatedBellotas.size()*2);
 
     auto sortByDepthOffset = [](const BellotaContainer& bellotas, std::vector<const BellotaPack*>& sortedBellotas)
     {
@@ -499,7 +424,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         update(deltaTimeMS);
 
         sortByDepthOffset(mBellotas, sortedBellotaPacks);
-        sortByDepthOffset(mAnimatedBellotas, sortedAnimatedBellotaPacks);
 
         // drawing with OpenGL
         glUseProgram(mShaderProgram);
@@ -537,39 +461,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
             dmesh.drawCall();
         }
 
-        for (auto& animatedBellotaPackPtr : sortedAnimatedBellotaPacks)
-        {
-            debugCheck(animatedBellotaPackPtr != nullptr, "invalid pointer to bellota pack.");
-            auto& animatedBellotaPack = *animatedBellotaPackPtr;
-            debugCheck(animatedBellotaPack.dmeshOpt.has_value(), "DMesh3D has not been initialized.");
-
-            const Bellota& animatedBellota = animatedBellotaPack.bellota;
-
-            if (not animatedBellota.visible())
-                continue;
-
-            const DMesh& dmesh = animatedBellotaPack.dmeshOpt.value();
-            const Transform& modelTransform = animatedBellota.transform();
-            const glm::mat3 modelTransformMat = modelTransform.toMat3();
-            const glm::mat3 totalTransformMat = worldTransformMat * modelTransformMat;
-
-            if (animatedBellotaPack.tintOpt != std::nullopt)
-            {
-                const Tint& tint = animatedBellotaPack.tintOpt.value();
-                glUniform3f(dTintColorLocation, tint.color.r, tint.color.g, tint.color.b);
-                glUniform1f(dTintIntensityLocation, tint.intensity);
-            }
-            else
-            {
-                glUniform3f(dTintColorLocation, 1.0f, 1.0f, 1.0f);
-                glUniform1f(dTintIntensityLocation, 0.0f);
-            }
-            glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
-            glUniform1i(dLayerIndexLocation, animatedBellota.currentLayer());
-            
-            dmesh.drawCall();
-        }
-
         if (mStats)
         {
             ImGui::Begin("stats");
@@ -591,15 +482,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         DMesh& dmesh = bellotaPack.dmeshOpt.value();
         dmesh.clear();
     }
-
-    for (auto& pair : mAnimatedBellotas.map())
-    {
-        BellotaPack& bellotaPack = pair.second;
-        DMesh& dmesh = bellotaPack.dmeshOpt.value();
-        dmesh.clear();
-    }
 }
-
 
 void Canvas::CanvasImpl::close()
 {

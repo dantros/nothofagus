@@ -36,12 +36,12 @@ void Canvas::removeBellota(const BellotaId bellotaId)
 
 BellotaId Canvas::addAnimatedBellota(const Bellota& animatedBellota)
 {
-    return mCanvasImpl->addAnimatedBellota(animatedBellota);
+    return mCanvasImpl->addBellota(animatedBellota);
 }
 
 void Canvas::removeAnimatedBellota(const BellotaId animatedBellotaId)
 {
-    mCanvasImpl->removeAnimatedBellota(animatedBellotaId);
+    mCanvasImpl->removeBellota(animatedBellotaId);
 }
 
 TextureId Canvas::addTexture(const Texture& texture)
@@ -56,12 +56,12 @@ void Canvas::removeTexture(const TextureId textureId)
 
 TextureId Canvas::addTextureArray(const Texture& textureArray)
 {
-    return mCanvasImpl->addTextureArray(textureArray);
+    return mCanvasImpl->addTexture(textureArray);
 }
 
 void Canvas::removeTextureArray(const TextureId textureId)
 {
-    mCanvasImpl->removeTextureArray(textureId);
+    mCanvasImpl->removeTexture(textureId);
 }
 
 void Canvas::setTint(const BellotaId bellotaId, const Tint& tint)
@@ -86,12 +86,12 @@ const Bellota& Canvas::bellota(BellotaId bellotaId) const
 
 Bellota& Canvas::animatedBellota(BellotaId animatedBellotaId)
 {
-    return mCanvasImpl->animatedBellota(animatedBellotaId);
+    return mCanvasImpl->bellota(animatedBellotaId);
 }
 
 const Bellota& Canvas::animatedBellota(BellotaId animatedBellotaId) const
 {
-    return mCanvasImpl->animatedBellota(animatedBellotaId);
+    return mCanvasImpl->bellota(animatedBellotaId);
 }
 
 Texture& Canvas::texture(TextureId textureId)
@@ -106,12 +106,12 @@ const Texture& Canvas::texture(TextureId textureId) const
 
 Texture& Canvas::textureArray(TextureId textureId)
 {
-    return mCanvasImpl->textureArray(textureId);
+    return mCanvasImpl->texture(textureId);
 }
 
 const Texture& Canvas::textureArray(TextureId textureId) const
 {
-    return mCanvasImpl->textureArray(textureId);
+    return mCanvasImpl->texture(textureId);
 }
 
 bool& Canvas::stats()

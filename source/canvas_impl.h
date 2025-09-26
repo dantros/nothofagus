@@ -53,19 +53,6 @@ public:
      * @param bellotaId The ID of the Bellota to remove.
      */
     void removeBellota(const BellotaId bellotaId);
-    
-    /**
-     * @brief Adds an Bellota object to the canvas.
-     * @param animatedBellota The Bellota object to add.
-     * @return The ID of the added Bellota.
-     */
-    BellotaId addAnimatedBellota(const Bellota& animatedBellota);
-
-    /**
-     * @brief Removes an Bellota object from the canvas.
-     * @param animatedBellotaId The ID of the Bellota to remove.
-     */
-    void removeAnimatedBellota(const BellotaId animatedBellotaId);
 
     /**
      * @brief Adds a Texture object to the canvas.
@@ -79,19 +66,6 @@ public:
      * @param textureId The ID of the Texture to remove.
      */
     void removeTexture(const TextureId textureId);
-    
-    /**
-     * @brief Adds a TextureArray object to the canvas.
-     * @param textureArray The TextureArray object to add.
-     * @return The ID of the added TextureArray.
-     */
-    TextureId addTextureArray(const Texture& textureArray);
-
-    /**
-     * @brief Removes a TextureArray object from the canvas.
-     * @param textureId The ID of the TextureArray to remove.
-     */
-    void removeTextureArray(const TextureId textureId);
 
     /**
      * @brief Sets a tint color for a Bellota.
@@ -119,20 +93,6 @@ public:
      * @return A const reference to the Bellota object.
      */
     const Bellota& bellota(BellotaId bellotaId) const;
-    
-    /**
-     * @brief Retrieves an Bellota by its ID.
-     * @param animatedBellotaId The ID of the Bellota.
-     * @return A reference to the Bellota object.
-     */
-    Bellota& animatedBellota(BellotaId animatedBellotaId);
-
-    /**
-     * @brief Retrieves a const Bellota by its ID.
-     * @param animatedBellotaId The ID of the Bellota.
-     * @return A const reference to the Bellota object.
-     */
-    const Bellota& animatedBellota(BellotaId animatedBellotaId) const;
 
     /**
      * @brief Retrieves a Texture by its ID.
@@ -191,10 +151,7 @@ private:
     unsigned int mPixelSize; ///< The pixel size on the canvas.
 
     TextureContainer mTextures; ///< Container for Texture objects.
-    TextureContainer mTexturesArrays; ///< Container for TextureArray objects.
-
     BellotaContainer mBellotas; ///< Container for Bellota objects.
-    BellotaContainer mAnimatedBellotas; ///< Container for Bellota objects.
 
     unsigned int mShaderProgram; ///< The OpenGL shader program for rendering.
 
