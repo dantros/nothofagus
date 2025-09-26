@@ -7,7 +7,6 @@
 
 int main()
 {
-
     // Create a canvas for rendering
     // - Size: 150x100
     // - Title: "Set Layer"
@@ -15,56 +14,50 @@ int main()
     // - Pixel Size: 6
     Nothofagus::Canvas canvas({150, 100}, "Set Layer", {0.7, 0.7, 0.7}, 6);
 
-    // Define 5 different color palettes, each with a single color in RGBA format
-    Nothofagus::ColorPallete pallete1{{0.0, 0.0, 0.0, 1.0}};  // Black
-    Nothofagus::ColorPallete pallete2{{1.0, 0.0, 0.0, 1.0}};  // Red
-    Nothofagus::ColorPallete pallete3{{0.0, 1.0, 0.0, 1.0}};  // Green
-    Nothofagus::ColorPallete pallete4{{0.0, 0.0, 1.0, 1.0}};  // Blue
-    Nothofagus::ColorPallete pallete5{{1.0, 1.0, 0.0, 1.0}};  // Yellow
+    Nothofagus::ColorPallete pallete{
+        {0.0, 0.0, 0.0, 1.0},  // Black
+        {1.0, 0.0, 0.0, 1.0},  // Red
+        {0.0, 1.0, 0.0, 1.0},  // Green
+        {0.0, 0.0, 1.0, 1.0},  // Blue
+        {1.0, 1.0, 0.0, 1.0}   // Yellow
+    };
 
     // Create a TextureArray with dimensions 4x4 and 5 layers
-    Nothofagus::TextureArray textureArray({4, 4}, 5);
+    Nothofagus::TextureArray textureArray({4, 4}, glm::vec4(0,0,0,1), 5);
 
     // Assign each color palette to a specific layer in the texture array
     // Each layer is filled with the corresponding palette color
-    textureArray.setLayerPallete(pallete1, 0)
-        .setPixelsInLayer({
+    textureArray
+        .setPallete(pallete)
+        .setPixels({
             0,0,0,0,
             0,0,0,0,
             0,0,0,0,
             0,0,0,0
-        }, 0);
-
-    textureArray.setLayerPallete(pallete2, 1)
-        .setPixelsInLayer({
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0
-        }, 1);
-
-    textureArray.setLayerPallete(pallete3, 2)
-        .setPixelsInLayer({
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0
-        }, 2);
-
-    textureArray.setLayerPallete(pallete4, 3)
-        .setPixelsInLayer({
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0
-        }, 3);
-
-    textureArray.setLayerPallete(pallete5, 4)
-        .setPixelsInLayer({
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0
+        }, 0)
+        .setPixels({
+            1,1,1,1,
+            1,1,1,1,
+            1,1,1,1,
+            1,1,1,1
+        }, 1)
+        .setPixels({
+            2,2,2,2,
+            2,2,2,2,
+            2,2,2,2,
+            2,2,2,2
+        }, 2)
+        .setPixels({
+            3,3,3,3,
+            3,3,3,3,
+            3,3,3,3,
+            3,3,3,3
+        }, 3)
+        .setPixels({
+            4,4,4,4,
+            4,4,4,4,
+            4,4,4,4,
+            4,4,4,4
         }, 4);
 
     // Add the TextureArray to the canvas
@@ -92,7 +85,7 @@ int main()
     };
 
     // Initialize layer index variable
-    int l = 0;
+    int layer = 0;
 
     // Create a controller for handling user inputs
     Nothofagus::Controller controller;
@@ -100,15 +93,15 @@ int main()
     // Register a keybinding for "W" to increment the current layer
     controller.registerAction({Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
-        l = (l + 1) % 5;  // Cycle to the next layer (0-4)
-        animatedbellota.setActualLayer(l);  // Update the visible layer
+        layer = (layer + 1) % 5;  // Cycle to the next layer (0-4)
+        animatedbellota.currentLayer() = layer;  // Update the visible layer
     });
 
     // Register a keybinding for "S" to decrement the current layer
     controller.registerAction({Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
-        l = (l + 4) % 5;  // Cycle to the previous layer (0-4)
-        animatedbellota.setActualLayer(l);  // Update the visible layer
+        layer = (layer + 4) % 5;  // Cycle to the previous layer (0-4)
+        animatedbellota.currentLayer() = layer;  // Update the visible layer
     });
 
     // Run the canvas with the update function and controller logic

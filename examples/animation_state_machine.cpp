@@ -25,77 +25,67 @@ int main()
     };
   
     // Create a TextureArray with 4x4 textures and 7 layers
-    Nothofagus::TextureArray textureArray({4, 4}, 10);
+    Nothofagus::TextureArray textureArray({4, 4}, glm::vec4(0,0,0,1), 10);
 
     // Initialize each layer in the texture array with specific color indices
-    textureArray.setLayerPallete(pallete, 0)
-        .setPixelsInLayer({
-            0,1,1,0, // Layer 0
+    textureArray
+        .setPallete(pallete)
+        .setPixels({
+            0,1,1,0,
             0,1,1,0,
             0,0,0,0,
             0,0,0,0
-        }, 0);
-    textureArray.setLayerPallete(pallete, 1)
-        .setPixelsInLayer({
-            0,0,0,0, // Layer 1
+        }, 0)
+        .setPixels({
+            0,0,0,0,
             0,0,0,0,
             0,1,1,0,
             0,1,1,0
-        }, 1);
-
-    textureArray.setLayerPallete(pallete, 2)
-        .setPixelsInLayer({
-            3,3,0,0, // Layer 2
+        }, 1)
+        .setPixels({
+            3,3,0,0,
             3,3,0,0,
             0,0,0,0,
             0,0,0,0
-        }, 2);
-    textureArray.setLayerPallete(pallete, 3)
-        .setPixelsInLayer({
-            4,4,0,0, // Layer 3
+        }, 2)
+        .setPixels({
+            4,4,0,0,
             4,4,0,0,
             0,0,0,0,
             0,0,0,0
-            }, 3);
-    textureArray.setLayerPallete(pallete, 4)
-        .setPixelsInLayer({
-            0,0,3,3, // Layer 4
+            }, 3)
+        .setPixels({
+            0,0,3,3,
             0,0,3,3,
             0,0,0,0,
             0,0,0,0
-        }, 4);
-    // Similar initialization for layers 4, 5, 6...
-    textureArray.setLayerPallete(pallete, 5)
-        .setPixelsInLayer({
-            0,0,4,4, // Layer 5
+        }, 4)
+        .setPixels({
+            0,0,4,4,
             0,0,4,4,
             0,0,0,0,
             0,0,0,0
-        }, 5);
-    textureArray.setLayerPallete(pallete, 6)
-        .setPixelsInLayer({
-            0,0,0,0, // Layer 6
+        }, 5)
+        .setPixels({
+            0,0,0,0,
             0,0,0,0,
             5,5,0,0,
             5,5,0,0
-        }, 6);
-    textureArray.setLayerPallete(pallete, 7)
-        .setPixelsInLayer({
-            0,0,0,0, // Layer 7
+        }, 6)
+        .setPixels({
+            0,0,0,0,
             0,0,0,0,
             6,6,0,0,
             6,6,0,0
-        }, 7);
-    textureArray.setLayerPallete(pallete, 8)
-        .setPixelsInLayer({
-            0,0,0,0, // Layer 6
+        }, 7)
+        .setPixels({
+            0,0,0,0,
             0,0,0,0,
             0,0,5,5,
             0,0,5,5
-            }, 8);
-    textureArray.setLayerPallete(pallete, 9)
-        .setPixelsInLayer({
-            0,0,0,0, // Layer 7
+            }, 8)
+        .setPixels({
+            0,0,0,0,
             0,0,0,0,
             0,0,6,6,
             0,0,6,6

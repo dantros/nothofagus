@@ -7,66 +7,49 @@
 
 int main()
 {
-    // You can directly use spdlog to ease your logging
-    spdlog::info("Hello Animated Bellota!");
-
     Nothofagus::Canvas canvas({150, 100}, "Hello Animated Bellota", {0.7, 0.7, 0.7}, 6);
 
-    Nothofagus::ColorPallete pallete1{
-        {0.0, 0.0, 0.0, 1.0}
-    };
-    Nothofagus::ColorPallete pallete2{
-        {1.0, 0.0, 0.0, 1.0}
-    };
-    Nothofagus::ColorPallete pallete3{
-        {0.0, 1.0, 0.0, 1.0}
-    };
-    Nothofagus::ColorPallete pallete4{
-        {0.0, 0.0, 1.0, 1.0}
-    };
-    Nothofagus::ColorPallete pallete5{
+    Nothofagus::ColorPallete pallete{
+        {0.0, 0.0, 0.0, 1.0},
+        {1.0, 0.0, 0.0, 1.0},
+        {0.0, 1.0, 0.0, 1.0},
+        {0.0, 0.0, 1.0, 1.0},
         {1.0, 1.0, 0.0, 1.0}
     };
 
-
-
-    //// test de texture arrays
-    spdlog::info("textureArray");
-    Nothofagus::TextureArray textureArray({ 4, 4 }, 5);
-    textureArray.setLayerPallete(pallete1, 0)
-        .setPixelsInLayer({
+    spdlog::info("textureArray test");
+    Nothofagus::TextureArray textureArray({ 4, 4 }, glm::vec4(0,0,0,1), 5);
+    textureArray
+        .setPallete(pallete)
+        .setPixels({
             0,0,0,0,
             0,0,0,0,
             0,0,0,0,
             0,0,0,0
-        }, 0);
-    textureArray.setLayerPallete(pallete2, 1)
-        .setPixelsInLayer({
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0
-        }, 1);
-    textureArray.setLayerPallete(pallete3, 2)
-        .setPixelsInLayer({
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0
-        }, 2);
-    textureArray.setLayerPallete(pallete4, 3)
-        .setPixelsInLayer({
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0
-        }, 3);
-    textureArray.setLayerPallete(pallete5, 4)
-        .setPixelsInLayer({
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0,
-            0,0,0,0
+        }, 0)
+        .setPixels({
+            1,0,0,0,
+            1,0,0,0,
+            1,0,0,0,
+            1,0,0,0
+        }, 1)
+        .setPixels({
+            0,1,0,0,
+            0,1,0,0,
+            0,1,0,0,
+            0,1,0,0
+        }, 2)
+        .setPixels({
+            0,0,2,0,
+            0,0,2,0,
+            0,0,2,0,
+            0,0,2,0
+        }, 3)
+        .setPixels({
+            0,0,0,3,
+            0,0,0,3,
+            0,0,0,3,
+            0,0,0,3
         }, 4);
 
     Nothofagus::TextureId textureId = canvas.addTextureArray(textureArray);

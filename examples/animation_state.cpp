@@ -25,39 +25,36 @@ int main()
     };
 
     // Create a TextureArray with dimensions 4x4 and 5 layers
-    Nothofagus::TextureArray textureArray({4, 4}, 5);
+    Nothofagus::TextureArray textureArray({4, 4}, glm::vec4(0,0,0,1), 5);
 
     // Populate each layer of the TextureArray with pixel indices corresponding to the palette
-    textureArray.setLayerPallete(pallete, 0)
-        .setPixelsInLayer({
+    textureArray
+        .setPallete(pallete)
+        .setPixels({
             0,1,2,3,
             4,0,1,2,
             3,4,0,1,
             2,3,4,0
-        }, 0);
-    textureArray.setLayerPallete(pallete, 1)
-        .setPixelsInLayer({
+        }, 0)
+        .setPixels({
             4,0,1,2,
             3,4,0,1,
             2,3,4,0,
             1,2,3,4
-        }, 1);
-    textureArray.setLayerPallete(pallete, 2)
-        .setPixelsInLayer({
+        }, 1)
+        .setPixels({
             3,4,0,1,
             2,3,4,0,
             1,2,3,4,
             0,1,2,3
-        }, 2);
-    textureArray.setLayerPallete(pallete, 3)
-        .setPixelsInLayer({
+        }, 2)
+        .setPixels({
             2,3,4,0,
             1,2,3,4,
             0,1,2,3,
             4,0,1,2
-        }, 3);
-    textureArray.setLayerPallete(pallete, 4)
-        .setPixelsInLayer({
+        }, 3)
+        .setPixels({
             1,2,3,4,
             0,1,2,3,
             4,0,1,2,
