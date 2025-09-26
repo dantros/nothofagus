@@ -197,7 +197,6 @@ private:
     BellotaContainer mAnimatedBellotas; ///< Container for Bellota objects.
 
     unsigned int mShaderProgram; ///< The OpenGL shader program for rendering.
-    unsigned int mAnimatedShaderProgram; ///< The OpenGL shader program for rendering animated textures.
 
     bool mStats; ///< Flag to indicate whether stats should be displayed.
 

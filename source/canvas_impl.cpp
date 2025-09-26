@@ -132,33 +132,16 @@ Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& 
         #version 330 core
         in vec2 outTextureCoordinates;
         out vec4 outColor;
-        uniform sampler2D textureSampler;
+        uniform sampler2DArray textureSampler;
         uniform int layerIndex;
         uniform vec3 tintColor;
         uniform float tintIntensity;
         void main()
         {
-            vec4 textureSample = texture(textureSampler, outTextureCoordinates + layerIndex);
+            //vec4 textureSample = texture(textureSampler, outTextureCoordinates + layerIndex);
+            vec4 textureSample = texture(textureSampler, vec3(outTextureCoordinates, layerIndex));
             vec3 textureColor = textureSample.xyz;
             float textureOpacity = textureSample.w;
-            vec3 blendColor = (tintColor * tintIntensity) + (textureColor * (1 - tintIntensity));
-            outColor = vec4(blendColor, textureOpacity);
-        }
-    )";
-    
-    const std::string textureArrayFragmentShaderSource = R"(
-        #version 330 core
-        in vec2 outTextureCoordinates;
-        out vec4 outColor;
-        uniform sampler2DArray textureArray;
-        uniform int layerIndex;
-        uniform vec3 tintColor;
-        uniform float tintIntensity;
-        void main()
-        {
-            vec4 textureArraySample = texture(textureArray, vec3(outTextureCoordinates, layerIndex));
-            vec3 textureColor = textureArraySample.xyz;
-            float textureOpacity = textureArraySample.w;
             vec3 blendColor = (tintColor * tintIntensity) + (textureColor * (1 - tintIntensity));
             outColor = vec4(blendColor, textureOpacity);
         }
@@ -168,14 +151,11 @@ Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& 
 
     unsigned int vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderSource);
     unsigned int fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSource);
-    unsigned int textureArrayFragmentShader = compileShader(GL_FRAGMENT_SHADER, textureArrayFragmentShaderSource);
 
     mShaderProgram = createShaderProgram(vertexShader, fragmentShader);
-    mAnimatedShaderProgram = createShaderProgram(vertexShader, textureArrayFragmentShader);
 
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
-    glDeleteShader(textureArrayFragmentShader);
 
     // Enabling transparency
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -335,31 +315,6 @@ void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
     glBindVertexArray(0);
 }
 
-GLuint textureSimpleSetup(const TextureData& textureData)
-{
-    // wrapMode: GL_REPEAT, GL_CLAMP_TO_EDGE
-    // filterMode: GL_LINEAR, GL_NEAREST
-
-    GLuint gpuTexture;
-    glGenTextures(1, &gpuTexture);
-    glBindTexture(GL_TEXTURE_2D, gpuTexture);
-
-    // texture wrapping params
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-    // texture filtering params
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    GLuint internalFormat = GL_RGBA;
-    GLuint format = GL_RGBA;
-
-    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, textureData.width, textureData.height, 0, format, GL_UNSIGNED_BYTE, textureData.getData());
-
-    return gpuTexture;
-}
-
 GLuint textureArraySimpleSetup(const TextureData& textureData)
 {
     // wrapMode: GL_REPEAT, GL_CLAMP_TO_EDGE
@@ -382,8 +337,6 @@ GLuint textureArraySimpleSetup(const TextureData& textureData)
     // texture filtering params
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-
 
     return gpuTexture;
 }
@@ -418,7 +371,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         const Texture& texture = texturePack.texture;
         TextureData textureData = texture.generateTextureData();
 
-        texturePack.dtextureOpt = DTexture{ textureSimpleSetup(textureData) };
+        texturePack.dtextureOpt = DTexture{ textureArraySimpleSetup(textureData) };
     }
 
     for (auto& pair : mTexturesArrays.map())
@@ -467,7 +420,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         animatedBellotaPack.dmeshOpt = DMesh();
         DMesh& dmesh = animatedBellotaPack.dmeshOpt.value();
         dmesh.initBuffers();
-        setupVAO(dmesh, mAnimatedShaderProgram);
+        setupVAO(dmesh, mShaderProgram);
         dmesh.fillBuffers(animatedBellotaPack.meshOpt.value(), GL_STATIC_DRAW);
         TextureId textureId = animatedBellota.texture();
         const TexturePack& texturePack = mTexturesArrays.at(textureId.id);
@@ -492,16 +445,10 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     );
     worldTransformMat = glm::scale(worldTransformMat, worldScale);
 
-    const auto dLayerIndexLocation0 = glGetUniformLocation(mShaderProgram, "layerIndex");
+    const auto dLayerIndexLocation = glGetUniformLocation(mShaderProgram, "layerIndex");
     const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
     const auto dTintColorLocation = glGetUniformLocation(mShaderProgram, "tintColor");
     const auto dTintIntensityLocation = glGetUniformLocation(mShaderProgram, "tintIntensity");
-    
-    // TA = Texture Array
-    const auto dTATransformLocation = glGetUniformLocation(mAnimatedShaderProgram, "transform");
-    const auto dTATintColorLocation = glGetUniformLocation(mAnimatedShaderProgram, "tintColor");
-    const auto dTATintIntensityLocation = glGetUniformLocation(mAnimatedShaderProgram, "tintIntensity");
-    const auto dLayerIndexLocation = glGetUniformLocation(mAnimatedShaderProgram, "layerIndex");
 
     PerformanceMonitor performanceMonitor(glfwGetTime(), 0.5f);
 
@@ -585,13 +532,10 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
                 glUniform1f(dTintIntensityLocation, 0.0f);
             }
             glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
-            glUniform1i(dLayerIndexLocation0, bellota.currentLayer());
+            glUniform1i(dLayerIndexLocation, bellota.currentLayer());
             
             dmesh.drawCall();
         }
-        
-
-        glUseProgram(mAnimatedShaderProgram);
 
         for (auto& animatedBellotaPackPtr : sortedAnimatedBellotaPacks)
         {
@@ -612,15 +556,15 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
             if (animatedBellotaPack.tintOpt != std::nullopt)
             {
                 const Tint& tint = animatedBellotaPack.tintOpt.value();
-                glUniform3f(dTATintColorLocation, tint.color.r, tint.color.g, tint.color.b);
-                glUniform1f(dTATintIntensityLocation, tint.intensity);
+                glUniform3f(dTintColorLocation, tint.color.r, tint.color.g, tint.color.b);
+                glUniform1f(dTintIntensityLocation, tint.intensity);
             }
             else
             {
-                glUniform3f(dTATintColorLocation, 1.0f, 1.0f, 1.0f);
-                glUniform1f(dTATintIntensityLocation, 0.0f);
+                glUniform3f(dTintColorLocation, 1.0f, 1.0f, 1.0f);
+                glUniform1f(dTintIntensityLocation, 0.0f);
             }
-            glUniformMatrix3fv(dTATransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
+            glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
             glUniform1i(dLayerIndexLocation, animatedBellota.currentLayer());
             
             dmesh.drawCall();

@@ -30,8 +30,9 @@ void DMesh::drawCall() const
     // Binding the VAO and executing the draw call
     glBindVertexArray(vao);
 
-    glBindTexture(GL_TEXTURE_2D, texture);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, texture);
     glDrawElements(GL_TRIANGLES, size, GL_UNSIGNED_INT, nullptr);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 
     // Unbind the current VAO
     glBindVertexArray(0);
