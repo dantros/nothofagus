@@ -103,7 +103,7 @@ int main()
 
     // Add the TextureArray to the canvas and create an AnimatedBellota using it
     Nothofagus::TextureId textureId = canvas.addTextureArray(textureArray);
-    Nothofagus::AnimatedBellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});
+    Nothofagus::BellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});
 
     // Define animation states (layers, times, names)
     Nothofagus::AnimationState animation1({0}, {500.0f}, "W");
@@ -154,7 +154,7 @@ int main()
         time += dt;
 
         // Update AnimatedBellota properties and AnimationStateMachine
-        Nothofagus::AnimatedBellota& animatedbellota = canvas.animatedBellota(animatedBellotaId);
+        Nothofagus::Bellota& animatedbellota = canvas.animatedBellota(animatedBellotaId);
         animatedbellota.transform().scale() = glm::vec2(10.0f, 10.0f);
         textureArrayAnimationTree.update(dt);
     };

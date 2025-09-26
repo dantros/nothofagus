@@ -70,10 +70,10 @@ int main()
     // Create an AnimatedBellota using the TextureArray
     // Position: (75, 50)
     // Layer count: 5
-    Nothofagus::AnimatedBellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});
+    Nothofagus::BellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});
 
     // Access the AnimatedBellota from the canvas
-    Nothofagus::AnimatedBellota& animatedbellota = canvas.animatedBellota(animatedBellotaId);
+    Nothofagus::Bellota& animatedbellota = canvas.animatedBellota(animatedBellotaId);
 
     // Define an animation state with 5 layers and equal time intervals
     std::vector<int> anim1Layers = {0, 1, 2, 3, 4};       // Layers to cycle through

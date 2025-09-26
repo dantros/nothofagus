@@ -212,12 +212,12 @@ void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
     mBellotas.remove(bellotaId.id);
 }
 
-AnimatedBellotaId Canvas::CanvasImpl::addAnimatedBellota(const AnimatedBellota& animatedBellota)
+BellotaId Canvas::CanvasImpl::addAnimatedBellota(const AnimatedBellota& animatedBellota)
 {
     return {mAnimatedBellotas.add({animatedBellota, std::nullopt, std::nullopt})};
 }
 
-void Canvas::CanvasImpl::removeAnimatedBellota(const AnimatedBellotaId animatedBellotaId)
+void Canvas::CanvasImpl::removeAnimatedBellota(const BellotaId animatedBellotaId)
 {
     mAnimatedBellotas.remove(animatedBellotaId.id);
 }
@@ -268,12 +268,12 @@ const Bellota& Canvas::CanvasImpl::bellota(BellotaId bellotaId) const
     return mBellotas.at(bellotaId.id).bellota;
 }
 
-AnimatedBellota& Canvas::CanvasImpl::animatedBellota(AnimatedBellotaId animatedBellotaId)
+AnimatedBellota& Canvas::CanvasImpl::animatedBellota(BellotaId animatedBellotaId)
 {
     return mAnimatedBellotas.at(animatedBellotaId.id).animatedBellota;
 }
 
-const AnimatedBellota& Canvas::CanvasImpl::animatedBellota(AnimatedBellotaId animatedBellotaId) const
+const AnimatedBellota& Canvas::CanvasImpl::animatedBellota(BellotaId animatedBellotaId) const
 {
     return mAnimatedBellotas.at(animatedBellotaId.id).animatedBellota;
 }
@@ -458,7 +458,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     
     for (auto& pair : mAnimatedBellotas.map())
     {
-        const AnimatedBellotaId animatedBellotaId{ pair.first };
+        const BellotaId animatedBellotaId{ pair.first };
         AnimatedBellotaPack& animatedBellotaPack = pair.second;
         const AnimatedBellota& animatedBellota = animatedBellotaPack.animatedBellota;
 

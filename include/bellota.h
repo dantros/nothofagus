@@ -17,11 +17,6 @@ struct BellotaId
     std::size_t id;
 };
 
-struct AnimatedBellotaId
-{
-    std::size_t id;
-};
-
 /* Drawable element */
 class Bellota
 {

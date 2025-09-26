@@ -59,13 +59,13 @@ public:
      * @param animatedBellota The AnimatedBellota object to add.
      * @return The ID of the added AnimatedBellota.
      */
-    AnimatedBellotaId addAnimatedBellota(const AnimatedBellota& animatedBellota);
+    BellotaId addAnimatedBellota(const AnimatedBellota& animatedBellota);
 
     /**
      * @brief Removes an AnimatedBellota object from the canvas.
      * @param animatedBellotaId The ID of the AnimatedBellota to remove.
      */
-    void removeAnimatedBellota(const AnimatedBellotaId animatedBellotaId);
+    void removeAnimatedBellota(const BellotaId animatedBellotaId);
 
     /**
      * @brief Adds a Texture object to the canvas.
@@ -125,14 +125,14 @@ public:
      * @param animatedBellotaId The ID of the AnimatedBellota.
      * @return A reference to the AnimatedBellota object.
      */
-    AnimatedBellota& animatedBellota(AnimatedBellotaId animatedBellotaId);
+    AnimatedBellota& animatedBellota(BellotaId animatedBellotaId);
 
     /**
      * @brief Retrieves a const AnimatedBellota by its ID.
      * @param animatedBellotaId The ID of the AnimatedBellota.
      * @return A const reference to the AnimatedBellota object.
      */
-    const AnimatedBellota& animatedBellota(AnimatedBellotaId animatedBellotaId) const;
+    const AnimatedBellota& animatedBellota(BellotaId animatedBellotaId) const;
 
     /**
      * @brief Retrieves a Texture by its ID.

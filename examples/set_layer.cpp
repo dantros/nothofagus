@@ -73,10 +73,10 @@ int main()
     // Create an AnimatedBellota using the TextureArray
     // - Position: (75, 50)
     // - Layer count: 5
-    Nothofagus::AnimatedBellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});
+    Nothofagus::BellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});
 
     // Access the AnimatedBellota object to modify its properties
-    Nothofagus::AnimatedBellota& animatedbellota = canvas.animatedBellota(animatedBellotaId);
+    Nothofagus::Bellota& animatedbellota = canvas.animatedBellota(animatedBellotaId);
 
     // Scale the AnimatedBellota to 10x10 units
     animatedbellota.transform().scale() = glm::vec2(10.0f, 10.0f);

@@ -34,12 +34,12 @@ void Canvas::removeBellota(const BellotaId bellotaId)
     mCanvasImpl->removeBellota(bellotaId);
 }
 
-AnimatedBellotaId Canvas::addAnimatedBellota(const AnimatedBellota& animatedBellota)
+BellotaId Canvas::addAnimatedBellota(const AnimatedBellota& animatedBellota)
 {
     return mCanvasImpl->addAnimatedBellota(animatedBellota);
 }
 
-void Canvas::removeAnimatedBellota(const AnimatedBellotaId animatedBellotaId)
+void Canvas::removeAnimatedBellota(const BellotaId animatedBellotaId)
 {
     mCanvasImpl->removeAnimatedBellota(animatedBellotaId);
 }
@@ -84,12 +84,12 @@ const Bellota& Canvas::bellota(BellotaId bellotaId) const
     return mCanvasImpl->bellota(bellotaId);
 }
 
-AnimatedBellota& Canvas::animatedBellota(AnimatedBellotaId animatedBellotaId)
+AnimatedBellota& Canvas::animatedBellota(BellotaId animatedBellotaId)
 {
     return mCanvasImpl->animatedBellota(animatedBellotaId);
 }
 
-const AnimatedBellota& Canvas::animatedBellota(AnimatedBellotaId animatedBellotaId) const
+const AnimatedBellota& Canvas::animatedBellota(BellotaId animatedBellotaId) const
 {
     return mCanvasImpl->animatedBellota(animatedBellotaId);
 }

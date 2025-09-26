@@ -70,7 +70,7 @@ int main()
         }, 4);
 
     Nothofagus::TextureId textureId = canvas.addTextureArray(textureArray);
-    Nothofagus::AnimatedBellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});
+    Nothofagus::BellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});
 
     std::vector<int> anim1Layers = {0, 1};
     std::vector<float> anim1LayersTimes = {500.0f, 1000.0f};
@@ -140,7 +140,7 @@ int main()
         time += dt;
 
 
-        Nothofagus::AnimatedBellota& animatedbellota = canvas.animatedBellota(animatedBellotaId);
+        Nothofagus::Bellota& animatedbellota = canvas.animatedBellota(animatedBellotaId);
         animatedbellota.transform().scale() = glm::vec2(10.0f, 10.0f);
         textureArrayAnimationTree.update(dt);
         
