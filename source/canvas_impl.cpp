@@ -378,7 +378,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
     // Dirty fix to sort bellotas by depth as required by transparent objects.
     std::vector<const BellotaPack*> sortedBellotaPacks;
-    std::vector<const BellotaPack*> sortedAnimatedBellotaPacks;
 
     // Leaving some room in case more bellotas are created during runtime.
     sortedBellotaPacks.reserve(mBellotas.size()*2);
