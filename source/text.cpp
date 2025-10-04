@@ -8,7 +8,7 @@
 namespace Nothofagus
 {
 
-void writeChar(Texture& texture, std::uint8_t character, std::size_t i0, std::size_t j0, FontType fontType)
+void writeChar(IndirectTexture& texture, std::uint8_t character, std::size_t i0, std::size_t j0, FontType fontType)
 {
     debugCheck(i0 + 8 <= texture.size().x and j0 + 8 <= texture.size().y, "Character does not fit inside the texture.");
 
@@ -78,7 +78,7 @@ void writeChar(Texture& texture, std::uint8_t character, std::size_t i0, std::si
     }
 }
 
-void writeText(Texture& texture, std::string text, std::size_t i0, std::size_t j0, FontType fontType)
+void writeText(IndirectTexture& texture, std::string text, std::size_t i0, std::size_t j0, FontType fontType)
 {
     for (std::size_t t = 0; t < text.size(); ++t)
     {

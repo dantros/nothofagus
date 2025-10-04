@@ -7,7 +7,7 @@ namespace Nothofagus
  * @brief A factory class that generates unique indices.
  * 
  * The `IndexFactory` class is responsible for generating unique indices. Each time `generateIndex()` is called, it returns a new index that is incremented from the last generated index.
- * This is useful for ensuring that each element in a container can be uniquely identified by an index.
+ * This is useful to ensure that each element in a container can be uniquely identified by an index.
  */
 class IndexFactory
 {

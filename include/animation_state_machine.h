@@ -59,7 +59,7 @@ class AnimationStateMachine
          * 
          * @param animatedBellota A reference to the `AnimatedBellota` object associated with this state machine.
          */
-        AnimationStateMachine(Nothofagus::AnimatedBellota& animatedBellota) : mAnimatedBellota(animatedBellota) {}
+        AnimationStateMachine(Nothofagus::Bellota& animatedBellota) : mAnimatedBellota(animatedBellota) {}
 
         /**
          * @brief Adds a new animation state to the state machine.
@@ -134,7 +134,7 @@ class AnimationStateMachine
         StatesMap mAnimationStates; /**< A map of all animation states, keyed by state name. */
         TransitionMap transitions; /**< A map of transitions, keyed by transition event and starting state. */
         State currentState; /**< The name of the current active state. */
-        Nothofagus::AnimatedBellota& mAnimatedBellota; /**< The reference to the associated `AnimatedBellota` object. */
+        Nothofagus::Bellota& mAnimatedBellota; /**< The reference to the associated `AnimatedBellota` object. */
 };
 
 }

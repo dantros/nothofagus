@@ -44,7 +44,7 @@ namespace Nothofagus {
         mAnimationStates[currentState]->update(deltaTime);
         
         // Update current layer
-        mAnimatedBellota.setActualLayer(mAnimationStates[currentState]->getCurrentLayer());
+        mAnimatedBellota.currentLayer() = mAnimationStates[currentState]->getCurrentLayer();
         
     }
 

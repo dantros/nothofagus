@@ -20,7 +20,7 @@ enum class FontType: std::uint8_t {
     Count
 };
 
-void writeChar(Texture& texture, std::uint8_t a, std::size_t i0 = 0, std::size_t j0 = 0, FontType fontType = FontType::Basic);
-void writeText(Texture& texture, std::string text, std::size_t i0 = 0, std::size_t j0 = 0, FontType fontType = FontType::Basic);
+void writeChar(IndirectTexture& texture, std::uint8_t a, std::size_t i0 = 0, std::size_t j0 = 0, FontType fontType = FontType::Basic);
+void writeText(IndirectTexture& texture, std::string text, std::size_t i0 = 0, std::size_t j0 = 0, FontType fontType = FontType::Basic);
 
 }

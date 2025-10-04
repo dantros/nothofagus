@@ -4,6 +4,7 @@
 #include <initializer_list>
 #include <glm/glm.hpp>
 #include <iostream>
+#include <variant>
 
 namespace Nothofagus
 {
@@ -181,14 +182,14 @@ struct ColorPallete
 
 /**
  * @struct TextureData
- * @brief Represents the raw texture data including pixel colors.
+ * @brief Represents the raw texture data including pixel colors for every layer.
  * 
- * This structure holds the raw texture data, width, and height, and provides a function to retrieve the data.
+ * This structure holds the raw texture data of every layer, width, and height, and provides a function to retrieve the data.
  */
 struct TextureData
 {
     std::vector<std::uint8_t> data; /**< Raw texture data in RGBA format. */
-    std::size_t width, height; /**< The dimensions of the texture. */
+    std::size_t width, height, layers = 1; /**< The dimensions of the texture. */
 
     /**
      * @brief Returns a pointer to the raw texture data.
@@ -208,7 +209,7 @@ struct TextureData
  * This class holds a texture as a matrix of pixels, each associated with an index of a color 
  * from the color palette.
  */
-class Texture
+class IndirectTexture
 {
 public:
 
@@ -220,12 +221,21 @@ public:
      * @param size The size of the texture (width and height).
      * @param defaultColor The default color for all pixels.
      */
-    Texture(const glm::ivec2 size, const glm::vec4 defaultColor):
+    IndirectTexture(const glm::ivec2 size, const glm::vec4 defaultColor, const std::size_t layers = 1):
+        mLayers(layers),
         mSize(size),
-        mPixels(size.x* size.y, { 0 }),
+        mPixels(size.x * size.y * mLayers, { 0 }),
         mPallete({ defaultColor })
     {
+        //debugCheck(layers > 0);
     }
+
+    /**
+     * @brief Returns the number of layers in the texture.
+     * 
+     * @return The number of layers.
+     */
+    size_t layers() const { return mLayers; }
 
     /**
      * @brief Returns the size of the texture.
@@ -246,7 +256,7 @@ public:
      * 
      * @param pixelColors The list of color IDs to assign to the pixels.
      */
-    void setPixels(std::initializer_list<Pixel::ColorId> pixelColors);
+    IndirectTexture& setPixels(std::initializer_list<Pixel::ColorId> pixelColors, std::size_t layer = 0);
 
     /**
      * @brief Sets the pixel colors using an iterator range.
@@ -266,9 +276,10 @@ public:
      * 
      * @param i The x-coordinate of the pixel.
      * @param j The y-coordinate of the pixel.
+     * @param layer The layer of interest for this query
      * @return The `Pixel` at the specified position.
      */
-    const Pixel& pixel(const std::size_t i, const std::size_t j) const;
+    const Pixel& pixel(const std::size_t i, const std::size_t j, std::size_t layer = 0) const;
 
     /**
      * @brief Sets the pixel at the specified position.
@@ -278,7 +289,7 @@ public:
      * @param pixel The pixel to set at the specified position.
      * @return A reference to this texture.
      */
-    Texture& setPixel(const std::size_t i, const std::size_t j, const Pixel pixel);
+    IndirectTexture& setPixel(const std::size_t i, const std::size_t j, const Pixel pixel, std::size_t layer = 0);
 
     /**
      * @brief Returns the color of the pixel at the specified position.
@@ -287,7 +298,7 @@ public:
      * @param j The y-coordinate of the pixel.
      * @return The `glm::vec4` color of the pixel.
      */
-    const glm::vec4& color(const std::size_t i, const std::size_t j) const;
+    const glm::vec4& color(const std::size_t i, const std::size_t j, std::size_t layer = 0) const;
 
     /**
      * @brief Returns the color palette of the texture.
@@ -302,7 +313,73 @@ public:
      * @param pallete The new color palette to set.
      * @return A reference to this texture.
      */
-    Texture& setPallete(const ColorPallete& pallete);
+    IndirectTexture& setPallete(const ColorPallete& pallete);
+
+    /**
+     * @brief Generates the raw texture data for the texture.
+     * 
+     * @return A `TextureData` object containing the raw texture data.
+     */
+    TextureData generateTextureData() const;
+
+private:
+    std::size_t mLayers; /**< The number of layers in the texture. */
+    glm::ivec2 mSize; /**< The size of the texture (width and height). */
+    std::vector<Pixel> mPixels; /**< The pixel data of the texture. */
+    ColorPallete mPallete; /**< The color palette used by the texture. */
+};
+
+std::ostream& operator<<(std::ostream& os, const IndirectTexture& texture);
+
+class DirectTexture
+{
+public:
+
+    /**
+     * @brief Constructs a texture with a specified size and a default color.
+     * 
+     * This constructor initializes the texture with the given size and a default color for all pixels.
+     * 
+     * @param size The size of the texture (width and height).
+     * @param defaultColor The default color for all pixels.
+     */
+    DirectTexture(const glm::ivec2 size, const glm::vec4 defaultColor):
+        mSize(size),
+        mPixels(size.x * size.y, defaultColor)
+    {
+    }
+
+    /**
+     * @brief Returns the size of the texture.
+     * 
+     * @return The size of the texture (width and height).
+     */
+    glm::ivec2 size() const { return mSize; }
+
+    /**
+     * @brief Returns a reference to the list of pixels in the texture.
+     * 
+     * @return A reference to the `std::vector<Pixel>` containing the pixel data.
+     */
+    const std::vector<glm::vec4>& pixels() const { return mPixels; }
+
+    /**
+     * @brief Returns the color of the pixel at the specified position.
+     * 
+     * @param i The x-coordinate of the pixel.
+     * @param j The y-coordinate of the pixel.
+     * @return The `glm::vec4` color of the pixel.
+     */
+    glm::vec4& color(const std::size_t i, const std::size_t j);
+
+    /**
+     * @brief Returns the color of the pixel at the specified position.
+     * 
+     * @param i The x-coordinate of the pixel.
+     * @param j The y-coordinate of the pixel.
+     * @return The `glm::vec4` color of the pixel.
+     */
+    const glm::vec4& color(const std::size_t i, const std::size_t j) const;
 
     /**
      * @brief Generates the raw texture data for the texture.
@@ -313,179 +390,23 @@ public:
 
 private:
     glm::ivec2 mSize; /**< The size of the texture (width and height). */
-    std::vector<Pixel> mPixels; /**< The pixel data of the texture. */
-    ColorPallete mPallete; /**< The color palette used by the texture. */
+    std::vector<glm::vec4> mPixels; /**< The color data of the texture. */
 };
 
-std::ostream& operator<<(std::ostream& os, const Texture& texture);
+std::ostream& operator<<(std::ostream& os, const DirectTexture& texture);
 
+using Texture = std::variant<IndirectTexture, DirectTexture>;
 
-/**
- * @struct TextureArrayData
- * @brief Represents the raw texture data including pixel colors for every layer.
- * 
- * This structure holds the raw texture data of every layer, width, and height, and provides a function to retrieve the data.
- */
-struct TextureArrayData
+struct GetTextureSizeVisitor
 {
-    std::vector<std::uint8_t> data;
-    std::size_t width, height, layers;
-
-    const std::uint8_t* getData() const
-    {
-        return data.data();
-    }
+    glm::ivec2 operator()(const IndirectTexture& texture) const { return texture.size(); };
+    glm::ivec2 operator()(const DirectTexture& texture) const { return texture.size(); };
 };
 
-/**
- * @class TextureArray
- * @brief Represents a texture array consisting of multiple layers of textures.
- * 
- * This class manages a texture array, which consists of several layers of textures. Each layer is a `Texture` object
- * and can be independently modified or displayed.
- */
-class TextureArray
+struct GenerateTextureDataVisitor
 {
-public:
-
-    /**
-     * @brief Constructs a texture array with the specified size and number of layers.
-     * 
-     * @param size The size of the textures in the array (width and height).
-     * @param layers The number of layers in the texture array.
-     */
-    TextureArray(const glm::ivec2 size, const size_t layers):
-        mSize(size),
-        mLayers(layers),
-        mPixels(size.x* size.y* layers, { 0 })
-    {
-        mPalletes.resize(layers);
-        
-    }
-
-    /**
-     * @brief Returns the size of the texture array.
-     * 
-     * @return The size of the texture array (width and height).
-     */
-    glm::ivec2 size() const { return mSize; }
-    
-    /**
-     * @brief Returns the number of layers in the texture array.
-     * 
-     * @return The number of layers.
-     */
-    size_t layers() const { return mLayers; }
-
-    /**
-     * @brief Returns a reference to the list of pixels in the texture array.
-     * 
-     * @return A reference to the `std::vector<Pixel>` containing the pixel data of the texture array.
-     */
-    const std::vector<Pixel>& pixels() const { return mPixels; }
-
-    /**
-     * @brief Sets the pixel colors for a specific layer in the texture array.
-     * 
-     * @param pixelColors The list of color IDs to assign to the pixels in the specified layer.
-     * @param layer The layer index to update.
-     */
-    void setPixelsInLayer(std::initializer_list<Pixel::ColorId> pixelColors, size_t layer);
-
-    /**
-     * @brief Sets the pixel colors for a specific layer in the texture array using iterators.
-     * 
-     * @tparam PixelIt The iterator type.
-     * @param begin The starting iterator.
-     * @param end The ending iterator.
-     * @param layer The layer index to update.
-     */
-    template <typename PixelIt>
-    void setPixelsInLayer(const PixelIt& begin, const PixelIt& end, size_t layer)
-    {
-        // debugCheck(mLayers > layer, "Invalid number of layer.");
-        // Calcular el inicio y fin de los píxeles para este layer
-        size_t startIdx = layer * mPixels.size() / mLayers;
-        size_t endIdx = (layer + 1) * mPixels.size() / mLayers;
-
-        // Actualizar solo los píxeles correspondientes al layer indicado
-        auto pixelIt = begin;
-        for (size_t idx = startIdx; idx < endIdx && pixelIt != end; ++idx, ++pixelIt)
-        {
-            mPixels[idx].colorId = static_cast<std::size_t>(pixelIt);  // Asignar el colorId desde los iteradores
-        }
-    }
-
-    /**
-     * @brief Returns the pixel at the specified position in a specific layer.
-     * 
-     * @param i The x-coordinate of the pixel.
-     * @param j The y-coordinate of the pixel.
-     * @param layer The layer index.
-     * @return The `Pixel` at the specified position and layer.
-     */
-    const Pixel& pixelInLayer(const std::size_t i, const std::size_t j, size_t layer) const;
-
-    /**
-     * @brief Sets the pixel at the specified position in a specific layer.
-     * 
-     * @param i The x-coordinate of the pixel.
-     * @param j The y-coordinate of the pixel.
-     * @param pixel The pixel to set.
-     * @param layer The layer index.
-     * @return A reference to this `TextureArray`.
-     */
-    TextureArray& setPixelInLayer(const std::size_t i, const std::size_t j, const Pixel pixel, size_t layer);
-
-    /**
-     * @brief Returns the color of the pixel at the specified position in a specific layer.
-     * 
-     * @param i The x-coordinate of the pixel.
-     * @param j The y-coordinate of the pixel.
-     * @param layer The layer index.
-     * @return The `glm::vec4` color of the pixel.
-     */
-    const glm::vec4& colorInLayer(const std::size_t i, const std::size_t j, const size_t layer) const;
-
-    /**
-     * @brief Returns the color palette of a specific layer.
-     * 
-     * @param layer The layer index.
-     * @return A reference to the `ColorPallete` object of the specified layer.
-     */
-    const ColorPallete& layerPallete(const size_t layer) const { return *mPalletes[layer]; }
-
-    /**
-     * @brief Sets the color palette for a specific layer.
-     * 
-     * @param pallete The new color palette.
-     * @param layer The layer index.
-     * @return A reference to this `TextureArray`.
-     */
-    TextureArray& setLayerPallete(ColorPallete& pallete, const size_t layer);
-
-    /**
-     * @brief Generates the raw texture data for the entire texture array.
-     * 
-     * @return A `TextureArrayData` object containing the raw texture data.
-     */
-    TextureArrayData generateTextureArrayData() const;
-
-private:
-    size_t mLayers; /**< The number of layers in the texture array. */
-    glm::ivec2 mSize; /**< The size of the textures (width and height). */
-    std::vector<Pixel> mPixels; /**< The pixel data for all layers in the texture array. */
-    std::vector<ColorPallete*> mPalletes; /**< The color palettes for each layer. */
+    TextureData operator()(const IndirectTexture& texture) const { return texture.generateTextureData(); };
+    TextureData operator()(const DirectTexture& texture) const { return texture.generateTextureData(); };
 };
 
-/**
- * @brief Outputs the texture array data to a stream.
- * 
- * This operator allows streaming the `TextureArray` to an output stream, useful for debugging or logging.
- * 
- * @param os The output stream.
- * @param texture The `TextureArray` object.
- * @return The output stream.
- */
-std::ostream& operator<<(std::ostream& os, const TextureArray& texture);
 }

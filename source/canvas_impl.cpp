@@ -132,32 +132,15 @@ Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& 
         #version 330 core
         in vec2 outTextureCoordinates;
         out vec4 outColor;
-        uniform sampler2D textureSampler;
-        uniform vec3 tintColor;
-        uniform float tintIntensity;
-        void main()
-        {
-            vec4 textureSample = texture(textureSampler, outTextureCoordinates);
-            vec3 textureColor = textureSample.xyz;
-            float textureOpacity = textureSample.w;
-            vec3 blendColor = (tintColor * tintIntensity) + (textureColor * (1 - tintIntensity));
-            outColor = vec4(blendColor, textureOpacity);
-        }
-    )";
-    
-    const std::string textureArrayFragmentShaderSource = R"(
-        #version 330 core
-        in vec2 outTextureCoordinates;
-        out vec4 outColor;
-        uniform sampler2DArray textureArray;
+        uniform sampler2DArray textureSampler;
         uniform int layerIndex;
         uniform vec3 tintColor;
         uniform float tintIntensity;
         void main()
         {
-            vec4 textureArraySample = texture(textureArray, vec3(outTextureCoordinates, layerIndex));
-            vec3 textureColor = textureArraySample.xyz;
-            float textureOpacity = textureArraySample.w;
+            vec4 textureSample = texture(textureSampler, vec3(outTextureCoordinates, layerIndex));
+            vec3 textureColor = textureSample.xyz;
+            float textureOpacity = textureSample.w;
             vec3 blendColor = (tintColor * tintIntensity) + (textureColor * (1 - tintIntensity));
             outColor = vec4(blendColor, textureOpacity);
         }
@@ -167,14 +150,11 @@ Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& 
 
     unsigned int vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderSource);
     unsigned int fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSource);
-    unsigned int textureArrayFragmentShader = compileShader(GL_FRAGMENT_SHADER, textureArrayFragmentShaderSource);
 
     mShaderProgram = createShaderProgram(vertexShader, fragmentShader);
-    mAnimatedShaderProgram = createShaderProgram(vertexShader, textureArrayFragmentShader);
 
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
-    glDeleteShader(textureArrayFragmentShader);
 
     // Enabling transparency
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -211,16 +191,6 @@ void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
     mBellotas.remove(bellotaId.id);
 }
 
-AnimatedBellotaId Canvas::CanvasImpl::addAnimatedBellota(const AnimatedBellota& animatedBellota)
-{
-    return {mAnimatedBellotas.add({animatedBellota, std::nullopt, std::nullopt})};
-}
-
-void Canvas::CanvasImpl::removeAnimatedBellota(const AnimatedBellotaId animatedBellotaId)
-{
-    mAnimatedBellotas.remove(animatedBellotaId.id);
-}
-
 TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
 {
     return { mTextures.add({texture, std::nullopt}) };
@@ -229,16 +199,6 @@ TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
 void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 {
     mTextures.remove(textureId.id);
-}
-
-TextureArrayId Canvas::CanvasImpl::addTextureArray(const TextureArray& textureArray)
-{
-    return { mTexturesArrays.add({textureArray, std::nullopt}) };
-}
-
-void Canvas::CanvasImpl::removeTextureArray(const TextureArrayId textureArrayId)
-{
-    mTexturesArrays.remove(textureArrayId.id);
 }
 
 void Canvas::CanvasImpl::setTint(const BellotaId bellotaId, const Tint& tint)
@@ -267,16 +227,6 @@ const Bellota& Canvas::CanvasImpl::bellota(BellotaId bellotaId) const
     return mBellotas.at(bellotaId.id).bellota;
 }
 
-AnimatedBellota& Canvas::CanvasImpl::animatedBellota(AnimatedBellotaId animatedBellotaId)
-{
-    return mAnimatedBellotas.at(animatedBellotaId.id).animatedBellota;
-}
-
-const AnimatedBellota& Canvas::CanvasImpl::animatedBellota(AnimatedBellotaId animatedBellotaId) const
-{
-    return mAnimatedBellotas.at(animatedBellotaId.id).animatedBellota;
-}
-
 Texture& Canvas::CanvasImpl::texture(TextureId textureId)
 {
     return mTextures.at(textureId.id).texture;
@@ -285,16 +235,6 @@ Texture& Canvas::CanvasImpl::texture(TextureId textureId)
 const Texture& Canvas::CanvasImpl::texture(TextureId textureId) const
 {
     return mTextures.at(textureId.id).texture;
-}
-
-TextureArray& Canvas::CanvasImpl::textureArray(TextureArrayId textureArrayId)
-{
-    return mTexturesArrays.at(textureArrayId.id).textureArray;
-}
-
-const TextureArray& Canvas::CanvasImpl::textureArray(TextureArrayId textureArrayId) const
-{
-    return mTexturesArrays.at(textureArrayId.id).textureArray;
 }
 
 bool& Canvas::CanvasImpl::stats()
@@ -334,59 +274,7 @@ void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
     glBindVertexArray(0);
 }
 
-//void setupVAO(DMesh3D& dMesh, GPUID shaderProgram)
-void setupVAO(DMesh3D& dmesh, unsigned int shaderProgram)
-{
-    // Binding VAO to setup
-    glBindVertexArray(dmesh.vao);
-
-    // Binding buffers to the current VAO
-    glBindBuffer(GL_ARRAY_BUFFER, dmesh.vbo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dmesh.ebo);
-
-    constexpr unsigned int positionAttribLength = 2;
-    constexpr unsigned int textureAttribLength = 2;
-    constexpr unsigned int stride = positionAttribLength + textureAttribLength;
-
-    const auto positionAttribLocation = glGetAttribLocation(shaderProgram, "position");
-    const auto textureAttribLocation = glGetAttribLocation(shaderProgram, "texture");
-
-    glVertexAttribPointer(positionAttribLocation, positionAttribLength, GL_FLOAT, GL_FALSE, stride * sizeof(GLfloat), (void*)(0 * sizeof(GLfloat)));
-    glEnableVertexAttribArray(positionAttribLocation);  
-    
-    glVertexAttribPointer(textureAttribLocation, textureAttribLength, GL_FLOAT, GL_FALSE, stride * sizeof(GLfloat), (void*)(positionAttribLength * sizeof(GLfloat)));
-    glEnableVertexAttribArray(textureAttribLocation);
-
-    // Unbinding current VAO
-    glBindVertexArray(0);
-}
-
-GLuint textureSimpleSetup(const TextureData& textureData)
-{
-    // wrapMode: GL_REPEAT, GL_CLAMP_TO_EDGE
-    // filterMode: GL_LINEAR, GL_NEAREST
-
-    GLuint gpuTexture;
-    glGenTextures(1, &gpuTexture);
-    glBindTexture(GL_TEXTURE_2D, gpuTexture);
-
-    // texture wrapping params
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-    // texture filtering params
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    GLuint internalFormat = GL_RGBA;
-    GLuint format = GL_RGBA;
-
-    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, textureData.width, textureData.height, 0, format, GL_UNSIGNED_BYTE, textureData.getData());
-
-    return gpuTexture;
-}
-
-GLuint textureArraySimpleSetup(const TextureArrayData& textureData)
+GLuint textureArraySimpleSetup(const TextureData& textureData)
 {
     // wrapMode: GL_REPEAT, GL_CLAMP_TO_EDGE
     // filterMode: GL_LINEAR, GL_NEAREST
@@ -397,8 +285,7 @@ GLuint textureArraySimpleSetup(const TextureArrayData& textureData)
 
     GLuint internalFormat = GL_RGBA;
     GLuint format = GL_RGBA;
-
-    std::cout << "layers: " << textureData.layers << std::endl;
+    
     glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, internalFormat, textureData.width, textureData.height, textureData.layers, 0, format, GL_UNSIGNED_BYTE, textureData.getData());
 
     // texture wrapping params
@@ -408,8 +295,6 @@ GLuint textureArraySimpleSetup(const TextureArrayData& textureData)
     // texture filtering params
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-
 
     return gpuTexture;
 }
@@ -442,20 +327,9 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         TexturePack& texturePack = pair.second;
 
         const Texture& texture = texturePack.texture;
-        TextureData textureData = texture.generateTextureData();
+        TextureData textureData = std::visit(GenerateTextureDataVisitor(), texture);
 
-        texturePack.dtextureOpt = DTexture{ textureSimpleSetup(textureData) };
-    }
-
-    for (auto& pair : mTexturesArrays.map())
-    {
-        const TextureArrayId textureArrayId{ pair.first };
-        TextureArrayPack& texturePack = pair.second;
-
-        const TextureArray& texture = texturePack.textureArray;
-        TextureArrayData textureData = texture.generateTextureArrayData();
-
-        texturePack.dtextureOpt = DTextureArray{ textureArraySimpleSetup(textureData) };
+        texturePack.dtextureOpt = DTexture{ textureArraySimpleSetup(textureData) };
     }
     
     for (auto& pair : mBellotas.map())
@@ -481,29 +355,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         dmesh.texture = dtexture.texture;
     }
-    
-    for (auto& pair : mAnimatedBellotas.map())
-    {
-        const AnimatedBellotaId animatedBellotaId{ pair.first };
-        AnimatedBellotaPack& animatedBellotaPack = pair.second;
-        const AnimatedBellota& animatedBellota = animatedBellotaPack.animatedBellota;
-
-        animatedBellotaPack.meshOpt = generateMesh(mTexturesArrays, animatedBellota);
-
-        animatedBellotaPack.dmeshOpt = DMesh3D();
-        DMesh3D& dmesh = animatedBellotaPack.dmeshOpt.value();
-        dmesh.initBuffers();
-        setupVAO(dmesh, mAnimatedShaderProgram);
-        dmesh.fillBuffers(animatedBellotaPack.meshOpt.value(), GL_STATIC_DRAW);
-        TextureArrayId textureArrayId = animatedBellota.textureArray();
-        const TextureArrayPack& textureArrayPack = mTexturesArrays.at(textureArrayId.id);
-
-        debugCheck(textureArrayPack.dtextureOpt.has_value(), "Texture array has not been initializad on GPU.");
-
-        const DTextureArray dtexture = textureArrayPack.dtextureOpt.value();
-
-        dmesh.textureArray = dtexture.textureArray;
-    }
 
     // state variable
     bool fillPolygons = true;
@@ -518,25 +369,19 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     );
     worldTransformMat = glm::scale(worldTransformMat, worldScale);
 
+    const auto dLayerIndexLocation = glGetUniformLocation(mShaderProgram, "layerIndex");
     const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
     const auto dTintColorLocation = glGetUniformLocation(mShaderProgram, "tintColor");
     const auto dTintIntensityLocation = glGetUniformLocation(mShaderProgram, "tintIntensity");
-    
-    // TA = TextureArray
-    const auto dTATransformLocation = glGetUniformLocation(mAnimatedShaderProgram, "transform");
-    const auto dTATintColorLocation = glGetUniformLocation(mAnimatedShaderProgram, "tintColor");
-    const auto dTATintIntensityLocation = glGetUniformLocation(mAnimatedShaderProgram, "tintIntensity");
-    const auto dLayerIndexLocation = glGetUniformLocation(mAnimatedShaderProgram, "layerIndex");
 
     PerformanceMonitor performanceMonitor(glfwGetTime(), 0.5f);
 
     // Dirty fix to sort bellotas by depth as required by transparent objects.
     std::vector<const BellotaPack*> sortedBellotaPacks;
-    std::vector<const AnimatedBellotaPack*> sortedAnimatedBellotaPacks;
+    std::vector<const BellotaPack*> sortedAnimatedBellotaPacks;
 
     // Leaving some room in case more bellotas are created during runtime.
     sortedBellotaPacks.reserve(mBellotas.size()*2);
-    sortedAnimatedBellotaPacks.reserve(mAnimatedBellotas.size()*2);
 
     auto sortByDepthOffset = [](const BellotaContainer& bellotas, std::vector<const BellotaPack*>& sortedBellotas)
     {
@@ -555,27 +400,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
                 debugCheck(lhs != nullptr and rhs != nullptr, "invalid pointers");
                 const auto lhsDepthOffset = lhs->bellota.depthOffset();
                 const auto rhsDepthOffset = rhs->bellota.depthOffset();
-                return lhsDepthOffset < rhsDepthOffset;
-            });
-    };
-    
-    auto sortTAByDepthOffset = [](const AnimatedBellotaContainer& animatedBellotas, std::vector<const AnimatedBellotaPack*>& sortedAnimatedBellotas)
-    {
-        // Per spec, clear does not change the underlaying memory allocation (capacity)
-        sortedAnimatedBellotas.clear();
-
-        for (const auto& pair : animatedBellotas.map())
-        {
-            const AnimatedBellotaPack& bellotaPack = pair.second;
-            sortedAnimatedBellotas.push_back(&bellotaPack);
-        }
-
-        std::sort(sortedAnimatedBellotas.begin(), sortedAnimatedBellotas.end(),
-            [](const AnimatedBellotaPack* lhs, const AnimatedBellotaPack* rhs)
-            {
-                debugCheck(lhs != nullptr and rhs != nullptr, "invalid pointers");
-                const auto lhsDepthOffset = lhs->animatedBellota.depthOffset();
-                const auto rhsDepthOffset = rhs->animatedBellota.depthOffset();
                 return lhsDepthOffset < rhsDepthOffset;
             });
     };
@@ -598,7 +422,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         update(deltaTimeMS);
 
         sortByDepthOffset(mBellotas, sortedBellotaPacks);
-        sortTAByDepthOffset(mAnimatedBellotas, sortedAnimatedBellotaPacks);
 
         // drawing with OpenGL
         glUseProgram(mShaderProgram);
@@ -631,46 +454,10 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
                 glUniform1f(dTintIntensityLocation, 0.0f);
             }
             glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
+            glUniform1i(dLayerIndexLocation, bellota.currentLayer());
             
             dmesh.drawCall();
         }
-        
-
-        glUseProgram(mAnimatedShaderProgram);
-
-        for (auto& animatedBellotaPackPtr : sortedAnimatedBellotaPacks)
-        {
-            debugCheck(animatedBellotaPackPtr != nullptr, "invalid pointer to bellota pack.");
-            auto& animatedBellotaPack = *animatedBellotaPackPtr;
-            debugCheck(animatedBellotaPack.dmeshOpt.has_value(), "DMesh3D has not been initialized.");
-
-            const AnimatedBellota& animatedBellota = animatedBellotaPack.animatedBellota;
-
-            if (not animatedBellota.visible())
-                continue;
-
-            const DMesh3D& dmesh3d = animatedBellotaPack.dmeshOpt.value();
-            const Transform& modelTransform = animatedBellota.transform();
-            const glm::mat3 modelTransformMat = modelTransform.toMat3();
-            const glm::mat3 totalTransformMat = worldTransformMat * modelTransformMat;
-
-            if (animatedBellotaPack.tintOpt != std::nullopt)
-            {
-                const Tint& tint = animatedBellotaPack.tintOpt.value();
-                glUniform3f(dTATintColorLocation, tint.color.r, tint.color.g, tint.color.b);
-                glUniform1f(dTATintIntensityLocation, tint.intensity);
-            }
-            else
-            {
-                glUniform3f(dTATintColorLocation, 1.0f, 1.0f, 1.0f);
-                glUniform1f(dTATintIntensityLocation, 0.0f);
-            }
-            glUniformMatrix3fv(dTATransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
-            glUniform1i(dLayerIndexLocation, animatedBellota.actualLayer());
-            
-            dmesh3d.drawCall();
-        }
-
 
         if (mStats)
         {
@@ -694,7 +481,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         dmesh.clear();
     }
 }
-
 
 void Canvas::CanvasImpl::close()
 {

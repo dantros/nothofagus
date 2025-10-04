@@ -16,7 +16,7 @@ The AnimatedBellota class represents a graphical element in the system capable o
 
 While Bellota is designed to represent static elements that use a single texture (TextureId), AnimatedBellota extends this functionality to support multiple layers of textures via a TextureArray. The key differences are:
 
-- Support for TextureArray: AnimatedBellota uses a TextureArrayId instead of a TextureId, enabling it to access textures arrays in the canvas.
+- Support for TextureArray: AnimatedBellota uses a TextureId instead of a TextureId, enabling it to access textures arrays in the canvas.
 - Animation Capabilities: It includes logic to manage which layer is currently displayed using actualLayer, a property that can dynamically change to show different animation frames.
 - Flexibility for Graphical Representation: While Bellota is suitable for static elements like backgrounds or stationary objects, AnimatedBellota is ideal for characters, enemies, or other objects requiring real-time visual changes.
 
@@ -24,7 +24,7 @@ Implementations has numerous similarities with Bellota, including a special vect
 
 #### How to Use AnimatedBellota
 
-- Creating an AnimatedBellota: An AnimatedBellota is created with a Transform, a TextureArrayId, and the number of layers in the TextureArray. As in Bellota an optional depthOffset can be included for z-ordering.
+- Creating an AnimatedBellota: An AnimatedBellota is created with a Transform, a TextureId, and the number of layers in the TextureArray. As in Bellota an optional depthOffset can be included for z-ordering.
 
 - Dynamic Layer Changes: You can change the currently visible layer using the setActualLayer method. This is crucial for handling transitions between frames in an animation.
 

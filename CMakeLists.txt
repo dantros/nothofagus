@@ -119,9 +119,9 @@ if (${NOTHOFAGUS_INSTALL})
             hello_text
             hello_tint
             test_keyboard
-            set_layer
-            animation_state
-            animation_state_machine
+            hello_layers
+            hello_animation
+            hello_animation_state_machine
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT NothofagusExamples_Runtime
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

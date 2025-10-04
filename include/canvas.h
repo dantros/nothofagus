@@ -35,9 +35,9 @@ constexpr static unsigned int DEFAULT_PIXEL_SIZE{ 4 };
 
 /**
  * @class Canvas
- * @brief A class representing the main drawing surface where objects like Bellotas, AnimatedBellotas, and textures are rendered.
+ * @brief A class representing the main drawing surface where objects like Bellotas, and textures are rendered.
  * 
- * The Canvas manages a variety of objects including textures, Bellotas, AnimatedBellotas, and handles user input.
+ * The Canvas manages a variety of objects including textures, Bellotas, and handles user input.
  */
 class Canvas
 {
@@ -80,17 +80,17 @@ public:
     void removeBellota(const BellotaId bellotaId);
     
     /**
-     * @brief Add an AnimatedBellota to the canvas.
-     * @param animatedBellota The AnimatedBellota object to add.
-     * @return The ID of the added AnimatedBellota.
+     * @brief Add an Bellota to the canvas.
+     * @param animatedBellota The Bellota object to add.
+     * @return The ID of the added Bellota.
      */
-    AnimatedBellotaId addAnimatedBellota(const AnimatedBellota& animatedBellota);
+    BellotaId addAnimatedBellota(const Bellota& animatedBellota);
 
     /**
-     * @brief Remove an AnimatedBellota from the canvas.
-     * @param animatedBellotaId The ID of the AnimatedBellota to remove.
+     * @brief Remove an Bellota from the canvas.
+     * @param animatedBellotaId The ID of the Bellota to remove.
      */
-    void removeAnimatedBellota(const AnimatedBellotaId animatedBellotaId);
+    void removeAnimatedBellota(const BellotaId animatedBellotaId);
 
     /**
      * @brief Add a Texture to the canvas.
@@ -110,13 +110,13 @@ public:
      * @param textureArray The TextureArray object to add.
      * @return The ID of the added TextureArray.
      */
-    TextureArrayId addTextureArray(const TextureArray& textureArray);
+    TextureId addTextureArray(const Texture& textureArray);
 
     /**
      * @brief Remove a TextureArray from the canvas.
-     * @param textureArrayId The ID of the TextureArray to remove.
+     * @param textureId The ID of the TextureArray to remove.
      */
-    void removeTextureArray(const TextureArrayId textureArrayId);
+    void removeTextureArray(const TextureId textureId);
 
     /**
      * @brief Set a tint color for a Bellota.
@@ -144,20 +144,6 @@ public:
      * @return A const reference to the Bellota.
      */
     const Bellota& bellota(BellotaId bellotaId) const;
-    
-    /**
-     * @brief Get an AnimatedBellota by its ID.
-     * @param animatedBellotaId The ID of the AnimatedBellota.
-     * @return A reference to the AnimatedBellota.
-     */
-    AnimatedBellota& animatedBellota(AnimatedBellotaId animatedBellotaId);
-
-    /**
-     * @brief Get a const AnimatedBellota by its ID.
-     * @param animatedBellotaId The ID of the AnimatedBellota.
-     * @return A const reference to the AnimatedBellota.
-     */
-    const AnimatedBellota& animatedBellota(AnimatedBellotaId animatedBellotaId) const;
 
     /**
      * @brief Get a Texture by its ID.
@@ -172,20 +158,6 @@ public:
      * @return A const reference to the Texture.
      */
     const Texture& texture(TextureId textureId) const;
-    
-    /**
-     * @brief Get a TextureArray by its ID.
-     * @param textureArrayId The ID of the TextureArray.
-     * @return A reference to the TextureArray.
-     */
-    TextureArray& textureArray(TextureArrayId textureArrayId);
-
-    /**
-     * @brief Get a const TextureArray by its ID.
-     * @param textureArrayId The ID of the TextureArray.
-     * @return A const reference to the TextureArray.
-     */
-    const TextureArray& textureArray(TextureArrayId textureArrayId) const;
 
     /**
      * @brief Access or modify the stats of the canvas.

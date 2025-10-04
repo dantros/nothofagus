@@ -5,12 +5,19 @@ set_property(TARGET hello_nothofagus PROPERTY CXX_STANDARD 20)
 target_include_directories(hello_nothofagus PRIVATE ${NOTHOFAGUS_INCLUDE})
 target_link_libraries(hello_nothofagus PRIVATE nothofagus)
 
-add_executable(hello_animated_bellota
-    "hello_animated_bellota.cpp"
+add_executable(hello_direct_texture
+    "hello_direct_texture.cpp"
 )
-set_property(TARGET hello_animated_bellota PROPERTY CXX_STANDARD 20)
-target_include_directories(hello_animated_bellota PRIVATE ${NOTHOFAGUS_INCLUDE})
-target_link_libraries(hello_animated_bellota PRIVATE nothofagus)
+set_property(TARGET hello_direct_texture PROPERTY CXX_STANDARD 20)
+target_include_directories(hello_direct_texture PRIVATE ${NOTHOFAGUS_INCLUDE})
+target_link_libraries(hello_direct_texture PRIVATE nothofagus)
+
+add_executable(hello_animation
+    "hello_animation.cpp"
+)
+set_property(TARGET hello_animation PROPERTY CXX_STANDARD 20)
+target_include_directories(hello_animation PRIVATE ${NOTHOFAGUS_INCLUDE})
+target_link_libraries(hello_animation PRIVATE nothofagus)
 
 add_executable(hello_text
     "hello_text.cpp"
@@ -33,23 +40,16 @@ set_property(TARGET test_keyboard PROPERTY CXX_STANDARD 20)
 target_include_directories(test_keyboard PRIVATE ${NOTHOFAGUS_INCLUDE})
 target_link_libraries(test_keyboard PRIVATE nothofagus)
 
-add_executable(set_layer
-    "set_layer.cpp"
+add_executable(hello_layers
+    "hello_layers.cpp"
 )
-set_property(TARGET set_layer PROPERTY CXX_STANDARD 20)
-target_include_directories(set_layer PRIVATE ${NOTHOFAGUS_INCLUDE})
-target_link_libraries(set_layer PRIVATE nothofagus)
+set_property(TARGET hello_layers PROPERTY CXX_STANDARD 20)
+target_include_directories(hello_layers PRIVATE ${NOTHOFAGUS_INCLUDE})
+target_link_libraries(hello_layers PRIVATE nothofagus)
 
-add_executable(animation_state
-    "animation_state.cpp"
+add_executable(hello_animation_state_machine
+    "hello_animation_state_machine.cpp"
 )
-set_property(TARGET animation_state PROPERTY CXX_STANDARD 20)
-target_include_directories(animation_state PRIVATE ${NOTHOFAGUS_INCLUDE})
-target_link_libraries(animation_state PRIVATE nothofagus)
-
-add_executable(animation_state_machine
-    "animation_state_machine.cpp"
-)
-set_property(TARGET animation_state_machine PROPERTY CXX_STANDARD 20)
-target_include_directories(animation_state_machine PRIVATE ${NOTHOFAGUS_INCLUDE})
-target_link_libraries(animation_state_machine PRIVATE nothofagus)
+set_property(TARGET hello_animation_state_machine PROPERTY CXX_STANDARD 20)
+target_include_directories(hello_animation_state_machine PRIVATE ${NOTHOFAGUS_INCLUDE})
+target_link_libraries(hello_animation_state_machine PRIVATE nothofagus)

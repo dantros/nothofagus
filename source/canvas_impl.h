@@ -53,19 +53,6 @@ public:
      * @param bellotaId The ID of the Bellota to remove.
      */
     void removeBellota(const BellotaId bellotaId);
-    
-    /**
-     * @brief Adds an AnimatedBellota object to the canvas.
-     * @param animatedBellota The AnimatedBellota object to add.
-     * @return The ID of the added AnimatedBellota.
-     */
-    AnimatedBellotaId addAnimatedBellota(const AnimatedBellota& animatedBellota);
-
-    /**
-     * @brief Removes an AnimatedBellota object from the canvas.
-     * @param animatedBellotaId The ID of the AnimatedBellota to remove.
-     */
-    void removeAnimatedBellota(const AnimatedBellotaId animatedBellotaId);
 
     /**
      * @brief Adds a Texture object to the canvas.
@@ -79,19 +66,6 @@ public:
      * @param textureId The ID of the Texture to remove.
      */
     void removeTexture(const TextureId textureId);
-    
-    /**
-     * @brief Adds a TextureArray object to the canvas.
-     * @param textureArray The TextureArray object to add.
-     * @return The ID of the added TextureArray.
-     */
-    TextureArrayId addTextureArray(const TextureArray& textureArray);
-
-    /**
-     * @brief Removes a TextureArray object from the canvas.
-     * @param textureArrayId The ID of the TextureArray to remove.
-     */
-    void removeTextureArray(const TextureArrayId textureArrayId);
 
     /**
      * @brief Sets a tint color for a Bellota.
@@ -119,20 +93,6 @@ public:
      * @return A const reference to the Bellota object.
      */
     const Bellota& bellota(BellotaId bellotaId) const;
-    
-    /**
-     * @brief Retrieves an AnimatedBellota by its ID.
-     * @param animatedBellotaId The ID of the AnimatedBellota.
-     * @return A reference to the AnimatedBellota object.
-     */
-    AnimatedBellota& animatedBellota(AnimatedBellotaId animatedBellotaId);
-
-    /**
-     * @brief Retrieves a const AnimatedBellota by its ID.
-     * @param animatedBellotaId The ID of the AnimatedBellota.
-     * @return A const reference to the AnimatedBellota object.
-     */
-    const AnimatedBellota& animatedBellota(AnimatedBellotaId animatedBellotaId) const;
 
     /**
      * @brief Retrieves a Texture by its ID.
@@ -150,17 +110,17 @@ public:
     
     /**
      * @brief Retrieves a TextureArray by its ID.
-     * @param textureArrayId The ID of the TextureArray.
+     * @param textureId The ID of the TextureArray.
      * @return A reference to the TextureArray object.
      */
-    TextureArray& textureArray(TextureArrayId textureArrayId);
+    Texture& textureArray(TextureId textureId);
 
     /**
      * @brief Retrieves a const TextureArray by its ID.
-     * @param textureArrayId The ID of the TextureArray.
+     * @param textureId The ID of the TextureArray.
      * @return A const reference to the TextureArray object.
      */
-    const TextureArray& textureArray(TextureArrayId textureArrayId) const;
+    const Texture& textureArray(TextureId textureId) const;
 
     /**
      * @brief Accesses or modifies the stats flag.
@@ -191,13 +151,9 @@ private:
     unsigned int mPixelSize; ///< The pixel size on the canvas.
 
     TextureContainer mTextures; ///< Container for Texture objects.
-    TextureArrayContainer mTexturesArrays; ///< Container for TextureArray objects.
-
     BellotaContainer mBellotas; ///< Container for Bellota objects.
-    AnimatedBellotaContainer mAnimatedBellotas; ///< Container for AnimatedBellota objects.
 
     unsigned int mShaderProgram; ///< The OpenGL shader program for rendering.
-    unsigned int mAnimatedShaderProgram; ///< The OpenGL shader program for rendering animated textures.
 
     bool mStats; ///< Flag to indicate whether stats should be displayed.
 

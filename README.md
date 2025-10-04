@@ -3,7 +3,7 @@
 ![example workflow](https://github.com/dantros/nothofagus/actions/workflows/cmake-multi-platform.yml/badge.svg)
 
 Sandbox C++ pixel art real time renderer using OpenGL 3.3 under the hood.
-You define some textures in your code, some dynamic locations and you are ready to quick start your game.
+You define some textures in your code, some dynamic locations and you are ready to quick start your game/application.
 Nothofagus also gives you access to ImGui and other third party libs to speed up your development journey.
 
 Your code will look like this.
@@ -16,7 +16,7 @@ Nothofagus::ColorPallete pallete{
     {0.5, 1.0, 0.5, 1.0},
 };
 
-Nothofagus::Texture texture({8, 8}, {0.5, 0.5, 0.5, 1.0});
+Nothofagus::IndirectTexture texture({8, 8}, {0.5, 0.5, 0.5, 1.0});
 texture.setPallete(pallete)
     .setPixels(
     {
@@ -106,9 +106,8 @@ Of course there are other ways to work, choose whatever suits you best.
 ## Quick start
 
 ```
-git clone https://github.com/dantros/nothofagus.git
+git clone --recursive https://github.com/dantros/nothofagus.git
 cd nothofagus
-git submodule update --init --recursive
 cmake --preset ninja-release
 cd ../build_cmake/ninja-release/
 ninja
@@ -116,27 +115,33 @@ ninja install
 cd ../install_cmake/ninja-release/
 ```
 
-There you will fing the nothofagus static library and some demos.
+If you forgot the `--recursive` argument, you can always download the dependencies later with
+
+```
+git submodule --init --recursive
+```
+
+There you will find the nothofagus static library and some demos.
 
 ## Dependencies
 
 You should have [cmake](https://cmake.org/), [ninja](https://ninja-build.org/) and [Visual Studio Community](https://visualstudio.microsoft.com/vs/community/) (or another proper compiler) in your development environment.
 
-## Advance features
+## Special Features
 
 - [Sprite Animations](docs/sprite_animations.md)
 
-## Doxygen Documentation
+## Doxygen Documentation [WIP]
 
-*Disclaimer: Doxygen documentation is work in progress...*
+This project uses Doxygen to create documentation, so you need to have Doxygen installed (https://www.doxygen.nl/manual/install.html). This documentation is not build by default. You need to enable it via CMake by setting the variable `NOTHOFAGUS_BUILD_DOCS` to `ON` either via cli cmake, cmake-gui or via your user cmake presets.
 
-This project uses Doxygen to create documentation, so you need to have Doxygen installed (https://www.doxygen.nl/manual/install.html) and once in this directory you should run the next command:
+Then, from the repository directory you should run the next command:
 
 ```bash
     doxygen Doxyfile
 ```
 
-You can also use ninja to generate documentation at installation. In this directory you should run the following commands:
+You can also use ninja to generate documentation at installation.
 
 ```bash
     cmake --preset ninja-release-examples
