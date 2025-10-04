@@ -138,7 +138,6 @@ Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& 
         uniform float tintIntensity;
         void main()
         {
-            //vec4 textureSample = texture(textureSampler, outTextureCoordinates + layerIndex);
             vec4 textureSample = texture(textureSampler, vec3(outTextureCoordinates, layerIndex));
             vec3 textureColor = textureSample.xyz;
             float textureOpacity = textureSample.w;
