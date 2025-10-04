@@ -321,6 +321,9 @@ void initializeTexturePacks(TextureContainer& textures)
         const TextureId textureId{ pair.first };
         TexturePack& texturePack = pair.second;
 
+        if (not texturePack.isDirty())
+            continue;
+
         const Texture& texture = texturePack.texture;
         TextureData textureData = std::visit(GenerateTextureDataVisitor(), texture);
 
@@ -334,6 +337,10 @@ void initializeBellotas(BellotaContainer& bellotas, TextureContainer& textures, 
     {
         const BellotaId bellotaId{ pair.first };
         BellotaPack& bellotaPack = pair.second;
+
+        if (not bellotaPack.isDirty())
+            continue;
+
         const Bellota& bellota = bellotaPack.bellota;
 
         bellotaPack.meshOpt = generateMesh(textures, bellota);
