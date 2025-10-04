@@ -313,15 +313,10 @@ void keyCallback(GLFWwindow* window, int glfwKey, int scancode, int action, int 
     controller->activate({ key, trigger });
 }
 
-void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)
+void initializeTexturePacks(TextureContainer& textures)
 {
-    debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
-
-    glfwSetWindowUserPointer(mWindow->glfwWindow, &controller);
-    glfwSetKeyCallback(mWindow->glfwWindow, keyCallback);
-    
     // TODO: create IndexedContainerIterator
-    for (auto& pair : mTextures.map())
+    for (auto& pair : textures.map())
     {
         const TextureId textureId{ pair.first };
         TexturePack& texturePack = pair.second;
@@ -331,23 +326,26 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         texturePack.dtextureOpt = DTexture{ textureArraySimpleSetup(textureData) };
     }
-    
-    for (auto& pair : mBellotas.map())
+}
+
+void initializeBellotas(BellotaContainer& bellotas, TextureContainer& textures, unsigned int shaderProgram)
+{
+    for (auto& pair : bellotas.map())
     {
         const BellotaId bellotaId{ pair.first };
         BellotaPack& bellotaPack = pair.second;
         const Bellota& bellota = bellotaPack.bellota;
 
-        bellotaPack.meshOpt = generateMesh(mTextures, bellota);
+        bellotaPack.meshOpt = generateMesh(textures, bellota);
 
         bellotaPack.dmeshOpt = DMesh();
         DMesh& dmesh = bellotaPack.dmeshOpt.value();
         dmesh.initBuffers();
-        setupVAO(dmesh, mShaderProgram);
+        setupVAO(dmesh, shaderProgram);
         dmesh.fillBuffers(bellotaPack.meshOpt.value(), GL_STATIC_DRAW);
 
         TextureId textureId = bellota.texture();
-        const TexturePack& texturePack = mTextures.at(textureId.id);
+        const TexturePack& texturePack = textures.at(textureId.id);
 
         debugCheck(texturePack.dtextureOpt.has_value(), "Texture has not been initializad on GPU.");
 
@@ -355,6 +353,17 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         dmesh.texture = dtexture.texture;
     }
+}
+
+void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)
+{
+    debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
+
+    glfwSetWindowUserPointer(mWindow->glfwWindow, &controller);
+    glfwSetKeyCallback(mWindow->glfwWindow, keyCallback);    
+    
+    initializeTexturePacks(mTextures);
+    initializeBellotas(mBellotas, mTextures, mShaderProgram);
 
     // state variable
     bool fillPolygons = true;
