@@ -28,15 +28,20 @@ struct BellotaPack
         return not (meshOpt.has_value() and dmeshOpt.has_value());
     }
 
-    void clear()
+    void clearMesh()
     {
         meshOpt.reset();
-        tintOpt.reset();
         if (dmeshOpt.has_value())
         {
             DMesh& dmesh = dmeshOpt.value();
             dmesh.clear();
         }
+    }
+
+    void clear()
+    {
+        clearMesh();
+        tintOpt.reset();
     }
 };
 

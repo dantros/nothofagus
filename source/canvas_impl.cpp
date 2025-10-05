@@ -183,24 +183,49 @@ const ScreenSize& Canvas::CanvasImpl::screenSize() const
 
 BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)
 {
-    return {mBellotas.add({bellota, std::nullopt, std::nullopt})};
+    BellotaId newBellotaId{mBellotas.add({bellota, std::nullopt, std::nullopt})};
+    Bellota& newBellota = this->bellota(newBellotaId);
+    TextureId newTextureId = newBellota.texture();
+    mTextureUsageMonitor.addEntry(newBellotaId, newTextureId);
+    return newBellotaId;
 }
 
 void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
 {
     BellotaPack& bellotaPackToRemove = mBellotas.at(bellotaId.id);
+    Bellota& bellotaToRemove = bellotaPackToRemove.bellota;
+    TextureId textureId = bellotaToRemove.texture();
     bellotaPackToRemove.clear();
     mBellotas.remove(bellotaId.id);
+    mTextureUsageMonitor.removeEntry(bellotaId, textureId);
 }
 
 TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
 {
-    return { mTextures.add({texture, std::nullopt}) };
+    TextureId newTextureId{mTextures.add({texture, std::nullopt})};
+    const bool textureWasAdded = mTextureUsageMonitor.addUnusedTexture(newTextureId);
+    debugCheck(textureWasAdded);
+    return newTextureId; 
 }
 
 void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 {
+    const bool textureWasRemoved = mTextureUsageMonitor.removeUnusedTexture(textureId);
+    debugCheck(textureWasRemoved);
     mTextures.remove(textureId.id);
+}
+
+void Canvas::CanvasImpl::setTexture(const BellotaId bellotaId, const TextureId textureId)
+{
+    const Bellota& bellotaOriginal = bellota(bellotaId);
+    Bellota bellotaWithNewTexture(
+        bellotaOriginal.transform(),
+        textureId,
+        bellotaOriginal.depthOffset()
+    );
+    bellotaWithNewTexture.visible() = bellotaOriginal.visible();
+    bellotaWithNewTexture.currentLayer() = bellotaOriginal.currentLayer();
+    replaceBellota(bellotaId, bellotaWithNewTexture);
 }
 
 void Canvas::CanvasImpl::setTint(const BellotaId bellotaId, const Tint& tint)
@@ -497,6 +522,22 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 void Canvas::CanvasImpl::close()
 {
     glfwSetWindowShouldClose(mWindow->glfwWindow, true);
+}
+
+void Canvas::CanvasImpl::replaceBellota(const BellotaId bellotaId, const Bellota& newBellota)
+{
+    BellotaPack& bellotaPack = mBellotas.at(bellotaId.id);
+
+    TextureId textureIdToReplace = bellotaPack.bellota.texture();
+    const bool oldEntryRemoved = mTextureUsageMonitor.removeEntry(bellotaId, textureIdToReplace);
+    debugCheck(oldEntryRemoved);
+
+    TextureId newTextureId = newBellota.texture();
+    const bool newEntryAdded = mTextureUsageMonitor.addEntry(bellotaId, newTextureId);
+    debugCheck(newEntryAdded);
+
+    bellotaPack.clearMesh();
+    bellotaPack.bellota = newBellota;
 }
 
 }

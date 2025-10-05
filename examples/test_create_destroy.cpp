@@ -50,7 +50,7 @@ Nothofagus::BellotaId addBellotaWithWrittenId(Nothofagus::Canvas& canvas, Nothof
 
     const std::string text = std::format("{}", bellotaId.id);
     Nothofagus::TextureId textureId = addTextureWithText(canvas, pallete, text);
-    bellota.texture() = textureId;
+    canvas.setTexture(bellotaId, textureId);
 
     return bellotaId;
 }

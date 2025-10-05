@@ -44,6 +44,11 @@ void Canvas::removeTexture(const TextureId textureId)
     mCanvasImpl->removeTexture(textureId);
 }
 
+void Canvas::setTexture(const BellotaId bellotaId, const TextureId textureId)
+{
+    mCanvasImpl->setTexture(bellotaId, textureId);
+}
+
 TextureId Canvas::addTextureArray(const Texture& textureArray)
 {
     return mCanvasImpl->addTexture(textureArray);

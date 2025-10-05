@@ -27,6 +27,11 @@ namespace Nothofagus
         #endif
     }
 
+    inline void debugCheck(bool condition)
+    {
+        debugCheck(condition, "");
+    }
+
     /**
      * @brief Checks if a given condition is valid during runtime, throwing an exception otherwise.
      * 
@@ -44,5 +49,10 @@ namespace Nothofagus
             spdlog::error("Check failed: {}", errorMessage);
             throw;
         }
+    }
+
+    inline void runtimeCheck(bool condition)
+    {
+        runtimeCheck(condition, "");
     }
 }
