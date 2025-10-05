@@ -34,16 +34,6 @@ void Canvas::removeBellota(const BellotaId bellotaId)
     mCanvasImpl->removeBellota(bellotaId);
 }
 
-BellotaId Canvas::addAnimatedBellota(const Bellota& animatedBellota)
-{
-    return mCanvasImpl->addBellota(animatedBellota);
-}
-
-void Canvas::removeAnimatedBellota(const BellotaId animatedBellotaId)
-{
-    mCanvasImpl->removeBellota(animatedBellotaId);
-}
-
 TextureId Canvas::addTexture(const Texture& texture)
 {
     return mCanvasImpl->addTexture(texture);

@@ -93,7 +93,7 @@ int main()
 
     // Add the Texture to the canvas and create an Bellota using it
     Nothofagus::TextureId textureId = canvas.addTexture(textureArray);
-    Nothofagus::BellotaId animatedBellotaId = canvas.addAnimatedBellota({{{75.0f, 50.0f}}, textureId, 5});
+    Nothofagus::BellotaId animatedBellotaId = canvas.addBellota({{{75.0f, 50.0f}}, textureId, 5});
 
     // Define animation states (layers, times, names)
     Nothofagus::AnimationState animation1({0}, {500.0f}, "W");

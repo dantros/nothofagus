@@ -78,19 +78,6 @@ public:
      * @param bellotaId The ID of the Bellota to remove.
      */
     void removeBellota(const BellotaId bellotaId);
-    
-    /**
-     * @brief Add an Bellota to the canvas.
-     * @param animatedBellota The Bellota object to add.
-     * @return The ID of the added Bellota.
-     */
-    BellotaId addAnimatedBellota(const Bellota& animatedBellota);
-
-    /**
-     * @brief Remove an Bellota from the canvas.
-     * @param animatedBellotaId The ID of the Bellota to remove.
-     */
-    void removeAnimatedBellota(const BellotaId animatedBellotaId);
 
     /**
      * @brief Add a Texture to the canvas.
