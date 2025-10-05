@@ -54,6 +54,8 @@ public:
 
     void clearUnusedTextureIds();
 
+    std::size_t loadedTextures() const;
+
 private:
     std::unordered_map<TextureId, std::unordered_set<BellotaId>> mTextureToBellotas;
     std::unordered_set<TextureId> mUnusedTextures;

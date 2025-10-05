@@ -93,4 +93,9 @@ void TextureUsageMonitor::clearUnusedTextureIds()
     mUnusedTextures.clear();
 }
 
+std::size_t TextureUsageMonitor::loadedTextures() const
+{
+    return mUnusedTextures.size() + mTextureToBellotas.size();
+}
+
 }
