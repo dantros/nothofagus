@@ -212,6 +212,10 @@ void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 {
     const bool textureWasRemoved = mTextureUsageMonitor.removeUnusedTexture(textureId);
     debugCheck(textureWasRemoved);
+
+    TexturePack& texturePackToRemove = mTextures.at(textureId.id);
+    texturePackToRemove.clear();
+
     mTextures.remove(textureId.id);
 }
 
