@@ -320,9 +320,6 @@ void initializeTexturePacks(TextureContainer& textures)
         if (not texturePack.isDirty())
             continue;
 
-        if (not texturePack.isDirty())
-            continue;
-
         const Texture& texture = texturePack.texture;
         TextureData textureData = std::visit(GenerateTextureDataVisitor(), texture);
 
