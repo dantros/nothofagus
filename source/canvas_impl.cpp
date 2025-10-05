@@ -188,6 +188,8 @@ BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)
 
 void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
 {
+    BellotaPack& bellotaPackToRemove = mBellotas.at(bellotaId.id);
+    bellotaPackToRemove.clear();
     mBellotas.remove(bellotaId.id);
 }
 
