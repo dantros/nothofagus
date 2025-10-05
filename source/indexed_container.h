@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include "check.h"
 #include "index_factory.h"
+#include "indexed_container_iterator.h"
 
 namespace Nothofagus
 {
@@ -107,33 +108,52 @@ public:
         return mElements.size();
     }
 
-    /**
-     * @brief Returns a constant reference to the underlying map of elements.
-     * 
-     * This map is keyed by the generated index for each element.
-     * 
-     * @return A const reference to the map of elements.
-     */
-    const std::unordered_map<std::size_t, ElementType>& map() const
+    // Internal iterator types
+
+    using MapType = std::unordered_map<std::size_t, ElementType>;
+    using MapIterator = MapType::iterator;
+    using MapConstIterator = MapType::const_iterator;
+    
+    // Iterator types
+
+    using iterator = IteratorT<MapIterator>;
+    using const_iterator = IteratorT<MapConstIterator>;
+
+    // Iterator interface
+
+    iterator begin()
     {
-        return mElements;
+        return iterator(mElements.begin());
     }
 
-    /**
-     * @brief Returns a reference to the underlying map of elements.
-     * 
-     * This map is keyed by the generated index for each element.
-     * 
-     * @return A reference to the map of elements.
-     */
-    std::unordered_map<std::size_t, ElementType>& map()
+    iterator end()
     {
-        return mElements;
+        return iterator(mElements.end());
+    }
+
+    const_iterator begin() const
+    {
+        return const_iterator(mElements.begin());
+    }
+
+    const_iterator end() const
+    {
+        return const_iterator(mElements.end());
+    }
+
+    const_iterator cbegin() const
+    {
+        return const_iterator(mElements.cbegin());
+    }
+
+    const_iterator cend() const
+    {
+        return const_iterator(mElements.cend());
     }
 
 private:
-    std::unordered_map<std::size_t, ElementType> mElements; ///< Map of elements indexed by a generated index
-    IndexFactory mIndexFactory; ///< Factory for generating unique indexes for elements
+    MapType mElements; ///< Map of elements indexed by a generated index
+    IndexFactory mIndexFactory; ///< Factory for generating unique indices for elements
 };
 
 }

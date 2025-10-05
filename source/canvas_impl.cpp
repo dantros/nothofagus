@@ -315,12 +315,8 @@ void keyCallback(GLFWwindow* window, int glfwKey, int scancode, int action, int 
 
 void initializeTexturePacks(TextureContainer& textures)
 {
-    // TODO: create IndexedContainerIterator
-    for (auto& pair : textures.map())
+    for (auto& [textureIndex, texturePack] : textures)
     {
-        const TextureId textureId{ pair.first };
-        TexturePack& texturePack = pair.second;
-
         if (not texturePack.isDirty())
             continue;
 
@@ -333,11 +329,8 @@ void initializeTexturePacks(TextureContainer& textures)
 
 void initializeBellotas(BellotaContainer& bellotas, TextureContainer& textures, unsigned int shaderProgram)
 {
-    for (auto& pair : bellotas.map())
+    for (auto& [bellotaIndex, bellotaPack] : bellotas)
     {
-        const BellotaId bellotaId{ pair.first };
-        BellotaPack& bellotaPack = pair.second;
-
         if (not bellotaPack.isDirty())
             continue;
 
@@ -403,9 +396,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         // Per spec, clear does not change the underlaying memory allocation (capacity)
         sortedBellotas.clear();
 
-        for (const auto& pair : bellotas.map())
+        for (const auto& [bellotaIndex, bellotaPack] : bellotas)
         {
-            const BellotaPack& bellotaPack = pair.second;
             sortedBellotas.push_back(&bellotaPack);
         }
 
@@ -416,7 +408,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
                 const auto lhsDepthOffset = lhs->bellota.depthOffset();
                 const auto rhsDepthOffset = rhs->bellota.depthOffset();
                 return lhsDepthOffset < rhsDepthOffset;
-            });
+            }
+        );
     };
 
     while (!glfwWindowShouldClose(mWindow->glfwWindow))
@@ -489,15 +482,13 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         glfwPollEvents();
     }
 
-    for (auto& pair : mBellotas.map())
+    for (auto& [bellotaIndex, bellotaPack] : mBellotas)
     {
-        BellotaPack& bellotaPack = pair.second;
         bellotaPack.clear();
     }
 
-    for (auto& pair : mTextures.map())
+    for (auto& [textureIndex, texturePack] : mTextures)
     {
-        TexturePack& texturePack = pair.second;
         texturePack.clear();
     }
 }
