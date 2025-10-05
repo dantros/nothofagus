@@ -361,9 +361,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
     glfwSetWindowUserPointer(mWindow->glfwWindow, &controller);
     glfwSetKeyCallback(mWindow->glfwWindow, keyCallback);    
-    
-    initializeTexturePacks(mTextures);
-    initializeBellotas(mBellotas, mTextures, mShaderProgram);
 
     // state variable
     bool fillPolygons = true;
@@ -429,6 +426,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         // executing user provided update
         update(deltaTimeMS);
 
+        initializeTexturePacks(mTextures);
+        initializeBellotas(mBellotas, mTextures, mShaderProgram);
         sortByDepthOffset(mBellotas, sortedBellotaPacks);
 
         // drawing with OpenGL
