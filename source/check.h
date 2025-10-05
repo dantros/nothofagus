@@ -19,11 +19,7 @@ namespace Nothofagus
     inline void debugCheck(bool condition, const std::string& errorMessage)
     {
         #ifdef _DEBUG
-        if (not condition)
-        {
-            spdlog::error("Check failed: {}", errorMessage);
-            throw;
-        }
+        runtimeCheck(condition, errorMessage);
         #endif
     }
 
