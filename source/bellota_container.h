@@ -26,7 +26,18 @@ struct BellotaPack
 
     bool isDirty() const
     {
-        return not (meshOpt.has_value() and dmeshOpt.has_value() and tintOpt.has_value());
+        return not (meshOpt.has_value() and dmeshOpt.has_value());
+    }
+
+    void clear()
+    {
+        meshOpt.reset();
+        tintOpt.reset();
+        if (dmeshOpt.has_value())
+        {
+            DMesh& dmesh = dmeshOpt.value();
+            dmesh.clear();
+        }
     }
 };
 
