@@ -219,6 +219,16 @@ void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
     mTextures.remove(textureId.id);
 }
 
+void Canvas::CanvasImpl::clearUnusedTextures()
+{
+    const auto& unusedTextureIds = mTextureUsageMonitor.getUnusedTextureIds();
+    for (const auto& textureId : unusedTextureIds)
+    {
+        removeTexture(textureId);
+    }
+    mTextureUsageMonitor.clearUnusedTextureIds();
+}
+
 void Canvas::CanvasImpl::setTexture(const BellotaId bellotaId, const TextureId textureId)
 {
     const Bellota& bellotaOriginal = bellota(bellotaId);
