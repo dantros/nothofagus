@@ -95,19 +95,6 @@ public:
     void clearUnusedTextures();
 
     void setTexture(const BellotaId bellotaId, const TextureId textureId);
-    
-    /**
-     * @brief Add a TextureArray to the canvas.
-     * @param textureArray The TextureArray object to add.
-     * @return The ID of the added TextureArray.
-     */
-    TextureId addTextureArray(const Texture& textureArray);
-
-    /**
-     * @brief Remove a TextureArray from the canvas.
-     * @param textureId The ID of the TextureArray to remove.
-     */
-    void removeTextureArray(const TextureId textureId);
 
     /**
      * @brief Set a tint color for a Bellota.

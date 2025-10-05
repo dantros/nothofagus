@@ -54,16 +54,6 @@ void Canvas::setTexture(const BellotaId bellotaId, const TextureId textureId)
     mCanvasImpl->setTexture(bellotaId, textureId);
 }
 
-TextureId Canvas::addTextureArray(const Texture& textureArray)
-{
-    return mCanvasImpl->addTexture(textureArray);
-}
-
-void Canvas::removeTextureArray(const TextureId textureId)
-{
-    mCanvasImpl->removeTexture(textureId);
-}
-
 void Canvas::setTint(const BellotaId bellotaId, const Tint& tint)
 {
     mCanvasImpl->setTint(bellotaId, tint);
