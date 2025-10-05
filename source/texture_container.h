@@ -12,6 +12,17 @@ struct TexturePack
 {
 	Texture texture;
 	std::optional<DTexture> dtextureOpt;
+
+	bool isDirty() const { return not dtextureOpt.has_value(); }
+
+	void clear()
+    {
+        if (dtextureOpt.has_value())
+        {
+            DTexture& dtexture = dtextureOpt.value();
+            dtexture.clear();
+        }
+    }
 };
 
 using TextureContainer = IndexedContainer<TexturePack>;

@@ -23,6 +23,22 @@ struct BellotaPack
     std::optional<Mesh> meshOpt;
     std::optional<DMesh> dmeshOpt;
     std::optional<Tint> tintOpt;
+
+    bool isDirty() const
+    {
+        return not (meshOpt.has_value() and dmeshOpt.has_value());
+    }
+
+    void clear()
+    {
+        meshOpt.reset();
+        tintOpt.reset();
+        if (dmeshOpt.has_value())
+        {
+            DMesh& dmesh = dmeshOpt.value();
+            dmesh.clear();
+        }
+    }
 };
 
 /**

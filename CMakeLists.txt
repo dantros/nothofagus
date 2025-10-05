@@ -23,6 +23,7 @@ add_library(nothofagus
     "source/bellota_to_mesh.cpp"
     "source/mesh.cpp"
     "source/dmesh.cpp"
+    "source/dtexture.cpp"
     "source/transform.cpp"
     "source/texture.cpp"
     "source/performance_monitor.cpp"

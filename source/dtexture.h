@@ -12,6 +12,8 @@ namespace Nothofagus
 struct DTexture
 {
     unsigned int texture; ///< The OpenGL texture handle for a 2D texture in GPU memory.
+
+    void clear() const;
 };
 
 }
