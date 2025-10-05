@@ -221,8 +221,8 @@ void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 
 void Canvas::CanvasImpl::clearUnusedTextures()
 {
-    const auto& unusedTextureIds = mTextureUsageMonitor.getUnusedTextureIds();
-    for (const auto& textureId : unusedTextureIds)
+    const std::unordered_set<TextureId> unusedTextureIdsCopy = mTextureUsageMonitor.getUnusedTextureIds();
+    for (TextureId textureId : unusedTextureIdsCopy)
     {
         removeTexture(textureId);
     }
@@ -456,6 +456,10 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         performanceMonitor.update(glfwGetTime());
         const float deltaTimeMS = performanceMonitor.getMS();
+
+        initializeTexturePacks(mTextures);
+        initializeBellotas(mBellotas, mTextures, mShaderProgram);
+        sortByDepthOffset(mBellotas, sortedBellotaPacks);
         
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -466,10 +470,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         // executing user provided update
         update(deltaTimeMS);
-
-        initializeTexturePacks(mTextures);
-        initializeBellotas(mBellotas, mTextures, mShaderProgram);
-        sortByDepthOffset(mBellotas, sortedBellotaPacks);
 
         // drawing with OpenGL
         glUseProgram(mShaderProgram);
