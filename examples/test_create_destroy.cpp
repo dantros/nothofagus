@@ -45,7 +45,7 @@ Nothofagus::BellotaId addBellotaWithWrittenId(Nothofagus::Canvas& canvas, Nothof
     Nothofagus::BellotaId bellotaId = canvas.addBellota({{position}, dummyTextureId});
     Nothofagus::Bellota& bellota = canvas.bellota(bellotaId);
 
-    // This is to ensure bellotas are drew in order according to their id. This way, transparency allow proper visibility.
+    // This is to ensure bellotas are drawn in order according to their id. This way, transparency allow proper visibility.
     bellota.depthOffset() = -127 + bellotaId.id;
 
     const std::string text = std::format("{}", bellotaId.id);
