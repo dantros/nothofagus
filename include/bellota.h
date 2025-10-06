@@ -10,11 +10,21 @@ namespace Nothofagus
 struct TextureId
 {
     std::size_t id;
+
+    bool operator==(const TextureId& rhs) const
+    {
+        return id == rhs.id;
+    }
 };
 
 struct BellotaId
 {
     std::size_t id;
+
+    bool operator==(const BellotaId& rhs) const
+    {
+        return id == rhs.id;
+    }
 };
 
 /* Drawable element */
@@ -45,7 +55,6 @@ public:
     Transform& transform() { return mTransform; }
 
     const TextureId& texture() const { return mTextureId; }
-    TextureId& texture() { return mTextureId; }
 
     const std::int8_t& depthOffset() const { return mDepthOffset; }
     std::int8_t& depthOffset() { return mDepthOffset; }

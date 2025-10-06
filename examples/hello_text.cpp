@@ -70,8 +70,6 @@ int main()
     Nothofagus::BellotaId bellotaId3 = canvas.addBellota({{{75.0f, 50.0f}}, textureId3});
 
     float time = 0.0f;
-    bool rotate = true;
-    bool visible = true;
 
     auto update = [&](float dt)
     {

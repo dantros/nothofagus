@@ -26,6 +26,7 @@ add_library(nothofagus
     "source/dtexture.cpp"
     "source/transform.cpp"
     "source/texture.cpp"
+    "source/texture_usage_monitor.cpp"
     "source/performance_monitor.cpp"
     "source/controller.cpp"
     "source/keyboard.cpp"

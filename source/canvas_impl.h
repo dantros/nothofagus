@@ -3,6 +3,7 @@
 #include "canvas.h"
 #include "texture_container.h"
 #include "bellota_container.h"
+#include "texture_usage_monitor.h"
 
 namespace Nothofagus
 {
@@ -66,6 +67,8 @@ public:
      * @param textureId The ID of the Texture to remove.
      */
     void removeTexture(const TextureId textureId);
+
+    void setTexture(const BellotaId bellotaId, const TextureId textureId);
 
     /**
      * @brief Sets a tint color for a Bellota.
@@ -145,6 +148,9 @@ public:
     void close();
 
 private:
+    void replaceBellota(const BellotaId bellotaId, const Bellota& bellota);
+    void clearUnusedTextures();
+
     ScreenSize mScreenSize; ///< The screen size of the canvas.
     std::string mTitle; ///< The title of the canvas window.
     glm::vec3 mClearColor; ///< The background color of the canvas.
@@ -152,6 +158,7 @@ private:
 
     TextureContainer mTextures; ///< Container for Texture objects.
     BellotaContainer mBellotas; ///< Container for Bellota objects.
+    TextureUsageMonitor mTextureUsageMonitor;
 
     unsigned int mShaderProgram; ///< The OpenGL shader program for rendering.
 

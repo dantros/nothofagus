@@ -40,6 +40,13 @@ set_property(TARGET test_keyboard PROPERTY CXX_STANDARD 20)
 target_include_directories(test_keyboard PRIVATE ${NOTHOFAGUS_INCLUDE})
 target_link_libraries(test_keyboard PRIVATE nothofagus)
 
+add_executable(test_create_destroy
+    "test_create_destroy.cpp"
+)
+set_property(TARGET test_create_destroy PROPERTY CXX_STANDARD 20)
+target_include_directories(test_create_destroy PRIVATE ${NOTHOFAGUS_INCLUDE})
+target_link_libraries(test_create_destroy PRIVATE nothofagus)
+
 add_executable(hello_layers
     "hello_layers.cpp"
 )
