@@ -92,8 +92,6 @@ public:
      */
     void removeTexture(const TextureId textureId);
 
-    void clearUnusedTextures();
-
     void setTexture(const BellotaId bellotaId, const TextureId textureId);
 
     /**

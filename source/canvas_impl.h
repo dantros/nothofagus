@@ -68,8 +68,6 @@ public:
      */
     void removeTexture(const TextureId textureId);
 
-    void clearUnusedTextures();
-
     void setTexture(const BellotaId bellotaId, const TextureId textureId);
 
     /**
@@ -151,6 +149,7 @@ public:
 
 private:
     void replaceBellota(const BellotaId bellotaId, const Bellota& bellota);
+    void clearUnusedTextures();
 
     ScreenSize mScreenSize; ///< The screen size of the canvas.
     std::string mTitle; ///< The title of the canvas window.

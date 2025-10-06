@@ -68,7 +68,7 @@ int main()
     Nothofagus::IndirectTexture dummyTexture({2, 2}, {1.0, 1.0, 1.0, 1.0});
     Nothofagus::TextureId dummyTextureId = canvas.addTexture(dummyTexture);
 
-    // this invisible Bellota is just to keep the texture alive, as we will remove unused textures every frame.
+    // this invisible Bellota is just to keep the texture alive, as Nothofagus removes unused textures every frame.
     Nothofagus::BellotaId dummyBellotaId = canvas.addBellota({{{10.0, 10.0}}, dummyTextureId});
     Nothofagus::Bellota& dummyBellota = canvas.bellota(dummyBellotaId);
     dummyBellota.visible() = false;
@@ -80,8 +80,6 @@ int main()
         ImGui::Begin("Use W to create and S to destroy");
         ImGui::Text("Handling %d bellotas", bellotaIds.size());
         ImGui::End();
-
-        canvas.clearUnusedTextures();
     };
 
     Nothofagus::Controller controller;

@@ -288,7 +288,6 @@ const bool& Canvas::CanvasImpl::stats() const
     return mStats;
 }
 
-//void setupVAO(DMesh& dMesh, GPUID shaderProgram)
 void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
 {
     // Binding VAO to setup
@@ -457,6 +456,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         performanceMonitor.update(glfwGetTime());
         const float deltaTimeMS = performanceMonitor.getMS();
 
+        clearUnusedTextures();
         initializeTexturePacks(mTextures);
         initializeBellotas(mBellotas, mTextures, mShaderProgram);
         sortByDepthOffset(mBellotas, sortedBellotaPacks);
