@@ -379,13 +379,6 @@ public:
     glm::ivec2 size() const { return mSize; }
 
     /**
-     * @brief Returns a reference to the list of pixels in the texture.
-     * 
-     * @return A reference to the `std::vector<Pixel>` containing the pixel data.
-     */
-    const std::vector<glm::vec4>& pixels() const { return mPixels; }
-
-    /**
      * @brief Returns the color of the pixel at the specified position.
      * 
      * @param i The x-coordinate of the pixel.
