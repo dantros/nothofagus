@@ -5,6 +5,8 @@
 #include <glm/glm.hpp>
 #include <iostream>
 #include <variant>
+#include <optional>
+#include <span>
 
 namespace Nothofagus
 {
@@ -186,20 +188,40 @@ struct ColorPallete
  * 
  * This structure holds the raw texture data of every layer, width, and height, and provides a function to retrieve the data.
  */
-struct TextureData
+class TextureData
 {
-    std::vector<std::uint8_t> data; /**< Raw texture data in RGBA format. */
-    std::size_t width, height, layers = 1; /**< The dimensions of the texture. */
+public:
+    static constexpr unsigned int colorDepth = 4;
 
-    /**
-     * @brief Returns a pointer to the raw texture data.
-     * 
-     * @return A pointer to the texture data.
-     */
-    const std::uint8_t* getData() const
+    /* Constructor that will use memory within this object */
+    TextureData(std::size_t width, std::size_t height, std::size_t layers = 1):
+        mDataOpt(std::in_place, colorDepth * width * height * layers, 0),
+        mDataSpan(mDataOpt.value().begin(), mDataOpt.value().end()),
+        mWidth(width),
+        mHeight(height),
+        mLayers(layers)
     {
-        return data.data();
     }
+
+    /* Constructor that will use external memory via the span provided */
+    TextureData(std::span<std::uint8_t> dataSpan, std::size_t width, std::size_t height, std::size_t layers = 1):
+        mDataOpt(std::nullopt),
+        mDataSpan(dataSpan),
+        mWidth(width),
+        mHeight(height),
+        mLayers(layers)
+    {
+    }
+
+    std::size_t width() const { return mWidth; }
+    std::size_t height() const { return mHeight; }
+    std::size_t layers() const { return mLayers; }
+    std::span<std::uint8_t> getDataSpan() const { return mDataSpan; }
+
+private:
+    std::optional<std::vector<std::uint8_t>> mDataOpt;
+    std::span<std::uint8_t> mDataSpan;
+    std::size_t mWidth, mHeight, mLayers = 1; /**< The dimensions of the texture. */
 };
 
 /**

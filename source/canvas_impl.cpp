@@ -326,7 +326,11 @@ GLuint textureArraySimpleSetup(const TextureData& textureData)
     GLuint internalFormat = GL_RGBA;
     GLuint format = GL_RGBA;
     
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, internalFormat, textureData.width, textureData.height, textureData.layers, 0, format, GL_UNSIGNED_BYTE, textureData.getData());
+    std::span<std::uint8_t> textureDataSpan = textureData.getDataSpan();
+    std::uint8_t& firstTextureValue = textureDataSpan.front();
+    std::uint8_t* pointerToFirstTextureValue = &firstTextureValue;
+
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, internalFormat, textureData.width(), textureData.height(), textureData.layers(), 0, format, GL_UNSIGNED_BYTE, pointerToFirstTextureValue);
 
     // texture wrapping params
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);

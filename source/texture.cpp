@@ -77,25 +77,23 @@ IndirectTexture& IndirectTexture::setPallete(const ColorPallete& pallete)
 
 TextureData IndirectTexture::generateTextureData() const
 {
-    TextureData out;
-    out.layers = mLayers;
-    out.width = mSize.x;
-    out.height = mSize.y;
-    static unsigned int colorDepth = 4;
-
-    out.data.reserve(out.layers * out.width * out.height * colorDepth);
+    TextureData out(mSize.x, mSize.y, mLayers);
+    std::span<std::uint8_t> dataSpan = out.getDataSpan();
+    std::size_t dataSpanIndex = 0;
 
     for (std::size_t layer = 0; layer < mLayers; ++layer)
     {
         std::size_t layerIndexStart = layer * mPixels.size() / mLayers;
-        for (std::size_t index = 0; index < out.width * out.height; ++index)
+        for (std::size_t pixelIndex = 0; pixelIndex < out.width() * out.height(); ++pixelIndex)
         {
-            const Pixel& pixel = mPixels[layerIndexStart + index];
+            const Pixel& pixel = mPixels[layerIndexStart + pixelIndex];
             const glm::vec4 color = 255.0f * mPallete.colors.at(pixel.colorId);
-            out.data.push_back(color.r);
-            out.data.push_back(color.g);
-            out.data.push_back(color.b);
-            out.data.push_back(color.a);
+            dataSpan[dataSpanIndex    ] = color.r;
+            dataSpan[dataSpanIndex + 1] = color.g;
+            dataSpan[dataSpanIndex + 2] = color.b;
+            dataSpan[dataSpanIndex + 3] = color.a;
+
+            dataSpanIndex += 4;
         }
     }
 
@@ -132,20 +130,19 @@ const glm::vec4 &DirectTexture::color(const std::size_t i, const std::size_t j) 
 
 TextureData DirectTexture::generateTextureData() const
 {
-    TextureData out;
-    out.width = mSize.x;
-    out.height = mSize.y;
-    static unsigned int colorDepth = 4;
+    TextureData out(mSize.x, mSize.y);
+    std::span<std::uint8_t> dataSpan = out.getDataSpan();
+    std::size_t dataSpanIndex = 0;
 
-    out.data.reserve(out.layers * out.width * out.height * colorDepth);
-
-    for (std::size_t index = 0; index < out.width * out.height; ++index)
+    for (std::size_t pixelIndex = 0; pixelIndex < out.width() * out.height(); ++pixelIndex)
     {
-        const glm::vec4 color = 255.0f * mPixels[index];
-        out.data.push_back(color.r);
-        out.data.push_back(color.g);
-        out.data.push_back(color.b);
-        out.data.push_back(color.a);
+        const glm::vec4 color = 255.0f * mPixels[pixelIndex];
+        dataSpan[dataSpanIndex    ] = color.r;
+        dataSpan[dataSpanIndex + 1] = color.g;
+        dataSpan[dataSpanIndex + 2] = color.b;
+        dataSpan[dataSpanIndex + 3] = color.a;
+
+        dataSpanIndex += 4;
     }
 
     return out;
