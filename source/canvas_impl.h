@@ -70,6 +70,8 @@ public:
 
     void setTexture(const BellotaId bellotaId, const TextureId textureId);
 
+    void markTextureAsDirty(const TextureId textureId);
+
     /**
      * @brief Sets a tint color for a Bellota.
      * @param bellotaId The ID of the Bellota.

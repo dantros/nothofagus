@@ -242,6 +242,15 @@ void Canvas::CanvasImpl::setTexture(const BellotaId bellotaId, const TextureId t
     replaceBellota(bellotaId, bellotaWithNewTexture);
 }
 
+void Canvas::CanvasImpl::markTextureAsDirty(const TextureId textureId)
+{
+    TexturePack& texturePack = mTextures.at(textureId.id);
+
+    // removing gpu content so it will be generated again with the new data.
+    // TODO: enable a fast path so the same GPU memory gets overwritten instead of a new one.
+    texturePack.clear();
+}
+
 void Canvas::CanvasImpl::setTint(const BellotaId bellotaId, const Tint& tint)
 {
     debugCheck(mBellotas.contains(bellotaId.id), "There is no Bellota associated with the BellotaId provided");
@@ -459,11 +468,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         performanceMonitor.update(glfwGetTime());
         const float deltaTimeMS = performanceMonitor.getMS();
-
-        clearUnusedTextures();
-        initializeTexturePacks(mTextures);
-        initializeBellotas(mBellotas, mTextures, mShaderProgram);
-        sortByDepthOffset(mBellotas, sortedBellotaPacks);
         
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -474,6 +478,11 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         // executing user provided update
         update(deltaTimeMS);
+
+        clearUnusedTextures();
+        initializeTexturePacks(mTextures);
+        initializeBellotas(mBellotas, mTextures, mShaderProgram);
+        sortByDepthOffset(mBellotas, sortedBellotaPacks);
 
         // drawing with OpenGL
         glUseProgram(mShaderProgram);
