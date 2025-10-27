@@ -21,6 +21,7 @@ struct TexturePack
         {
             DTexture& dtexture = dtextureOpt.value();
             dtexture.clear();
+            dtextureOpt = std::nullopt;
         }
     }
 };

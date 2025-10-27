@@ -242,6 +242,15 @@ void Canvas::CanvasImpl::setTexture(const BellotaId bellotaId, const TextureId t
     replaceBellota(bellotaId, bellotaWithNewTexture);
 }
 
+void Canvas::CanvasImpl::markTextureAsDirty(const TextureId textureId)
+{
+    TexturePack& texturePack = mTextures.at(textureId.id);
+
+    // removing gpu content so it will be generated again with the new data.
+    // TODO: enable a fast path so the same GPU memory gets overwritten instead of a new one.
+    texturePack.clear();
+}
+
 void Canvas::CanvasImpl::setTint(const BellotaId bellotaId, const Tint& tint)
 {
     debugCheck(mBellotas.contains(bellotaId.id), "There is no Bellota associated with the BellotaId provided");
@@ -326,7 +335,11 @@ GLuint textureArraySimpleSetup(const TextureData& textureData)
     GLuint internalFormat = GL_RGBA;
     GLuint format = GL_RGBA;
     
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, internalFormat, textureData.width, textureData.height, textureData.layers, 0, format, GL_UNSIGNED_BYTE, textureData.getData());
+    std::span<std::uint8_t> textureDataSpan = textureData.getDataSpan();
+    std::uint8_t& firstTextureValue = textureDataSpan.front();
+    std::uint8_t* pointerToFirstTextureValue = &firstTextureValue;
+
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, internalFormat, textureData.width(), textureData.height(), textureData.layers(), 0, format, GL_UNSIGNED_BYTE, pointerToFirstTextureValue);
 
     // texture wrapping params
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -455,11 +468,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         performanceMonitor.update(glfwGetTime());
         const float deltaTimeMS = performanceMonitor.getMS();
-
-        clearUnusedTextures();
-        initializeTexturePacks(mTextures);
-        initializeBellotas(mBellotas, mTextures, mShaderProgram);
-        sortByDepthOffset(mBellotas, sortedBellotaPacks);
         
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -470,6 +478,11 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         // executing user provided update
         update(deltaTimeMS);
+
+        clearUnusedTextures();
+        initializeTexturePacks(mTextures);
+        initializeBellotas(mBellotas, mTextures, mShaderProgram);
+        sortByDepthOffset(mBellotas, sortedBellotaPacks);
 
         // drawing with OpenGL
         glUseProgram(mShaderProgram);

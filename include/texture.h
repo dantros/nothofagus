@@ -5,6 +5,8 @@
 #include <glm/glm.hpp>
 #include <iostream>
 #include <variant>
+#include <optional>
+#include <span>
 
 namespace Nothofagus
 {
@@ -186,20 +188,34 @@ struct ColorPallete
  * 
  * This structure holds the raw texture data of every layer, width, and height, and provides a function to retrieve the data.
  */
-struct TextureData
+class TextureData
 {
-    std::vector<std::uint8_t> data; /**< Raw texture data in RGBA format. */
-    std::size_t width, height, layers = 1; /**< The dimensions of the texture. */
+public:
+    static constexpr unsigned int ColorDepth = 4;
 
-    /**
-     * @brief Returns a pointer to the raw texture data.
-     * 
-     * @return A pointer to the texture data.
-     */
-    const std::uint8_t* getData() const
+    /* Constructor that will use memory within this object */
+    TextureData(std::size_t width, std::size_t height, std::size_t layers = 1):
+        mDataOpt(std::in_place, ColorDepth * width * height * layers, 0),
+        mDataSpan(mDataOpt.value().begin(), mDataOpt.value().end()),
+        mWidth(width),
+        mHeight(height),
+        mLayers(layers)
     {
-        return data.data();
     }
+
+    /* Constructor that will use external memory via the span provided */
+    TextureData(std::span<std::uint8_t> dataSpan, std::size_t width, std::size_t height, std::size_t layers = 1);
+
+    std::size_t width() const { return mWidth; }
+    std::size_t height() const { return mHeight; }
+    std::size_t layers() const { return mLayers; }
+    std::span<std::uint8_t> getDataSpan() const { return mDataSpan; }
+    std::span<std::uint8_t> getPixelSpan(const std::size_t i, const std::size_t j) const;
+
+private:
+    std::optional<std::vector<std::uint8_t>> mDataOpt;
+    std::span<std::uint8_t> mDataSpan;
+    std::size_t mWidth, mHeight, mLayers = 1; /**< The dimensions of the texture. */
 };
 
 /**
@@ -341,11 +357,15 @@ public:
      * This constructor initializes the texture with the given size and a default color for all pixels.
      * 
      * @param size The size of the texture (width and height).
-     * @param defaultColor The default color for all pixels.
      */
-    DirectTexture(const glm::ivec2 size, const glm::vec4 defaultColor):
-        mSize(size),
-        mPixels(size.x * size.y, defaultColor)
+    DirectTexture(const glm::ivec2 size):
+        mTextureData(size.x, size.y, 1)
+    {
+    }
+
+    /* Constructor that will use external memory via the span provided */
+    DirectTexture(std::span<std::uint8_t> dataSpan, const glm::ivec2 size):
+        mTextureData(dataSpan, size.x, size.y, 1)
     {
     }
 
@@ -354,14 +374,7 @@ public:
      * 
      * @return The size of the texture (width and height).
      */
-    glm::ivec2 size() const { return mSize; }
-
-    /**
-     * @brief Returns a reference to the list of pixels in the texture.
-     * 
-     * @return A reference to the `std::vector<Pixel>` containing the pixel data.
-     */
-    const std::vector<glm::vec4>& pixels() const { return mPixels; }
+    glm::ivec2 size() const;
 
     /**
      * @brief Returns the color of the pixel at the specified position.
@@ -370,7 +383,7 @@ public:
      * @param j The y-coordinate of the pixel.
      * @return The `glm::vec4` color of the pixel.
      */
-    glm::vec4& color(const std::size_t i, const std::size_t j);
+    void setColor(const std::size_t i, const std::size_t j, const glm::vec4& color);
 
     /**
      * @brief Returns the color of the pixel at the specified position.
@@ -379,7 +392,7 @@ public:
      * @param j The y-coordinate of the pixel.
      * @return The `glm::vec4` color of the pixel.
      */
-    const glm::vec4& color(const std::size_t i, const std::size_t j) const;
+    glm::vec4 color(const std::size_t i, const std::size_t j) const;
 
     /**
      * @brief Generates the raw texture data for the texture.
@@ -389,8 +402,7 @@ public:
     TextureData generateTextureData() const;
 
 private:
-    glm::ivec2 mSize; /**< The size of the texture (width and height). */
-    std::vector<glm::vec4> mPixels; /**< The color data of the texture. */
+    TextureData mTextureData;
 };
 
 std::ostream& operator<<(std::ostream& os, const DirectTexture& texture);

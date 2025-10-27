@@ -49,6 +49,11 @@ void Canvas::setTexture(const BellotaId bellotaId, const TextureId textureId)
     mCanvasImpl->setTexture(bellotaId, textureId);
 }
 
+void Canvas::markTextureAsDirty(const TextureId textureId)
+{
+    mCanvasImpl->markTextureAsDirty(textureId);
+}
+
 void Canvas::setTint(const BellotaId bellotaId, const Tint& tint)
 {
     mCanvasImpl->setTint(bellotaId, tint);
