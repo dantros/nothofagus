@@ -5,10 +5,15 @@
 namespace Nothofagus
 {
 
+std::size_t indexOf(const std::size_t sizeI, const std::size_t sizeJ, const std::size_t i, const std::size_t j)
+{
+    debugCheck(i < sizeI and j < sizeJ, "Invalid indices for this texture.");
+    return sizeI * j + i;
+}
+
 std::size_t indexOf(const glm::ivec2 size, const std::size_t i, const std::size_t j)
 {
-    debugCheck(i < size.x and j < size.y, "Invalid indices for this texture.");
-    return size.x * j + i;
+    return indexOf(size.x, size.y, i, j);
 }
 
 IndirectTexture& IndirectTexture::setPixels(std::initializer_list<Pixel::ColorId> pixelColors, std::size_t layer)
@@ -116,36 +121,47 @@ std::ostream& operator<<(std::ostream& os, const IndirectTexture& texture)
     return os;
 }
 
-glm::vec4 &DirectTexture::color(const std::size_t i, const std::size_t j)
+glm::ivec2 DirectTexture::size() const
 {
-    const std::size_t index = indexOf(mSize, i, j);
-    return mPixels[index];
+    return {mTextureData.width(), mTextureData.height()};
 }
 
-const glm::vec4 &DirectTexture::color(const std::size_t i, const std::size_t j) const
+void DirectTexture::setColor(const std::size_t i, const std::size_t j, const glm::vec4 &color)
 {
-    const std::size_t index = indexOf(mSize, i, j);
-    return mPixels[index];
+    std::span<std::uint8_t> pixelSpan = mTextureData.getPixelSpan(i, j);
+    debugCheck(pixelSpan.size() == 4);
+
+    pixelSpan[0] = static_cast<std::uint8_t>(255.f * color.r);
+    pixelSpan[1] = static_cast<std::uint8_t>(255.f * color.g);
+    pixelSpan[2] = static_cast<std::uint8_t>(255.f * color.b);
+    pixelSpan[3] = static_cast<std::uint8_t>(255.f * color.a);
+}
+
+glm::vec4 DirectTexture::color(const std::size_t i, const std::size_t j) const
+{
+    std::span<std::uint8_t> pixelSpan = mTextureData.getPixelSpan(i, j);
+    debugCheck(pixelSpan.size() == 4);
+
+    return {
+        pixelSpan[0] / 255.f,
+        pixelSpan[1] / 255.f,
+        pixelSpan[2] / 255.f,
+        pixelSpan[3] / 255.f
+    };
 }
 
 TextureData DirectTexture::generateTextureData() const
 {
-    TextureData out(mSize.x, mSize.y);
-    std::span<std::uint8_t> dataSpan = out.getDataSpan();
-    std::size_t dataSpanIndex = 0;
+    return mTextureData;
+}
 
-    for (std::size_t pixelIndex = 0; pixelIndex < out.width() * out.height(); ++pixelIndex)
-    {
-        const glm::vec4 color = 255.0f * mPixels[pixelIndex];
-        dataSpan[dataSpanIndex    ] = color.r;
-        dataSpan[dataSpanIndex + 1] = color.g;
-        dataSpan[dataSpanIndex + 2] = color.b;
-        dataSpan[dataSpanIndex + 3] = color.a;
-
-        dataSpanIndex += 4;
-    }
-
-    return out;
+std::span<std::uint8_t> TextureData::getPixelSpan(const std::size_t i, const std::size_t j) const
+{
+    const std::size_t index = indexOf(mWidth, mHeight, i, j);
+    const std::size_t offset = index * ColorDepth;
+    std::uint8_t& firstPixelValue = mDataSpan[offset];
+    std::uint8_t* firstPixelAddress = &firstPixelValue;
+    return std::span<std::uint8_t>(firstPixelAddress, ColorDepth);
 }
 
 }

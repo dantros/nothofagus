@@ -9,18 +9,18 @@ int main()
 {
     Nothofagus::Canvas canvas({150, 100}, "Hello Direct Texture!", {0.7, 0.7, 0.7}, 6);
 
-    Nothofagus::DirectTexture texture({ 5, 5 }, { 0.5, 0.5, 0.5, 1.0 });
-    texture.color(0,0) = glm::vec4(0,0,0,1);
-    texture.color(0,1) = glm::vec4(1,1,1,1);
-    texture.color(1,1) = glm::vec4(1,0,0,1);
-    texture.color(2,1) = glm::vec4(0,1,0,1);
-    texture.color(3,1) = glm::vec4(0,0,1,1);
-    texture.color(1,2) = glm::vec4(1,1,0,1);
-    texture.color(2,2) = glm::vec4(0,1,1,1);
-    texture.color(3,2) = glm::vec4(1,0,1,1);
-    texture.color(1,3) = glm::vec4(0,0,0,1);
-    texture.color(2,3) = glm::vec4(0,0,0,1);
-    texture.color(3,3) = glm::vec4(1,1,1,1);
+    Nothofagus::DirectTexture texture({ 5, 5 });
+    texture.setColor(0,0, glm::vec4(0,0,0,1));
+    texture.setColor(0,1, glm::vec4(1,1,1,1));
+    texture.setColor(1,1, glm::vec4(1,0,0,1));
+    texture.setColor(2,1, glm::vec4(0,1,0,1));
+    texture.setColor(3,1, glm::vec4(0,0,1,1));
+    texture.setColor(1,2, glm::vec4(1,1,0,1));
+    texture.setColor(2,2, glm::vec4(0,1,1,1));
+    texture.setColor(3,2, glm::vec4(1,0,1,1));
+    texture.setColor(1,3, glm::vec4(0,0,0,1));
+    texture.setColor(2,3, glm::vec4(0,0,0,1));
+    texture.setColor(3,3, glm::vec4(1,1,1,1));
     Nothofagus::TextureId textureId = canvas.addTexture(texture);
 
     Nothofagus::BellotaId bellotaId1 = canvas.addBellota({{{30.0f, 80.0f}, 4}, textureId});

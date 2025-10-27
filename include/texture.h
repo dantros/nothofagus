@@ -191,11 +191,11 @@ struct ColorPallete
 class TextureData
 {
 public:
-    static constexpr unsigned int colorDepth = 4;
+    static constexpr unsigned int ColorDepth = 4;
 
     /* Constructor that will use memory within this object */
     TextureData(std::size_t width, std::size_t height, std::size_t layers = 1):
-        mDataOpt(std::in_place, colorDepth * width * height * layers, 0),
+        mDataOpt(std::in_place, ColorDepth * width * height * layers, 0),
         mDataSpan(mDataOpt.value().begin(), mDataOpt.value().end()),
         mWidth(width),
         mHeight(height),
@@ -217,6 +217,7 @@ public:
     std::size_t height() const { return mHeight; }
     std::size_t layers() const { return mLayers; }
     std::span<std::uint8_t> getDataSpan() const { return mDataSpan; }
+    std::span<std::uint8_t> getPixelSpan(const std::size_t i, const std::size_t j) const;
 
 private:
     std::optional<std::vector<std::uint8_t>> mDataOpt;
@@ -363,11 +364,9 @@ public:
      * This constructor initializes the texture with the given size and a default color for all pixels.
      * 
      * @param size The size of the texture (width and height).
-     * @param defaultColor The default color for all pixels.
      */
-    DirectTexture(const glm::ivec2 size, const glm::vec4 defaultColor):
-        mSize(size),
-        mPixels(size.x * size.y, defaultColor)
+    DirectTexture(const glm::ivec2 size):
+        mTextureData(size.x, size.y, 1)
     {
     }
 
@@ -376,7 +375,7 @@ public:
      * 
      * @return The size of the texture (width and height).
      */
-    glm::ivec2 size() const { return mSize; }
+    glm::ivec2 size() const;
 
     /**
      * @brief Returns the color of the pixel at the specified position.
@@ -385,7 +384,7 @@ public:
      * @param j The y-coordinate of the pixel.
      * @return The `glm::vec4` color of the pixel.
      */
-    glm::vec4& color(const std::size_t i, const std::size_t j);
+    void setColor(const std::size_t i, const std::size_t j, const glm::vec4& color);
 
     /**
      * @brief Returns the color of the pixel at the specified position.
@@ -394,7 +393,7 @@ public:
      * @param j The y-coordinate of the pixel.
      * @return The `glm::vec4` color of the pixel.
      */
-    const glm::vec4& color(const std::size_t i, const std::size_t j) const;
+    glm::vec4 color(const std::size_t i, const std::size_t j) const;
 
     /**
      * @brief Generates the raw texture data for the texture.
@@ -404,8 +403,7 @@ public:
     TextureData generateTextureData() const;
 
 private:
-    glm::ivec2 mSize; /**< The size of the texture (width and height). */
-    std::vector<glm::vec4> mPixels; /**< The color data of the texture. */
+    TextureData mTextureData;
 };
 
 std::ostream& operator<<(std::ostream& os, const DirectTexture& texture);
