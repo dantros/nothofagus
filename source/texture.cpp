@@ -155,6 +155,16 @@ TextureData DirectTexture::generateTextureData() const
     return mTextureData;
 }
 
+TextureData::TextureData(std::span<std::uint8_t> dataSpan, std::size_t width, std::size_t height, std::size_t layers):
+        mDataOpt(std::nullopt),
+        mDataSpan(dataSpan),
+        mWidth(width),
+        mHeight(height),
+        mLayers(layers)
+{
+    debugCheck(dataSpan.size() == width * height * layers * ColorDepth);
+}
+
 std::span<std::uint8_t> TextureData::getPixelSpan(const std::size_t i, const std::size_t j) const
 {
     const std::size_t index = indexOf(mWidth, mHeight, i, j);

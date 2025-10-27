@@ -204,14 +204,7 @@ public:
     }
 
     /* Constructor that will use external memory via the span provided */
-    TextureData(std::span<std::uint8_t> dataSpan, std::size_t width, std::size_t height, std::size_t layers = 1):
-        mDataOpt(std::nullopt),
-        mDataSpan(dataSpan),
-        mWidth(width),
-        mHeight(height),
-        mLayers(layers)
-    {
-    }
+    TextureData(std::span<std::uint8_t> dataSpan, std::size_t width, std::size_t height, std::size_t layers = 1);
 
     std::size_t width() const { return mWidth; }
     std::size_t height() const { return mHeight; }
@@ -367,6 +360,12 @@ public:
      */
     DirectTexture(const glm::ivec2 size):
         mTextureData(size.x, size.y, 1)
+    {
+    }
+
+    /* Constructor that will use external memory via the span provided */
+    DirectTexture(std::span<std::uint8_t> dataSpan, const glm::ivec2 size):
+        mTextureData(dataSpan, size.x, size.y, 1)
     {
     }
 

@@ -4,6 +4,8 @@
 #include <ciso646>
 #include <cmath>
 #include <nothofagus.h>
+#include <span>
+#include <cstddef>
 
 int main()
 {
@@ -28,6 +30,20 @@ int main()
     Nothofagus::BellotaId bellotaId3 = canvas.addBellota({{{50.0f, 20.0f}, 4}, textureId});
 
     canvas.setTint(bellotaId3, {0.5, glm::vec3(1, 0, 0)});
+
+    /* This is an example to use texture memory that is not owned by Nothofagus itself */
+    std::vector<std::uint8_t> externalTextureMemory{
+        255,   0,   0, 255,   0,   0,   0, 255,  // Red, Black
+          0,   0,   0, 255, 255,   0,   0, 255,  // Black, Red
+    };
+
+    /* obtaining a view of the existing data via span */
+    std::span<std::uint8_t> textureDataSpan(externalTextureMemory.begin(), externalTextureMemory.end());
+
+    /* our Nothofagus texture now uses that pre-existing data */
+    Nothofagus::DirectTexture externalTexture(textureDataSpan, {2, 2});
+    Nothofagus::TextureId textureId2 = canvas.addTexture(externalTexture);
+    Nothofagus::BellotaId bellotaId4 = canvas.addBellota({{{80.0f, 80.0f}, 6}, textureId2});
 
     float time = 0.0f;
     bool rotate = true;
