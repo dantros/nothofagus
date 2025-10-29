@@ -81,6 +81,8 @@ unsigned int createShaderProgram(const unsigned int& vertexShader, const unsigne
     return shaderProgram;
 }
 
+float scaleWidth, scaleHeight;
+
 Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& title, const glm::vec3 clearColor, const unsigned int pixelSize) :
     mScreenSize(screenSize),
     mTitle(title),
@@ -94,14 +96,34 @@ Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
+    // Get the primary monitor
+    GLFWmonitor* primary_monitor = glfwGetPrimaryMonitor();
+    if (!primary_monitor) {
+        std::cerr << "Failed to get primary monitor" << std::endl;
+        glfwTerminate();
+        throw;
+    }
+
+    // Get the video mode of the primary monitor
+    const GLFWvidmode* mode = glfwGetVideoMode(primary_monitor);
+    if (!mode) {
+        std::cerr << "Failed to get video mode" << std::endl;
+        glfwTerminate();
+        throw;
+    }
+
     // glfw window creation
-    GLFWwindow* glfwWindow = glfwCreateWindow(mScreenSize.width * mPixelSize, mScreenSize.height * mPixelSize, mTitle.c_str(), NULL, NULL);
+    GLFWwindow* glfwWindow = glfwCreateWindow(mode->width, mode->height, mTitle.c_str(), primary_monitor, NULL);
     if (glfwWindow == nullptr)
     {
         spdlog::error("Failed to create GLFW window");
         glfwTerminate();
         throw;
     }
+    
+    glfwGetWindowContentScale(glfwWindow, &scaleWidth, &scaleHeight);
+
+    spdlog::info("scaleWidth={} scaleHeight={}", scaleWidth, scaleHeight);
 
     mWindow = std::make_unique<Window>(glfwWindow);
 
@@ -166,6 +188,14 @@ Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& 
     ImGui_ImplGlfw_InitForOpenGL(mWindow->glfwWindow, true);
     const char* glsl_version = "#version 330";
     ImGui_ImplOpenGL3_Init(glsl_version);
+
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.ScaleAllSizes(scaleWidth);
+
+    float base_font_size = 50.0f;
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->AddFontFromFileTTF("Roboto-VariableFont_wdth,wght.ttf", base_font_size * scaleWidth);
 }
 
 Canvas::CanvasImpl::~CanvasImpl()
@@ -522,6 +552,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         if (mStats)
         {
+            ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
             ImGui::Begin("stats");
             ImGui::Text("%.2f fps", performanceMonitor.getFPS());
             ImGui::Text("%.2f ms", performanceMonitor.getMS());
