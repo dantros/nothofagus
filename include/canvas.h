@@ -60,7 +60,7 @@ public:
     /// Destructor
     ~Canvas();
 
-    // the number of monitor where the top left corner of the canvas is currently at
+    // the monitor index where the top left corner of the canvas is currently located
     std::size_t getCurrentMonitor() const;
 
     bool isFullscreen() const;
