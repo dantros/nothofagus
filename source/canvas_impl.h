@@ -26,18 +26,12 @@ class Canvas::CanvasImpl
 {
 public:
 
-    /**
-     * @brief Constructs a CanvasImpl object.
-     * @param screenSize The desired screen size for the canvas (in pixels).
-     * @param title The title of the window.
-     * @param clearColor The background color for the canvas.
-     * @param pixelSize The size of each pixel on the screen.
-     */
     CanvasImpl(
         const ScreenSize& screenSize,
         const std::string& title,
         const glm::vec3 clearColor,
-        const unsigned int pixelSize
+        const unsigned int pixelSize,
+        const float imguiFontSize
     );
 
     /// Destructor to clean up resources and terminate GLFW

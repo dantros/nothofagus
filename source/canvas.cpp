@@ -8,10 +8,11 @@ Canvas::Canvas(
     const ScreenSize& screenSize,
     const std::string& title,
     const glm::vec3 clearColor,
-    const unsigned int pixelSize
+    const unsigned int pixelSize,
+    const float imguiFontSize
 )
 {
-    mCanvasImpl = std::make_unique<CanvasImpl>(screenSize, title, clearColor, pixelSize);
+    mCanvasImpl = std::make_unique<CanvasImpl>(screenSize, title, clearColor, pixelSize, imguiFontSize);
 }
 
 Canvas::~Canvas()

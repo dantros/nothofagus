@@ -9,6 +9,7 @@
 #include "bellota_container.h"
 #include "keyboard.h"
 #include "controller.h"
+#include "roboto_font.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #define GLM_ENABLE_EXPERIMENTAL
@@ -81,7 +82,13 @@ unsigned int createShaderProgram(const unsigned int& vertexShader, const unsigne
     return shaderProgram;
 }
 
-Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& title, const glm::vec3 clearColor, const unsigned int pixelSize) :
+Canvas::CanvasImpl::CanvasImpl(
+    const ScreenSize& screenSize,
+    const std::string& title,
+    const glm::vec3 clearColor,
+    const unsigned int pixelSize,
+    const float imguiFontSize)
+    :
     mScreenSize(screenSize),
     mTitle(title),
     mClearColor(clearColor),
@@ -102,6 +109,9 @@ Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& 
         glfwTerminate();
         throw;
     }
+
+    float scaleWidth, scaleHeight;
+    glfwGetWindowContentScale(glfwWindow, &scaleWidth, &scaleHeight);
 
     mWindow = std::make_unique<Window>(glfwWindow);
 
@@ -166,6 +176,11 @@ Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& 
     ImGui_ImplGlfw_InitForOpenGL(mWindow->glfwWindow, true);
     const char* glsl_version = "#version 330";
     ImGui_ImplOpenGL3_Init(glsl_version);
+
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.ScaleAllSizes(scaleWidth);
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->AddFontFromMemoryTTF(assets_Roboto_VariableFont_wdth_wght_ttf, assets_Roboto_VariableFont_wdth_wght_ttf_len,  imguiFontSize * scaleWidth);
 }
 
 Canvas::CanvasImpl::~CanvasImpl()
@@ -607,8 +622,9 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         if (mStats)
         {
-            ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
-            ImGui::Begin("stats");
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Appearing);
+            ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+            ImGui::Begin("stats", NULL, ImGuiWindowFlags_NoTitleBar);
             ImGui::Text("%.2f fps", performanceMonitor.getFPS());
             ImGui::Text("%.2f ms", performanceMonitor.getMS());
             ImGui::End();
