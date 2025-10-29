@@ -75,7 +75,7 @@ canvas.run(update, controller);
 ```
 
 This is a screenshot of [examples/hello_nothofagus.cpp](examples/hello_nothofagus.cpp)
-![screenshot](assets/screenshot.webp "screenshot")
+![screenshot](media/screenshot.webp "screenshot")
 
 ## Setting up your project
 
