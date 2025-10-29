@@ -176,6 +176,91 @@ Canvas::CanvasImpl::~CanvasImpl()
     // Needs to be defined in the cpp file to avoid incomplete type errors due to the pimpl idiom for struct Window
 }
 
+std::size_t Canvas::CanvasImpl::getCurrentMonitor() const
+{
+    int monitorCount;
+    GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
+
+    if (monitors == nullptr)
+    {
+        spdlog::error("No monitors were found");
+        throw;
+    }
+
+    AABox windowBox = getWindowAABox();;
+
+    for (std::size_t monitorIndex = 0; monitorIndex < monitorCount; ++monitorIndex)
+    {
+        GLFWmonitor* currentMonitor = monitors[monitorIndex];
+        debugCheck(currentMonitor != nullptr);
+        AABox monitorBox;
+        glfwGetMonitorPos(currentMonitor, &monitorBox.x, &monitorBox.y);
+        const GLFWvidmode* videoMode = glfwGetVideoMode(currentMonitor);
+        debugCheck(videoMode != nullptr);
+        monitorBox.width = videoMode->width;
+        monitorBox.height = videoMode->height;
+
+        if (monitorBox.contains(windowBox.x, windowBox.y))
+        {
+            return monitorIndex;
+        }
+    }
+
+    throw;
+    return -1;
+}
+
+bool Canvas::CanvasImpl::isFullscreen() const
+{
+    GLFWmonitor* monitor = glfwGetWindowMonitor(mWindow->glfwWindow);
+    return monitor != nullptr;
+}
+
+void Canvas::CanvasImpl::setFullScreenOnMonitor(std::size_t monitorIndex)
+{
+    int monitorCount;
+    GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
+    debugCheck(monitorIndex < monitorCount);
+    GLFWmonitor* monitor = monitors[monitorIndex];
+    debugCheck(monitor != nullptr);
+    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+    debugCheck(mode != nullptr);
+
+    // saving current size to restore it later
+    mLastWindowedAABox = getWindowAABox();
+
+    glfwSetWindowMonitor(
+        mWindow->glfwWindow,
+        monitor,
+        0,
+        0,
+        mode->width, 
+        mode->height, 
+        mode->refreshRate
+    );
+}
+
+AABox Canvas::CanvasImpl::getWindowAABox() const
+{
+    AABox window;
+    glfwGetWindowPos(mWindow->glfwWindow, &window.x, &window.y);
+    glfwGetWindowSize(mWindow->glfwWindow, &window.width, &window.height);
+    return window;
+}
+
+void Canvas::CanvasImpl::setWindowed()
+{
+    glfwSetWindowMonitor(
+        mWindow->glfwWindow,
+        NULL,
+        mLastWindowedAABox.x,
+        mLastWindowedAABox.y,
+        mLastWindowedAABox.width, 
+        mLastWindowedAABox.height, 
+        0
+    );
+}
+
 const ScreenSize& Canvas::CanvasImpl::screenSize() const
 {
     return mScreenSize;
@@ -522,6 +607,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         if (mStats)
         {
+            ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
             ImGui::Begin("stats");
             ImGui::Text("%.2f fps", performanceMonitor.getFPS());
             ImGui::Text("%.2f ms", performanceMonitor.getMS());
@@ -565,6 +651,18 @@ void Canvas::CanvasImpl::replaceBellota(const BellotaId bellotaId, const Bellota
 
     bellotaPack.clearMesh();
     bellotaPack.bellota = newBellota;
+}
+
+bool isInRange(int value, int min, int max)
+{
+    return min <= value and value <= max;
+}
+
+bool AABox::contains(int x_, int y_) const
+{
+    return
+        isInRange(x_, x, x + width) and
+        isInRange(y_, y, y + height);
 }
 
 }

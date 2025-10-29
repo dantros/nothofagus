@@ -8,6 +8,13 @@
 namespace Nothofagus
 {
 
+struct AABox
+{
+    int x, y, width, height;
+
+    bool contains(int x_, int y_) const;
+};
+
 /**
  * @class Canvas::CanvasImpl
  * @brief Implementation of the Canvas class, responsible for managing the actual window, textures, Bellotas, and rendering.
@@ -35,6 +42,17 @@ public:
 
     /// Destructor to clean up resources and terminate GLFW
     ~CanvasImpl();
+
+    // the number of monitor where the top left corner of the canvas is currently at
+    std::size_t getCurrentMonitor() const;
+
+    bool isFullscreen() const;
+
+    void setFullScreenOnMonitor(std::size_t monitor = 0);
+
+    AABox getWindowAABox() const;
+
+    void setWindowed();
 
     /**
      * @brief Gets the screen size of the canvas.
@@ -168,6 +186,8 @@ private:
 
     struct Window; ///< Forward declaration for window management.
     std::unique_ptr<Window> mWindow; ///< Pointer to the window object.
+
+    AABox mLastWindowedAABox;
 };
 
 }
