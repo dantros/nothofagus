@@ -31,6 +31,8 @@ const glm::vec3 DEFAULT_CLEAR_COLOR{0.0f, 0.0f, 0.0f};
 /// Default pixel size for rendering.
 constexpr static unsigned int DEFAULT_PIXEL_SIZE{ 4 }; 
 
+constexpr static float DEFAULT_IMGUI_FONT_SIZE{14};
+
 
 
 /**
@@ -49,12 +51,14 @@ public:
      * @param title The window title (default is "Nothofagus App").
      * @param clearColor The background color of the canvas (default is black).
      * @param pixelSize The pixel size (default is 4).
+     * @param imguiFontSize font size used for DearImGui (default is 14.f).
      */
     Canvas(
         const ScreenSize& screenSize = DEFAULT_SCREEN_SIZE,
         const std::string& title = DEFAULT_TITLE,
         const glm::vec3 clearColor = DEFAULT_CLEAR_COLOR,
-        const unsigned int pixelSize = DEFAULT_PIXEL_SIZE
+        const unsigned int pixelSize = DEFAULT_PIXEL_SIZE,
+        const float imguiFontSize = DEFAULT_IMGUI_FONT_SIZE
     );
 
     /// Destructor

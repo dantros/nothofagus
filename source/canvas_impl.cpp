@@ -82,7 +82,13 @@ unsigned int createShaderProgram(const unsigned int& vertexShader, const unsigne
     return shaderProgram;
 }
 
-Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& title, const glm::vec3 clearColor, const unsigned int pixelSize) :
+Canvas::CanvasImpl::CanvasImpl(
+    const ScreenSize& screenSize,
+    const std::string& title,
+    const glm::vec3 clearColor,
+    const unsigned int pixelSize,
+    const float imguiFontSize)
+    :
     mScreenSize(screenSize),
     mTitle(title),
     mClearColor(clearColor),
@@ -173,9 +179,8 @@ Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& 
 
     ImGuiStyle& style = ImGui::GetStyle();
     style.ScaleAllSizes(scaleWidth);
-    const float baseFontSize = 14.0f;
     ImGuiIO& io = ImGui::GetIO();
-    io.Fonts->AddFontFromMemoryTTF(assets_Roboto_VariableFont_wdth_wght_ttf, assets_Roboto_VariableFont_wdth_wght_ttf_len,  baseFontSize * scaleWidth);
+    io.Fonts->AddFontFromMemoryTTF(assets_Roboto_VariableFont_wdth_wght_ttf, assets_Roboto_VariableFont_wdth_wght_ttf_len,  imguiFontSize * scaleWidth);
 }
 
 Canvas::CanvasImpl::~CanvasImpl()
@@ -617,7 +622,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         if (mStats)
         {
-            ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Appearing);
+            ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
             ImGui::Begin("stats");
             ImGui::Text("%.2f fps", performanceMonitor.getFPS());
             ImGui::Text("%.2f ms", performanceMonitor.getMS());
