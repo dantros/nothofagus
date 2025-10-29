@@ -60,6 +60,15 @@ public:
     /// Destructor
     ~Canvas();
 
+    // the number of monitor where the top left corner of the canvas is currently at
+    std::size_t getCurrentMonitor() const;
+
+    bool isFullscreen() const;
+
+    void setFullScreenOnMonitor(std::size_t monitor = 0);
+
+    void setWindowed();
+
     /**
      * @brief Returns reference to the screen size.
      * @return The screen size.

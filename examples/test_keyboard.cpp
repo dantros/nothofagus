@@ -56,6 +56,7 @@ int main()
         ImGui::Text("Discrete control keys: W, S, ESCAPE");
         ImGui::Text("Continuous control keys: A, D");
         ImGui::Text("Show/hide performance stats: Q");
+        ImGui::Text("Toggle fullscreen/windowed in the current monitor: F");
         ImGui::End();
 
         if (rotate)
@@ -98,6 +99,18 @@ int main()
     controller.registerAction({ Nothofagus::Key::Q, Nothofagus::DiscreteTrigger::Press }, [&]()
     {
         canvas.stats() = not canvas.stats();
+    });
+    controller.registerAction({ Nothofagus::Key::F, Nothofagus::DiscreteTrigger::Press }, [&]()
+    {
+        if (canvas.isFullscreen())
+        {
+            canvas.setWindowed();
+        }
+        else
+        {
+            std::size_t monitor = canvas.getCurrentMonitor();
+            canvas.setFullScreenOnMonitor(monitor);
+        }
     });
     controller.registerAction({Nothofagus::Key::SPACE, Nothofagus::DiscreteTrigger::Press}, [&]()
     {

@@ -19,6 +19,26 @@ Canvas::~Canvas()
 
 }
 
+std::size_t Canvas::getCurrentMonitor() const
+{
+    return mCanvasImpl->getCurrentMonitor();;
+}
+
+bool Canvas::isFullscreen() const
+{
+    return mCanvasImpl->isFullscreen();
+}
+
+void Canvas::setFullScreenOnMonitor(std::size_t monitor)
+{
+    mCanvasImpl->setFullScreenOnMonitor(monitor);
+}
+
+void Canvas::setWindowed()
+{
+    mCanvasImpl->setWindowed();
+}
+
 const ScreenSize& Canvas::screenSize() const
 {
     return mCanvasImpl->screenSize();
