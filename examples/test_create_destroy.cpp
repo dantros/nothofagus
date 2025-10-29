@@ -77,6 +77,7 @@ int main()
 
     auto update = [&](float dt)
     {
+        ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
         ImGui::Begin("Use W to create and S to destroy");
         ImGui::Text("Handling %d bellotas", bellotaIds.size());
         ImGui::End();

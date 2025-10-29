@@ -77,6 +77,7 @@ int main()
         Nothofagus::Bellota& bellota3 = canvas.bellota(bellotaId3);
 
         // you can directly use ImGui
+        ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
         ImGui::Begin("Hello there!");
         ImGui::Text("May ImGui be with you...");
         ImGui::Checkbox("Rotate?", &rotate);

@@ -51,6 +51,7 @@ int main()
         float scale = 2.0f + 0.5f * std::sin(0.005f * time);
         bellota.transform().scale() = glm::vec2(scale, scale);
 
+        ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
         ImGui::Begin("Hello there!");
         ImGui::Text("Discrete control keys: W, S, ESCAPE");
         ImGui::Text("Continuous control keys: A, D");

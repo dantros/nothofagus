@@ -84,6 +84,7 @@ int main()
                 std::sin(0.001f * time + std::numbers::pi/4)
             );
 
+        ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
         ImGui::Begin("Green Tint");
         ImGui::SliderFloat("Intensity", &intensity, 0.0f, 1.0f);
         ImGui::ColorPicker3("Color", tintColor);
