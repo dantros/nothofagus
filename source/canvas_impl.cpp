@@ -624,7 +624,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         {
             ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Appearing);
             ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
-            ImGui::Begin("stats");
+            ImGui::Begin("stats", NULL, ImGuiWindowFlags_NoTitleBar);
             ImGui::Text("%.2f fps", performanceMonitor.getFPS());
             ImGui::Text("%.2f ms", performanceMonitor.getMS());
             ImGui::End();
