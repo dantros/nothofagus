@@ -104,6 +104,9 @@ Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& 
         throw;
     }
 
+    float scaleWidth, scaleHeight;
+    glfwGetWindowContentScale(glfwWindow, &scaleWidth, &scaleHeight);
+
     mWindow = std::make_unique<Window>(glfwWindow);
 
     glfwMakeContextCurrent(mWindow->glfwWindow);
@@ -167,6 +170,12 @@ Canvas::CanvasImpl::CanvasImpl(const ScreenSize& screenSize, const std::string& 
     ImGui_ImplGlfw_InitForOpenGL(mWindow->glfwWindow, true);
     const char* glsl_version = "#version 330";
     ImGui_ImplOpenGL3_Init(glsl_version);
+
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.ScaleAllSizes(scaleWidth);
+    const float baseFontSize = 14.0f;
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->AddFontFromMemoryTTF(assets_Roboto_VariableFont_wdth_wght_ttf, assets_Roboto_VariableFont_wdth_wght_ttf_len,  baseFontSize * scaleWidth);
 }
 
 Canvas::CanvasImpl::~CanvasImpl()
