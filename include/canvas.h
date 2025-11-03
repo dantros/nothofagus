@@ -19,6 +19,16 @@ struct ScreenSize
     unsigned int width, height;
 };
 
+constexpr inline bool operator!=(const ScreenSize& lhs, const ScreenSize& rhs)
+{
+    return lhs.width != rhs.width or lhs.height != rhs.height;
+}
+
+constexpr inline bool operator==(const ScreenSize& lhs, const ScreenSize& rhs)
+{
+    return lhs.width == rhs.width and lhs.height == rhs.height;
+}
+
 // Default screen size for the canvas.
 constexpr static ScreenSize DEFAULT_SCREEN_SIZE{256, 240};
 
@@ -78,6 +88,10 @@ public:
      * @return The screen size.
      */
     const ScreenSize& screenSize() const;
+
+    void setScreenSize(const ScreenSize& screenSize);
+
+    ScreenSize windowSize() const;
 
     /**
      * @brief Add a Bellota to the canvas.

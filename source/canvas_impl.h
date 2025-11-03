@@ -54,6 +54,10 @@ public:
      */
     const ScreenSize& screenSize() const;
 
+    void setScreenSize(const ScreenSize& screenSize);
+
+    ScreenSize windowSize() const;
+
     /**
      * @brief Adds a Bellota object to the canvas.
      * @param bellota The Bellota object to add.

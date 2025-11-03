@@ -221,8 +221,8 @@ std::size_t Canvas::CanvasImpl::getCurrentMonitor() const
         }
     }
 
-    throw;
-    return -1;
+    spdlog::warn("Top left corner of the window is outside of all monitors. Returning primary monitor.");
+    return 0;
 }
 
 bool Canvas::CanvasImpl::isFullscreen() const
@@ -279,6 +279,21 @@ void Canvas::CanvasImpl::setWindowed()
 const ScreenSize& Canvas::CanvasImpl::screenSize() const
 {
     return mScreenSize;
+}
+
+void Canvas::CanvasImpl::setScreenSize(const ScreenSize& screenSize)
+{
+    mScreenSize = screenSize;
+}
+
+ScreenSize Canvas::CanvasImpl::windowSize() const
+{
+    debugCheck(mWindow != nullptr);
+    debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
+    
+    int width, height;
+    glfwGetWindowSize(mWindow->glfwWindow, &width, &height);
+    return {static_cast<unsigned int>(width), static_cast<unsigned int>(height)};
 }
 
 BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)
@@ -458,12 +473,14 @@ void keyCallback(GLFWwindow* window, int glfwKey, int scancode, int action, int 
         return;
 
     auto myUserPointer = glfwGetWindowUserPointer(window);
-    Controller* controller = static_cast<Controller*>(myUserPointer);
+    debugCheck(myUserPointer != nullptr);
+    Controller* controllerPtr = static_cast<Controller*>(myUserPointer);
+    debugCheck(controllerPtr != nullptr);
 
     Key key = KeyboardImplementation::toKeyCode(glfwKey);
 
     DiscreteTrigger trigger = action == GLFW_PRESS ? DiscreteTrigger::Press : DiscreteTrigger::Release;
-    controller->activate({ key, trigger });
+    controllerPtr->activate({ key, trigger });
 }
 
 void initializeTexturePacks(TextureContainer& textures)
@@ -520,13 +537,17 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
     glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
 
-    glm::mat3 worldTransformMat(1.0);
-    worldTransformMat = glm::translate(worldTransformMat, glm::vec2(-1.0, -1.0));
-    const glm::vec2 worldScale(
-        2.0f / mScreenSize.width,
-        2.0f / mScreenSize.height
-    );
-    worldTransformMat = glm::scale(worldTransformMat, worldScale);
+    auto computeWorldTransformMat = [](const ScreenSize& screenSize)
+    {
+        glm::mat3 worldTransformMat(1.0);
+        worldTransformMat = glm::translate(worldTransformMat, glm::vec2(-1.0, -1.0));
+        const glm::vec2 worldScale(
+            2.0f / screenSize.width,
+            2.0f / screenSize.height
+        );
+        return glm::scale(worldTransformMat, worldScale);
+    };
+    glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
 
     const auto dLayerIndexLocation = glGetUniformLocation(mShaderProgram, "layerIndex");
     const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
@@ -562,6 +583,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         );
     };
 
+    ScreenSize currentScreenSize = mScreenSize;
+
     while (!glfwWindowShouldClose(mWindow->glfwWindow))
     {
         controller.processInputs();
@@ -578,6 +601,12 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         // executing user provided update
         update(deltaTimeMS);
+
+        if (currentScreenSize != mScreenSize)
+        {
+            currentScreenSize = mScreenSize;
+            worldTransformMat = computeWorldTransformMat(mScreenSize);
+        }
 
         clearUnusedTextures();
         initializeTexturePacks(mTextures);
