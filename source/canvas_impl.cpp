@@ -710,4 +710,17 @@ bool AABox::contains(int x_, int y_) const
         isInRange(y_, y, y + height);
 }
 
+ScreenSize getPrimaryMonitorSize()
+{
+    glfwInit();  // idempotent — safe if Canvas has already initialised it
+    const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
+    if (!mode)
+    {
+        spdlog::warn("getPrimaryMonitorSize: could not query primary monitor, returning default 1920x1080");
+        return { 1920, 1080 };
+    }
+    return { static_cast<unsigned int>(mode->width),
+             static_cast<unsigned int>(mode->height) };
+}
+
 }

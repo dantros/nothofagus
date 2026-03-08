@@ -43,7 +43,9 @@ constexpr static unsigned int DEFAULT_PIXEL_SIZE{ 4 };
 
 constexpr static float DEFAULT_IMGUI_FONT_SIZE{14};
 
-
+/// @brief Returns the resolution of the primary monitor using GLFW.
+/// Safe to call before constructing a Canvas — initialises GLFW internally (idempotent).
+ScreenSize getPrimaryMonitorSize();
 
 /**
  * @class Canvas
