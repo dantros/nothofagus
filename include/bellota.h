@@ -36,8 +36,9 @@ public:
         mTextureId{ textureId },
         mCurrentLayer{ 0 },
         mDepthOffset{ 0 },
-        mVisible{ true }
-        
+        mVisible{ true },
+        mOpacity{ 1.0f }
+
     {
     }
 
@@ -46,7 +47,8 @@ public:
         mTextureId{ textureId },
         mCurrentLayer{ 0 },
         mDepthOffset{ depthOffset },
-        mVisible{ true }
+        mVisible{ true },
+        mOpacity{ 1.0f }
 
     {
     }
@@ -62,6 +64,9 @@ public:
     const bool& visible() const { return mVisible; }
     bool& visible() { return mVisible; }
 
+    const float& opacity() const { return mOpacity; }
+    float& opacity() { return mOpacity; }
+
     const std::size_t& currentLayer() const { return mCurrentLayer; }
     std::size_t& currentLayer() { return mCurrentLayer; }
 
@@ -75,6 +80,8 @@ private:
 
     /* You can hide this implementation */
     bool mVisible;
+
+    float mOpacity;  /**< 0.0 = fully transparent, 1.0 = fully opaque (default). */
 };
 
 }

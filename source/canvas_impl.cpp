@@ -146,13 +146,14 @@ Canvas::CanvasImpl::CanvasImpl(
         uniform int layerIndex;
         uniform vec3 tintColor;
         uniform float tintIntensity;
+        uniform float opacity;
         void main()
         {
             vec4 textureSample = texture(textureSampler, vec3(outTextureCoordinates, layerIndex));
             vec3 textureColor = textureSample.xyz;
             float textureOpacity = textureSample.w;
             vec3 blendColor = (tintColor * tintIntensity) + (textureColor * (1 - tintIntensity));
-            outColor = vec4(blendColor, textureOpacity);
+            outColor = vec4(blendColor, textureOpacity * opacity);
         }
     )";
 
@@ -553,6 +554,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
     const auto dTintColorLocation = glGetUniformLocation(mShaderProgram, "tintColor");
     const auto dTintIntensityLocation = glGetUniformLocation(mShaderProgram, "tintIntensity");
+    const auto dOpacityLocation = glGetUniformLocation(mShaderProgram, "opacity");
 
     PerformanceMonitor performanceMonitor(glfwGetTime(), 0.5f);
 
@@ -643,6 +645,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
                 glUniform3f(dTintColorLocation, 1.0f, 1.0f, 1.0f);
                 glUniform1f(dTintIntensityLocation, 0.0f);
             }
+            glUniform1f(dOpacityLocation, bellota.opacity());
             glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
             glUniform1i(dLayerIndexLocation, bellota.currentLayer());
             
