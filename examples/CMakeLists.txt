@@ -60,3 +60,10 @@ add_executable(hello_animation_state_machine
 set_property(TARGET hello_animation_state_machine PROPERTY CXX_STANDARD 20)
 target_include_directories(hello_animation_state_machine PRIVATE ${NOTHOFAGUS_INCLUDE})
 target_link_libraries(hello_animation_state_machine PRIVATE nothofagus)
+
+add_executable(hello_render_to_texture
+    "hello_render_to_texture.cpp"
+)
+set_property(TARGET hello_render_to_texture PROPERTY CXX_STANDARD 20)
+target_include_directories(hello_render_to_texture PRIVATE ${NOTHOFAGUS_INCLUDE})
+target_link_libraries(hello_render_to_texture PRIVATE nothofagus)
