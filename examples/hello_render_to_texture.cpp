@@ -48,11 +48,14 @@ int main()
     Nothofagus::BellotaId redBellotaId  = canvas.addBellota({{{22.0f, 32.0f}}, redTextureId});
     Nothofagus::BellotaId blueBellotaId = canvas.addBellota({{{42.0f, 32.0f}}, blueTextureId});
 
+    // Main canvas bellota — rendered on top of the display bellota, not inside the render target.
+    Nothofagus::BellotaId blueBellota2Id = canvas.addBellota({{{62.0f, 32.0f}}, blueTextureId, 1});
+
     // --- Render target: 64x64 pixels ---
 
     Nothofagus::RenderTargetId renderTargetId = canvas.addRenderTarget({64, 64});
     Nothofagus::TextureId renderTargetTextureId = canvas.renderTargetTexture(renderTargetId);
-    canvas.setRenderTargetClearColor(renderTargetId, {0.0f, 0.0f, 0.0f, 1.0f});
+    canvas.setRenderTargetClearColor(renderTargetId, {0.0f, 0.0f, 0.0f, 0.5f});
 
     // Display bellota — samples the render target and shows it on the main canvas.
     Nothofagus::BellotaId displayBellotaId = canvas.addBellota({{{64.0f, 64.0f}}, renderTargetTextureId});
@@ -68,7 +71,7 @@ int main()
         canvas.bellota(blueBellotaId).transform().angle() = -0.05f * time;
 
         // Gently bob the display bellota.
-        canvas.bellota(displayBellotaId).transform().location().y = 96.0f + 8.0f * std::sin(0.002f * time);
+        canvas.bellota(displayBellotaId).transform().location().y = 64.0f + 8.0f * std::sin(0.002f * time);
 
         // Schedule both source sprites to be rendered into the render target this frame.
         canvas.renderTo(renderTargetId, {redBellotaId, blueBellotaId});
