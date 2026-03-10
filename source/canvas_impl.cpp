@@ -7,6 +7,7 @@
 #include "performance_monitor.h"
 #include "texture_container.h"
 #include "bellota_container.h"
+#include "render_target_container.h"
 #include "keyboard.h"
 #include "controller.h"
 #include "roboto_font.h"
@@ -318,10 +319,11 @@ void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
 
 TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
 {
-    TextureId newTextureId{mTextures.add({texture, std::nullopt})};
+    glm::ivec2 textureSize = std::visit(GetTextureSizeVisitor(), texture);
+    TextureId newTextureId{mTextures.add({texture, std::nullopt, textureSize})};
     const bool textureWasAdded = mTextureUsageMonitor.addUnusedTexture(newTextureId);
     debugCheck(textureWasAdded);
-    return newTextureId; 
+    return newTextureId;
 }
 
 void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
@@ -340,6 +342,9 @@ void Canvas::CanvasImpl::clearUnusedTextures()
     const std::unordered_set<TextureId> unusedTextureIdsCopy = mTextureUsageMonitor.getUnusedTextureIds();
     for (TextureId textureId : unusedTextureIdsCopy)
     {
+        // Proxy entries are owned by their RenderTargetPack — skip auto-cleanup.
+        if (mTextures.at(textureId.id).isProxy())
+            continue;
         removeTexture(textureId);
     }
     mTextureUsageMonitor.clearUnusedTextureIds();
@@ -361,10 +366,64 @@ void Canvas::CanvasImpl::setTexture(const BellotaId bellotaId, const TextureId t
 void Canvas::CanvasImpl::markTextureAsDirty(const TextureId textureId)
 {
     TexturePack& texturePack = mTextures.at(textureId.id);
+    debugCheck(not texturePack.isProxy(), "markTextureAsDirty called on a render target proxy texture.");
 
     // removing gpu content so it will be generated again with the new data.
     // TODO: enable a fast path so the same GPU memory gets overwritten instead of a new one.
     texturePack.clear();
+}
+
+RenderTargetId Canvas::CanvasImpl::addRenderTarget(ScreenSize size)
+{
+    const glm::ivec2 texSize{static_cast<int>(size.width), static_cast<int>(size.height)};
+
+    // Register a proxy TexturePack so bellotas can reference the render target like any other texture.
+    TexturePack proxyPack;
+    proxyPack.texture = std::nullopt;
+    proxyPack.dtextureOpt = std::nullopt;
+    proxyPack.mTextureSize = texSize;
+    TextureId proxyTexId{mTextures.add(proxyPack)};
+    mTextureUsageMonitor.addUnusedTexture(proxyTexId);
+
+    RenderTargetPack renderTargetPack;
+    renderTargetPack.renderTarget = RenderTarget{texSize, proxyTexId};
+    renderTargetPack.dRenderTargetOpt = std::nullopt;
+    RenderTargetId newId{mRenderTargets.add(renderTargetPack)};
+
+    return newId;
+}
+
+void Canvas::CanvasImpl::removeRenderTarget(RenderTargetId renderTargetId)
+{
+    RenderTargetPack& renderTargetPack = mRenderTargets.at(renderTargetId.id);
+    const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
+
+    // Destroy the FBO (also frees the colorTexture GL handle).
+    renderTargetPack.clear();
+
+    // Detach the borrowed GL handle from the proxy TexturePack before removing it.
+    mTextures.at(proxyTexId.id).dtextureOpt = std::nullopt;
+    mTextures.remove(proxyTexId.id);
+
+    // Remove from usage monitor if currently unused (i.e. no bellotas reference it).
+    mTextureUsageMonitor.removeUnusedTexture(proxyTexId);
+
+    mRenderTargets.remove(renderTargetId.id);
+}
+
+TextureId Canvas::CanvasImpl::renderTargetTexture(RenderTargetId renderTargetId) const
+{
+    return mRenderTargets.at(renderTargetId.id).renderTarget.mProxyTextureId;
+}
+
+void Canvas::CanvasImpl::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)
+{
+    mPendingRttPasses.emplace_back(renderTargetId, std::move(bellotaIds));
+}
+
+void Canvas::CanvasImpl::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
+{
+    mRenderTargets.at(renderTargetId.id).renderTarget.mClearColor = clearColor;
 }
 
 void Canvas::CanvasImpl::setTint(const BellotaId bellotaId, const Tint& tint)
@@ -395,12 +454,12 @@ const Bellota& Canvas::CanvasImpl::bellota(BellotaId bellotaId) const
 
 Texture& Canvas::CanvasImpl::texture(TextureId textureId)
 {
-    return mTextures.at(textureId.id).texture;
+    return mTextures.at(textureId.id).texture.value();
 }
 
 const Texture& Canvas::CanvasImpl::texture(TextureId textureId) const
 {
-    return mTextures.at(textureId.id).texture;
+    return mTextures.at(textureId.id).texture.value();
 }
 
 bool& Canvas::CanvasImpl::stats()
@@ -491,10 +550,32 @@ void initializeTexturePacks(TextureContainer& textures)
         if (not texturePack.isDirty())
             continue;
 
-        const Texture& texture = texturePack.texture;
+        // Proxy entries (render target color attachments) are initialized separately.
+        if (texturePack.isProxy())
+            continue;
+
+        const Texture& texture = texturePack.texture.value();
         TextureData textureData = std::visit(GenerateTextureDataVisitor(), texture);
 
         texturePack.dtextureOpt = DTexture{ textureArraySimpleSetup(textureData) };
+    }
+}
+
+void initializeRenderTargets(RenderTargetContainer& renderTargets, TextureContainer& textures)
+{
+    for (auto& [renderTargetIndex, renderTargetPack] : renderTargets)
+    {
+        if (not renderTargetPack.isDirty())
+            continue;
+
+        DRenderTarget dRenderTarget;
+        dRenderTarget.create(renderTargetPack.renderTarget.mSize);
+        const unsigned int colorTexture = dRenderTarget.colorTexture;
+        renderTargetPack.dRenderTargetOpt = dRenderTarget;
+
+        // Wire the FBO color attachment into the proxy TexturePack so DMesh can sample it.
+        const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
+        textures.at(proxyTexId.id).dtextureOpt = DTexture{colorTexture};
     }
 }
 
@@ -526,6 +607,51 @@ void initializeBellotas(BellotaContainer& bellotas, TextureContainer& textures, 
     }
 }
 
+struct BellotaShaderUniforms
+{
+    GLint transform;
+    GLint layerIndex;
+    GLint tintColor;
+    GLint tintIntensity;
+    GLint opacity;
+};
+
+void drawBellotaPacks(
+    const std::vector<const BellotaPack*>& sortedPacks,
+    const glm::mat3& worldTransform,
+    const BellotaShaderUniforms& uniforms)
+{
+    for (const BellotaPack* packPtr : sortedPacks)
+    {
+        debugCheck(packPtr != nullptr, "invalid pointer to bellota pack.");
+        const Bellota& bellota = packPtr->bellota;
+
+        if (not bellota.visible())
+            continue;
+
+        debugCheck(packPtr->dmeshOpt.has_value(), "DMesh has not been initialized.");
+        const DMesh& dmesh = packPtr->dmeshOpt.value();
+        const glm::mat3 totalTransformMat = worldTransform * bellota.transform().toMat3();
+
+        if (packPtr->tintOpt != std::nullopt)
+        {
+            const Tint& tint = packPtr->tintOpt.value();
+            glUniform3f(uniforms.tintColor, tint.color.r, tint.color.g, tint.color.b);
+            glUniform1f(uniforms.tintIntensity, tint.intensity);
+        }
+        else
+        {
+            glUniform3f(uniforms.tintColor, 1.0f, 1.0f, 1.0f);
+            glUniform1f(uniforms.tintIntensity, 0.0f);
+        }
+        glUniform1f(uniforms.opacity, bellota.opacity());
+        glUniformMatrix3fv(uniforms.transform, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
+        glUniform1i(uniforms.layerIndex, bellota.currentLayer());
+
+        dmesh.drawCall();
+    }
+}
+
 void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
     debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
@@ -550,11 +676,15 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     };
     glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
 
-    const auto dLayerIndexLocation = glGetUniformLocation(mShaderProgram, "layerIndex");
-    const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
-    const auto dTintColorLocation = glGetUniformLocation(mShaderProgram, "tintColor");
-    const auto dTintIntensityLocation = glGetUniformLocation(mShaderProgram, "tintIntensity");
-    const auto dOpacityLocation = glGetUniformLocation(mShaderProgram, "opacity");
+    // clang off
+    const BellotaShaderUniforms bellotaShaderUniforms{
+        /*GLint transform;      */ glGetUniformLocation(mShaderProgram, "transform"),
+        /*GLint layerIndex;     */ glGetUniformLocation(mShaderProgram, "layerIndex"),
+        /*GLint tintColor;      */ glGetUniformLocation(mShaderProgram, "tintColor"),
+        /*GLint tintIntensity;  */ glGetUniformLocation(mShaderProgram, "tintIntensity"),
+        /*GLint opacity;        */ glGetUniformLocation(mShaderProgram, "opacity"),
+    };
+    //clang on
 
     PerformanceMonitor performanceMonitor(glfwGetTime(), 0.5f);
 
@@ -612,45 +742,66 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         clearUnusedTextures();
         initializeTexturePacks(mTextures);
+        initializeRenderTargets(mRenderTargets, mTextures);
         initializeBellotas(mBellotas, mTextures, mShaderProgram);
         sortByDepthOffset(mBellotas, sortedBellotaPacks);
 
-        // drawing with OpenGL
         glUseProgram(mShaderProgram);
 
-        for (auto& bellotaPackPtr : sortedBellotaPacks)
+        // RTT pre-passes — render requested bellotas into their render targets
+        // before drawing to the main framebuffer.
+        if (not mPendingRttPasses.empty())
         {
-            debugCheck(bellotaPackPtr != nullptr, "invalid pointer to bellota pack.");
-            auto& bellotaPack = *bellotaPackPtr;
-            debugCheck(bellotaPack.dmeshOpt.has_value(), "DMesh has not been initialized.");
-
-            const Bellota& bellota = bellotaPack.bellota;
-
-            if (not bellota.visible())
-                continue;
-
-            const DMesh& dmesh = bellotaPack.dmeshOpt.value();
-            const Transform& modelTransform = bellota.transform();
-            const glm::mat3 modelTransformMat = modelTransform.toMat3();
-            const glm::mat3 totalTransformMat = worldTransformMat * modelTransformMat;
-
-            if (bellotaPack.tintOpt != std::nullopt)
+            for (auto& [renderTargetId, bellotaIds] : mPendingRttPasses)
             {
-                const Tint& tint = bellotaPack.tintOpt.value();
-                glUniform3f(dTintColorLocation, tint.color.r, tint.color.g, tint.color.b);
-                glUniform1f(dTintIntensityLocation, tint.intensity);
+                if (not mRenderTargets.contains(renderTargetId.id))
+                    continue;
+
+                RenderTargetPack& renderTargetPack = mRenderTargets.at(renderTargetId.id);
+                if (not renderTargetPack.dRenderTargetOpt.has_value())
+                    continue;
+
+                DRenderTarget& dRenderTarget = renderTargetPack.dRenderTargetOpt.value();
+                dRenderTarget.bind();
+                glViewport(0, 0, dRenderTarget.size.x, dRenderTarget.size.y);
+                const glm::vec4& clearColor = renderTargetPack.renderTarget.mClearColor;
+                glClearColor(clearColor.r, clearColor.g, clearColor.b, clearColor.a);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+                glm::mat3 renderTargetWorldTransform(1.0f);
+                renderTargetWorldTransform = glm::translate(renderTargetWorldTransform, glm::vec2(-1.0f, -1.0f));
+                renderTargetWorldTransform = glm::scale(renderTargetWorldTransform, glm::vec2(2.0f / dRenderTarget.size.x, 2.0f / dRenderTarget.size.y));
+
+                std::vector<const BellotaPack*> renderTargetSortedPacks;
+                for (const BellotaId bellotaId : bellotaIds)
+                {
+                    if (mBellotas.contains(bellotaId.id))
+                        renderTargetSortedPacks.push_back(&mBellotas.at(bellotaId.id));
+                }
+                std::sort(renderTargetSortedPacks.begin(), renderTargetSortedPacks.end(),
+                    [](const BellotaPack* lhs, const BellotaPack* rhs)
+                    {
+                        return lhs->bellota.depthOffset() < rhs->bellota.depthOffset();
+                    }
+                );
+
+                drawBellotaPacks(renderTargetSortedPacks, renderTargetWorldTransform, bellotaShaderUniforms);
+
+                dRenderTarget.unbind();
             }
-            else
+
+            // Restore viewport and clear color to the main framebuffer values.
             {
-                glUniform3f(dTintColorLocation, 1.0f, 1.0f, 1.0f);
-                glUniform1f(dTintIntensityLocation, 0.0f);
+                int frameBufferWidth, frameBufferHeight;
+                glfwGetFramebufferSize(mWindow->glfwWindow, &frameBufferWidth, &frameBufferHeight);
+                glViewport(0, 0, frameBufferWidth, frameBufferHeight);
+                glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
             }
-            glUniform1f(dOpacityLocation, bellota.opacity());
-            glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
-            glUniform1i(dLayerIndexLocation, bellota.currentLayer());
-            
-            dmesh.drawCall();
+            mPendingRttPasses.clear();
         }
+
+        // drawing with OpenGL
+        drawBellotaPacks(sortedBellotaPacks, worldTransformMat, bellotaShaderUniforms);
 
         if (mStats)
         {
@@ -672,6 +823,19 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     for (auto& [bellotaIndex, bellotaPack] : mBellotas)
     {
         bellotaPack.clear();
+    }
+
+    // Render targets must be cleared before textures: DRenderTarget::clear() deletes
+    // the colorTexture GL handle that the proxy TexturePack's dtextureOpt borrows.
+    for (auto& [renderTargetIndex, renderTargetPack] : mRenderTargets)
+    {
+        if (renderTargetPack.dRenderTargetOpt.has_value())
+        {
+            const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
+            if (mTextures.contains(proxyTexId.id))
+                mTextures.at(proxyTexId.id).dtextureOpt = std::nullopt;
+        }
+        renderTargetPack.clear();
     }
 
     for (auto& [textureIndex, texturePack] : mTextures)

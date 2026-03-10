@@ -4,23 +4,29 @@
 #include "indexed_container.h"
 #include "dtexture.h"
 #include <optional>
+#include <glm/glm.hpp>
 
 namespace Nothofagus
 {
 
 struct TexturePack
 {
-	Texture texture;
-	std::optional<DTexture> dtextureOpt;
+    // nullopt for GPU-proxy entries (render target color attachments).
+    // CPU-owned textures (IndirectTexture / DirectTexture) always have a value.
+    std::optional<Texture> texture;
+    std::optional<DTexture> dtextureOpt;
+    glm::ivec2 mTextureSize{0, 0}; ///< Cached size — set at creation for both CPU and proxy entries.
 
-	bool isDirty() const { return not dtextureOpt.has_value(); }
+    bool isProxy() const { return not texture.has_value(); }
+    bool isDirty() const { return not dtextureOpt.has_value(); }
 
-	void clear()
+    void clear()
     {
         if (dtextureOpt.has_value())
         {
-            DTexture& dtexture = dtextureOpt.value();
-            dtexture.clear();
+            // Proxy entries borrow the GL handle from DRenderTarget — do not delete it here.
+            if (not isProxy())
+                dtextureOpt.value().clear();
             dtextureOpt = std::nullopt;
         }
     }
