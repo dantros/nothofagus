@@ -135,6 +135,8 @@ public:
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 
+    void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
+
     /**
      * @brief Set a tint color for a Bellota.
      * @param bellotaId The ID of the Bellota to tint.

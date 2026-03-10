@@ -105,6 +105,11 @@ void Canvas::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bell
     mCanvasImpl->renderTo(renderTargetId, std::move(bellotaIds));
 }
 
+void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
+{
+    mCanvasImpl->setRenderTargetClearColor(renderTargetId, clearColor);
+}
+
 void Canvas::setTint(const BellotaId bellotaId, const Tint& tint)
 {
     mCanvasImpl->setTint(bellotaId, tint);

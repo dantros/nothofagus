@@ -421,6 +421,11 @@ void Canvas::CanvasImpl::renderTo(RenderTargetId renderTargetId, std::vector<Bel
     mPendingRttPasses.emplace_back(renderTargetId, std::move(bellotaIds));
 }
 
+void Canvas::CanvasImpl::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
+{
+    mRenderTargets.at(renderTargetId.id).renderTarget.mClearColor = clearColor;
+}
+
 void Canvas::CanvasImpl::setTint(const BellotaId bellotaId, const Tint& tint)
 {
     debugCheck(mBellotas.contains(bellotaId.id), "There is no Bellota associated with the BellotaId provided");
@@ -710,6 +715,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
                 DRenderTarget& dRenderTarget = renderTargetPack.dRenderTargetOpt.value();
                 dRenderTarget.bind();
                 glViewport(0, 0, dRenderTarget.size.x, dRenderTarget.size.y);
+                const glm::vec4& clearColor = renderTargetPack.renderTarget.mClearColor;
+                glClearColor(clearColor.r, clearColor.g, clearColor.b, clearColor.a);
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
                 glm::mat3 renderTargetWorldTransform(1.0f);
@@ -760,11 +767,12 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
                 dRenderTarget.unbind();
             }
 
-            // Restore viewport to the window framebuffer.
+            // Restore viewport and clear color to the main framebuffer values.
             {
                 int frameBufferWidth, frameBufferHeight;
                 glfwGetFramebufferSize(mWindow->glfwWindow, &frameBufferWidth, &frameBufferHeight);
                 glViewport(0, 0, frameBufferWidth, frameBufferHeight);
+                glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
             }
             mPendingRttPasses.clear();
         }
