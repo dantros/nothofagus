@@ -12,7 +12,7 @@ namespace Nothofagus
  * depth renderbuffer. The color texture handle can be used directly as a
  * DMesh texture so bellotas can sample the rendered result.
  */
-struct DFramebuffer
+struct DRenderTarget
 {
     unsigned int fbo;
     unsigned int colorTexture; ///< GL_TEXTURE_2D_ARRAY, 1 layer — shared with the proxy TexturePack.

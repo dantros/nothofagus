@@ -387,7 +387,7 @@ RenderTargetId Canvas::CanvasImpl::addRenderTarget(ScreenSize size)
 
     RenderTargetPack pack;
     pack.renderTarget = RenderTarget{texSize, proxyTexId};
-    pack.dframebufferOpt = std::nullopt;
+    pack.dRenderTargetOpt = std::nullopt;
     RenderTargetId newId{mRenderTargets.add(pack)};
 
     return newId;

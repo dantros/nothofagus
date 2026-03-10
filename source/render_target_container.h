@@ -2,7 +2,7 @@
 
 #include "render_target.h"
 #include "indexed_container.h"
-#include "dframebuffer.h"
+#include "drender_target.h"
 #include <optional>
 
 namespace Nothofagus
@@ -11,16 +11,16 @@ namespace Nothofagus
 struct RenderTargetPack
 {
     RenderTarget renderTarget;
-    std::optional<DFramebuffer> dframebufferOpt;
+    std::optional<DRenderTarget> dRenderTargetOpt;
 
-    bool isDirty() const { return not dframebufferOpt.has_value(); }
+    bool isDirty() const { return not dRenderTargetOpt.has_value(); }
 
     void clear()
     {
-        if (dframebufferOpt.has_value())
+        if (dRenderTargetOpt.has_value())
         {
-            dframebufferOpt.value().clear();
-            dframebufferOpt = std::nullopt;
+            dRenderTargetOpt.value().clear();
+            dRenderTargetOpt = std::nullopt;
         }
     }
 };

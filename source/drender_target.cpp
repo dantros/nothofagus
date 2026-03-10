@@ -1,10 +1,10 @@
-#include "dframebuffer.h"
+#include "drender_target.h"
 #include <glad/glad.h>
 
 namespace Nothofagus
 {
 
-void DFramebuffer::create(glm::ivec2 size)
+void DRenderTarget::create(glm::ivec2 size)
 {
     this->size = size;
 
@@ -33,17 +33,17 @@ void DFramebuffer::create(glm::ivec2 size)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void DFramebuffer::bind() const
+void DRenderTarget::bind() const
 {
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 }
 
-void DFramebuffer::unbind() const
+void DRenderTarget::unbind() const
 {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void DFramebuffer::clear() const
+void DRenderTarget::clear() const
 {
     glDeleteFramebuffers(1, &fbo);
     glDeleteTextures(1, &colorTexture);

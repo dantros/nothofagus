@@ -24,7 +24,7 @@ struct TexturePack
     {
         if (dtextureOpt.has_value())
         {
-            // Proxy entries borrow the GL handle from DFramebuffer — do not delete it here.
+            // Proxy entries borrow the GL handle from DRenderTarget — do not delete it here.
             if (not isProxy())
                 dtextureOpt.value().clear();
             dtextureOpt = std::nullopt;
