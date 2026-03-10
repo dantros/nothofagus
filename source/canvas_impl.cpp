@@ -7,6 +7,7 @@
 #include "performance_monitor.h"
 #include "texture_container.h"
 #include "bellota_container.h"
+#include "render_target_container.h"
 #include "keyboard.h"
 #include "controller.h"
 #include "roboto_font.h"
@@ -318,10 +319,11 @@ void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
 
 TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
 {
-    TextureId newTextureId{mTextures.add({texture, std::nullopt})};
+    glm::ivec2 textureSize = std::visit(GetTextureSizeVisitor(), texture);
+    TextureId newTextureId{mTextures.add({texture, std::nullopt, textureSize})};
     const bool textureWasAdded = mTextureUsageMonitor.addUnusedTexture(newTextureId);
     debugCheck(textureWasAdded);
-    return newTextureId; 
+    return newTextureId;
 }
 
 void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
@@ -340,6 +342,9 @@ void Canvas::CanvasImpl::clearUnusedTextures()
     const std::unordered_set<TextureId> unusedTextureIdsCopy = mTextureUsageMonitor.getUnusedTextureIds();
     for (TextureId textureId : unusedTextureIdsCopy)
     {
+        // Proxy entries are owned by their RenderTargetPack — skip auto-cleanup.
+        if (mTextures.at(textureId.id).isProxy())
+            continue;
         removeTexture(textureId);
     }
     mTextureUsageMonitor.clearUnusedTextureIds();
@@ -361,10 +366,59 @@ void Canvas::CanvasImpl::setTexture(const BellotaId bellotaId, const TextureId t
 void Canvas::CanvasImpl::markTextureAsDirty(const TextureId textureId)
 {
     TexturePack& texturePack = mTextures.at(textureId.id);
+    debugCheck(not texturePack.isProxy(), "markTextureAsDirty called on a render target proxy texture.");
 
     // removing gpu content so it will be generated again with the new data.
     // TODO: enable a fast path so the same GPU memory gets overwritten instead of a new one.
     texturePack.clear();
+}
+
+RenderTargetId Canvas::CanvasImpl::addRenderTarget(ScreenSize size)
+{
+    const glm::ivec2 texSize{static_cast<int>(size.width), static_cast<int>(size.height)};
+
+    // Register a proxy TexturePack so bellotas can reference the render target like any other texture.
+    TexturePack proxyPack;
+    proxyPack.texture = std::nullopt;
+    proxyPack.dtextureOpt = std::nullopt;
+    proxyPack.mTextureSize = texSize;
+    TextureId proxyTexId{mTextures.add(proxyPack)};
+    mTextureUsageMonitor.addUnusedTexture(proxyTexId);
+
+    RenderTargetPack pack;
+    pack.renderTarget = RenderTarget{texSize, proxyTexId};
+    pack.dframebufferOpt = std::nullopt;
+    RenderTargetId newId{mRenderTargets.add(pack)};
+
+    return newId;
+}
+
+void Canvas::CanvasImpl::removeRenderTarget(RenderTargetId renderTargetId)
+{
+    RenderTargetPack& pack = mRenderTargets.at(renderTargetId.id);
+    const TextureId proxyTexId = pack.renderTarget.mProxyTextureId;
+
+    // Destroy the FBO (also frees the colorTexture GL handle).
+    pack.clear();
+
+    // Detach the borrowed GL handle from the proxy TexturePack before removing it.
+    mTextures.at(proxyTexId.id).dtextureOpt = std::nullopt;
+    mTextures.remove(proxyTexId.id);
+
+    // Remove from usage monitor if currently unused (i.e. no bellotas reference it).
+    mTextureUsageMonitor.removeUnusedTexture(proxyTexId);
+
+    mRenderTargets.remove(renderTargetId.id);
+}
+
+TextureId Canvas::CanvasImpl::renderTargetTexture(RenderTargetId renderTargetId) const
+{
+    return mRenderTargets.at(renderTargetId.id).renderTarget.mProxyTextureId;
+}
+
+void Canvas::CanvasImpl::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)
+{
+    mPendingRttPasses.emplace_back(renderTargetId, std::move(bellotaIds));
 }
 
 void Canvas::CanvasImpl::setTint(const BellotaId bellotaId, const Tint& tint)

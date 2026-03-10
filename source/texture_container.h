@@ -4,6 +4,7 @@
 #include "indexed_container.h"
 #include "dtexture.h"
 #include <optional>
+#include <glm/glm.hpp>
 
 namespace Nothofagus
 {
@@ -14,6 +15,7 @@ struct TexturePack
     // CPU-owned textures (IndirectTexture / DirectTexture) always have a value.
     std::optional<Texture> texture;
     std::optional<DTexture> dtextureOpt;
+    glm::ivec2 mTextureSize{0, 0}; ///< Cached size — set at creation for both CPU and proxy entries.
 
     bool isProxy() const { return not texture.has_value(); }
     bool isDirty() const { return not dtextureOpt.has_value(); }

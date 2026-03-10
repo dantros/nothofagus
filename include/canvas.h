@@ -3,11 +3,13 @@
 #include <glm/glm.hpp>
 #include "bellota.h"
 #include "texture.h"
+#include "render_target.h"
 #include "controller.h"
 #include "tint.h"
 #include <memory>
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace Nothofagus
 {
@@ -124,6 +126,14 @@ public:
     void setTexture(const BellotaId bellotaId, const TextureId textureId);
 
     void markTextureAsDirty(const TextureId textureId);
+
+    RenderTargetId addRenderTarget(ScreenSize size);
+
+    void removeRenderTarget(RenderTargetId renderTargetId);
+
+    TextureId renderTargetTexture(RenderTargetId renderTargetId) const;
+
+    void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 
     /**
      * @brief Set a tint color for a Bellota.

@@ -3,7 +3,10 @@
 #include "canvas.h"
 #include "texture_container.h"
 #include "bellota_container.h"
+#include "render_target_container.h"
 #include "texture_usage_monitor.h"
+#include <vector>
+#include <utility>
 
 namespace Nothofagus
 {
@@ -87,6 +90,14 @@ public:
     void setTexture(const BellotaId bellotaId, const TextureId textureId);
 
     void markTextureAsDirty(const TextureId textureId);
+
+    RenderTargetId addRenderTarget(ScreenSize size);
+
+    void removeRenderTarget(RenderTargetId renderTargetId);
+
+    TextureId renderTargetTexture(RenderTargetId renderTargetId) const;
+
+    void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 
     /**
      * @brief Sets a tint color for a Bellota.
@@ -176,7 +187,11 @@ private:
 
     TextureContainer mTextures; ///< Container for Texture objects.
     BellotaContainer mBellotas; ///< Container for Bellota objects.
+    RenderTargetContainer mRenderTargets; ///< Container for RenderTarget objects.
     TextureUsageMonitor mTextureUsageMonitor;
+
+    /// RTT passes queued by renderTo() during the update callback, executed before the main render.
+    std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
 
     unsigned int mShaderProgram; ///< The OpenGL shader program for rendering.
 
