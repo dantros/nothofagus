@@ -91,6 +91,10 @@ machine.transition("start_running");
 machine.update(dt);
 ```
 
+## Coding Conventions
+
+- **No variable name abbreviations** — use full names in local variables and parameters. E.g. `renderTargetPack` not `rtPack`, `renderTargetId` not `rtId`, `dRenderTarget` not `drt`, `bellotaId` not `bid`.
+
 ## Important Details
 
 - **Default canvas size**: 256×240 pixels, 4px scale → 1024×960 window
