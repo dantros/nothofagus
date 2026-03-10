@@ -67,3 +67,10 @@ add_executable(hello_render_to_texture
 set_property(TARGET hello_render_to_texture PROPERTY CXX_STANDARD 20)
 target_include_directories(hello_render_to_texture PRIVATE ${NOTHOFAGUS_INCLUDE})
 target_link_libraries(hello_render_to_texture PRIVATE nothofagus)
+
+add_executable(hello_nested_render_targets
+    "hello_nested_render_targets.cpp"
+)
+set_property(TARGET hello_nested_render_targets PROPERTY CXX_STANDARD 20)
+target_include_directories(hello_nested_render_targets PRIVATE ${NOTHOFAGUS_INCLUDE})
+target_link_libraries(hello_nested_render_targets PRIVATE nothofagus)
