@@ -607,6 +607,51 @@ void initializeBellotas(BellotaContainer& bellotas, TextureContainer& textures, 
     }
 }
 
+struct BellotaShaderUniforms
+{
+    GLint transform;
+    GLint layerIndex;
+    GLint tintColor;
+    GLint tintIntensity;
+    GLint opacity;
+};
+
+void drawBellotaPacks(
+    const std::vector<const BellotaPack*>& sortedPacks,
+    const glm::mat3& worldTransform,
+    const BellotaShaderUniforms& uniforms)
+{
+    for (const BellotaPack* packPtr : sortedPacks)
+    {
+        debugCheck(packPtr != nullptr, "invalid pointer to bellota pack.");
+        const Bellota& bellota = packPtr->bellota;
+
+        if (not bellota.visible())
+            continue;
+
+        debugCheck(packPtr->dmeshOpt.has_value(), "DMesh has not been initialized.");
+        const DMesh& dmesh = packPtr->dmeshOpt.value();
+        const glm::mat3 totalTransformMat = worldTransform * bellota.transform().toMat3();
+
+        if (packPtr->tintOpt != std::nullopt)
+        {
+            const Tint& tint = packPtr->tintOpt.value();
+            glUniform3f(uniforms.tintColor, tint.color.r, tint.color.g, tint.color.b);
+            glUniform1f(uniforms.tintIntensity, tint.intensity);
+        }
+        else
+        {
+            glUniform3f(uniforms.tintColor, 1.0f, 1.0f, 1.0f);
+            glUniform1f(uniforms.tintIntensity, 0.0f);
+        }
+        glUniform1f(uniforms.opacity, bellota.opacity());
+        glUniformMatrix3fv(uniforms.transform, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
+        glUniform1i(uniforms.layerIndex, bellota.currentLayer());
+
+        dmesh.drawCall();
+    }
+}
+
 void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
     debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
@@ -631,11 +676,15 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     };
     glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
 
-    const auto dLayerIndexLocation = glGetUniformLocation(mShaderProgram, "layerIndex");
-    const auto dTransformLocation = glGetUniformLocation(mShaderProgram, "transform");
-    const auto dTintColorLocation = glGetUniformLocation(mShaderProgram, "tintColor");
-    const auto dTintIntensityLocation = glGetUniformLocation(mShaderProgram, "tintIntensity");
-    const auto dOpacityLocation = glGetUniformLocation(mShaderProgram, "opacity");
+    // clang off
+    const BellotaShaderUniforms bellotaShaderUniforms{
+        /*GLint transform;      */ glGetUniformLocation(mShaderProgram, "transform"),
+        /*GLint layerIndex;     */ glGetUniformLocation(mShaderProgram, "layerIndex"),
+        /*GLint tintColor;      */ glGetUniformLocation(mShaderProgram, "tintColor"),
+        /*GLint tintIntensity;  */ glGetUniformLocation(mShaderProgram, "tintIntensity"),
+        /*GLint opacity;        */ glGetUniformLocation(mShaderProgram, "opacity"),
+    };
+    //clang on
 
     PerformanceMonitor performanceMonitor(glfwGetTime(), 0.5f);
 
@@ -736,33 +785,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
                     }
                 );
 
-                for (const BellotaPack* packPtr : renderTargetSortedPacks)
-                {
-                    const Bellota& bellota = packPtr->bellota;
-                    if (not bellota.visible())
-                        continue;
-
-                    debugCheck(packPtr->dmeshOpt.has_value(), "DMesh has not been initialized for RTT bellota.");
-                    const DMesh& dmesh = packPtr->dmeshOpt.value();
-                    const glm::mat3 totalTransformMat = renderTargetWorldTransform * bellota.transform().toMat3();
-
-                    if (packPtr->tintOpt != std::nullopt)
-                    {
-                        const Tint& tint = packPtr->tintOpt.value();
-                        glUniform3f(dTintColorLocation, tint.color.r, tint.color.g, tint.color.b);
-                        glUniform1f(dTintIntensityLocation, tint.intensity);
-                    }
-                    else
-                    {
-                        glUniform3f(dTintColorLocation, 1.0f, 1.0f, 1.0f);
-                        glUniform1f(dTintIntensityLocation, 0.0f);
-                    }
-                    glUniform1f(dOpacityLocation, bellota.opacity());
-                    glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
-                    glUniform1i(dLayerIndexLocation, bellota.currentLayer());
-
-                    dmesh.drawCall();
-                }
+                drawBellotaPacks(renderTargetSortedPacks, renderTargetWorldTransform, bellotaShaderUniforms);
 
                 dRenderTarget.unbind();
             }
@@ -778,40 +801,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         }
 
         // drawing with OpenGL
-
-        for (auto& bellotaPackPtr : sortedBellotaPacks)
-        {
-            debugCheck(bellotaPackPtr != nullptr, "invalid pointer to bellota pack.");
-            auto& bellotaPack = *bellotaPackPtr;
-            debugCheck(bellotaPack.dmeshOpt.has_value(), "DMesh has not been initialized.");
-
-            const Bellota& bellota = bellotaPack.bellota;
-
-            if (not bellota.visible())
-                continue;
-
-            const DMesh& dmesh = bellotaPack.dmeshOpt.value();
-            const Transform& modelTransform = bellota.transform();
-            const glm::mat3 modelTransformMat = modelTransform.toMat3();
-            const glm::mat3 totalTransformMat = worldTransformMat * modelTransformMat;
-
-            if (bellotaPack.tintOpt != std::nullopt)
-            {
-                const Tint& tint = bellotaPack.tintOpt.value();
-                glUniform3f(dTintColorLocation, tint.color.r, tint.color.g, tint.color.b);
-                glUniform1f(dTintIntensityLocation, tint.intensity);
-            }
-            else
-            {
-                glUniform3f(dTintColorLocation, 1.0f, 1.0f, 1.0f);
-                glUniform1f(dTintIntensityLocation, 0.0f);
-            }
-            glUniform1f(dOpacityLocation, bellota.opacity());
-            glUniformMatrix3fv(dTransformLocation, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
-            glUniform1i(dLayerIndexLocation, bellota.currentLayer());
-            
-            dmesh.drawCall();
-        }
+        drawBellotaPacks(sortedBellotaPacks, worldTransformMat, bellotaShaderUniforms);
 
         if (mStats)
         {
