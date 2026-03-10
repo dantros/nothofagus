@@ -37,6 +37,22 @@
             }
         },
         {
+            "name": "ninja-debug",
+            "inherits": "base",
+            "hidden": false,
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "ninja-debug-examples",
+            "inherits": "ninja-debug",
+            "cacheVariables": {
+                "NOTHOFAGUS_BUILD_EXAMPLES": "ON"
+            }
+        },
+        {
             "name": "vs-debug",
             "inherits": "base",
             "hidden": false,
