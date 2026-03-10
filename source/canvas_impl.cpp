@@ -395,12 +395,12 @@ const Bellota& Canvas::CanvasImpl::bellota(BellotaId bellotaId) const
 
 Texture& Canvas::CanvasImpl::texture(TextureId textureId)
 {
-    return mTextures.at(textureId.id).texture;
+    return mTextures.at(textureId.id).texture.value();
 }
 
 const Texture& Canvas::CanvasImpl::texture(TextureId textureId) const
 {
-    return mTextures.at(textureId.id).texture;
+    return mTextures.at(textureId.id).texture.value();
 }
 
 bool& Canvas::CanvasImpl::stats()
@@ -491,7 +491,11 @@ void initializeTexturePacks(TextureContainer& textures)
         if (not texturePack.isDirty())
             continue;
 
-        const Texture& texture = texturePack.texture;
+        // Proxy entries (render target color attachments) are initialized separately.
+        if (texturePack.isProxy())
+            continue;
+
+        const Texture& texture = texturePack.texture.value();
         TextureData textureData = std::visit(GenerateTextureDataVisitor(), texture);
 
         texturePack.dtextureOpt = DTexture{ textureArraySimpleSetup(textureData) };
