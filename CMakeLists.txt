@@ -24,6 +24,7 @@ add_library(nothofagus
     "source/mesh.cpp"
     "source/dmesh.cpp"
     "source/dtexture.cpp"
+    "source/dframebuffer.cpp"
     "source/transform.cpp"
     "source/texture.cpp"
     "source/texture_usage_monitor.cpp"
