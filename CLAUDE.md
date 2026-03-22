@@ -10,7 +10,8 @@ Pixel art real-time renderer built on OpenGL 3.3, written in C++20. Outputs a st
 - **IndirectTexture** — paletted texture: pixels hold color indices into a `ColorPallete`
 - **DirectTexture** — raw RGBA texture
 - **Transform** — position (`mLocation`), scale (`mScale`), rotation (`mAngle` in degrees)
-- **Controller** — keyboard input handler mapping `KeyboardTrigger` → `Action` callbacks
+- **Controller** — keyboard and mouse input handler; maps `KeyboardTrigger`/`MouseButtonTrigger` → `Action` callbacks and tracks mouse position as `glm::vec2`
+- **MouseButton** — enum with values `Left`, `Middle`, `Right`
 - **AnimationState** — frame sequence with per-frame durations, loops automatically
 - **AnimationStateMachine** — manages multiple states with named event-based transitions
 
@@ -76,11 +77,30 @@ canvas.run([&](float dt) {
 });
 ```
 
-### Input
+### Keyboard input
 ```cpp
 controller.registerAction({Key::W, DiscreteTrigger::Press}, [&]() { ... });
+controller.deleteAction({Key::W, DiscreteTrigger::Press});
 canvas.run(update, controller);
 ```
+
+### Mouse input
+
+Mouse position is delivered in **game canvas coordinates** (origin bottom-left, same space as bellota positions). Coordinate conversion from GLFW window coords through the letterbox viewport happens automatically inside `canvas.run()`.
+
+```cpp
+// Button callbacks — same DiscreteTrigger enum as keyboard
+controller.registerMouseAction({MouseButton::Left, DiscreteTrigger::Press}, [&]() { ... });
+controller.deleteMouseAction({MouseButton::Right, DiscreteTrigger::Release});
+
+// Move callback — fires every time the cursor moves
+controller.registerMouseMove([&](glm::vec2 position) { ... });
+
+// Polling — valid at any point inside the canvas.run() callback
+glm::vec2 pos = controller.getMousePosition();
+```
+
+Mouse button callbacks are dispatched via the same `processInputs()` queue as keyboard. The move callback fires immediately from the GLFW cursor callback (outside the queue), so it can be called multiple times per frame.
 
 ### Animations
 ```cpp
@@ -128,7 +148,7 @@ Nothofagus::ViewportRect viewport = canvas.gameViewport();
 | `hello_layers.cpp` | Depth-based layering |
 | `hello_text.cpp` | Text rendering |
 | `hello_tint.cpp` | Color tinting |
-| `test_keyboard.cpp` | Input handling |
+| `test_keyboard.cpp` | Keyboard input handling |
 | `test_create_destroy.cpp` | Object lifecycle |
 
 ## Dependencies (third_party/ submodules)
