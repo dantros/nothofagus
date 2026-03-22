@@ -91,6 +91,21 @@ machine.transition("start_running");
 machine.update(dt);
 ```
 
+### Display and viewport
+
+```cpp
+// Query current game viewport (updated each frame — valid inside canvas.run() callback)
+Nothofagus::ViewportRect viewport = canvas.gameViewport();
+// viewport.x, viewport.y           — bottom-left offset in framebuffer pixels (OpenGL convention: y from bottom)
+// viewport.width, viewport.height  — game area dimensions in framebuffer pixels
+```
+
+## Naming Conventions (C++)
+
+- Variables and functions: **camelCase**
+- Member variables: **mCamelCase** prefix
+- No abbreviated names — use full descriptive names (e.g. `framebufferWidth` not `fbW`, `viewportX` not `vpX`, `canvasAspectRatio` not `aspect`)
+
 ## Important Details
 
 - **Default canvas size**: 256×240 pixels, 4px scale → 1024×960 window
@@ -100,6 +115,7 @@ machine.update(dt);
 - **Angles**: degrees, not radians
 - **MSVC workaround**: `FMT_UNICODE=0` in CMake for spdlog on Windows
 - **C++ standard**: C++20 required
+- **Aspect ratio**: in fullscreen and on manual window resize, game content is letterboxed/pillarboxed to preserve the canvas aspect ratio — black bands fill unused screen area. Viewport is recomputed every frame from `glfwGetFramebufferSize`, so it adapts automatically.
 
 ## Examples Reference
 

@@ -55,6 +55,11 @@ ScreenSize Canvas::windowSize() const
     return mCanvasImpl->windowSize();
 }
 
+ViewportRect Canvas::gameViewport() const
+{
+    return mCanvasImpl->gameViewport();
+}
+
 BellotaId Canvas::addBellota(const Bellota& bellota)
 {
     return mCanvasImpl->addBellota(bellota);

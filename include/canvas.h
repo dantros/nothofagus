@@ -29,6 +29,10 @@ constexpr inline bool operator==(const ScreenSize& lhs, const ScreenSize& rhs)
     return lhs.width == rhs.width and lhs.height == rhs.height;
 }
 
+/// @struct ViewportRect
+/// @brief Game viewport rectangle in framebuffer pixels (OpenGL convention: y from bottom).
+struct ViewportRect { int x, y, width, height; };
+
 // Default screen size for the canvas.
 constexpr static ScreenSize DEFAULT_SCREEN_SIZE{256, 240};
 
@@ -94,6 +98,9 @@ public:
     void setScreenSize(const ScreenSize& screenSize);
 
     ScreenSize windowSize() const;
+
+    /// Returns the current game viewport in framebuffer pixels (letterboxed or pillarboxed).
+    ViewportRect gameViewport() const;
 
     /**
      * @brief Add a Bellota to the canvas.

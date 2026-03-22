@@ -33,10 +33,30 @@ struct Canvas::CanvasImpl::Window
     GLFWwindow* glfwWindow;
 };
 
-// glfw: whenever the window size changed (by OS or user resize) this callback function executes
-void framebufferSizeCallback(GLFWwindow* window, int width, int height)
+// glfw: whenever the window size changed (by OS or user resize) this callback function executes.
+// Viewport is recalculated per-frame in run(), so this callback is intentionally a no-op.
+void framebufferSizeCallback(GLFWwindow* /*window*/, int /*width*/, int /*height*/) {}
+
+static ViewportRect computeLetterboxViewport(int framebufferWidth, int framebufferHeight, unsigned int canvasWidth, unsigned int canvasHeight)
 {
-    glViewport(0, 0, width, height);
+    const float canvasAspectRatio      = static_cast<float>(canvasWidth)      / static_cast<float>(canvasHeight);
+    const float framebufferAspectRatio = static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight);
+    int viewportWidth, viewportHeight, viewportX, viewportY;
+    if (framebufferAspectRatio > canvasAspectRatio)
+    {   // Pillarbox: framebuffer is wider than canvas — black bands left and right
+        viewportHeight = framebufferHeight;
+        viewportWidth  = static_cast<int>(framebufferHeight * canvasAspectRatio);
+        viewportX      = (framebufferWidth - viewportWidth) / 2;
+        viewportY      = 0;
+    }
+    else
+    {   // Letterbox: framebuffer is taller than canvas — black bands top and bottom
+        viewportWidth  = framebufferWidth;
+        viewportHeight = static_cast<int>(framebufferWidth / canvasAspectRatio);
+        viewportX      = 0;
+        viewportY      = (framebufferHeight - viewportHeight) / 2;
+    }
+    return { viewportX, viewportY, viewportWidth, viewportHeight };
 }
 
 unsigned int compileShader(GLenum shaderType, const std::string& shaderSource)
@@ -93,7 +113,8 @@ Canvas::CanvasImpl::CanvasImpl(
     mTitle(title),
     mClearColor(clearColor),
     mPixelSize(pixelSize),
-    mStats(false)
+    mStats(false),
+    mGameViewport{0, 0, 0, 0}
 {
     // glfw: initialize and configure
     glfwInit();
@@ -291,11 +312,13 @@ ScreenSize Canvas::CanvasImpl::windowSize() const
 {
     debugCheck(mWindow != nullptr);
     debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
-    
+
     int width, height;
     glfwGetWindowSize(mWindow->glfwWindow, &width, &height);
     return {static_cast<unsigned int>(width), static_cast<unsigned int>(height)};
 }
+
+ViewportRect Canvas::CanvasImpl::gameViewport() const { return mGameViewport; }
 
 BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)
 {
@@ -536,8 +559,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     // state variable
     bool fillPolygons = true;
 
-    glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
-
     auto computeWorldTransformMat = [](const ScreenSize& screenSize)
     {
         glm::mat3 worldTransformMat(1.0);
@@ -593,7 +614,23 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         performanceMonitor.update(glfwGetTime());
         const float deltaTimeMS = performanceMonitor.getMS();
-        
+
+        // Get current framebuffer size and compute letterboxed viewport
+        int framebufferWidth, framebufferHeight;
+        glfwGetFramebufferSize(mWindow->glfwWindow, &framebufferWidth, &framebufferHeight);
+        mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, mScreenSize.width, mScreenSize.height);
+
+        // Clear entire framebuffer to black (fills the letterbox/pillarbox bands)
+        glViewport(0, 0, framebufferWidth, framebufferHeight);
+        glDisable(GL_SCISSOR_TEST);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        // Clear game area only to the game background color
+        glViewport(mGameViewport.x, mGameViewport.y, mGameViewport.width, mGameViewport.height);
+        glScissor(mGameViewport.x, mGameViewport.y, mGameViewport.width, mGameViewport.height);
+        glEnable(GL_SCISSOR_TEST);
+        glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Start the Dear ImGui frame
@@ -651,6 +688,10 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
             
             dmesh.drawCall();
         }
+
+        // Restore full framebuffer viewport for ImGui (header, popups, stats)
+        glDisable(GL_SCISSOR_TEST);
+        glViewport(0, 0, framebufferWidth, framebufferHeight);
 
         if (mStats)
         {

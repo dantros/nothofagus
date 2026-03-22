@@ -58,6 +58,8 @@ public:
 
     ScreenSize windowSize() const;
 
+    ViewportRect gameViewport() const;
+
     /**
      * @brief Adds a Bellota object to the canvas.
      * @param bellota The Bellota object to add.
@@ -186,6 +188,7 @@ private:
     std::unique_ptr<Window> mWindow; ///< Pointer to the window object.
 
     AABox mLastWindowedAABox;
+    ViewportRect mGameViewport; ///< Current letterboxed game viewport (set each frame in run()).
 };
 
 }
