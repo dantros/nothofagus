@@ -137,13 +137,41 @@ std::vector<int> ids = controller.getConnectedGamepadIds();   // sorted
 Gamepad button events are dispatched in `processInputs()` (same frame-deferred pattern as keyboard/mouse). Axis callbacks fire immediately when polled (same pattern as scroll).
 
 ### Animations
+
+Multi-layer `IndirectTexture` stores frames as layers. `AnimationStateMachine` drives `bellota.currentLayer()` automatically each frame.
+
 ```cpp
-AnimationStateMachine machine(canvas, bellotaId);
-machine.addState({"idle", {0,1,2}, {0.1f, 0.1f, 0.1f}});
-machine.addTransition({"idle", "run"}, "start_running");
-machine.transition("start_running");
+// 1. Build a multi-layer texture (3rd arg = layer count)
+Nothofagus::IndirectTexture tex({w, h}, glm::vec4(0,0,0,1), numLayers);
+tex.setPallete(palette).setPixels({/* frame 0 */}, 0).setPixels({/* frame 1 */}, 1); // ...
+Nothofagus::TextureId texId = canvas.addTexture(tex);
+Nothofagus::BellotaId id    = canvas.addBellota({{{x, y}}, texId});
+
+// 2. Define AnimationState objects (layers, times_ms, name) — must outlive the machine
+AnimationState idleState({0, 1, 2}, {100.0f, 100.0f, 100.0f}, "idle");
+AnimationState runState ({3, 4},    {80.0f,  80.0f},           "run");
+
+// 3. Build state machine bound to the bellota reference
+AnimationStateMachine machine(canvas.bellota(id));
+machine.addState("idle", &idleState);
+machine.addState("run",  &runState);
+
+// 4. Define named transition edges: (fromState, transitionName, toState)
+machine.newAnimationTransition("idle", "start_running", "run");
+machine.newAnimationTransition("run",  "stop",          "idle");
+
+// 5. Set initial state — required before first update()
+machine.setState("idle");
+
+// 6. Per frame:
 machine.update(dt);
+
+// 7. Trigger transitions:
+machine.transition("start_running");   // fire named edge from current state
+machine.goToState("idle");             // direct jump + reset (bypasses transition graph)
 ```
+
+`AnimationState` loops automatically (after the last frame it restarts from index 0). `goToState` calls `reset()` on the target state before switching; `transition` does the same.
 
 ### Display and viewport
 
@@ -165,7 +193,7 @@ Nothofagus::ViewportRect viewport = canvas.gameViewport();
 - **Default canvas size**: 256×240 pixels, 4px scale → 1024×960 window
 - **Depth/Z-ordering**: `bellota.mDepthOffset` (-128 to 127)
 - **Opacity**: `bellota.mOpacity` (0.0–1.0)
-- **Layers**: multi-layer textures use `bellota.mCurrentLayer`
+- **Layers**: multi-layer textures use `bellota.currentLayer()` (managed automatically by `AnimationStateMachine::update()`, or set manually)
 - **Angles**: degrees, not radians
 - **MSVC workaround**: `FMT_UNICODE=0` in CMake for spdlog on Windows
 - **C++ standard**: C++20 required

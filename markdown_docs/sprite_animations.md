@@ -1,118 +1,202 @@
 ## Sprite Animations
 
-Nothofagus was a single-sprite-per-object engine, thus for representing movement or interaction with the world depicted in the scene it meant using sound effects and/or a new object appearing. Visual motion was not something easily achivable for every case and needed to hardcode a lot of objects for every frame of the movement.
+Nothofagus supports frame-by-frame sprite animation through multi-layer textures and an optional state machine. Each layer of an `IndirectTexture` holds one animation frame. The `AnimationStateMachine` advances the active frame over time and writes the result into `bellota.currentLayer()`.
 
-Motivated by this, a feature to improve was the ability to animate characters by accumulating frames in a texture array, and creating a way to manage transitions between different animations.
+---
 
-For this assignment, an animation method was implemented in a class called AnimatedBellota, which uses array textures (also known as texture atlases, see more at https://www.khronos.org/opengl/wiki/Array_Texture) to send information about the sprites that could be shown for the character. These sprites are distributed on the layers of the texture. This tool aligns with the actual code in Nothofagus for Bellotas and Textures.
+### Multi-layer textures
 
-A state machine was created for animation transitions. It's nodes are animation states, associated with the layers of an animation and the time intervals each has to be shown. It also has a transition map, which allows to move from one state to another along the edges of the departing node. It was made this way resembling the Godot animation tree and its a compact and intuitive way to do it.
+`IndirectTexture` accepts an optional third argument — the number of layers:
 
-### Animated Bellota
+```cpp
+// 5-layer 4×4 texture (5 animation frames)
+Nothofagus::IndirectTexture tex({4, 4}, glm::vec4(0, 0, 0, 1), 5);
+tex.setPallete(palette)
+   .setPixels({ /* frame 0 indices */ }, 0)
+   .setPixels({ /* frame 1 indices */ }, 1)
+   // ...
+   .setPixels({ /* frame 4 indices */ }, 4);
 
-The AnimatedBellota class represents a graphical element in the system capable of dynamically switching between multiple layers (has a variable with that name) of a TextureArray. This allows it to display animations by cycling through the layers of a texture array, which is especially useful for representing animated characters or objects with dynamic states.
+Nothofagus::TextureId texId = canvas.addTexture(tex);
+```
 
-#### Why is AnimatedBellota different from Bellota?
+Add a bellota using that texture normally. The `depthOffset` (third argument to `Bellota`) is unrelated to layer count:
 
-While Bellota is designed to represent static elements that use a single texture (TextureId), AnimatedBellota extends this functionality to support multiple layers of textures via a TextureArray. The key differences are:
+```cpp
+// depthOffset = 1, texture has 5 layers — independent values
+Nothofagus::BellotaId id = canvas.addBellota({{{x, y}}, texId, /*depthOffset=*/1});
+```
 
-- Support for TextureArray: AnimatedBellota uses a TextureId instead of a TextureId, enabling it to access textures arrays in the canvas.
-- Animation Capabilities: It includes logic to manage which layer is currently displayed using actualLayer, a property that can dynamically change to show different animation frames.
-- Flexibility for Graphical Representation: While Bellota is suitable for static elements like backgrounds or stationary objects, AnimatedBellota is ideal for characters, enemies, or other objects requiring real-time visual changes.
-
-Implementations has numerous similarities with Bellota, including a special vector for AnimatedBellotas (and for TextureArrays) in canvas, its own fragment shader, use of a mesh, etc. Yet it has its own way to be loaded to GPU, stores different inforamtion and keeps states (layer been shown).
-
-#### How to Use AnimatedBellota
-
-- Creating an AnimatedBellota: An AnimatedBellota is created with a Transform, a TextureId, and the number of layers in the TextureArray. As in Bellota an optional depthOffset can be included for z-ordering.
-
-- Dynamic Layer Changes: You can change the currently visible layer using the setActualLayer method. This is crucial for handling transitions between frames in an animation.
-
-- GPU Rendering: In the OpenGL implementation, AnimatedBellota instances are rendered using a specific shader program (mAnimatedShaderProgram) that considers the TextureArray layers and applies real-time transformations.
-
-- Management in Canvas: The Canvas class allows adding and managing AnimatedBellota instances through methods like addAnimatedBellota and animatedBellota. This centralizes graphical element handling.
-
-#### Advantages
-
-- Graphical Optimization: By using TextureArray and specific shaders, it minimizes the overhead of switching textures on the GPU.
-- Flexibility: Supports various types of animations, including looping and custom transitions.
+---
 
 ### AnimationState
 
-The AnimationState class encapsulates the logic for managing animation frames for an individual animation state.
+`AnimationState` describes a looping frame sequence — which layers to show and for how long each one.
 
-#### Purpose:
+```cpp
+#include <animation_state.h>
 
-- To represent a sequence of texture array layers (mLayers) associated with a particular animation, cycling through them based on custom timings (mTimes).
-- Supports seamless transitions between layers based on elapsed time (deltaTime).
+AnimationState(const std::vector<int>& layers,
+               const std::vector<float>& times,
+               const std::string& name);
+```
 
-#### Key Attributes:
+- `layers` — texture layer indices to cycle through (in order)
+- `times` — duration in ms for each layer; must be the same length as `layers`
+- `name` — string identifier (must be unique within a state machine)
 
-1. mLayers: A vector of integers representing the indices of texture array layers.
-2. mTimes: A vector of floats specifying the time duration for each layer in mLayers.
-3. mCurrentLayerIndex: Tracks the current layer in the animation sequence.
-4. mTimeAccumulator: Accumulates elapsed time to determine when to switch to the next layer.
-5. mName: A string to identify the animation state.
+The sequence loops: after the last layer the state resets to layer 0 automatically.
 
-#### Core Methods:
+```cpp
+// Cycle through layers 0→1→2→0→1→2… at 500 ms per frame
+Nothofagus::AnimationState walkState({0, 1, 2}, {500.0f, 500.0f, 500.0f}, "walk");
+```
 
-1. update(float deltaTime):
+**Methods:**
 
-   > - Updates the animation state by checking if the current layer's time duration has elapsed.
-   > - Switches to the next layer in the sequence and resets the accumulator when the duration is met.
+| Method | Description |
+|---|---|
+| `update(float dt)` | Advances the frame timer; call once per frame |
+| `int getCurrentLayer() const` | Returns the layer index currently active |
+| `std::string getName() const` | Returns the state name |
+| `reset()` | Jumps back to the first layer and resets the timer |
 
-2. getCurrentLayer() const: Returns the current texture array layer being displayed.
-
-3. getName() const: Provides the name of the animation state.
-
-4. reset(): Resets the animation state to its initial configuration by setting the layer index and time accumulator to 0.
+---
 
 ### AnimationStateMachine
 
-The AnimationStateMachine manages multiple AnimationState objects and facilitates transitions between them.
+`AnimationStateMachine` manages one or more `AnimationState` objects, drives their timers each frame, and writes the active layer into the bound `Bellota`.
 
-Purpose:
+```cpp
+#include <animation_state_machine.h>
 
-- To control animations dynamically, allowing for state-specific behavior and transitions.
-- Integrates with the AnimatedBellota class to update texture layers.
+AnimationStateMachine(Nothofagus::Bellota& bellota);
+```
 
-#### Key Components:
+The machine holds a reference to the `Bellota` — its `currentLayer()` is updated automatically by `update()`. All `AnimationState` objects passed to `addState` must remain alive for the lifetime of the machine (store them as member variables or locals in the same scope).
 
-- mAnimationStates: A map linking state names (State, a std::string) to their corresponding AnimationState pointers.
+**Methods:**
 
-- transitions: A map that defines transitions between states. Keys are (State, transition_name) pairs, and values are the resulting states.
+| Method | Description |
+|---|---|
+| `addState(name, AnimationState*)` | Register a state |
+| `setState(name)` | Set the initial state — **must be called before the first `update()`** |
+| `newAnimationTransition(from, transitionName, to)` | Define a named edge in the transition graph |
+| `transition(transitionName)` | Fire a named edge from the current state (no-op if undefined for current state) |
+| `goToState(name)` | Jump directly to a state, bypassing the transition graph; resets the new state |
+| `update(float dt)` | Advance the current state's timer and sync `bellota.currentLayer()` |
+| `int getCurrentLayer() const` | Returns the current texture layer |
 
-- currentState: Tracks the name of the active animation state.
+---
 
-- mAnimatedBellota: A reference to the AnimatedBellota instance associated with this state machine, used for updating its texture layer.
+### Example: single looping animation
 
-#### Core Methods:
+Mirrors `examples/hello_animation.cpp`.
 
-1. addState(const State& stateName, AnimationState\* state): Adds a new AnimationState to the state machine.
+```cpp
+// 5-layer 4×4 texture
+Nothofagus::IndirectTexture tex({4, 4}, glm::vec4(0,0,0,1), 5);
+tex.setPallete(palette)
+   .setPixels({/* layer 0 */}, 0)
+   .setPixels({/* layer 1 */}, 1)
+   .setPixels({/* layer 2 */}, 2)
+   .setPixels({/* layer 3 */}, 3)
+   .setPixels({/* layer 4 */}, 4);
 
-2. setState(const State& stateName): Sets the initial state of the animation.
+Nothofagus::TextureId texId = canvas.addTexture(tex);
+Nothofagus::BellotaId id    = canvas.addBellota({{{75.0f, 50.0f}}, texId});
 
-3. newAnimationTransition(const State& state, const std::string& transition_name, const State& resultingState): Adds a new state transition rule, specifying the resulting state when a given transition is triggered from a specific state.
+// Animation state: all 5 layers, 500 ms each
+Nothofagus::AnimationState anim({0, 1, 2, 3, 4},
+                                {500.0f, 500.0f, 500.0f, 500.0f, 500.0f},
+                                "example");
 
-4. transition(const std::string& transition_name):
+// State machine bound to the bellota
+Nothofagus::AnimationStateMachine machine(canvas.bellota(id));
+machine.addState("example", &anim);
+machine.setState("example");
 
-   > - Executes a state transition based on the current state and the provided transition name.
-   > - Resets the new state's animation progress.
+canvas.run([&](float dt) {
+    canvas.bellota(id).transform().scale() = {10.0f, 10.0f};
+    machine.update(dt);
+});
+```
 
-5. goToState(const State& stateName): Directly changes to a specific state without requiring a named transition.
+---
 
-6. update(float deltaTime): Updates the animation of the current state and adjusts the texture layer of the associated AnimatedBellota.
+### Example: state machine with transitions
 
-7. getCurrentLayer() const: Retrieves the current texture layer of the active animation state.
+Mirrors `examples/hello_animation_state_machine.cpp`. States represent a character facing up/down with optional left/right lean.
 
-## Examples
+```cpp
+// 10-layer texture (frames for W, S, Wleft, Wright, Sleft, Sright — 2 frames each)
+Nothofagus::IndirectTexture tex({4, 4}, glm::vec4(0,0,0,1), 10);
+// ... setPallete + setPixels for layers 0–9 ...
 
-"Set Layer GIF!
+Nothofagus::TextureId texId = canvas.addTexture(tex);
+Nothofagus::BellotaId id    = canvas.addBellota({{{75.0f, 50.0f}}, texId});
 
-![Cambio simple entre Layers (distintos colores)](../media/set_layer_gif.gif "Set Layer GIF!")
+// Define states
+Nothofagus::AnimationState stateW      ({0},    {500.0f},         "W");
+Nothofagus::AnimationState stateS      ({1},    {500.0f},         "S");
+Nothofagus::AnimationState stateWleft  ({2, 3}, {500.0f, 500.0f}, "Wleft");
+Nothofagus::AnimationState stateWright ({4, 5}, {500.0f, 500.0f}, "Wright");
+Nothofagus::AnimationState stateSleft  ({6, 7}, {500.0f, 500.0f}, "Sleft");
+Nothofagus::AnimationState stateSright ({8, 9}, {500.0f, 500.0f}, "Sright");
 
-Animation state: looping diferent patterns!
+Nothofagus::AnimationStateMachine machine(canvas.bellota(id));
+machine.addState("W",      &stateW);
+machine.addState("S",      &stateS);
+machine.addState("Wleft",  &stateWleft);
+machine.addState("Wright", &stateWright);
+machine.addState("Sleft",  &stateSleft);
+machine.addState("Sright", &stateSright);
 
-![Animation state loop: patterns](../media/animation_state_gif.gif "Animation state loop!")
+// "right" transition — from any facing, lean right
+machine.newAnimationTransition("W",      "right", "Wright");
+machine.newAnimationTransition("Wleft",  "right", "Wright");
+machine.newAnimationTransition("Wright", "right", "Wright");
+machine.newAnimationTransition("S",      "right", "Sright");
+machine.newAnimationTransition("Sleft",  "right", "Sright");
+machine.newAnimationTransition("Sright", "right", "Sright");
 
-For an animation state machine example you can check te video on "medi" folder.
+// "left" transition
+machine.newAnimationTransition("W",      "left", "Wleft");
+machine.newAnimationTransition("Wright", "left", "Wleft");
+machine.newAnimationTransition("Wleft",  "left", "Wleft");
+machine.newAnimationTransition("S",      "left", "Sleft");
+machine.newAnimationTransition("Sright", "left", "Sleft");
+machine.newAnimationTransition("Sleft",  "left", "Sleft");
+
+machine.setState("W");  // initial state
+
+Nothofagus::Controller controller;
+// goToState: direct jump, ignores transition graph
+controller.registerAction({Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Press},
+    [&]() { machine.goToState("W"); });
+controller.registerAction({Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Press},
+    [&]() { machine.goToState("S"); });
+// transition: fires named edge from current state
+controller.registerAction({Nothofagus::Key::A, Nothofagus::DiscreteTrigger::Press},
+    [&]() { machine.transition("left"); });
+controller.registerAction({Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Press},
+    [&]() { machine.transition("right"); });
+
+canvas.run([&](float dt) {
+    canvas.bellota(id).transform().scale() = {10.0f, 10.0f};
+    machine.update(dt);
+}, controller);
+```
+
+---
+
+### Manual layer control
+
+For cases that don't need a full state machine, set `bellota.currentLayer()` directly:
+
+```cpp
+Nothofagus::Bellota& b = canvas.bellota(id);
+b.currentLayer() = 2;  // show layer 2 immediately
+```
+
+This is useful for UI elements or objects that switch appearance based on game state rather than time.
