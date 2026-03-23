@@ -20,6 +20,7 @@
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
 #include <ciso646>
+#include <cmath>
 #include <optional>
 #include <vector>
 #include <format>
@@ -614,6 +615,10 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     glfwSetCursorPosCallback(mWindow->glfwWindow, cursorPosCallback);
     glfwSetScrollCallback(mWindow->glfwWindow, scrollCallback);
 
+    constexpr float GAMEPAD_AXIS_DEADZONE = 0.1f;
+    std::array<GLFWgamepadstate, GLFW_JOYSTICK_LAST + 1> previousGamepadStates = {};
+    std::array<bool,             GLFW_JOYSTICK_LAST + 1> gamepadConnectedState  = {};
+
     // state variable
     bool fillPolygons = true;
 
@@ -768,6 +773,64 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         glfwSwapBuffers(mWindow->glfwWindow);
         glfwPollEvents();
+
+        // Poll gamepad state for all joystick slots.
+        for (int i = 0; i <= GLFW_JOYSTICK_LAST; ++i)
+        {
+            bool nowConnected = glfwJoystickPresent(i) && glfwJoystickIsGamepad(i);
+            if (nowConnected != gamepadConnectedState[i])
+            {
+                gamepadConnectedState[i] = nowConnected;
+                if (nowConnected)
+                {
+                    controller.gamepadConnected(i);
+                }
+                else
+                {
+                    controller.gamepadDisconnected(i);
+                    previousGamepadStates[i] = {};
+                    continue;
+                }
+            }
+            if (!nowConnected)
+                continue;
+
+            GLFWgamepadstate state{};
+            if (!glfwGetGamepadState(i, &state))
+                continue;
+
+            for (int buttonIndex = 0; buttonIndex <= GLFW_GAMEPAD_BUTTON_LAST; ++buttonIndex)
+            {
+                if (state.buttons[buttonIndex] != previousGamepadStates[i].buttons[buttonIndex])
+                {
+                    DiscreteTrigger trigger = (state.buttons[buttonIndex] == GLFW_PRESS)
+                        ? DiscreteTrigger::Press : DiscreteTrigger::Release;
+                    controller.activateGamepadButton({i, static_cast<GamepadButton>(buttonIndex), trigger});
+                }
+            }
+
+            for (int axisIndex = 0; axisIndex <= GLFW_GAMEPAD_AXIS_LAST; ++axisIndex)
+            {
+                GamepadAxis axis = static_cast<GamepadAxis>(axisIndex);
+                float value = state.axes[axisIndex];
+
+                if (axis == GamepadAxis::LeftTrigger || axis == GamepadAxis::RightTrigger)
+                {
+                    value = (value + 1.0f) * 0.5f;
+                    if (value < GAMEPAD_AXIS_DEADZONE) value = 0.0f;
+                }
+                else
+                {
+                    if (axis == GamepadAxis::LeftY || axis == GamepadAxis::RightY)
+                        value = -value;
+                    if (std::abs(value) < GAMEPAD_AXIS_DEADZONE) value = 0.0f;
+                }
+
+                controller.updateGamepadAxis(i, axis, value);
+            }
+
+            previousGamepadStates[i] = state;
+        }
     }
 
     for (auto& [bellotaIndex, bellotaPack] : mBellotas)

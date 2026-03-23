@@ -106,6 +106,36 @@ glm::vec2 pos = controller.getMousePosition();
 
 Mouse button callbacks are dispatched via the same `processInputs()` queue as keyboard. The move and scroll callbacks fire immediately from their GLFW callbacks (outside the queue), so they can be called multiple times per frame.
 
+### Gamepad input
+
+GLFW gamepads are polled each frame (after `glfwPollEvents()`) for all 16 joystick slots. Button state diffs generate queued `Press`/`Release` events; axis updates fire callbacks immediately if the value changed. Connect/disconnect is detected by frame-to-frame comparison of `glfwJoystickPresent(i) && glfwJoystickIsGamepad(i)`.
+
+**Axis normalisation applied in `canvas_impl.cpp` before the controller receives values:**
+- `LeftY`, `RightY`: inverted so positive = up (matches canvas convention)
+- `LeftTrigger`, `RightTrigger`: remapped from GLFW `[-1, 1]` → `[0, 1]`
+- All axes: 0.1 deadzone (values below threshold clamped to 0)
+
+```cpp
+// Registration
+controller.registerGamepadAction({gamepadId, GamepadButton::A, DiscreteTrigger::Press}, [&]() { ... });
+controller.deleteGamepadAction({gamepadId, GamepadButton::A, DiscreteTrigger::Press});
+controller.registerGamepadAxis(gamepadId, GamepadAxis::LeftX, [&](float value) { ... });
+controller.registerGamepadConnected([&](int id) { ... });
+controller.registerGamepadDisconnected([&](int id) { ... });
+
+// Polling — valid any time inside canvas.run() callback
+float value = controller.getGamepadAxis(gamepadId, GamepadAxis::LeftX);
+bool  held  = controller.getGamepadButton(gamepadId, GamepadButton::A);
+bool  conn  = controller.isGamepadConnected(gamepadId);
+std::vector<int> ids = controller.getConnectedGamepadIds();   // sorted
+```
+
+**`GamepadButton` enum:** `A, B, X, Y, LeftBumper, RightBumper, Back, Start, Guide, LeftThumb, RightThumb, DpadUp, DpadRight, DpadDown, DpadLeft`
+
+**`GamepadAxis` enum:** `LeftX, LeftY, RightX, RightY, LeftTrigger, RightTrigger`
+
+Gamepad button events are dispatched in `processInputs()` (same frame-deferred pattern as keyboard/mouse). Axis callbacks fire immediately when polled (same pattern as scroll).
+
 ### Animations
 ```cpp
 AnimationStateMachine machine(canvas, bellotaId);
