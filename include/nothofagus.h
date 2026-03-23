@@ -8,6 +8,7 @@
 #include "canvas.h"
 #include "controller.h"
 #include "keyboard.h"
+#include "mouse.h"
 #include "text.h"
 #include "animation_state.h"
 #include "animation_state_machine.h"

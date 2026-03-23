@@ -30,6 +30,7 @@ add_library(nothofagus
     "source/performance_monitor.cpp"
     "source/controller.cpp"
     "source/keyboard.cpp"
+    "source/mouse.cpp"
     "source/text.cpp"
     "source/animation_state_machine.cpp"
     "source/animation_state.cpp"

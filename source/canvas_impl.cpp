@@ -8,6 +8,7 @@
 #include "texture_container.h"
 #include "bellota_container.h"
 #include "keyboard.h"
+#include "mouse.h"
 #include "controller.h"
 #include "roboto_font.h"
 #include <glad/glad.h>
@@ -491,20 +492,65 @@ GLuint textureArraySimpleSetup(const TextureData& textureData)
     return gpuTexture;
 }
 
+// Context passed as the GLFW window user pointer so all input callbacks share it.
+struct InputContext
+{
+    Controller* controller;
+    ViewportRect viewport;
+    ScreenSize screenSize;
+};
+
 void keyCallback(GLFWwindow* window, int glfwKey, int scancode, int action, int mods)
 {
     if (not (action == GLFW_PRESS or action == GLFW_RELEASE))
         return;
 
-    auto myUserPointer = glfwGetWindowUserPointer(window);
-    debugCheck(myUserPointer != nullptr);
-    Controller* controllerPtr = static_cast<Controller*>(myUserPointer);
-    debugCheck(controllerPtr != nullptr);
+    InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
+    debugCheck(ctx != nullptr);
 
     Key key = KeyboardImplementation::toKeyCode(glfwKey);
-
     DiscreteTrigger trigger = action == GLFW_PRESS ? DiscreteTrigger::Press : DiscreteTrigger::Release;
-    controllerPtr->activate({ key, trigger });
+    ctx->controller->activate({ key, trigger });
+}
+
+void mouseButtonCallback(GLFWwindow* window, int glfwButton, int action, int mods)
+{
+    if (not (action == GLFW_PRESS or action == GLFW_RELEASE))
+        return;
+
+    InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
+    debugCheck(ctx != nullptr);
+
+    MouseButton button = MouseImplementation::toMouseButton(glfwButton);
+    DiscreteTrigger trigger = action == GLFW_PRESS ? DiscreteTrigger::Press : DiscreteTrigger::Release;
+    ctx->controller->activateMouseButton({ button, trigger });
+}
+
+void cursorPosCallback(GLFWwindow* window, double cursorX, double cursorY)
+{
+    InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
+    debugCheck(ctx != nullptr);
+
+    // cursorX/Y are in top-left window coords. Scale to framebuffer pixels (HiDPI).
+    int windowWidth, windowHeight, framebufferWidth, framebufferHeight;
+    glfwGetWindowSize(window, &windowWidth, &windowHeight);
+    glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
+
+    const float scaleX = (windowWidth  > 0) ? static_cast<float>(framebufferWidth)  / static_cast<float>(windowWidth)  : 1.0f;
+    const float scaleY = (windowHeight > 0) ? static_cast<float>(framebufferHeight) / static_cast<float>(windowHeight) : 1.0f;
+
+    // Convert to framebuffer coords with bottom-left origin.
+    const float fbCursorX = static_cast<float>(cursorX) * scaleX;
+    const float fbCursorY = static_cast<float>(framebufferHeight) - static_cast<float>(cursorY) * scaleY;
+
+    // Map through the letterboxed viewport to game canvas coords.
+    const ViewportRect& vp = ctx->viewport;
+    const glm::vec2 gamePosition = {
+        (fbCursorX - static_cast<float>(vp.x)) / static_cast<float>(vp.width)  * static_cast<float>(ctx->screenSize.width),
+        (fbCursorY - static_cast<float>(vp.y)) / static_cast<float>(vp.height) * static_cast<float>(ctx->screenSize.height)
+    };
+
+    ctx->controller->updateMousePosition(gamePosition);
 }
 
 void initializeTexturePacks(TextureContainer& textures)
@@ -553,8 +599,11 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 {
     debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
 
-    glfwSetWindowUserPointer(mWindow->glfwWindow, &controller);
-    glfwSetKeyCallback(mWindow->glfwWindow, keyCallback);    
+    InputContext inputContext{ &controller, {}, mScreenSize };
+    glfwSetWindowUserPointer(mWindow->glfwWindow, &inputContext);
+    glfwSetKeyCallback(mWindow->glfwWindow, keyCallback);
+    glfwSetMouseButtonCallback(mWindow->glfwWindow, mouseButtonCallback);
+    glfwSetCursorPosCallback(mWindow->glfwWindow, cursorPosCallback);
 
     // state variable
     bool fillPolygons = true;
@@ -619,6 +668,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         int framebufferWidth, framebufferHeight;
         glfwGetFramebufferSize(mWindow->glfwWindow, &framebufferWidth, &framebufferHeight);
         mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, mScreenSize.width, mScreenSize.height);
+        inputContext.viewport   = mGameViewport;
+        inputContext.screenSize = mScreenSize;
 
         // Clear entire framebuffer to black (fills the letterbox/pillarbox bands)
         glViewport(0, 0, framebufferWidth, framebufferHeight);
