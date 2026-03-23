@@ -96,11 +96,15 @@ controller.deleteMouseAction({MouseButton::Right, DiscreteTrigger::Release});
 // Move callback — fires every time the cursor moves
 controller.registerMouseMove([&](glm::vec2 position) { ... });
 
+// Scroll callback — fires on scroll wheel events; offset.x = horizontal, offset.y = vertical
+// offset.y > 0 = scroll up, offset.y < 0 = scroll down
+controller.registerMouseScroll([&](glm::vec2 offset) { ... });
+
 // Polling — valid at any point inside the canvas.run() callback
 glm::vec2 pos = controller.getMousePosition();
 ```
 
-Mouse button callbacks are dispatched via the same `processInputs()` queue as keyboard. The move callback fires immediately from the GLFW cursor callback (outside the queue), so it can be called multiple times per frame.
+Mouse button callbacks are dispatched via the same `processInputs()` queue as keyboard. The move and scroll callbacks fire immediately from their GLFW callbacks (outside the queue), so they can be called multiple times per frame.
 
 ### Animations
 ```cpp

@@ -89,4 +89,15 @@ void Controller::updateMousePosition(glm::vec2 position)
         (*mMouseMoveCallback)(mMousePosition);
 }
 
+void Controller::registerMouseScroll(std::function<void(glm::vec2)> callback)
+{
+    mMouseScrollCallback = std::move(callback);
+}
+
+void Controller::scrolled(glm::vec2 offset)
+{
+    if (mMouseScrollCallback.has_value())
+        (*mMouseScrollCallback)(offset);
+}
+
 }

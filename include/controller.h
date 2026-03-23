@@ -94,6 +94,7 @@ public:
     bool registerMouseAction(MouseButtonTrigger mouseButtonTrigger, Action action);
     bool deleteMouseAction(MouseButtonTrigger mouseButtonTrigger);
     void registerMouseMove(std::function<void(glm::vec2)> callback);
+    void registerMouseScroll(std::function<void(glm::vec2)> callback);
 
     glm::vec2 getMousePosition() const;
 
@@ -102,6 +103,7 @@ public:
     void activate(KeyboardTrigger keyboardTrigger);
     void activateMouseButton(MouseButtonTrigger mouseButtonTrigger);
     void updateMousePosition(glm::vec2 position);
+    void scrolled(glm::vec2 offset);
 
 private:
     TriggerActions mTriggerActions;
@@ -110,6 +112,7 @@ private:
     MouseTriggerActions mMouseTriggerActions;
     ActiveMouseActions mActiveMouseActions;
     std::optional<std::function<void(glm::vec2)>> mMouseMoveCallback;
+    std::optional<std::function<void(glm::vec2)>> mMouseScrollCallback;
     glm::vec2 mMousePosition{0.0f, 0.0f};
 };
 

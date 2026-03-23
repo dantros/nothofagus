@@ -553,6 +553,14 @@ void cursorPosCallback(GLFWwindow* window, double cursorX, double cursorY)
     ctx->controller->updateMousePosition(gamePosition);
 }
 
+void scrollCallback(GLFWwindow* window, double xoffset, double yoffset)
+{
+    InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
+    debugCheck(ctx != nullptr);
+
+    ctx->controller->scrolled({static_cast<float>(xoffset), static_cast<float>(yoffset)});
+}
+
 void initializeTexturePacks(TextureContainer& textures)
 {
     for (auto& [textureIndex, texturePack] : textures)
@@ -604,6 +612,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     glfwSetKeyCallback(mWindow->glfwWindow, keyCallback);
     glfwSetMouseButtonCallback(mWindow->glfwWindow, mouseButtonCallback);
     glfwSetCursorPosCallback(mWindow->glfwWindow, cursorPosCallback);
+    glfwSetScrollCallback(mWindow->glfwWindow, scrollCallback);
 
     // state variable
     bool fillPolygons = true;
