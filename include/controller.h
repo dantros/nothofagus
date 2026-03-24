@@ -222,6 +222,10 @@ public:
 
     void processInputs();
 
+    /// Clear all registered actions and callbacks.
+    /// Call between manifest sessions before clearing Python globals.
+    void clear();
+
     // Internal — keyboard/mouse
     void activate(KeyboardTrigger keyboardTrigger);
     void activateMouseButton(MouseButtonTrigger mouseButtonTrigger);

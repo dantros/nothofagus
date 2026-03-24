@@ -231,11 +231,11 @@ std::size_t Canvas::CanvasImpl::getCurrentMonitor() const
     for (std::size_t monitorIndex = 0; monitorIndex < monitorCount; ++monitorIndex)
     {
         GLFWmonitor* currentMonitor = monitors[monitorIndex];
-        debugCheck(currentMonitor != nullptr);
+        debugCheck(currentMonitor != nullptr, "GLFW returned a null monitor pointer in monitors array");
         AABox monitorBox;
         glfwGetMonitorPos(currentMonitor, &monitorBox.x, &monitorBox.y);
         const GLFWvidmode* videoMode = glfwGetVideoMode(currentMonitor);
-        debugCheck(videoMode != nullptr);
+        debugCheck(videoMode != nullptr, "glfwGetVideoMode returned null for current monitor");
         monitorBox.width = videoMode->width;
         monitorBox.height = videoMode->height;
 
@@ -259,11 +259,11 @@ void Canvas::CanvasImpl::setFullScreenOnMonitor(std::size_t monitorIndex)
 {
     int monitorCount;
     GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
-    debugCheck(monitorIndex < monitorCount);
+    debugCheck(monitorIndex < monitorCount, "Monitor index out of range");
     GLFWmonitor* monitor = monitors[monitorIndex];
-    debugCheck(monitor != nullptr);
+    debugCheck(monitor != nullptr, "GLFW returned a null pointer for the selected monitor index");
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-    debugCheck(mode != nullptr);
+    debugCheck(mode != nullptr, "glfwGetVideoMode returned null for the selected monitor");
 
     // saving current size to restore it later
     mLastWindowedAABox = getWindowAABox();
@@ -310,9 +310,14 @@ void Canvas::CanvasImpl::setScreenSize(const ScreenSize& screenSize)
     mScreenSize = screenSize;
 }
 
+void Canvas::CanvasImpl::setClearColor(glm::vec3 clearColor)
+{
+    mClearColor = clearColor;
+}
+
 ScreenSize Canvas::CanvasImpl::windowSize() const
 {
-    debugCheck(mWindow != nullptr);
+    debugCheck(mWindow != nullptr, "Canvas window has not been initialized");
     debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
 
     int width, height;
@@ -345,14 +350,14 @@ TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
 {
     TextureId newTextureId{mTextures.add({texture, std::nullopt})};
     const bool textureWasAdded = mTextureUsageMonitor.addUnusedTexture(newTextureId);
-    debugCheck(textureWasAdded);
+    debugCheck(textureWasAdded, "Texture ID already present in usage monitor — duplicate addTexture call");
     return newTextureId; 
 }
 
 void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 {
     const bool textureWasRemoved = mTextureUsageMonitor.removeUnusedTexture(textureId);
-    debugCheck(textureWasRemoved);
+    debugCheck(textureWasRemoved, "Texture is not in the unused set — still referenced by a bellota or already removed");
 
     TexturePack& texturePackToRemove = mTextures.at(textureId.id);
     texturePackToRemove.clear();
@@ -507,7 +512,7 @@ void keyCallback(GLFWwindow* window, int glfwKey, int scancode, int action, int 
         return;
 
     InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
-    debugCheck(ctx != nullptr);
+    debugCheck(ctx != nullptr, "GLFW key callback: window user pointer is null");
 
     Key key = KeyboardImplementation::toKeyCode(glfwKey);
     DiscreteTrigger trigger = action == GLFW_PRESS ? DiscreteTrigger::Press : DiscreteTrigger::Release;
@@ -520,7 +525,7 @@ void mouseButtonCallback(GLFWwindow* window, int glfwButton, int action, int mod
         return;
 
     InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
-    debugCheck(ctx != nullptr);
+    debugCheck(ctx != nullptr, "GLFW mouse button callback: window user pointer is null");
 
     MouseButton button = MouseImplementation::toMouseButton(glfwButton);
     DiscreteTrigger trigger = action == GLFW_PRESS ? DiscreteTrigger::Press : DiscreteTrigger::Release;
@@ -530,7 +535,7 @@ void mouseButtonCallback(GLFWwindow* window, int glfwButton, int action, int mod
 void cursorPosCallback(GLFWwindow* window, double cursorX, double cursorY)
 {
     InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
-    debugCheck(ctx != nullptr);
+    debugCheck(ctx != nullptr, "GLFW cursor pos callback: window user pointer is null");
 
     // cursorX/Y are in top-left window coords. Scale to framebuffer pixels (HiDPI).
     int windowWidth, windowHeight, framebufferWidth, framebufferHeight;
@@ -557,7 +562,7 @@ void cursorPosCallback(GLFWwindow* window, double cursorX, double cursorY)
 void scrollCallback(GLFWwindow* window, double xoffset, double yoffset)
 {
     InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
-    debugCheck(ctx != nullptr);
+    debugCheck(ctx != nullptr, "GLFW scroll callback: window user pointer is null");
 
     ctx->controller->scrolled({static_cast<float>(xoffset), static_cast<float>(yoffset)});
 }
@@ -671,6 +676,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
     ScreenSize currentScreenSize = mScreenSize;
 
+    glfwSetWindowShouldClose(mWindow->glfwWindow, false);
     while (!glfwWindowShouldClose(mWindow->glfwWindow))
     {
         controller.processInputs();
@@ -855,11 +861,11 @@ void Canvas::CanvasImpl::replaceBellota(const BellotaId bellotaId, const Bellota
 
     TextureId textureIdToReplace = bellotaPack.bellota.texture();
     const bool oldEntryRemoved = mTextureUsageMonitor.removeEntry(bellotaId, textureIdToReplace);
-    debugCheck(oldEntryRemoved);
+    debugCheck(oldEntryRemoved, "Failed to remove old texture entry from usage monitor during bellota replacement");
 
     TextureId newTextureId = newBellota.texture();
     const bool newEntryAdded = mTextureUsageMonitor.addEntry(bellotaId, newTextureId);
-    debugCheck(newEntryAdded);
+    debugCheck(newEntryAdded, "Failed to add new texture entry to usage monitor during bellota replacement");
 
     bellotaPack.clearMesh();
     bellotaPack.bellota = newBellota;

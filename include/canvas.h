@@ -97,6 +97,8 @@ public:
 
     void setScreenSize(const ScreenSize& screenSize);
 
+    void setClearColor(glm::vec3 clearColor);
+
     ScreenSize windowSize() const;
 
     /// Returns the current game viewport in framebuffer pixels (letterboxed or pillarboxed).

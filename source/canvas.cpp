@@ -50,6 +50,11 @@ void Canvas::setScreenSize(const ScreenSize& screenSize)
     mCanvasImpl->setScreenSize(screenSize);
 }
 
+void Canvas::setClearColor(glm::vec3 clearColor)
+{
+    mCanvasImpl->setClearColor(clearColor);
+}
+
 ScreenSize Canvas::windowSize() const
 {
     return mCanvasImpl->windowSize();

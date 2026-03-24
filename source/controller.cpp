@@ -207,4 +207,22 @@ void Controller::gamepadDisconnected(int gamepadId)
         (*mGamepadDisconnectedCallback)(gamepadId);
 }
 
+void Controller::clear()
+{
+    mTriggerActions.clear();
+    mActiveActions.clear();
+    mMouseTriggerActions.clear();
+    mActiveMouseActions.clear();
+    mMouseMoveCallback.reset();
+    mMouseScrollCallback.reset();
+    mGamepadTriggerActions.clear();
+    mActiveGamepadActions.clear();
+    mGamepadAxisCallbacks.clear();
+    mGamepadAxisValues.clear();
+    mGamepadButtonValues.clear();
+    mGamepadConnectedCallback.reset();
+    mGamepadDisconnectedCallback.reset();
+    mConnectedGamepads.clear();
+}
+
 }

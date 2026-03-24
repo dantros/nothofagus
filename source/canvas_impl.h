@@ -56,6 +56,8 @@ public:
 
     void setScreenSize(const ScreenSize& screenSize);
 
+    void setClearColor(glm::vec3 clearColor);
+
     ScreenSize windowSize() const;
 
     ViewportRect gameViewport() const;
