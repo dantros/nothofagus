@@ -67,6 +67,9 @@ BellotaId id = canvas.addBellota({{{x, y}}, texId});
 // Raw RGBA texture
 Nothofagus::DirectTexture tex({w, h});
 TextureId texId = canvas.addTexture(tex);
+
+// Rebind a bellota to a different texture (old texture is auto-GC'd next frame)
+canvas.setTexture(bellotaId, newTexId);
 ```
 
 ### Main loop
@@ -198,6 +201,7 @@ Nothofagus::ViewportRect viewport = canvas.gameViewport();
 - **MSVC workaround**: `FMT_UNICODE=0` in CMake for spdlog on Windows
 - **C++ standard**: C++20 required
 - **Aspect ratio**: in fullscreen and on manual window resize, game content is letterboxed/pillarboxed to preserve the canvas aspect ratio — black bands fill unused screen area. Viewport is recomputed every frame from `glfwGetFramebufferSize`, so it adapts automatically.
+- **Automatic texture GC**: `TextureUsageMonitor` tracks which textures are referenced by bellotas. After each `update()` callback, `clearUnusedTextures()` automatically removes any texture not referenced by at least one bellota. Calling `canvas.removeTexture()` on a texture still in use triggers a `debugCheck` assert. Use `canvas.setTexture(bellotaId, newTexId)` to swap textures — the old one is marked unused and removed automatically next frame.
 
 ## Examples Reference
 
