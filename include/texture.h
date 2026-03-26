@@ -206,6 +206,58 @@ public:
     /* Constructor that will use external memory via the span provided */
     TextureData(std::span<std::uint8_t> dataSpan, std::size_t width, std::size_t height, std::size_t layers = 1);
 
+    TextureData(const TextureData& other):
+        mDataOpt(other.mDataOpt),
+        mDataSpan(mDataOpt.has_value()
+            ? std::span<std::uint8_t>(mDataOpt.value().data(), mDataOpt.value().size())
+            : other.mDataSpan),
+        mWidth(other.mWidth),
+        mHeight(other.mHeight),
+        mLayers(other.mLayers)
+    {
+    }
+
+    TextureData& operator=(const TextureData& other)
+    {
+        if (this != &other)
+        {
+            mDataOpt  = other.mDataOpt;
+            mDataSpan = mDataOpt.has_value()
+                ? std::span<std::uint8_t>(mDataOpt.value().data(), mDataOpt.value().size())
+                : other.mDataSpan;
+            mWidth  = other.mWidth;
+            mHeight = other.mHeight;
+            mLayers = other.mLayers;
+        }
+        return *this;
+    }
+
+    TextureData(TextureData&& other) noexcept:
+        mDataOpt(std::move(other.mDataOpt)),
+        mDataSpan(mDataOpt.has_value()
+            ? std::span<std::uint8_t>(mDataOpt.value().data(), mDataOpt.value().size())
+            : other.mDataSpan),
+        mWidth(other.mWidth),
+        mHeight(other.mHeight),
+        mLayers(other.mLayers)
+    {
+    }
+
+    TextureData& operator=(TextureData&& other) noexcept
+    {
+        if (this != &other)
+        {
+            mDataOpt  = std::move(other.mDataOpt);
+            mDataSpan = mDataOpt.has_value()
+                ? std::span<std::uint8_t>(mDataOpt.value().data(), mDataOpt.value().size())
+                : other.mDataSpan;
+            mWidth  = other.mWidth;
+            mHeight = other.mHeight;
+            mLayers = other.mLayers;
+        }
+        return *this;
+    }
+
     std::size_t width() const { return mWidth; }
     std::size_t height() const { return mHeight; }
     std::size_t layers() const { return mLayers; }
