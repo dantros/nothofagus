@@ -421,6 +421,12 @@ public:
     {
     }
 
+    /* Constructor that takes ownership of a pre-filled TextureData */
+    explicit DirectTexture(TextureData&& textureData):
+        mTextureData(std::move(textureData))
+    {
+    }
+
     /**
      * @brief Returns the size of the texture.
      * 
