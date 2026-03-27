@@ -17,8 +17,7 @@ glm::ivec2 getTextureSize(const TextureContainer& textures, const Bellota& bello
 {
     const TextureId& textureId = bellota.texture();
     const TexturePack& texturePack = textures.at(textureId.id);
-    const Texture& texture = texturePack.texture;
-    return std::visit(GetTextureSizeVisitor(), texture);
+    return texturePack.mTextureSize;
 }
 
 /**

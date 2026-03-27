@@ -105,6 +105,31 @@ void Canvas::setTextureMagFilter(const TextureId textureId, TextureSampleMode mo
     mCanvasImpl->setTextureMagFilter(textureId, mode);
 }
 
+RenderTargetId Canvas::addRenderTarget(ScreenSize size)
+{
+    return mCanvasImpl->addRenderTarget(size);
+}
+
+void Canvas::removeRenderTarget(RenderTargetId renderTargetId)
+{
+    mCanvasImpl->removeRenderTarget(renderTargetId);
+}
+
+TextureId Canvas::renderTargetTexture(RenderTargetId renderTargetId) const
+{
+    return mCanvasImpl->renderTargetTexture(renderTargetId);
+}
+
+void Canvas::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)
+{
+    mCanvasImpl->renderTo(renderTargetId, std::move(bellotaIds));
+}
+
+void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
+{
+    mCanvasImpl->setRenderTargetClearColor(renderTargetId, clearColor);
+}
+
 void Canvas::setTint(const BellotaId bellotaId, const Tint& tint)
 {
     mCanvasImpl->setTint(bellotaId, tint);

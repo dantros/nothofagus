@@ -6,6 +6,7 @@
 #include "transform.h"
 #include "bellota.h"
 #include "canvas.h"
+#include "render_target.h"
 #include "controller.h"
 #include "keyboard.h"
 #include "mouse.h"

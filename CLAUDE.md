@@ -189,7 +189,7 @@ Nothofagus::ViewportRect viewport = canvas.gameViewport();
 
 - Variables and functions: **camelCase**
 - Member variables: **mCamelCase** prefix
-- No abbreviated names — use full descriptive names (e.g. `framebufferWidth` not `fbW`, `viewportX` not `vpX`, `canvasAspectRatio` not `aspect`)
+- No abbreviated names — use full descriptive names (e.g. `framebufferWidth` not `fbW`, `viewportX` not `vpX`, `canvasAspectRatio` not `aspect`, `renderTargetPack` not `rtPack`, `renderTargetId` not `rtId`)
 
 ## Important Details
 
