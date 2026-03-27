@@ -12,6 +12,8 @@ struct TexturePack
 {
 	Texture texture;
 	std::optional<DTexture> dtextureOpt;
+	TextureSampleMode minFilter = TextureSampleMode::Nearest;
+	TextureSampleMode magFilter = TextureSampleMode::Nearest;
 
 	bool isDirty() const { return not dtextureOpt.has_value(); }
 

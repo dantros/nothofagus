@@ -467,6 +467,12 @@ std::ostream& operator<<(std::ostream& os, const DirectTexture& texture);
 
 using Texture = std::variant<IndirectTexture, DirectTexture>;
 
+enum class TextureSampleMode : std::uint8_t
+{
+    Nearest = 0,  ///< GL_NEAREST — sharp, pixel-art style
+    Linear  = 1,  ///< GL_LINEAR  — bilinear interpolation
+};
+
 struct GetTextureSizeVisitor
 {
     glm::ivec2 operator()(const IndirectTexture& texture) const { return texture.size(); };

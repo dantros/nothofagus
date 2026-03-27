@@ -397,6 +397,32 @@ void Canvas::CanvasImpl::markTextureAsDirty(const TextureId textureId)
     texturePack.clear();
 }
 
+void Canvas::CanvasImpl::setTextureMinFilter(const TextureId textureId, TextureSampleMode mode)
+{
+    TexturePack& texturePack = mTextures.at(textureId.id);
+    texturePack.minFilter = mode;
+    if (texturePack.dtextureOpt.has_value())
+    {
+        const GLint glFilter = (mode == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
+        glBindTexture(GL_TEXTURE_2D_ARRAY, texturePack.dtextureOpt.value().texture);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, glFilter);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+    }
+}
+
+void Canvas::CanvasImpl::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)
+{
+    TexturePack& texturePack = mTextures.at(textureId.id);
+    texturePack.magFilter = mode;
+    if (texturePack.dtextureOpt.has_value())
+    {
+        const GLint glFilter = (mode == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
+        glBindTexture(GL_TEXTURE_2D_ARRAY, texturePack.dtextureOpt.value().texture);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, glFilter);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+    }
+}
+
 void Canvas::CanvasImpl::setTint(const BellotaId bellotaId, const Tint& tint)
 {
     debugCheck(mBellotas.contains(bellotaId.id), "There is no Bellota associated with the BellotaId provided");
@@ -469,7 +495,7 @@ void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
     glBindVertexArray(0);
 }
 
-GLuint textureArraySimpleSetup(const TextureData& textureData)
+GLuint textureArraySimpleSetup(const TextureData& textureData, TextureSampleMode minFilter, TextureSampleMode magFilter)
 {
     // wrapMode: GL_REPEAT, GL_CLAMP_TO_EDGE
     // filterMode: GL_LINEAR, GL_NEAREST
@@ -480,7 +506,7 @@ GLuint textureArraySimpleSetup(const TextureData& textureData)
 
     GLuint internalFormat = GL_RGBA;
     GLuint format = GL_RGBA;
-    
+
     std::span<std::uint8_t> textureDataSpan = textureData.getDataSpan();
     std::uint8_t& firstTextureValue = textureDataSpan.front();
     std::uint8_t* pointerToFirstTextureValue = &firstTextureValue;
@@ -492,8 +518,10 @@ GLuint textureArraySimpleSetup(const TextureData& textureData)
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
     // texture filtering params
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    const GLint glMinFilter = (minFilter == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
+    const GLint glMagFilter = (magFilter == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, glMinFilter);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, glMagFilter);
 
     return gpuTexture;
 }
@@ -577,7 +605,7 @@ void initializeTexturePacks(TextureContainer& textures)
         const Texture& texture = texturePack.texture;
         TextureData textureData = std::visit(GenerateTextureDataVisitor(), texture);
 
-        texturePack.dtextureOpt = DTexture{ textureArraySimpleSetup(textureData) };
+        texturePack.dtextureOpt = DTexture{ textureArraySimpleSetup(textureData, texturePack.minFilter, texturePack.magFilter) };
     }
 }
 

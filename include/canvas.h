@@ -133,6 +133,8 @@ public:
     void setTexture(const BellotaId bellotaId, const TextureId textureId);
 
     void markTextureAsDirty(const TextureId textureId);
+    void setTextureMinFilter(const TextureId textureId, TextureSampleMode mode);
+    void setTextureMagFilter(const TextureId textureId, TextureSampleMode mode);
 
     /**
      * @brief Set a tint color for a Bellota.

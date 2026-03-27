@@ -95,6 +95,16 @@ void Canvas::markTextureAsDirty(const TextureId textureId)
     mCanvasImpl->markTextureAsDirty(textureId);
 }
 
+void Canvas::setTextureMinFilter(const TextureId textureId, TextureSampleMode mode)
+{
+    mCanvasImpl->setTextureMinFilter(textureId, mode);
+}
+
+void Canvas::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)
+{
+    mCanvasImpl->setTextureMagFilter(textureId, mode);
+}
+
 void Canvas::setTint(const BellotaId bellotaId, const Tint& tint)
 {
     mCanvasImpl->setTint(bellotaId, tint);
