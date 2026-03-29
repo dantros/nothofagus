@@ -83,7 +83,8 @@ class VulkanBackend
 public:
     // --- RenderBackend concept interface ---
 
-    void initialize(GLFWwindow* window, glm::ivec2 canvasSize);
+    void initialize(void* nativeWindowHandle, glm::ivec2 canvasSize);
+    void initImGuiRenderer();
     void shutdown();
 
     DTexture      uploadTexture(const Texture& texture, TextureSampleMode minFilter, TextureSampleMode magFilter);
@@ -100,7 +101,7 @@ public:
     void endRttPass();
     void beginMainPass(ViewportRect gameViewport);
     void drawSprite(DMesh dmesh, DTexture dtexture, const SpriteDrawParams& params);
-    void endFrame(GLFWwindow* window, ImDrawData* imguiData, int framebufferWidth, int framebufferHeight);
+    void endFrame(ImDrawData* imguiData, int framebufferWidth, int framebufferHeight);
     ScreenshotPixels takeScreenshot(ViewportRect gameViewport, glm::ivec2 gameSize) const;
 
     // Not part of the concept — called by canvas_impl to update filter after upload
@@ -193,7 +194,9 @@ private:
     void destroySwapchainDepthResources();
     void createSwapchainFramebuffers();
     void destroySwapchainResources();
-    void recreateSwapchain(GLFWwindow* window);
+    GLFWwindow* mGlfwWindow = nullptr;
+
+    void recreateSwapchain();
 
     void rebuildSampler(VulkanTexture& tex, TextureSampleMode minFilter, TextureSampleMode magFilter);
 };

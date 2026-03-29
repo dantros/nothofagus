@@ -41,6 +41,8 @@ else()
         "source/backends/glfw_mouse.cpp")
 endif()
 
+option(NOTHOFAGUS_BACKEND_VULKAN "Use Vulkan backend instead of OpenGL" OFF)
+
 add_subdirectory("third_party/glad")
 if(NOTHOFAGUS_BACKEND_VULKAN)
     set(IMGUI_VULKAN_BACKEND ON CACHE BOOL "" FORCE)
@@ -49,8 +51,6 @@ add_subdirectory("third_party/imgui_cmake")
 
 file(GLOB_RECURSE NOTHOFAGUS_SOURCE_HEADERS "source/*.h")
 file(GLOB_RECURSE NOTHOFAGUS_PUBLIC_HEADERS "include/*.h")
-
-option(NOTHOFAGUS_BACKEND_VULKAN "Use Vulkan backend instead of OpenGL" OFF)
 
 add_library(nothofagus
     "source/canvas.cpp"
@@ -85,8 +85,8 @@ if(NOTHOFAGUS_BACKEND_VULKAN)
 
     target_compile_definitions(nothofagus PRIVATE NOTHOFAGUS_BACKEND_VULKAN)
     target_sources(nothofagus PRIVATE
-        "source/vulkan_backend.cpp"
-        "source/vma_impl.cpp"
+        "source/backends/vulkan_backend.cpp"
+        "source/backends/vma_impl.cpp"
     )
 
     # SPIR-V shader compilation

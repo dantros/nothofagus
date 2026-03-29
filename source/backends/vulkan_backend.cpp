@@ -1,8 +1,11 @@
 #include "vulkan_backend.h"
 #include <VkBootstrap.h>
 #include <vk_mem_alloc.h>
-#include <GLFW/glfw3.h>
-#include <backends/imgui_impl_glfw.h>
+#if defined(NOTHOFAGUS_BACKEND_SDL3)
+#  include <SDL3/SDL_vulkan.h>
+#else
+#  include <GLFW/glfw3.h>
+#endif
 #include <backends/imgui_impl_vulkan.h>
 #include <imgui.h>
 #include <spdlog/spdlog.h>
@@ -301,7 +304,7 @@ void VulkanBackend::destroySwapchainResources()
     mSwapchainImageViews.clear();
 }
 
-void VulkanBackend::recreateSwapchain(GLFWwindow* window)
+void VulkanBackend::recreateSwapchain()
 {
     vkDeviceWaitIdle(mDevice);
     destroySwapchainResources();
@@ -332,7 +335,7 @@ void VulkanBackend::recreateSwapchain(GLFWwindow* window)
 // initialize()
 // ---------------------------------------------------------------------------
 
-void VulkanBackend::initialize(GLFWwindow* window, glm::ivec2 canvasSize)
+void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
 {
     // 1. Instance
     // Disable Samsung Galaxy overlay implicit layers before the Vulkan loader
@@ -359,8 +362,14 @@ void VulkanBackend::initialize(GLFWwindow* window, glm::ivec2 canvasSize)
     mDebugMessenger = vkbInstance.debug_messenger;
 
     // 2. Surface
-    if (glfwCreateWindowSurface(mInstance, window, nullptr, &mSurface) != VK_SUCCESS)
-        throw std::runtime_error("Failed to create Vulkan window surface");
+#if defined(NOTHOFAGUS_BACKEND_SDL3)
+    if (!SDL_Vulkan_CreateSurface(static_cast<SDL_Window*>(nativeWindowHandle), mInstance, nullptr, &mSurface))
+        throw std::runtime_error("Failed to create Vulkan window surface (SDL3)");
+#else
+    mGlfwWindow = static_cast<GLFWwindow*>(nativeWindowHandle);
+    if (glfwCreateWindowSurface(mInstance, mGlfwWindow, nullptr, &mSurface) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create Vulkan window surface (GLFW)");
+#endif
 
     // 3. Physical device
     vkb::PhysicalDeviceSelector physSelector{vkbInstance};
@@ -719,9 +728,14 @@ void VulkanBackend::initialize(GLFWwindow* window, glm::ivec2 canvasSize)
         vkDestroyShaderModule(mDevice, fragModule, nullptr);
     }
 
-    // 17. ImGui
-    ImGui_ImplGlfw_InitForVulkan(window, true);
+}
 
+// ---------------------------------------------------------------------------
+// initImGuiRenderer()
+// ---------------------------------------------------------------------------
+
+void VulkanBackend::initImGuiRenderer()
+{
     ImGui_ImplVulkan_InitInfo imguiInfo{};
     imguiInfo.Instance        = mInstance;
     imguiInfo.PhysicalDevice  = mPhysicalDevice;
@@ -781,7 +795,6 @@ void VulkanBackend::shutdown()
     vkDeviceWaitIdle(mDevice);
 
     ImGui_ImplVulkan_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
 
     // Flush deferred deletions from all frame slots — these were queued by
     // freeTexture/freeMesh/freeRenderTarget during the last frames and never
@@ -1235,8 +1248,7 @@ void VulkanBackend::beginFrame(
 
     if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR)
     {
-        // Window was resized — recreateSwapchain requires the GLFW window, which we don't
-        // have here. Mark mActiveCommandBuffer null so draw calls are no-ops until next frame.
+        recreateSwapchain();
         mActiveCommandBuffer = VK_NULL_HANDLE;
         return;
     }
@@ -1260,7 +1272,6 @@ void VulkanBackend::beginFrame(
 void VulkanBackend::imguiNewFrame()
 {
     ImGui_ImplVulkan_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
 }
 
 // ---------------------------------------------------------------------------
@@ -1420,7 +1431,7 @@ void VulkanBackend::drawSprite(DMesh dmesh, DTexture dtexture, const SpriteDrawP
 // ---------------------------------------------------------------------------
 
 void VulkanBackend::endFrame(
-    GLFWwindow* window, ImDrawData* imguiData, int framebufferWidth, int framebufferHeight)
+    ImDrawData* imguiData, int framebufferWidth, int framebufferHeight)
 {
     if (mActiveCommandBuffer == VK_NULL_HANDLE) return;
 
@@ -1459,7 +1470,7 @@ void VulkanBackend::endFrame(
 
     VkResult presentResult = vkQueuePresentKHR(mPresentQueue, &presentInfo);
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)
-        recreateSwapchain(window);
+        recreateSwapchain();
 
     mCurrentFrame = (mCurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     mActiveCommandBuffer = VK_NULL_HANDLE;
