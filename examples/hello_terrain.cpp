@@ -88,10 +88,17 @@ int main()
         return heights[row * gridColumns + col] * 40.0f;
     };
 
-    // Initial character Y: terrain height at spawn + half sprite height so it sits on the surface
+    // Initial character Y: terrain height at spawn + half sprite height so it sits on the surface.
+    // textureSize = {8,8}, scale = {2.0, 2.5} → billboard {16, 20} world units.
     const float initialTerrainY = sampleTerrainHeight(128.0f, 120.0f); // = 40 at hill peak
-    Nothofagus::WorldBellotaId characterId = canvas.addWorldBellota(
-        {/*position=*/{128.0f, initialTerrainY + 10.0f, 120.0f}, /*size=*/{16.0f, 20.0f}, characterTexId}
+    Nothofagus::BellotaId characterId = canvas.addBellota(
+        Nothofagus::Bellota(
+            Nothofagus::Transform3D(
+                glm::vec3{128.0f, initialTerrainY + 10.0f, 120.0f},
+                glm::vec3{2.0f, 2.5f, 1.0f}
+            ),
+            characterTexId
+        )
     );
 
     // ── HUD sprite (screen-space, always on top) ───────────────────────────────
@@ -150,9 +157,8 @@ int main()
 
         // Snap character Y to terrain surface so it's always visible
         const float terrainY = sampleTerrainHeight(characterX, characterZ);
-        canvas.worldBellota(characterId).position().x = characterX;
-        canvas.worldBellota(characterId).position().y = terrainY + 10.0f; // +10 = half sprite height
-        canvas.worldBellota(characterId).position().z = characterZ;
+        canvas.bellota(characterId).transform3d().location() =
+            glm::vec3{characterX, terrainY + 10.0f, characterZ};
 
         ImGui::SetNextWindowPos({4.0f, 4.0f});
         ImGui::Begin("Controls", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs);

@@ -8,7 +8,6 @@
 #include "tint.h"
 #include "camera.h"
 #include "heightmap_terrain.h"
-#include "world_bellota.h"
 #include <memory>
 #include <functional>
 #include <string>
@@ -229,25 +228,6 @@ public:
      */
     HeightmapTerrain& heightmapTerrain(HeightmapTerrainId terrainId);
     const HeightmapTerrain& heightmapTerrain(HeightmapTerrainId terrainId) const;
-
-    /**
-     * @brief Add a world-space billboard bellota to the scene.
-     * @param worldBellota The WorldBellota to add.
-     * @return The ID of the added world bellota.
-     */
-    WorldBellotaId addWorldBellota(const WorldBellota& worldBellota);
-
-    /**
-     * @brief Remove a world-space bellota from the scene.
-     * @param worldBellotaId The ID of the world bellota to remove.
-     */
-    void removeWorldBellota(WorldBellotaId worldBellotaId);
-
-    /**
-     * @brief Get a reference to a world bellota by ID.
-     */
-    WorldBellota& worldBellota(WorldBellotaId worldBellotaId);
-    const WorldBellota& worldBellota(WorldBellotaId worldBellotaId) const;
 
     /**
      * @brief Start the canvas main loop with the default update function.

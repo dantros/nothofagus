@@ -3,6 +3,7 @@
 #include "bellota.h"
 #include "mesh.h"
 #include "dmesh.h"
+#include "dmesh3d.h"
 #include "tint.h"
 #include "indexed_container.h"
 #include <optional>
@@ -19,12 +20,15 @@ namespace Nothofagus
 struct BellotaPack
 {
     Bellota bellota;
-    std::optional<Mesh> meshOpt;
-    std::optional<DMesh> dmeshOpt;
-    std::optional<Tint> tintOpt;
+    std::optional<Mesh>    meshOpt;
+    std::optional<DMesh>   dmeshOpt;
+    std::optional<Tint>    tintOpt;
+    std::optional<DMesh3D> dmesh3dOpt; ///< GPU mesh for world-space (3D billboard) bellotas.
 
     bool isDirty() const
     {
+        if (bellota.isWorldSpace())
+            return not dmesh3dOpt.has_value();
         return not (meshOpt.has_value() and dmeshOpt.has_value());
     }
 
@@ -35,6 +39,12 @@ struct BellotaPack
         {
             DMesh& dmesh = dmeshOpt.value();
             dmesh.clear();
+            dmeshOpt.reset();
+        }
+        if (dmesh3dOpt.has_value())
+        {
+            dmesh3dOpt.value().clear();
+            dmesh3dOpt.reset();
         }
     }
 

@@ -5,7 +5,6 @@
 #include "bellota_container.h"
 #include "render_target_container.h"
 #include "heightmap_terrain_container.h"
-#include "world_bellota_container.h"
 #include "texture_usage_monitor.h"
 #include "aa_box.h"
 #include "../include/camera.h"
@@ -126,11 +125,6 @@ public:
     HeightmapTerrain& heightmapTerrain(HeightmapTerrainId terrainId);
     const HeightmapTerrain& heightmapTerrain(HeightmapTerrainId terrainId) const;
 
-    WorldBellotaId addWorldBellota(const WorldBellota& worldBellota);
-    void removeWorldBellota(WorldBellotaId worldBellotaId);
-    WorldBellota& worldBellota(WorldBellotaId worldBellotaId);
-    const WorldBellota& worldBellota(WorldBellotaId worldBellotaId) const;
-
     /**
      * @brief Retrieves a Bellota by its ID.
      * @param bellotaId The ID of the Bellota.
@@ -213,18 +207,17 @@ private:
     BellotaContainer mBellotas; ///< Container for Bellota objects.
     RenderTargetContainer mRenderTargets; ///< Container for RenderTarget objects.
     HeightmapTerrainContainer mHeightmapTerrains; ///< Container for HeightmapTerrain objects.
-    WorldBellotaContainer mWorldBellotas; ///< Container for WorldBellota objects.
     TextureUsageMonitor mTextureUsageMonitor;
 
-    /// Tracks how many WorldBellotas reference each TextureId, to prevent auto-GC.
-    std::unordered_map<TextureId, std::size_t> mWorldBellotaTextureRefCounts;
+    /// Tracks how many HeightmapTerrains reference each TextureId, to prevent auto-GC.
+    std::unordered_map<TextureId, std::size_t> mTerrainTextureRefCounts;
 
     /// RTT passes queued by renderTo() during the update callback, executed before the main render.
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
 
-    unsigned int mShaderProgram;             ///< Shader program for 2D screen-space bellotas.
-    unsigned int mTerrainShaderProgram;      ///< Shader program for 3D heightmap terrain.
-    unsigned int mWorldBillboardShaderProgram; ///< Shader program for 3D world-space billboard bellotas.
+    unsigned int mShaderProgram;               ///< Shader program for 2D screen-space bellotas.
+    unsigned int mTerrainShaderProgram;        ///< Shader program for 3D heightmap terrain.
+    unsigned int mWorldBillboardShaderProgram; ///< Shader program for 3D world-space billboard bellotas (Transform3D).
 
     bool mStats; ///< Flag to indicate whether stats should be displayed.
 

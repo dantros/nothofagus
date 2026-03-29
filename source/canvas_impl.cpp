@@ -10,7 +10,6 @@
 #include "bellota_container.h"
 #include "render_target_container.h"
 #include "heightmap_terrain_container.h"
-#include "world_bellota_container.h"
 #include "keyboard.h"
 #include "mouse.h"
 #include "controller.h"
@@ -247,9 +246,6 @@ Canvas::CanvasImpl::~CanvasImpl()
     for (auto& [index, pack] : mHeightmapTerrains)
         pack.clear();
 
-    for (auto& [index, pack] : mWorldBellotas)
-        pack.clear();
-
     glDeleteProgram(mTerrainShaderProgram);
     glDeleteProgram(mWorldBillboardShaderProgram);
 
@@ -354,7 +350,7 @@ void Canvas::CanvasImpl::clearUnusedTextures()
         if (mTextures.at(textureId.id).isProxy())
             continue;
         // Textures still referenced by world bellotas or terrain are not GC'd.
-        if (mWorldBellotaTextureRefCounts.contains(textureId))
+        if (mTerrainTextureRefCounts.contains(textureId))
             continue;
         removeTexture(textureId);
     }
@@ -363,15 +359,9 @@ void Canvas::CanvasImpl::clearUnusedTextures()
 
 void Canvas::CanvasImpl::setTexture(const BellotaId bellotaId, const TextureId textureId)
 {
-    const Bellota& bellotaOriginal = bellota(bellotaId);
-    Bellota bellotaWithNewTexture(
-        bellotaOriginal.transform(),
-        textureId,
-        bellotaOriginal.depthOffset()
-    );
-    bellotaWithNewTexture.visible() = bellotaOriginal.visible();
-    bellotaWithNewTexture.currentLayer() = bellotaOriginal.currentLayer();
-    replaceBellota(bellotaId, bellotaWithNewTexture);
+    Bellota updated = bellota(bellotaId);
+    updated.texture() = textureId;
+    replaceBellota(bellotaId, updated);
 }
 
 void Canvas::CanvasImpl::markTextureAsDirty(const TextureId textureId)
@@ -507,7 +497,7 @@ HeightmapTerrainId Canvas::CanvasImpl::addHeightmapTerrain(const HeightmapTerrai
     HeightmapTerrainId newId{mHeightmapTerrains.add({terrain, std::nullopt, std::nullopt})};
     // Track texture reference to prevent auto-GC.
     TextureId colorTexId = terrain.colorTextureId();
-    mWorldBellotaTextureRefCounts[colorTexId]++;
+    mTerrainTextureRefCounts[colorTexId]++;
     return newId;
 }
 
@@ -519,12 +509,12 @@ void Canvas::CanvasImpl::removeHeightmapTerrain(HeightmapTerrainId terrainId)
     mHeightmapTerrains.remove(terrainId.id);
 
     // Decrement texture ref count.
-    auto it = mWorldBellotaTextureRefCounts.find(colorTexId);
-    if (it != mWorldBellotaTextureRefCounts.end())
+    auto it = mTerrainTextureRefCounts.find(colorTexId);
+    if (it != mTerrainTextureRefCounts.end())
     {
         it->second--;
         if (it->second == 0)
-            mWorldBellotaTextureRefCounts.erase(it);
+            mTerrainTextureRefCounts.erase(it);
     }
 }
 
@@ -536,42 +526,6 @@ HeightmapTerrain& Canvas::CanvasImpl::heightmapTerrain(HeightmapTerrainId terrai
 const HeightmapTerrain& Canvas::CanvasImpl::heightmapTerrain(HeightmapTerrainId terrainId) const
 {
     return mHeightmapTerrains.at(terrainId.id).terrain;
-}
-
-WorldBellotaId Canvas::CanvasImpl::addWorldBellota(const WorldBellota& worldBellota)
-{
-    WorldBellotaId newId{mWorldBellotas.add({worldBellota, std::nullopt})};
-    // Track texture reference to prevent auto-GC.
-    TextureId texId = worldBellota.textureId();
-    mWorldBellotaTextureRefCounts[texId]++;
-    return newId;
-}
-
-void Canvas::CanvasImpl::removeWorldBellota(WorldBellotaId worldBellotaId)
-{
-    WorldBellotaPack& pack = mWorldBellotas.at(worldBellotaId.id);
-    TextureId texId = pack.worldBellota.textureId();
-    pack.clear();
-    mWorldBellotas.remove(worldBellotaId.id);
-
-    // Decrement texture ref count.
-    auto it = mWorldBellotaTextureRefCounts.find(texId);
-    if (it != mWorldBellotaTextureRefCounts.end())
-    {
-        it->second--;
-        if (it->second == 0)
-            mWorldBellotaTextureRefCounts.erase(it);
-    }
-}
-
-WorldBellota& Canvas::CanvasImpl::worldBellota(WorldBellotaId worldBellotaId)
-{
-    return mWorldBellotas.at(worldBellotaId.id).worldBellota;
-}
-
-const WorldBellota& Canvas::CanvasImpl::worldBellota(WorldBellotaId worldBellotaId) const
-{
-    return mWorldBellotas.at(worldBellotaId.id).worldBellota;
 }
 
 bool& Canvas::CanvasImpl::stats()
@@ -757,7 +711,11 @@ void initializeRenderTargets(RenderTargetContainer& renderTargets, TextureContai
     }
 }
 
-void initializeBellotas(BellotaContainer& bellotas, TextureContainer& textures, unsigned int shaderProgram)
+// Indices for a billboard quad (constant, filled once during init).
+static const std::array<unsigned int, 6> BILLBOARD_INDICES = {0, 1, 2, 0, 2, 3};
+
+void initializeBellotas(BellotaContainer& bellotas, TextureContainer& textures,
+                        unsigned int shaderProgram2D, unsigned int shaderProgram3D)
 {
     for (auto& [bellotaIndex, bellotaPack] : bellotas)
     {
@@ -765,23 +723,53 @@ void initializeBellotas(BellotaContainer& bellotas, TextureContainer& textures, 
             continue;
 
         const Bellota& bellota = bellotaPack.bellota;
-
-        bellotaPack.meshOpt = generateMesh(textures, bellota);
-
-        bellotaPack.dmeshOpt = DMesh();
-        DMesh& dmesh = bellotaPack.dmeshOpt.value();
-        dmesh.initBuffers();
-        setupVAO(dmesh, shaderProgram);
-        dmesh.fillBuffers(bellotaPack.meshOpt.value(), GL_STATIC_DRAW);
-
-        TextureId textureId = bellota.texture();
+        const TextureId textureId = bellota.texture();
         const TexturePack& texturePack = textures.at(textureId.id);
 
-        debugCheck(texturePack.dtextureOpt.has_value(), "Texture has not been initializad on GPU.");
+        if (bellota.isWorldSpace())
+        {
+            // World-space billboard path: allocate a GL_DYNAMIC_DRAW VBO (corners rebuilt each frame).
+            bellotaPack.dmesh3dOpt = DMesh3D{};
+            DMesh3D& dmesh3d = bellotaPack.dmesh3dOpt.value();
+            dmesh3d.initBuffers();
+            setupVAO3D(dmesh3d, shaderProgram3D);
 
-        const DTexture dtexture = texturePack.dtextureOpt.value();
+            constexpr std::size_t vertexCount    = 4;
+            constexpr std::size_t floatsPerVertex = 5;
+            const std::array<float, vertexCount * floatsPerVertex> zeroVertices{};
 
-        dmesh.texture = dtexture.texture;
+            glBindBuffer(GL_ARRAY_BUFFER, dmesh3d.vbo);
+            glBufferData(GL_ARRAY_BUFFER,
+                         static_cast<GLsizeiptr>(zeroVertices.size() * sizeof(float)),
+                         zeroVertices.data(), GL_DYNAMIC_DRAW);
+
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dmesh3d.ebo);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                         static_cast<GLsizeiptr>(BILLBOARD_INDICES.size() * sizeof(unsigned int)),
+                         BILLBOARD_INDICES.data(), GL_STATIC_DRAW);
+
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+            dmesh3d.indexCount = BILLBOARD_INDICES.size();
+
+            debugCheck(texturePack.dtextureOpt.has_value(), "World-space bellota texture has not been initialized on GPU.");
+            dmesh3d.texture = texturePack.dtextureOpt.value().texture;
+        }
+        else
+        {
+            // Screen-space (2D) path: unchanged.
+            bellotaPack.meshOpt = generateMesh(textures, bellota);
+
+            bellotaPack.dmeshOpt = DMesh();
+            DMesh& dmesh = bellotaPack.dmeshOpt.value();
+            dmesh.initBuffers();
+            setupVAO(dmesh, shaderProgram2D);
+            dmesh.fillBuffers(bellotaPack.meshOpt.value(), GL_STATIC_DRAW);
+
+            debugCheck(texturePack.dtextureOpt.has_value(), "Texture has not been initializad on GPU.");
+            dmesh.texture = texturePack.dtextureOpt.value().texture;
+        }
     }
 }
 
@@ -806,53 +794,6 @@ void initializeHeightmapTerrains(
         const TextureId colorTextureId = terrainPack.terrain.colorTextureId();
         const TexturePack& texturePack = textures.at(colorTextureId.id);
         debugCheck(texturePack.dtextureOpt.has_value(), "Terrain colour texture has not been initialized on GPU.");
-        dmesh3d.texture = texturePack.dtextureOpt.value().texture;
-    }
-}
-
-// Indices for a billboard quad (constant, filled once during init).
-static const std::array<unsigned int, 6> BILLBOARD_INDICES = {0, 1, 2, 0, 2, 3};
-
-void initializeWorldBellotas(
-    WorldBellotaContainer& worldBellotas,
-    const TextureContainer& textures,
-    unsigned int            shaderProgram)
-{
-    for (auto& [worldBellotaIndex, worldBellotaPack] : worldBellotas)
-    {
-        if (not worldBellotaPack.isDirty())
-            continue;
-
-        worldBellotaPack.dmeshOpt = DMesh3D{};
-        DMesh3D& dmesh3d = worldBellotaPack.dmeshOpt.value();
-        dmesh3d.initBuffers();
-        setupVAO3D(dmesh3d, shaderProgram);
-
-        // Allocate VBO with room for 4 vertices * 5 floats, using DYNAMIC_DRAW
-        // because billboard corners are recomputed each frame.
-        constexpr std::size_t vertexCount    = 4;
-        constexpr std::size_t floatsPerVertex = 5;
-        const std::array<float, vertexCount * floatsPerVertex> zeroVertices{};
-
-        glBindBuffer(GL_ARRAY_BUFFER, dmesh3d.vbo);
-        glBufferData(GL_ARRAY_BUFFER,
-                     static_cast<GLsizeiptr>(zeroVertices.size() * sizeof(float)),
-                     zeroVertices.data(), GL_DYNAMIC_DRAW);
-
-        // EBO is static: two triangles, same for all billboards.
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dmesh3d.ebo);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                     static_cast<GLsizeiptr>(BILLBOARD_INDICES.size() * sizeof(unsigned int)),
-                     BILLBOARD_INDICES.data(), GL_STATIC_DRAW);
-
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-
-        dmesh3d.indexCount = BILLBOARD_INDICES.size();
-
-        const TextureId textureId = worldBellotaPack.worldBellota.textureId();
-        const TexturePack& texturePack = textures.at(textureId.id);
-        debugCheck(texturePack.dtextureOpt.has_value(), "WorldBellota texture has not been initialized on GPU.");
         dmesh3d.texture = texturePack.dtextureOpt.value().texture;
     }
 }
@@ -895,7 +836,8 @@ void drawHeightmapTerrains(
 }
 
 void updateAndDrawWorldBellotas(
-    WorldBellotaContainer&               worldBellotas,
+    BellotaContainer&                    bellotas,
+    const TextureContainer&              textures,
     const glm::mat4&                     viewProjectionMatrix,
     const Camera&                        camera,
     const WorldBillboardShaderUniforms&  uniforms)
@@ -905,42 +847,50 @@ void updateAndDrawWorldBellotas(
     const glm::vec3 cameraRight   = glm::normalize(glm::cross(cameraForward, camera.upVector()));
     const glm::vec3 cameraUp      = glm::normalize(glm::cross(cameraRight, cameraForward));
 
-    // Collect visible world bellotas and sort back-to-front for correct alpha blending.
-    std::vector<WorldBellotaPack*> sortedPacks;
-    sortedPacks.reserve(worldBellotas.size());
-    for (auto& [index, pack] : worldBellotas)
+    // Collect visible world-space bellotas and sort back-to-front for correct alpha blending.
+    std::vector<BellotaPack*> sortedPacks;
+    for (auto& [index, pack] : bellotas)
     {
-        if (pack.worldBellota.visible() and pack.dmeshOpt.has_value())
+        if (pack.bellota.isWorldSpace() and pack.bellota.visible() and pack.dmesh3dOpt.has_value())
             sortedPacks.push_back(&pack);
     }
 
     const glm::vec3 cameraPosition = camera.position();
     std::sort(sortedPacks.begin(), sortedPacks.end(),
-        [&cameraPosition](const WorldBellotaPack* lhs, const WorldBellotaPack* rhs)
+        [&cameraPosition](const BellotaPack* lhs, const BellotaPack* rhs)
         {
-            const float distL = glm::dot(lhs->worldBellota.position() - cameraPosition,
-                                          lhs->worldBellota.position() - cameraPosition);
-            const float distR = glm::dot(rhs->worldBellota.position() - cameraPosition,
-                                          rhs->worldBellota.position() - cameraPosition);
+            const glm::vec3 posL = lhs->bellota.transform3d().location();
+            const glm::vec3 posR = rhs->bellota.transform3d().location();
+            const float distL = glm::dot(posL - cameraPosition, posL - cameraPosition);
+            const float distR = glm::dot(posR - cameraPosition, posR - cameraPosition);
             return distL > distR; // descending: farthest first
         }
     );
 
-    for (WorldBellotaPack* packPtr : sortedPacks)
+    for (BellotaPack* packPtr : sortedPacks)
     {
-        WorldBellota& worldBellota = packPtr->worldBellota;
-        DMesh3D&      dmesh3d     = packPtr->dmeshOpt.value();
+        const Bellota&    bellota  = packPtr->bellota;
+        const Transform3D& t3d    = bellota.transform3d();
+        DMesh3D&           dmesh3d = packPtr->dmesh3dOpt.value();
 
-        const glm::vec3 position  = worldBellota.position();
-        const float     halfWidth  = worldBellota.size().x * 0.5f;
-        const float     halfHeight = worldBellota.size().y * 0.5f;
+        const glm::vec3 position = t3d.location();
 
-        // Four billboard corners in world space (spherical billboard).
-        // UV convention matches the existing 2D quad: (0,1) BL, (1,1) BR, (1,0) TR, (0,0) TL.
-        const glm::vec3 bottomLeft  = position - cameraRight * halfWidth - cameraUp * halfHeight;
-        const glm::vec3 bottomRight = position + cameraRight * halfWidth - cameraUp * halfHeight;
-        const glm::vec3 topRight    = position + cameraRight * halfWidth + cameraUp * halfHeight;
-        const glm::vec3 topLeft     = position - cameraRight * halfWidth + cameraUp * halfHeight;
+        // Billboard size: texture pixels * scale.
+        const glm::ivec2 texSize  = textures.at(bellota.texture().id).mTextureSize;
+        const float halfWidth     = static_cast<float>(texSize.x) * t3d.scale().x * 0.5f;
+        const float halfHeight    = static_cast<float>(texSize.y) * t3d.scale().y * 0.5f;
+
+        // Apply the Transform3D quaternion rotation to the camera-aligned axes,
+        // so users can rotate the billboard plane independent of the camera.
+        const glm::vec3 rightDir = t3d.rotation() * cameraRight;
+        const glm::vec3 upDir    = t3d.rotation() * cameraUp;
+
+        // Four billboard corners in world space.
+        // UV convention: (0,1) BL, (1,1) BR, (1,0) TR, (0,0) TL.
+        const glm::vec3 bottomLeft  = position - rightDir * halfWidth - upDir * halfHeight;
+        const glm::vec3 bottomRight = position + rightDir * halfWidth - upDir * halfHeight;
+        const glm::vec3 topRight    = position + rightDir * halfWidth + upDir * halfHeight;
+        const glm::vec3 topLeft     = position - rightDir * halfWidth + upDir * halfHeight;
 
         // Packed vertex data: x, y, z, u, v per corner.
         const std::array<float, 20> vertexData = {
@@ -958,11 +908,21 @@ void updateAndDrawWorldBellotas(
 
         glUniformMatrix4fv(uniforms.modelViewProjection, 1, GL_FALSE,
                            glm::value_ptr(viewProjectionMatrix));
-        glUniform1i(uniforms.layerIndex, static_cast<int>(worldBellota.currentLayer()));
-        glUniform3f(uniforms.tintColor, 1.0f, 1.0f, 1.0f);
-        glUniform1f(uniforms.tintIntensity, 0.0f);
-        glUniform1f(uniforms.opacity, worldBellota.opacity());
+        glUniform1i(uniforms.layerIndex, static_cast<int>(bellota.currentLayer()));
 
+        if (packPtr->tintOpt.has_value())
+        {
+            const Tint& tint = packPtr->tintOpt.value();
+            glUniform3f(uniforms.tintColor, tint.color.r, tint.color.g, tint.color.b);
+            glUniform1f(uniforms.tintIntensity, tint.intensity);
+        }
+        else
+        {
+            glUniform3f(uniforms.tintColor, 1.0f, 1.0f, 1.0f);
+            glUniform1f(uniforms.tintIntensity, 0.0f);
+        }
+
+        glUniform1f(uniforms.opacity, bellota.opacity());
         dmesh3d.drawCall();
     }
 }
@@ -1070,7 +1030,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         for (const auto& [bellotaIndex, bellotaPack] : bellotas)
         {
-            sortedBellotas.push_back(&bellotaPack);
+            if (not bellotaPack.bellota.isWorldSpace())
+                sortedBellotas.push_back(&bellotaPack);
         }
 
         std::sort(sortedBellotas.begin(), sortedBellotas.end(),
@@ -1127,9 +1088,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         clearUnusedTextures();
         initializeTexturePacks(mTextures);
         initializeRenderTargets(mRenderTargets, mTextures);
-        initializeBellotas(mBellotas, mTextures, mShaderProgram);
+        initializeBellotas(mBellotas, mTextures, mShaderProgram, mWorldBillboardShaderProgram);
         initializeHeightmapTerrains(mHeightmapTerrains, mTextures, mTerrainShaderProgram);
-        initializeWorldBellotas(mWorldBellotas, mTextures, mWorldBillboardShaderProgram);
         sortByDepthOffset(mBellotas, sortedBellotaPacks);
 
         glUseProgram(mShaderProgram);
@@ -1212,7 +1172,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         drawHeightmapTerrains(mHeightmapTerrains, viewProjectionMatrix, terrainShaderUniforms);
 
         glUseProgram(mWorldBillboardShaderProgram);
-        updateAndDrawWorldBellotas(mWorldBellotas, viewProjectionMatrix, mCamera, worldBillboardShaderUniforms);
+        updateAndDrawWorldBellotas(mBellotas, mTextures, viewProjectionMatrix, mCamera, worldBillboardShaderUniforms);
 
         // ── 2D PASS: screen-space bellotas (depth test OFF, always on top) ─────
         glDisable(GL_DEPTH_TEST);

@@ -51,6 +51,7 @@ add_library(nothofagus
     "source/canvas.cpp"
     "source/canvas_impl.cpp"
     ${NOTHOFAGUS_BACKEND_SRC}
+    "source/bellota.cpp"
     "source/bellota_to_mesh.cpp"
     "source/mesh.cpp"
     "source/dmesh.cpp"
@@ -69,7 +70,6 @@ add_library(nothofagus
     "source/camera.cpp"
     "source/dmesh3d.cpp"
     "source/heightmap_terrain.cpp"
-    "source/world_bellota.cpp"
     "source/heightmap_terrain_to_mesh.cpp"
 
     # This is only required to show header files in the Visual Studio IDE solution browser

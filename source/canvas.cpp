@@ -183,26 +183,6 @@ const HeightmapTerrain& Canvas::heightmapTerrain(HeightmapTerrainId terrainId) c
     return mCanvasImpl->heightmapTerrain(terrainId);
 }
 
-WorldBellotaId Canvas::addWorldBellota(const WorldBellota& worldBellota)
-{
-    return mCanvasImpl->addWorldBellota(worldBellota);
-}
-
-void Canvas::removeWorldBellota(WorldBellotaId worldBellotaId)
-{
-    mCanvasImpl->removeWorldBellota(worldBellotaId);
-}
-
-WorldBellota& Canvas::worldBellota(WorldBellotaId worldBellotaId)
-{
-    return mCanvasImpl->worldBellota(worldBellotaId);
-}
-
-const WorldBellota& Canvas::worldBellota(WorldBellotaId worldBellotaId) const
-{
-    return mCanvasImpl->worldBellota(worldBellotaId);
-}
-
 bool& Canvas::stats()
 {
     return mCanvasImpl->stats();
