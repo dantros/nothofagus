@@ -1547,11 +1547,17 @@ ScreenshotPixels VulkanBackend::takeScreenshot(ViewportRect gameViewport, glm::i
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
         0, VK_ACCESS_TRANSFER_WRITE_BIT);
 
-    // Blit swapchain → intermediate, swapping Y to get top-to-bottom order
+    // gameViewport.y is in OpenGL convention (from bottom). Convert to Vulkan image
+    // coordinates (Y from top) before blitting. No Y-flip needed: reading top→bottom
+    // maps directly to the top-to-bottom output required by ScreenshotPixels.
+    const int framebufferHeight = static_cast<int>(mSwapchainExtent.height);
+    const int vulkanGameTop     = framebufferHeight - gameViewport.y - gameViewport.height;
+    const int vulkanGameBottom  = framebufferHeight - gameViewport.y;
+
     VkImageBlit blit{};
     blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    blit.srcOffsets[0]  = {gameViewport.x, gameViewport.y + gameViewport.height, 0};  // Y-flip
-    blit.srcOffsets[1]  = {gameViewport.x + gameViewport.width, gameViewport.y, 1};
+    blit.srcOffsets[0]  = {gameViewport.x, vulkanGameTop, 0};
+    blit.srcOffsets[1]  = {gameViewport.x + gameViewport.width, vulkanGameBottom, 1};
     blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     blit.dstOffsets[0]  = {0, 0, 0};
     blit.dstOffsets[1]  = {static_cast<int32_t>(width), static_cast<int32_t>(height), 1};
