@@ -3,11 +3,14 @@
 #include "check.h"
 #include "bellota_to_mesh.h"
 #include "dmesh.h"
-// #include "dmesh3D.h"
+#include "dmesh3d.h"
+#include "heightmap_terrain_to_mesh.h"
 #include "performance_monitor.h"
 #include "texture_container.h"
 #include "bellota_container.h"
 #include "render_target_container.h"
+#include "heightmap_terrain_container.h"
+#include "world_bellota_container.h"
 #include "keyboard.h"
 #include "mouse.h"
 #include "controller.h"
@@ -164,6 +167,68 @@ Canvas::CanvasImpl::CanvasImpl(
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
+    // ---- 3D terrain shader ----
+    const std::string terrainVertexShaderSource = R"(
+        #version 330 core
+        in vec3 position;
+        in vec2 textureCoordinates;
+        out vec2 outTextureCoordinates;
+        uniform mat4 modelViewProjection;
+        void main()
+        {
+            outTextureCoordinates = textureCoordinates;
+            gl_Position = modelViewProjection * vec4(position, 1.0);
+        }
+    )";
+    const std::string terrainFragmentShaderSource = R"(
+        #version 330 core
+        in vec2 outTextureCoordinates;
+        out vec4 outColor;
+        uniform sampler2DArray textureSampler;
+        uniform int layerIndex;
+        uniform float opacity;
+        void main()
+        {
+            vec4 textureSample = texture(textureSampler, vec3(outTextureCoordinates, layerIndex));
+            outColor = vec4(textureSample.rgb, textureSample.a * opacity);
+        }
+    )";
+
+    {
+        unsigned int terrainVertexShader   = compileShader(GL_VERTEX_SHADER,   terrainVertexShaderSource);
+        unsigned int terrainFragmentShader = compileShader(GL_FRAGMENT_SHADER, terrainFragmentShaderSource);
+        mTerrainShaderProgram = createShaderProgram(terrainVertexShader, terrainFragmentShader);
+        glDeleteShader(terrainVertexShader);
+        glDeleteShader(terrainFragmentShader);
+    }
+
+    // ---- World billboard shader (same vertex, fragment adds tint) ----
+    const std::string worldBillboardFragmentShaderSource = R"(
+        #version 330 core
+        in vec2 outTextureCoordinates;
+        out vec4 outColor;
+        uniform sampler2DArray textureSampler;
+        uniform int layerIndex;
+        uniform vec3 tintColor;
+        uniform float tintIntensity;
+        uniform float opacity;
+        void main()
+        {
+            vec4 textureSample = texture(textureSampler, vec3(outTextureCoordinates, layerIndex));
+            vec3 blendColor = (tintColor * tintIntensity) + (textureSample.rgb * (1.0 - tintIntensity));
+            outColor = vec4(blendColor, textureSample.a * opacity);
+        }
+    )";
+
+    {
+        // Terrain and world billboard share the same vertex shader source.
+        unsigned int worldBillboardVertexShader   = compileShader(GL_VERTEX_SHADER,   terrainVertexShaderSource);
+        unsigned int worldBillboardFragmentShader = compileShader(GL_FRAGMENT_SHADER, worldBillboardFragmentShaderSource);
+        mWorldBillboardShaderProgram = createShaderProgram(worldBillboardVertexShader, worldBillboardFragmentShader);
+        glDeleteShader(worldBillboardVertexShader);
+        glDeleteShader(worldBillboardFragmentShader);
+    }
+
     // Enabling transparency
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_BLEND);
@@ -178,6 +243,16 @@ Canvas::CanvasImpl::CanvasImpl(
 
 Canvas::CanvasImpl::~CanvasImpl()
 {
+    // Free 3D GPU resources
+    for (auto& [index, pack] : mHeightmapTerrains)
+        pack.clear();
+
+    for (auto& [index, pack] : mWorldBellotas)
+        pack.clear();
+
+    glDeleteProgram(mTerrainShaderProgram);
+    glDeleteProgram(mWorldBillboardShaderProgram);
+
     // Window destructor handles backend cleanup (GL context, ImGui shutdown, etc.)
     // Needs to be defined in the cpp file to avoid incomplete type errors due to the pimpl idiom for struct Window
 }
@@ -277,6 +352,9 @@ void Canvas::CanvasImpl::clearUnusedTextures()
     {
         // Proxy entries are owned by their RenderTargetPack — skip auto-cleanup.
         if (mTextures.at(textureId.id).isProxy())
+            continue;
+        // Textures still referenced by world bellotas or terrain are not GC'd.
+        if (mWorldBellotaTextureRefCounts.contains(textureId))
             continue;
         removeTexture(textureId);
     }
@@ -421,6 +499,81 @@ const Texture& Canvas::CanvasImpl::texture(TextureId textureId) const
     return mTextures.at(textureId.id).texture.value();
 }
 
+Camera& Canvas::CanvasImpl::camera()             { return mCamera; }
+const Camera& Canvas::CanvasImpl::camera() const { return mCamera; }
+
+HeightmapTerrainId Canvas::CanvasImpl::addHeightmapTerrain(const HeightmapTerrain& terrain)
+{
+    HeightmapTerrainId newId{mHeightmapTerrains.add({terrain, std::nullopt, std::nullopt})};
+    // Track texture reference to prevent auto-GC.
+    TextureId colorTexId = terrain.colorTextureId();
+    mWorldBellotaTextureRefCounts[colorTexId]++;
+    return newId;
+}
+
+void Canvas::CanvasImpl::removeHeightmapTerrain(HeightmapTerrainId terrainId)
+{
+    HeightmapTerrainPack& pack = mHeightmapTerrains.at(terrainId.id);
+    TextureId colorTexId = pack.terrain.colorTextureId();
+    pack.clear();
+    mHeightmapTerrains.remove(terrainId.id);
+
+    // Decrement texture ref count.
+    auto it = mWorldBellotaTextureRefCounts.find(colorTexId);
+    if (it != mWorldBellotaTextureRefCounts.end())
+    {
+        it->second--;
+        if (it->second == 0)
+            mWorldBellotaTextureRefCounts.erase(it);
+    }
+}
+
+HeightmapTerrain& Canvas::CanvasImpl::heightmapTerrain(HeightmapTerrainId terrainId)
+{
+    return mHeightmapTerrains.at(terrainId.id).terrain;
+}
+
+const HeightmapTerrain& Canvas::CanvasImpl::heightmapTerrain(HeightmapTerrainId terrainId) const
+{
+    return mHeightmapTerrains.at(terrainId.id).terrain;
+}
+
+WorldBellotaId Canvas::CanvasImpl::addWorldBellota(const WorldBellota& worldBellota)
+{
+    WorldBellotaId newId{mWorldBellotas.add({worldBellota, std::nullopt})};
+    // Track texture reference to prevent auto-GC.
+    TextureId texId = worldBellota.textureId();
+    mWorldBellotaTextureRefCounts[texId]++;
+    return newId;
+}
+
+void Canvas::CanvasImpl::removeWorldBellota(WorldBellotaId worldBellotaId)
+{
+    WorldBellotaPack& pack = mWorldBellotas.at(worldBellotaId.id);
+    TextureId texId = pack.worldBellota.textureId();
+    pack.clear();
+    mWorldBellotas.remove(worldBellotaId.id);
+
+    // Decrement texture ref count.
+    auto it = mWorldBellotaTextureRefCounts.find(texId);
+    if (it != mWorldBellotaTextureRefCounts.end())
+    {
+        it->second--;
+        if (it->second == 0)
+            mWorldBellotaTextureRefCounts.erase(it);
+    }
+}
+
+WorldBellota& Canvas::CanvasImpl::worldBellota(WorldBellotaId worldBellotaId)
+{
+    return mWorldBellotas.at(worldBellotaId.id).worldBellota;
+}
+
+const WorldBellota& Canvas::CanvasImpl::worldBellota(WorldBellotaId worldBellotaId) const
+{
+    return mWorldBellotas.at(worldBellotaId.id).worldBellota;
+}
+
 bool& Canvas::CanvasImpl::stats()
 {
     return mStats;
@@ -507,6 +660,33 @@ void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
     glEnableVertexAttribArray(textureAttribLocation);
 
     // Unbinding current VAO
+    glBindVertexArray(0);
+}
+
+void setupVAO3D(DMesh3D& dmesh3d, unsigned int shaderProgram)
+{
+    // Vertex layout: position (3 floats) + textureCoordinates (2 floats) = stride of 5 floats.
+    glBindVertexArray(dmesh3d.vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, dmesh3d.vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dmesh3d.ebo);
+
+    constexpr unsigned int positionAttribLength          = 3;
+    constexpr unsigned int textureCoordinatesAttribLength = 2;
+    constexpr unsigned int stride = positionAttribLength + textureCoordinatesAttribLength;
+
+    const auto positionAttribLocation          = glGetAttribLocation(shaderProgram, "position");
+    const auto textureCoordinatesAttribLocation = glGetAttribLocation(shaderProgram, "textureCoordinates");
+
+    glVertexAttribPointer(positionAttribLocation, positionAttribLength, GL_FLOAT, GL_FALSE,
+                          stride * sizeof(GLfloat), reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(positionAttribLocation);
+
+    glVertexAttribPointer(textureCoordinatesAttribLocation, textureCoordinatesAttribLength, GL_FLOAT, GL_FALSE,
+                          stride * sizeof(GLfloat),
+                          reinterpret_cast<void*>(positionAttribLength * sizeof(GLfloat)));
+    glEnableVertexAttribArray(textureCoordinatesAttribLocation);
+
     glBindVertexArray(0);
 }
 
@@ -605,6 +785,188 @@ void initializeBellotas(BellotaContainer& bellotas, TextureContainer& textures, 
     }
 }
 
+void initializeHeightmapTerrains(
+    HeightmapTerrainContainer& terrains,
+    const TextureContainer&    textures,
+    unsigned int               shaderProgram)
+{
+    for (auto& [terrainIndex, terrainPack] : terrains)
+    {
+        if (not terrainPack.isDirty())
+            continue;
+
+        terrainPack.meshOpt = generateHeightmapTerrainMesh(terrainPack.terrain);
+
+        terrainPack.dmeshOpt = DMesh3D{};
+        DMesh3D& dmesh3d = terrainPack.dmeshOpt.value();
+        dmesh3d.initBuffers();
+        setupVAO3D(dmesh3d, shaderProgram);
+        dmesh3d.fillBuffers(terrainPack.meshOpt.value(), GL_STATIC_DRAW);
+
+        const TextureId colorTextureId = terrainPack.terrain.colorTextureId();
+        const TexturePack& texturePack = textures.at(colorTextureId.id);
+        debugCheck(texturePack.dtextureOpt.has_value(), "Terrain colour texture has not been initialized on GPU.");
+        dmesh3d.texture = texturePack.dtextureOpt.value().texture;
+    }
+}
+
+// Indices for a billboard quad (constant, filled once during init).
+static const std::array<unsigned int, 6> BILLBOARD_INDICES = {0, 1, 2, 0, 2, 3};
+
+void initializeWorldBellotas(
+    WorldBellotaContainer& worldBellotas,
+    const TextureContainer& textures,
+    unsigned int            shaderProgram)
+{
+    for (auto& [worldBellotaIndex, worldBellotaPack] : worldBellotas)
+    {
+        if (not worldBellotaPack.isDirty())
+            continue;
+
+        worldBellotaPack.dmeshOpt = DMesh3D{};
+        DMesh3D& dmesh3d = worldBellotaPack.dmeshOpt.value();
+        dmesh3d.initBuffers();
+        setupVAO3D(dmesh3d, shaderProgram);
+
+        // Allocate VBO with room for 4 vertices * 5 floats, using DYNAMIC_DRAW
+        // because billboard corners are recomputed each frame.
+        constexpr std::size_t vertexCount    = 4;
+        constexpr std::size_t floatsPerVertex = 5;
+        const std::array<float, vertexCount * floatsPerVertex> zeroVertices{};
+
+        glBindBuffer(GL_ARRAY_BUFFER, dmesh3d.vbo);
+        glBufferData(GL_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(zeroVertices.size() * sizeof(float)),
+                     zeroVertices.data(), GL_DYNAMIC_DRAW);
+
+        // EBO is static: two triangles, same for all billboards.
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dmesh3d.ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(BILLBOARD_INDICES.size() * sizeof(unsigned int)),
+                     BILLBOARD_INDICES.data(), GL_STATIC_DRAW);
+
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+        dmesh3d.indexCount = BILLBOARD_INDICES.size();
+
+        const TextureId textureId = worldBellotaPack.worldBellota.textureId();
+        const TexturePack& texturePack = textures.at(textureId.id);
+        debugCheck(texturePack.dtextureOpt.has_value(), "WorldBellota texture has not been initialized on GPU.");
+        dmesh3d.texture = texturePack.dtextureOpt.value().texture;
+    }
+}
+
+struct TerrainShaderUniforms
+{
+    GLint modelViewProjection;
+    GLint layerIndex;
+    GLint opacity;
+};
+
+struct WorldBillboardShaderUniforms
+{
+    GLint modelViewProjection;
+    GLint layerIndex;
+    GLint tintColor;
+    GLint tintIntensity;
+    GLint opacity;
+};
+
+void drawHeightmapTerrains(
+    const HeightmapTerrainContainer& terrains,
+    const glm::mat4&                 viewProjectionMatrix,
+    const TerrainShaderUniforms&     uniforms)
+{
+    for (const auto& [terrainIndex, terrainPack] : terrains)
+    {
+        if (not terrainPack.dmeshOpt.has_value())
+            continue;
+
+        const DMesh3D& dmesh3d = terrainPack.dmeshOpt.value();
+
+        glUniformMatrix4fv(uniforms.modelViewProjection, 1, GL_FALSE,
+                           glm::value_ptr(viewProjectionMatrix));
+        glUniform1i(uniforms.layerIndex, 0);
+        glUniform1f(uniforms.opacity, 1.0f);
+
+        dmesh3d.drawCall();
+    }
+}
+
+void updateAndDrawWorldBellotas(
+    WorldBellotaContainer&               worldBellotas,
+    const glm::mat4&                     viewProjectionMatrix,
+    const Camera&                        camera,
+    const WorldBillboardShaderUniforms&  uniforms)
+{
+    // Compute camera basis vectors for spherical billboarding.
+    const glm::vec3 cameraForward = glm::normalize(camera.target() - camera.position());
+    const glm::vec3 cameraRight   = glm::normalize(glm::cross(cameraForward, camera.upVector()));
+    const glm::vec3 cameraUp      = glm::normalize(glm::cross(cameraRight, cameraForward));
+
+    // Collect visible world bellotas and sort back-to-front for correct alpha blending.
+    std::vector<WorldBellotaPack*> sortedPacks;
+    sortedPacks.reserve(worldBellotas.size());
+    for (auto& [index, pack] : worldBellotas)
+    {
+        if (pack.worldBellota.visible() and pack.dmeshOpt.has_value())
+            sortedPacks.push_back(&pack);
+    }
+
+    const glm::vec3 cameraPosition = camera.position();
+    std::sort(sortedPacks.begin(), sortedPacks.end(),
+        [&cameraPosition](const WorldBellotaPack* lhs, const WorldBellotaPack* rhs)
+        {
+            const float distL = glm::dot(lhs->worldBellota.position() - cameraPosition,
+                                          lhs->worldBellota.position() - cameraPosition);
+            const float distR = glm::dot(rhs->worldBellota.position() - cameraPosition,
+                                          rhs->worldBellota.position() - cameraPosition);
+            return distL > distR; // descending: farthest first
+        }
+    );
+
+    for (WorldBellotaPack* packPtr : sortedPacks)
+    {
+        WorldBellota& worldBellota = packPtr->worldBellota;
+        DMesh3D&      dmesh3d     = packPtr->dmeshOpt.value();
+
+        const glm::vec3 position  = worldBellota.position();
+        const float     halfWidth  = worldBellota.size().x * 0.5f;
+        const float     halfHeight = worldBellota.size().y * 0.5f;
+
+        // Four billboard corners in world space (spherical billboard).
+        // UV convention matches the existing 2D quad: (0,1) BL, (1,1) BR, (1,0) TR, (0,0) TL.
+        const glm::vec3 bottomLeft  = position - cameraRight * halfWidth - cameraUp * halfHeight;
+        const glm::vec3 bottomRight = position + cameraRight * halfWidth - cameraUp * halfHeight;
+        const glm::vec3 topRight    = position + cameraRight * halfWidth + cameraUp * halfHeight;
+        const glm::vec3 topLeft     = position - cameraRight * halfWidth + cameraUp * halfHeight;
+
+        // Packed vertex data: x, y, z, u, v per corner.
+        const std::array<float, 20> vertexData = {
+            bottomLeft.x,  bottomLeft.y,  bottomLeft.z,  0.0f, 1.0f,  // v0 BL
+            bottomRight.x, bottomRight.y, bottomRight.z, 1.0f, 1.0f,  // v1 BR
+            topRight.x,    topRight.y,    topRight.z,    1.0f, 0.0f,  // v2 TR
+            topLeft.x,     topLeft.y,     topLeft.z,     0.0f, 0.0f,  // v3 TL
+        };
+
+        glBindBuffer(GL_ARRAY_BUFFER, dmesh3d.vbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0,
+                        static_cast<GLsizeiptr>(vertexData.size() * sizeof(float)),
+                        vertexData.data());
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+        glUniformMatrix4fv(uniforms.modelViewProjection, 1, GL_FALSE,
+                           glm::value_ptr(viewProjectionMatrix));
+        glUniform1i(uniforms.layerIndex, static_cast<int>(worldBellota.currentLayer()));
+        glUniform3f(uniforms.tintColor, 1.0f, 1.0f, 1.0f);
+        glUniform1f(uniforms.tintIntensity, 0.0f);
+        glUniform1f(uniforms.opacity, worldBellota.opacity());
+
+        dmesh3d.drawCall();
+    }
+}
+
 struct BellotaShaderUniforms
 {
     GLint transform;
@@ -676,6 +1038,20 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         /*GLint tintColor;      */ glGetUniformLocation(mShaderProgram, "tintColor"),
         /*GLint tintIntensity;  */ glGetUniformLocation(mShaderProgram, "tintIntensity"),
         /*GLint opacity;        */ glGetUniformLocation(mShaderProgram, "opacity"),
+    };
+
+    const TerrainShaderUniforms terrainShaderUniforms{
+        /*GLint modelViewProjection; */ glGetUniformLocation(mTerrainShaderProgram, "modelViewProjection"),
+        /*GLint layerIndex;          */ glGetUniformLocation(mTerrainShaderProgram, "layerIndex"),
+        /*GLint opacity;             */ glGetUniformLocation(mTerrainShaderProgram, "opacity"),
+    };
+
+    const WorldBillboardShaderUniforms worldBillboardShaderUniforms{
+        /*GLint modelViewProjection; */ glGetUniformLocation(mWorldBillboardShaderProgram, "modelViewProjection"),
+        /*GLint layerIndex;          */ glGetUniformLocation(mWorldBillboardShaderProgram, "layerIndex"),
+        /*GLint tintColor;           */ glGetUniformLocation(mWorldBillboardShaderProgram, "tintColor"),
+        /*GLint tintIntensity;       */ glGetUniformLocation(mWorldBillboardShaderProgram, "tintIntensity"),
+        /*GLint opacity;             */ glGetUniformLocation(mWorldBillboardShaderProgram, "opacity"),
     };
     //clang on
 
@@ -752,6 +1128,8 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         initializeTexturePacks(mTextures);
         initializeRenderTargets(mRenderTargets, mTextures);
         initializeBellotas(mBellotas, mTextures, mShaderProgram);
+        initializeHeightmapTerrains(mHeightmapTerrains, mTextures, mTerrainShaderProgram);
+        initializeWorldBellotas(mWorldBellotas, mTextures, mWorldBillboardShaderProgram);
         sortByDepthOffset(mBellotas, sortedBellotaPacks);
 
         glUseProgram(mShaderProgram);
@@ -820,7 +1198,27 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         glScissor(mGameViewport.x, mGameViewport.y, mGameViewport.width, mGameViewport.height);
         glEnable(GL_SCISSOR_TEST);
 
+        // ── 3D PASS: terrain + world bellotas (depth test ON) ──────────────────
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+
+        const float aspectRatio = (mGameViewport.height > 0)
+            ? static_cast<float>(mGameViewport.width) / static_cast<float>(mGameViewport.height)
+            : 1.0f;
+        const glm::mat4 viewProjectionMatrix =
+            mCamera.toProjectionMatrix(aspectRatio) * mCamera.toViewMatrix();
+
+        glUseProgram(mTerrainShaderProgram);
+        drawHeightmapTerrains(mHeightmapTerrains, viewProjectionMatrix, terrainShaderUniforms);
+
+        glUseProgram(mWorldBillboardShaderProgram);
+        updateAndDrawWorldBellotas(mWorldBellotas, viewProjectionMatrix, mCamera, worldBillboardShaderUniforms);
+
+        // ── 2D PASS: screen-space bellotas (depth test OFF, always on top) ─────
+        glDisable(GL_DEPTH_TEST);
+
         // drawing with OpenGL
+        glUseProgram(mShaderProgram);
         drawBellotaPacks(sortedBellotaPacks, worldTransformMat, bellotaShaderUniforms);
 
         // Restore full framebuffer viewport for ImGui (header, popups, stats)

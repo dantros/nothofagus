@@ -160,6 +160,49 @@ const Texture& Canvas::texture(TextureId textureId) const
     return mCanvasImpl->texture(textureId);
 }
 
+Camera& Canvas::camera()             { return mCanvasImpl->camera(); }
+const Camera& Canvas::camera() const { return mCanvasImpl->camera(); }
+
+HeightmapTerrainId Canvas::addHeightmapTerrain(const HeightmapTerrain& terrain)
+{
+    return mCanvasImpl->addHeightmapTerrain(terrain);
+}
+
+void Canvas::removeHeightmapTerrain(HeightmapTerrainId terrainId)
+{
+    mCanvasImpl->removeHeightmapTerrain(terrainId);
+}
+
+HeightmapTerrain& Canvas::heightmapTerrain(HeightmapTerrainId terrainId)
+{
+    return mCanvasImpl->heightmapTerrain(terrainId);
+}
+
+const HeightmapTerrain& Canvas::heightmapTerrain(HeightmapTerrainId terrainId) const
+{
+    return mCanvasImpl->heightmapTerrain(terrainId);
+}
+
+WorldBellotaId Canvas::addWorldBellota(const WorldBellota& worldBellota)
+{
+    return mCanvasImpl->addWorldBellota(worldBellota);
+}
+
+void Canvas::removeWorldBellota(WorldBellotaId worldBellotaId)
+{
+    mCanvasImpl->removeWorldBellota(worldBellotaId);
+}
+
+WorldBellota& Canvas::worldBellota(WorldBellotaId worldBellotaId)
+{
+    return mCanvasImpl->worldBellota(worldBellotaId);
+}
+
+const WorldBellota& Canvas::worldBellota(WorldBellotaId worldBellotaId) const
+{
+    return mCanvasImpl->worldBellota(worldBellotaId);
+}
+
 bool& Canvas::stats()
 {
     return mCanvasImpl->stats();

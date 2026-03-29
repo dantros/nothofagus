@@ -6,6 +6,9 @@
 #include "render_target.h"
 #include "controller.h"
 #include "tint.h"
+#include "camera.h"
+#include "heightmap_terrain.h"
+#include "world_bellota.h"
 #include <memory>
 #include <functional>
 #include <string>
@@ -200,6 +203,51 @@ public:
      * @return A const reference to the stats flag.
      */
     const bool& stats() const;
+
+    /**
+     * @brief Access the 3D perspective camera.
+     * @return A reference to the Camera (modify inside the run() callback each frame).
+     */
+    Camera& camera();
+    const Camera& camera() const;
+
+    /**
+     * @brief Add a heightmap terrain to the scene.
+     * @param terrain The HeightmapTerrain to add.
+     * @return The ID of the added terrain.
+     */
+    HeightmapTerrainId addHeightmapTerrain(const HeightmapTerrain& terrain);
+
+    /**
+     * @brief Remove a heightmap terrain from the scene.
+     * @param terrainId The ID of the terrain to remove.
+     */
+    void removeHeightmapTerrain(HeightmapTerrainId terrainId);
+
+    /**
+     * @brief Get a reference to a heightmap terrain by ID.
+     */
+    HeightmapTerrain& heightmapTerrain(HeightmapTerrainId terrainId);
+    const HeightmapTerrain& heightmapTerrain(HeightmapTerrainId terrainId) const;
+
+    /**
+     * @brief Add a world-space billboard bellota to the scene.
+     * @param worldBellota The WorldBellota to add.
+     * @return The ID of the added world bellota.
+     */
+    WorldBellotaId addWorldBellota(const WorldBellota& worldBellota);
+
+    /**
+     * @brief Remove a world-space bellota from the scene.
+     * @param worldBellotaId The ID of the world bellota to remove.
+     */
+    void removeWorldBellota(WorldBellotaId worldBellotaId);
+
+    /**
+     * @brief Get a reference to a world bellota by ID.
+     */
+    WorldBellota& worldBellota(WorldBellotaId worldBellotaId);
+    const WorldBellota& worldBellota(WorldBellotaId worldBellotaId) const;
 
     /**
      * @brief Start the canvas main loop with the default update function.

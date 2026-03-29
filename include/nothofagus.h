@@ -13,3 +13,6 @@
 #include "text.h"
 #include "animation_state.h"
 #include "animation_state_machine.h"
+#include "camera.h"
+#include "heightmap_terrain.h"
+#include "world_bellota.h"

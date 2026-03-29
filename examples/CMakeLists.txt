@@ -81,3 +81,10 @@ add_executable(hello_screenshot
 set_property(TARGET hello_screenshot PROPERTY CXX_STANDARD 20)
 target_include_directories(hello_screenshot PRIVATE ${NOTHOFAGUS_INCLUDE})
 target_link_libraries(hello_screenshot PRIVATE nothofagus)
+
+add_executable(hello_terrain
+    "hello_terrain.cpp"
+)
+set_property(TARGET hello_terrain PROPERTY CXX_STANDARD 20)
+target_include_directories(hello_terrain PRIVATE ${NOTHOFAGUS_INCLUDE})
+target_link_libraries(hello_terrain PRIVATE nothofagus)

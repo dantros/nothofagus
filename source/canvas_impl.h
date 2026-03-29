@@ -4,10 +4,14 @@
 #include "texture_container.h"
 #include "bellota_container.h"
 #include "render_target_container.h"
+#include "heightmap_terrain_container.h"
+#include "world_bellota_container.h"
 #include "texture_usage_monitor.h"
 #include "aa_box.h"
+#include "../include/camera.h"
 #include <vector>
 #include <utility>
+#include <unordered_map>
 
 namespace Nothofagus
 {
@@ -114,6 +118,19 @@ public:
      */
     void removeTint(const BellotaId bellotaId);
 
+    Camera& camera();
+    const Camera& camera() const;
+
+    HeightmapTerrainId addHeightmapTerrain(const HeightmapTerrain& terrain);
+    void removeHeightmapTerrain(HeightmapTerrainId terrainId);
+    HeightmapTerrain& heightmapTerrain(HeightmapTerrainId terrainId);
+    const HeightmapTerrain& heightmapTerrain(HeightmapTerrainId terrainId) const;
+
+    WorldBellotaId addWorldBellota(const WorldBellota& worldBellota);
+    void removeWorldBellota(WorldBellotaId worldBellotaId);
+    WorldBellota& worldBellota(WorldBellotaId worldBellotaId);
+    const WorldBellota& worldBellota(WorldBellotaId worldBellotaId) const;
+
     /**
      * @brief Retrieves a Bellota by its ID.
      * @param bellotaId The ID of the Bellota.
@@ -190,15 +207,24 @@ private:
     glm::vec3 mClearColor; ///< The background color of the canvas.
     unsigned int mPixelSize; ///< The pixel size on the canvas.
 
+    Camera mCamera; ///< Perspective camera for 3D rendering.
+
     TextureContainer mTextures; ///< Container for Texture objects.
     BellotaContainer mBellotas; ///< Container for Bellota objects.
     RenderTargetContainer mRenderTargets; ///< Container for RenderTarget objects.
+    HeightmapTerrainContainer mHeightmapTerrains; ///< Container for HeightmapTerrain objects.
+    WorldBellotaContainer mWorldBellotas; ///< Container for WorldBellota objects.
     TextureUsageMonitor mTextureUsageMonitor;
+
+    /// Tracks how many WorldBellotas reference each TextureId, to prevent auto-GC.
+    std::unordered_map<TextureId, std::size_t> mWorldBellotaTextureRefCounts;
 
     /// RTT passes queued by renderTo() during the update callback, executed before the main render.
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
 
-    unsigned int mShaderProgram; ///< The OpenGL shader program for rendering.
+    unsigned int mShaderProgram;             ///< Shader program for 2D screen-space bellotas.
+    unsigned int mTerrainShaderProgram;      ///< Shader program for 3D heightmap terrain.
+    unsigned int mWorldBillboardShaderProgram; ///< Shader program for 3D world-space billboard bellotas.
 
     bool mStats; ///< Flag to indicate whether stats should be displayed.
 

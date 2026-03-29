@@ -66,6 +66,11 @@ add_library(nothofagus
     "source/text.cpp"
     "source/animation_state_machine.cpp"
     "source/animation_state.cpp"
+    "source/camera.cpp"
+    "source/dmesh3d.cpp"
+    "source/heightmap_terrain.cpp"
+    "source/world_bellota.cpp"
+    "source/heightmap_terrain_to_mesh.cpp"
 
     # This is only required to show header files in the Visual Studio IDE solution browser
     ${NOTHOFAGUS_SOURCE_HEADERS}
@@ -164,6 +169,7 @@ if (${NOTHOFAGUS_INSTALL})
             hello_render_to_texture
             hello_nested_render_targets
             hello_screenshot
+            hello_terrain
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT NothofagusExamples_Runtime
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
