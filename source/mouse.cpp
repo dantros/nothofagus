@@ -1,33 +1,42 @@
-
 #include "mouse.h"
-#include <GLFW/glfw3.h>
+#include <concepts>
+
+#ifdef NOTHOFAGUS_BACKEND_SDL3
+  #include "backends/sdl3_mouse.h"
+#else
+  #include "backends/glfw_mouse.h"
+#endif
 
 namespace Nothofagus
 {
 
+template<typename T>
+concept MouseBackend = requires(MouseButton button, int code)
+{
+    { T::toMouseButton(code)           } -> std::same_as<MouseButton>;
+    { T::toInternalMouseButton(button) } -> std::same_as<int>;
+};
+
+#ifdef NOTHOFAGUS_BACKEND_SDL3
+  using SelectedMouseBackend = Sdl3MouseBackend;
+#else
+  using SelectedMouseBackend = GlfwMouseBackend;
+#endif
+
+static_assert(MouseBackend<SelectedMouseBackend>,
+    "Selected mouse backend does not satisfy the MouseBackend concept");
+
 namespace MouseImplementation
 {
 
-MouseButton toMouseButton(int glfwButton)
+MouseButton toMouseButton(int button)
 {
-    switch (glfwButton)
-    {
-        case GLFW_MOUSE_BUTTON_LEFT:   return MouseButton::Left;
-        case GLFW_MOUSE_BUTTON_MIDDLE: return MouseButton::Middle;
-        case GLFW_MOUSE_BUTTON_RIGHT:  return MouseButton::Right;
-        default:                       return MouseButton::Left;
-    }
+    return SelectedMouseBackend::toMouseButton(button);
 }
 
-int toGLFWMouseButton(MouseButton button)
+int toInternalMouseButton(MouseButton button)
 {
-    switch (button)
-    {
-        case MouseButton::Left:   return GLFW_MOUSE_BUTTON_LEFT;
-        case MouseButton::Middle: return GLFW_MOUSE_BUTTON_MIDDLE;
-        case MouseButton::Right:  return GLFW_MOUSE_BUTTON_RIGHT;
-        default:                  return GLFW_MOUSE_BUTTON_LEFT;
-    }
+    return SelectedMouseBackend::toInternalMouseButton(button);
 }
 
 } // namespace MouseImplementation

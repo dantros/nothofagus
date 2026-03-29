@@ -113,6 +113,62 @@
                 "CMAKE_CXX_FLAGS": "-Wno-narrowing",
                 "NOTHOFAGUS_BUILD_EXAMPLES": "ON"
             }
+        },
+        {
+            "name": "ninja-release-sdl3",
+            "inherits": "ninja-release",
+            "cacheVariables": {
+                "NOTHOFAGUS_WINDOW_BACKEND": "SDL3"
+            }
+        },
+        {
+            "name": "ninja-release-sdl3-examples",
+            "inherits": "ninja-release-sdl3",
+            "cacheVariables": {
+                "NOTHOFAGUS_BUILD_EXAMPLES": "ON"
+            }
+        },
+        {
+            "name": "ninja-debug-sdl3",
+            "inherits": "ninja-debug",
+            "cacheVariables": {
+                "NOTHOFAGUS_WINDOW_BACKEND": "SDL3"
+            }
+        },
+        {
+            "name": "ninja-debug-sdl3-examples",
+            "inherits": "ninja-debug-sdl3",
+            "cacheVariables": {
+                "NOTHOFAGUS_BUILD_EXAMPLES": "ON"
+            }
+        },
+        {
+            "name": "linux-debug-sdl3",
+            "inherits": "linux-debug",
+            "cacheVariables": {
+                "NOTHOFAGUS_WINDOW_BACKEND": "SDL3"
+            }
+        },
+        {
+            "name": "linux-release-sdl3",
+            "inherits": "linux-release",
+            "cacheVariables": {
+                "NOTHOFAGUS_WINDOW_BACKEND": "SDL3"
+            }
+        },
+        {
+            "name": "linux-debug-sdl3-examples",
+            "inherits": "linux-debug-sdl3",
+            "cacheVariables": {
+                "NOTHOFAGUS_BUILD_EXAMPLES": "ON"
+            }
+        },
+        {
+            "name": "linux-release-sdl3-examples",
+            "inherits": "linux-release-sdl3",
+            "cacheVariables": {
+                "NOTHOFAGUS_BUILD_EXAMPLES": "ON"
+            }
         }
     ]
 }

@@ -5,18 +5,12 @@
 #include "bellota_container.h"
 #include "render_target_container.h"
 #include "texture_usage_monitor.h"
+#include "aa_box.h"
 #include <vector>
 #include <utility>
 
 namespace Nothofagus
 {
-
-struct AABox
-{
-    int x, y, width, height;
-
-    bool contains(int x_, int y_) const;
-};
 
 /**
  * @class Canvas::CanvasImpl
@@ -37,7 +31,7 @@ public:
         const float imguiFontSize
     );
 
-    /// Destructor to clean up resources and terminate GLFW
+    /// Destructor to clean up resources and terminate the window backend
     ~CanvasImpl();
 
     // the number of monitor where the top left corner of the canvas is currently at

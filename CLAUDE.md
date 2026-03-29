@@ -19,27 +19,32 @@ Pixel art real-time renderer built on OpenGL 3.3, written in C++20. Outputs a st
 
 ```
 Canvas (public API)
-└── CanvasImpl (Pimpl, hidden GLFW/OpenGL details)
-    ├── IndexedContainer<BellotaPack>   → Bellota + Mesh + DMesh + Tint
-    └── IndexedContainer<TexturePack>  → Texture + DTexture
+└── CanvasImpl (Pimpl, hidden windowing/OpenGL details)
+    ├── Window : SelectedWindowBackend   → GlfwBackend or Sdl3Backend (compile-time)
+    ├── IndexedContainer<BellotaPack>    → Bellota + Mesh + DMesh + Tint
+    └── IndexedContainer<TexturePack>   → Texture + DTexture
 ```
 
 - `include/` — public API headers
 - `source/` — implementation + internal headers (never expose to users)
+- `source/backends/` — window/input backend implementations (`glfw_backend`, `sdl3_backend`, per-backend keyboard/mouse mappers)
 - `examples/` — standalone demo executables
-- `third_party/` — git submodules (glfw, glad, glm, imgui, spdlog, font8x8)
+- `third_party/` — git submodules (glfw, glad, glm, imgui, spdlog, font8x8, SDL)
 
 ## Build System
 
 **Presets (CMakePresets.json):**
 
-| Preset | Platform | Build |
-|--------|----------|-------|
-| `ninja-release` / `ninja-debug` | Windows | Ninja + MSVC |
-| `ninja-release-examples` / `ninja-debug-examples` | Windows | Same + examples |
-| `vs-debug` / `vs-debug-examples` | Windows | Visual Studio 17 2022 |
-| `linux-debug` / `linux-release` | Linux | Unix Makefiles + GCC |
-| `linux-debug-examples` / `linux-release-examples` | Linux | Same + examples |
+| Preset | Platform | Backend | Build |
+|--------|----------|---------|-------|
+| `ninja-release` / `ninja-debug` | Windows | GLFW | Ninja + MSVC |
+| `ninja-release-examples` / `ninja-debug-examples` | Windows | GLFW | Same + examples |
+| `ninja-debug-sdl3` / `ninja-release-sdl3` | Windows | SDL3 | Ninja + MSVC |
+| `ninja-debug-sdl3-examples` / `ninja-release-sdl3-examples` | Windows | SDL3 | Same + examples |
+| `vs-debug` / `vs-debug-examples` | Windows | GLFW | Visual Studio 17 2022 |
+| `linux-debug` / `linux-release` | Linux | GLFW | Unix Makefiles + GCC |
+| `linux-debug-examples` / `linux-release-examples` | Linux | GLFW | Same + examples |
+| `linux-debug-sdl3` / `linux-debug-sdl3-examples` | Linux | SDL3 | Same + examples |
 
 **Build and install (examples):**
 ```bash
@@ -53,6 +58,34 @@ ninja install
 - `NOTHOFAGUS_BUILD_EXAMPLES` — build demo apps (default OFF, enabled by `-examples` presets)
 - `NOTHOFAGUS_INSTALL` — install artifacts (default OFF, presets set ON)
 - `NOTHOFAGUS_BUILD_DOCS` — generate Doxygen docs (default OFF)
+- `NOTHOFAGUS_WINDOW_BACKEND` — `"GLFW"` (default) or `"SDL3"`; selects the window/input backend at configure time
+
+## Window Backend Abstraction
+
+The windowing and input layer is abstracted behind a **C++20 concept** (`WindowBackend`) so the rest of the engine is completely decoupled from both GLFW and SDL3.
+
+**Selection is compile-time** — `NOTHOFAGUS_WINDOW_BACKEND=SDL3` sets the `NOTHOFAGUS_BACKEND_SDL3` preprocessor define, which swaps in `Sdl3Backend`. Without it, `GlfwBackend` is used. A `static_assert` verifies the chosen class satisfies the concept at build time.
+
+```
+source/backends/
+├── window_backend.h       — WindowBackend concept + SelectedWindowBackend type alias
+├── glfw_backend.h/.cpp    — GLFW implementation
+├── glfw_keyboard.h/.cpp   — GLFW key-code ↔ Key mapping
+├── glfw_mouse.h/.cpp      — GLFW button ↔ MouseButton mapping
+├── sdl3_backend.h/.cpp    — SDL3 implementation
+├── sdl3_keyboard.h/.cpp   — SDL3 key-code ↔ Key mapping
+└── sdl3_mouse.h/.cpp      — SDL3 button ↔ MouseButton mapping
+```
+
+`CanvasImpl` owns a `Window` that inherits from `SelectedWindowBackend` (PIMPL). The `window_backend.h` header is only included in `canvas_impl.cpp`, keeping backend headers entirely out of the public API.
+
+**`WindowBackend` concept — required interface:**
+- Session: `beginSession(Controller&)`, `isRunning()`
+- Per-frame: `newImGuiFrame()`, `endFrame(Controller&, ViewportRect, ScreenSize)`, `getFramebufferSize()`, `getTime()`
+- ImGui/DPI: `initImGui(fontSize, fontData, fontDataLen)`, `contentScale()`
+- Window management: `getCurrentMonitor()`, `isFullscreen()`, `setFullscreenOnMonitor(index)`, `getWindowAABox()`, `setWindowed(AABox)`, `getWindowSize()`, `requestClose()`
+
+Both backends route all keyboard, mouse, scroll, and gamepad events into `Controller` using the same public API (`activate`, `activateMouseButton`, `updateMousePosition`, `scrolled`, `activateGamepadButton`, `updateGamepadAxis`).
 
 ## Public API Patterns
 
@@ -89,7 +122,7 @@ canvas.run(update, controller);
 
 ### Mouse input
 
-Mouse position is delivered in **game canvas coordinates** (origin bottom-left, same space as bellota positions). Coordinate conversion from GLFW window coords through the letterbox viewport happens automatically inside `canvas.run()`.
+Mouse position is delivered in **game canvas coordinates** (origin bottom-left, same space as bellota positions). Coordinate conversion from window coords through the letterbox viewport happens automatically inside `canvas.run()`.
 
 ```cpp
 // Button callbacks — same DiscreteTrigger enum as keyboard
@@ -107,15 +140,15 @@ controller.registerMouseScroll([&](glm::vec2 offset) { ... });
 glm::vec2 pos = controller.getMousePosition();
 ```
 
-Mouse button callbacks are dispatched via the same `processInputs()` queue as keyboard. The move and scroll callbacks fire immediately from their GLFW callbacks (outside the queue), so they can be called multiple times per frame.
+Mouse button callbacks are dispatched via the same `processInputs()` queue as keyboard. The move and scroll callbacks fire immediately from the backend event source (outside the queue), so they can be called multiple times per frame.
 
 ### Gamepad input
 
-GLFW gamepads are polled each frame (after `glfwPollEvents()`) for all 16 joystick slots. Button state diffs generate queued `Press`/`Release` events; axis updates fire callbacks immediately if the value changed. Connect/disconnect is detected by frame-to-frame comparison of `glfwJoystickPresent(i) && glfwJoystickIsGamepad(i)`.
+Gamepads are polled each frame by the active backend. Button state diffs generate queued `Press`/`Release` events; axis updates fire callbacks immediately if the value changed. Connect/disconnect is detected per-frame by the backend.
 
-**Axis normalisation applied in `canvas_impl.cpp` before the controller receives values:**
+**Axis normalisation applied by the backend before the controller receives values:**
 - `LeftY`, `RightY`: inverted so positive = up (matches canvas convention)
-- `LeftTrigger`, `RightTrigger`: remapped from GLFW `[-1, 1]` → `[0, 1]`
+- `LeftTrigger`, `RightTrigger`: remapped to `[0, 1]`
 - All axes: 0.1 deadzone (values below threshold clamped to 0)
 
 ```cpp
@@ -218,7 +251,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 - **Angles**: degrees, not radians
 - **MSVC workaround**: `FMT_UNICODE=0` in CMake for spdlog on Windows
 - **C++ standard**: C++20 required
-- **Aspect ratio**: in fullscreen and on manual window resize, game content is letterboxed/pillarboxed to preserve the canvas aspect ratio — black bands fill unused screen area. Viewport is recomputed every frame from `glfwGetFramebufferSize`, so it adapts automatically.
+- **Aspect ratio**: in fullscreen and on manual window resize, game content is letterboxed/pillarboxed to preserve the canvas aspect ratio — black bands fill unused screen area. Viewport is recomputed every frame from `mWindow->getFramebufferSize()`, so it adapts automatically.
 - **Automatic texture GC**: `TextureUsageMonitor` tracks which textures are referenced by bellotas. After each `update()` callback, `clearUnusedTextures()` automatically removes any texture not referenced by at least one bellota. Calling `canvas.removeTexture()` on a texture still in use triggers a `debugCheck` assert. Use `canvas.setTexture(bellotaId, newTexId)` to swap textures — the old one is marked unused and removed automatically next frame.
 
 ## Examples Reference
@@ -238,7 +271,8 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 
 ## Dependencies (third_party/ submodules)
 
-- **glfw** — window + input
+- **glfw** — window + input (default backend)
+- **SDL** — window + input (SDL3 backend, used when `NOTHOFAGUS_WINDOW_BACKEND=SDL3`)
 - **glad** — OpenGL loader (3.3 core)
 - **glm** — math (vec2, vec3, mat3, etc.)
 - **imgui** — immediate-mode GUI
