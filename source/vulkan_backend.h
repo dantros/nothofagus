@@ -19,12 +19,22 @@ namespace Nothofagus
 
 static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
+struct PendingBufferDeletion
+{
+    VkBuffer      buffer;
+    VmaAllocation allocation;
+};
+
 struct FrameData
 {
     VkCommandBuffer commandBuffer  = VK_NULL_HANDLE;
     VkSemaphore     imageAvailable = VK_NULL_HANDLE;
     VkSemaphore     renderFinished = VK_NULL_HANDLE;
     VkFence         inFlight       = VK_NULL_HANDLE;
+
+    // Buffers queued for deletion — flushed at the start of the next beginFrame()
+    // for this slot, after vkWaitForFences guarantees the GPU is done with them.
+    std::vector<PendingBufferDeletion> pendingBufferDeletions;
 };
 
 /// Push constant layout for sprite drawing.

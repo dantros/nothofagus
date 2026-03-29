@@ -989,8 +989,13 @@ void VulkanBackend::freeMesh(DMesh dmesh)
     if (it == mMeshes.end()) return;
 
     VulkanMesh& mesh = it->second;
-    vmaDestroyBuffer(mAllocator, mesh.vertexBuffer, mesh.vertexAlloc);
-    vmaDestroyBuffer(mAllocator, mesh.indexBuffer,  mesh.indexAlloc);
+    // Defer destruction: the buffers may still be referenced by an in-flight
+    // command buffer from a previous frame. Queue them for the current frame slot;
+    // they will be destroyed at the start of beginFrame() for this slot once the
+    // GPU fence confirms that submission has completed.
+    FrameData& frame = mFrames[mCurrentFrame];
+    frame.pendingBufferDeletions.push_back({mesh.vertexBuffer, mesh.vertexAlloc});
+    frame.pendingBufferDeletions.push_back({mesh.indexBuffer,  mesh.indexAlloc});
     mMeshes.erase(it);
 }
 
@@ -1163,6 +1168,12 @@ void VulkanBackend::beginFrame(
     FrameData& frame = mFrames[mCurrentFrame];
 
     vkWaitForFences(mDevice, 1, &frame.inFlight, VK_TRUE, UINT64_MAX);
+
+    // Safe to destroy buffers queued during the previous use of this frame slot —
+    // the fence above guarantees the GPU has finished executing that submission.
+    for (auto& pending : frame.pendingBufferDeletions)
+        vmaDestroyBuffer(mAllocator, pending.buffer, pending.allocation);
+    frame.pendingBufferDeletions.clear();
 
     VkResult acquireResult = vkAcquireNextImageKHR(
         mDevice, mSwapchain, UINT64_MAX, frame.imageAvailable, VK_NULL_HANDLE,
