@@ -528,6 +528,33 @@ const bool& Canvas::CanvasImpl::stats() const
     return mStats;
 }
 
+DirectTexture Canvas::CanvasImpl::takeScreenshot() const
+{
+    const int width  = mGameViewport.width;
+    const int height = mGameViewport.height;
+
+    // Allocate owning TextureData (RGBA, 4 bytes/pixel, 1 layer).
+    TextureData textureData(width, height, 1);
+    auto pixelSpan = textureData.getDataSpan();
+
+    // Front buffer holds the last fully composited + swapped frame.
+    // The back buffer was already cleared before update() ran this frame.
+    glReadBuffer(GL_FRONT);
+    glReadPixels(mGameViewport.x, mGameViewport.y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixelSpan.data());
+    glReadBuffer(GL_BACK);
+
+    // OpenGL fills rows bottom-to-top; flip to top-to-bottom for conventional image use.
+    const std::size_t rowBytes = static_cast<std::size_t>(width) * 4;
+    for (int top = 0, bottom = height - 1; top < bottom; ++top, --bottom)
+    {
+        uint8_t* topRow    = pixelSpan.data() + top    * rowBytes;
+        uint8_t* bottomRow = pixelSpan.data() + bottom * rowBytes;
+        std::swap_ranges(topRow, topRow + rowBytes, bottomRow);
+    }
+
+    return DirectTexture(std::move(textureData));
+}
+
 void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
 {
     // Binding VAO to setup

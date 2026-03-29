@@ -222,6 +222,10 @@ public:
     /// Close the canvas and clean up resources.
     void close();
 
+    /// Captures the last rendered frame visible to the user as a DirectTexture (RGBA).
+    /// Must be called from within the update() callback.
+    DirectTexture takeScreenshot() const;
+
 private:
     class CanvasImpl;
     std::unique_ptr<CanvasImpl> mCanvasImpl;
