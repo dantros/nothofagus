@@ -958,6 +958,12 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         // before drawing to the main framebuffer.
         if (not mPendingRttPasses.empty())
         {
+            // Scissor test was enabled for the game-area clear above.
+            // Each RTT FBO uses its own coordinate space starting at (0,0), so a
+            // letterboxed/pillarboxed scissor rect (offset from the origin) would
+            // clip all draws and clears inside the render target.  Disable it here;
+            // it is restored with the correct game-viewport rect after the loop.
+            glDisable(GL_SCISSOR_TEST);
             for (auto& [renderTargetId, bellotaIds] : mPendingRttPasses)
             {
                 if (not mRenderTargets.contains(renderTargetId.id))
