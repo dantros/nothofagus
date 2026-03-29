@@ -264,6 +264,22 @@ public:
     std::span<std::uint8_t> getDataSpan() const { return mDataSpan; }
     std::span<std::uint8_t> getPixelSpan(const std::size_t i, const std::size_t j) const;
 
+    /**
+     * @brief Reads the pixel at (i, j) as a raw 32-bit float.
+     *
+     * The four RGBA bytes are reinterpreted as IEEE 754 single-precision float.
+     * Requires sizeof(float) == 4 (static_assert enforced).
+     */
+    float getFloat(std::size_t i, std::size_t j) const;
+
+    /**
+     * @brief Writes a raw 32-bit float into pixel (i, j).
+     *
+     * The float bits are stored directly into the four RGBA bytes of the pixel.
+     * Requires sizeof(float) == 4 (static_assert enforced).
+     */
+    void setFloat(std::size_t i, std::size_t j, float value);
+
 private:
     std::optional<std::vector<std::uint8_t>> mDataOpt;
     std::span<std::uint8_t> mDataSpan;
@@ -459,28 +475,12 @@ public:
      */
     TextureData generateTextureData() const;
 
-    /**
-     * @brief Returns the raw byte span for pixel (i, j).
-     *
-     * Span length equals TextureData::ColorDepth (4 bytes).
-     */
-    std::span<std::uint8_t> getPixelSpan(std::size_t i, std::size_t j) const;
+    std::span<std::uint8_t> getPixelSpan(std::size_t i, std::size_t j) const { return mTextureData.getPixelSpan(i, j); }
+    float  getFloat(std::size_t i, std::size_t j) const                       { return mTextureData.getFloat(i, j); }
+    void   setFloat(std::size_t i, std::size_t j, float value)                { mTextureData.setFloat(i, j, value); }
 
-    /**
-     * @brief Reads the pixel at (i, j) as a raw 32-bit float.
-     *
-     * The four RGBA bytes are reinterpreted as IEEE 754 single-precision float.
-     * Requires sizeof(float) == 4 (static_assert enforced).
-     */
-    float getFloat(std::size_t i, std::size_t j) const;
-
-    /**
-     * @brief Writes a raw 32-bit float into pixel (i, j).
-     *
-     * The float bits are stored directly into the four RGBA bytes of the pixel.
-     * Requires sizeof(float) == 4 (static_assert enforced).
-     */
-    void setFloat(std::size_t i, std::size_t j, float value);
+    TextureData& textureData() { return mTextureData; }
+    const TextureData& textureData() const { return mTextureData; }
 
 private:
     TextureData mTextureData;

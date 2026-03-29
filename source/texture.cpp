@@ -156,27 +156,6 @@ TextureData DirectTexture::generateTextureData() const
     return mTextureData;
 }
 
-std::span<std::uint8_t> DirectTexture::getPixelSpan(std::size_t i, std::size_t j) const
-{
-    return mTextureData.getPixelSpan(i, j);
-}
-
-float DirectTexture::getFloat(std::size_t i, std::size_t j) const
-{
-    static_assert(sizeof(float) == TextureData::ColorDepth,
-        "float must be 32 bits to fit in one RGBA pixel slot");
-    float value;
-    std::memcpy(&value, mTextureData.getPixelSpan(i, j).data(), sizeof(float));
-    return value;
-}
-
-void DirectTexture::setFloat(std::size_t i, std::size_t j, float value)
-{
-    static_assert(sizeof(float) == TextureData::ColorDepth,
-        "float must be 32 bits to fit in one RGBA pixel slot");
-    std::memcpy(mTextureData.getPixelSpan(i, j).data(), &value, sizeof(float));
-}
-
 TextureData::TextureData(std::span<std::uint8_t> dataSpan, std::size_t width, std::size_t height, std::size_t layers):
         mDataOpt(std::nullopt),
         mDataSpan(dataSpan),
@@ -194,6 +173,22 @@ std::span<std::uint8_t> TextureData::getPixelSpan(const std::size_t i, const std
     std::uint8_t& firstPixelValue = mDataSpan[offset];
     std::uint8_t* firstPixelAddress = &firstPixelValue;
     return std::span<std::uint8_t>(firstPixelAddress, ColorDepth);
+}
+
+float TextureData::getFloat(std::size_t i, std::size_t j) const
+{
+    static_assert(sizeof(float) == ColorDepth,
+        "float must be 32 bits to fit in one RGBA pixel slot");
+    float value;
+    std::memcpy(&value, getPixelSpan(i, j).data(), sizeof(float));
+    return value;
+}
+
+void TextureData::setFloat(std::size_t i, std::size_t j, float value)
+{
+    static_assert(sizeof(float) == ColorDepth,
+        "float must be 32 bits to fit in one RGBA pixel slot");
+    std::memcpy(getPixelSpan(i, j).data(), &value, sizeof(float));
 }
 
 }
