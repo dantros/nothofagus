@@ -11,7 +11,7 @@ int main()
 {
     Nothofagus::Canvas canvas({150, 100}, "Hello Direct Texture!", {0.7, 0.7, 0.7}, 6);
 
-    Nothofagus::DirectTexture texture({ 5, 5 });
+    Nothofagus::DirectTexture texture(glm::ivec2{ 5, 5 });
     texture.setColor(0,0, glm::vec4(0,0,0,1));
     texture.setColor(0,1, glm::vec4(1,1,1,1));
     texture.setColor(1,1, glm::vec4(1,0,0,1));
