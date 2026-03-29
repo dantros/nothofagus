@@ -124,6 +124,7 @@ if (${NOTHOFAGUS_INSTALL})
             hello_animation_state_machine
             hello_render_to_texture
             hello_nested_render_targets
+            hello_screenshot
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT NothofagusExamples_Runtime
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

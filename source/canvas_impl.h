@@ -184,6 +184,9 @@ public:
     /// Close the canvas and release resources.
     void close();
 
+    /// Captures the last rendered frame visible to the user as a DirectTexture (RGBA).
+    DirectTexture takeScreenshot() const;
+
 private:
     void replaceBellota(const BellotaId bellotaId, const Bellota& bellota);
     void clearUnusedTextures();
