@@ -19,6 +19,7 @@ if(NOTHOFAGUS_WINDOW_BACKEND STREQUAL "SDL3")
     set(NOTHOFAGUS_WIN_LINK SDL3::SDL3-static)
     set(NOTHOFAGUS_WIN_INCS "third_party/SDL/include")
     set(NOTHOFAGUS_WIN_DEFS NOTHOFAGUS_BACKEND_SDL3)
+    set(NOTHOFAGUS_BACKEND_SRC "source/backends/sdl3_backend.cpp")
 else()
     # ── GLFW (default) ────────────────────────
     option(GLFW_INSTALL        "Disabling installation of GLFW"   OFF)
@@ -31,6 +32,7 @@ else()
     set(NOTHOFAGUS_WIN_LINK glfw)
     set(NOTHOFAGUS_WIN_INCS "third_party/glfw/include")
     set(NOTHOFAGUS_WIN_DEFS "")
+    set(NOTHOFAGUS_BACKEND_SRC "source/backends/glfw_backend.cpp")
 endif()
 
 add_subdirectory("third_party/glad")
@@ -42,6 +44,7 @@ file(GLOB_RECURSE NOTHOFAGUS_PUBLIC_HEADERS "include/*.h")
 add_library(nothofagus
     "source/canvas.cpp"
     "source/canvas_impl.cpp"
+    ${NOTHOFAGUS_BACKEND_SRC}
     "source/bellota_to_mesh.cpp"
     "source/mesh.cpp"
     "source/dmesh.cpp"
