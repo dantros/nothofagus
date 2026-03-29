@@ -40,11 +40,11 @@ enum class Key : unsigned int
 
 namespace KeyboardImplementation
 {
-    using GLFWKeyCode = int;
+    using InternalKeyCode = int;
 
-    GLFWKeyCode toGLFWKeyCode(Key aliceKey);
+    InternalKeyCode toInternalKeyCode(Key key);
 
-    Key toKeyCode(GLFWKeyCode glfwKeyCode);
+    Key toKeyCode(InternalKeyCode code);
 }
 
 }

@@ -13,12 +13,12 @@
 #include "controller.h"
 #include "roboto_font.h"
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_transform_2d.hpp>
 #include <glm/ext.hpp>
 #include <imgui.h>
-#include <backends/imgui_impl_glfw.h>
+#include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_opengl3.h>
 #include <ciso646>
 #include <cmath>
@@ -26,19 +26,19 @@
 #include <vector>
 #include <format>
 #include <algorithm>
+#include <unordered_map>
 
 namespace Nothofagus
 {
 
-// Wrapper class forward declared in the .h to avoid including GLFW dependecies in the header file.
+// Wrapper class forward declared in the .h to avoid including SDL dependencies in the header file.
 struct Canvas::CanvasImpl::Window
 {
-    GLFWwindow* glfwWindow;
+    SDL_Window*   sdlWindow   = nullptr;
+    SDL_GLContext glContext   = nullptr;
+    bool          shouldClose = false;
+    std::unordered_map<SDL_JoystickID, SDL_Gamepad*> openGamepads;
 };
-
-// glfw: whenever the window size changed (by OS or user resize) this callback function executes.
-// Viewport is recalculated per-frame in run(), so this callback is intentionally a no-op.
-void framebufferSizeCallback(GLFWwindow* /*window*/, int /*width*/, int /*height*/) {}
 
 static ViewportRect computeLetterboxViewport(int framebufferWidth, int framebufferHeight, unsigned int canvasWidth, unsigned int canvasHeight)
 {
@@ -119,34 +119,35 @@ Canvas::CanvasImpl::CanvasImpl(
     mStats(false),
     mGameViewport{0, 0, 0, 0}
 {
-    // glfw: initialize and configure
-    glfwInit();
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
-    // glfw window creation
-    GLFWwindow* glfwWindow = glfwCreateWindow(mScreenSize.width * mPixelSize, mScreenSize.height * mPixelSize, mTitle.c_str(), NULL, NULL);
-    if (glfwWindow == nullptr)
+    SDL_Window* sdlWindow = SDL_CreateWindow(
+        mTitle.c_str(),
+        static_cast<int>(mScreenSize.width  * mPixelSize),
+        static_cast<int>(mScreenSize.height * mPixelSize),
+        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE
+    );
+    if (!sdlWindow)
     {
-        spdlog::error("Failed to create GLFW window");
-        glfwTerminate();
-        throw;
+        spdlog::error("Failed to create SDL window: {}", SDL_GetError());
+        throw std::runtime_error("Failed to create SDL window");
     }
 
-    float scaleWidth, scaleHeight;
-    glfwGetWindowContentScale(glfwWindow, &scaleWidth, &scaleHeight);
+    SDL_GLContext glContext = SDL_GL_CreateContext(sdlWindow);
+    SDL_GL_MakeCurrent(sdlWindow, glContext);
 
-    mWindow = std::make_unique<Window>(glfwWindow);
+    const float scale = SDL_GetWindowDisplayScale(sdlWindow);
 
-    glfwMakeContextCurrent(mWindow->glfwWindow);
-    glfwSetFramebufferSizeCallback(mWindow->glfwWindow, framebufferSizeCallback);
+    mWindow = std::make_unique<Window>(sdlWindow, glContext);
 
     // glad: load all OpenGL function pointers
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
     {
         spdlog::error("Failed to initialize GLAD");
-        throw;
+        throw std::runtime_error("Failed to initialize GLAD");
     }
 
     const std::string vertexShaderSource = R"(
@@ -181,8 +182,6 @@ Canvas::CanvasImpl::CanvasImpl(
         }
     )";
 
-    // build and compile our shader program
-
     unsigned int vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderSource);
     unsigned int fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSource);
 
@@ -198,107 +197,85 @@ Canvas::CanvasImpl::CanvasImpl(
     // ImGui setup
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
-    ImGui_ImplGlfw_InitForOpenGL(mWindow->glfwWindow, true);
+    ImGui_ImplSDL3_InitForOpenGL(sdlWindow, glContext);
     const char* glsl_version = "#version 330";
     ImGui_ImplOpenGL3_Init(glsl_version);
 
     ImGuiStyle& style = ImGui::GetStyle();
-    style.ScaleAllSizes(scaleWidth);
+    style.ScaleAllSizes(scale);
     ImGuiIO& io = ImGui::GetIO();
-    io.Fonts->AddFontFromMemoryTTF(assets_Roboto_VariableFont_wdth_wght_ttf, assets_Roboto_VariableFont_wdth_wght_ttf_len,  imguiFontSize * scaleWidth);
+    io.Fonts->AddFontFromMemoryTTF(assets_Roboto_VariableFont_wdth_wght_ttf, assets_Roboto_VariableFont_wdth_wght_ttf_len, imguiFontSize * scale);
 }
 
 Canvas::CanvasImpl::~CanvasImpl()
 {
-    // freeing GPU memorygpuShape.clear();
-    glfwTerminate();
+    SDL_GL_DestroyContext(mWindow->glContext);
+    SDL_DestroyWindow(mWindow->sdlWindow);
+    SDL_Quit();
 
     // Needs to be defined in the cpp file to avoid incomplete type errors due to the pimpl idiom for struct Window
 }
 
 std::size_t Canvas::CanvasImpl::getCurrentMonitor() const
 {
-    int monitorCount;
-    GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
+    SDL_DisplayID currentDisplay = SDL_GetDisplayForWindow(mWindow->sdlWindow);
 
-    if (monitors == nullptr)
+    int count;
+    SDL_DisplayID* displays = SDL_GetDisplays(&count);
+    if (!displays)
     {
         spdlog::error("No monitors were found");
-        throw;
+        throw std::runtime_error("No monitors found");
     }
 
-    AABox windowBox = getWindowAABox();;
-
-    for (std::size_t monitorIndex = 0; monitorIndex < monitorCount; ++monitorIndex)
+    for (int i = 0; i < count; ++i)
     {
-        GLFWmonitor* currentMonitor = monitors[monitorIndex];
-        debugCheck(currentMonitor != nullptr, "GLFW returned a null monitor pointer in monitors array");
-        AABox monitorBox;
-        glfwGetMonitorPos(currentMonitor, &monitorBox.x, &monitorBox.y);
-        const GLFWvidmode* videoMode = glfwGetVideoMode(currentMonitor);
-        debugCheck(videoMode != nullptr, "glfwGetVideoMode returned null for current monitor");
-        monitorBox.width = videoMode->width;
-        monitorBox.height = videoMode->height;
-
-        if (monitorBox.contains(windowBox.x, windowBox.y))
+        if (displays[i] == currentDisplay)
         {
-            return monitorIndex;
+            SDL_free(displays);
+            return static_cast<std::size_t>(i);
         }
     }
 
+    SDL_free(displays);
     spdlog::warn("Top left corner of the window is outside of all monitors. Returning primary monitor.");
     return 0;
 }
 
 bool Canvas::CanvasImpl::isFullscreen() const
 {
-    GLFWmonitor* monitor = glfwGetWindowMonitor(mWindow->glfwWindow);
-    return monitor != nullptr;
+    return (SDL_GetWindowFlags(mWindow->sdlWindow) & SDL_WINDOW_FULLSCREEN) != 0;
 }
 
 void Canvas::CanvasImpl::setFullScreenOnMonitor(std::size_t monitorIndex)
 {
-    int monitorCount;
-    GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
-    debugCheck(monitorIndex < monitorCount, "Monitor index out of range");
-    GLFWmonitor* monitor = monitors[monitorIndex];
-    debugCheck(monitor != nullptr, "GLFW returned a null pointer for the selected monitor index");
-    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-    debugCheck(mode != nullptr, "glfwGetVideoMode returned null for the selected monitor");
+    int count;
+    SDL_DisplayID* displays = SDL_GetDisplays(&count);
+    debugCheck(static_cast<int>(monitorIndex) < count, "Monitor index out of range");
+    SDL_DisplayID display = displays[monitorIndex];
+    SDL_free(displays);
 
-    // saving current size to restore it later
     mLastWindowedAABox = getWindowAABox();
 
-    glfwSetWindowMonitor(
-        mWindow->glfwWindow,
-        monitor,
-        0,
-        0,
-        mode->width, 
-        mode->height, 
-        mode->refreshRate
-    );
+    SDL_Rect bounds;
+    SDL_GetDisplayBounds(display, &bounds);
+    SDL_SetWindowPosition(mWindow->sdlWindow, bounds.x, bounds.y);
+    SDL_SetWindowFullscreen(mWindow->sdlWindow, true);
 }
 
 AABox Canvas::CanvasImpl::getWindowAABox() const
 {
-    AABox window;
-    glfwGetWindowPos(mWindow->glfwWindow, &window.x, &window.y);
-    glfwGetWindowSize(mWindow->glfwWindow, &window.width, &window.height);
-    return window;
+    AABox box;
+    SDL_GetWindowPosition(mWindow->sdlWindow, &box.x, &box.y);
+    SDL_GetWindowSize(mWindow->sdlWindow, &box.width, &box.height);
+    return box;
 }
 
 void Canvas::CanvasImpl::setWindowed()
 {
-    glfwSetWindowMonitor(
-        mWindow->glfwWindow,
-        NULL,
-        mLastWindowedAABox.x,
-        mLastWindowedAABox.y,
-        mLastWindowedAABox.width, 
-        mLastWindowedAABox.height, 
-        0
-    );
+    SDL_SetWindowFullscreen(mWindow->sdlWindow, false);
+    SDL_SetWindowPosition(mWindow->sdlWindow, mLastWindowedAABox.x, mLastWindowedAABox.y);
+    SDL_SetWindowSize(mWindow->sdlWindow, mLastWindowedAABox.width, mLastWindowedAABox.height);
 }
 
 const ScreenSize& Canvas::CanvasImpl::screenSize() const
@@ -319,10 +296,10 @@ void Canvas::CanvasImpl::setClearColor(glm::vec3 clearColor)
 ScreenSize Canvas::CanvasImpl::windowSize() const
 {
     debugCheck(mWindow != nullptr, "Canvas window has not been initialized");
-    debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
+    debugCheck(mWindow->sdlWindow != nullptr, "SDL Window has not been initialized.");
 
     int width, height;
-    glfwGetWindowSize(mWindow->glfwWindow, &width, &height);
+    SDL_GetWindowSize(mWindow->sdlWindow, &width, &height);
     return {static_cast<unsigned int>(width), static_cast<unsigned int>(height)};
 }
 
@@ -545,8 +522,8 @@ void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
     const auto textureAttribLocation = glGetAttribLocation(shaderProgram, "texture");
 
     glVertexAttribPointer(positionAttribLocation, positionAttribLength, GL_FLOAT, GL_FALSE, stride * sizeof(GLfloat), (void*)(0 * sizeof(GLfloat)));
-    glEnableVertexAttribArray(positionAttribLocation);  
-    
+    glEnableVertexAttribArray(positionAttribLocation);
+
     glVertexAttribPointer(textureAttribLocation, textureAttribLength, GL_FLOAT, GL_FALSE, stride * sizeof(GLfloat), (void*)(positionAttribLength * sizeof(GLfloat)));
     glEnableVertexAttribArray(textureAttribLocation);
 
@@ -556,9 +533,6 @@ void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
 
 GLuint textureArraySimpleSetup(const TextureData& textureData, TextureSampleMode minFilter, TextureSampleMode magFilter)
 {
-    // wrapMode: GL_REPEAT, GL_CLAMP_TO_EDGE
-    // filterMode: GL_LINEAR, GL_NEAREST
-
     GLuint gpuTexture;
     glGenTextures(1, &gpuTexture);
     glBindTexture(GL_TEXTURE_2D_ARRAY, gpuTexture);
@@ -583,92 +557,6 @@ GLuint textureArraySimpleSetup(const TextureData& textureData, TextureSampleMode
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, glMagFilter);
 
     return gpuTexture;
-}
-
-// Context passed as the GLFW window user pointer so all input callbacks share it.
-struct InputContext
-{
-    Controller* controller;
-    ViewportRect viewport;
-    ScreenSize screenSize;
-};
-
-void keyCallback(GLFWwindow* window, int glfwKey, int scancode, int action, int mods)
-{
-    ImGui_ImplGlfw_KeyCallback(window, glfwKey, scancode, action, mods);
-
-    if (ImGui::GetIO().WantCaptureKeyboard)
-        return;
-
-    if (not (action == GLFW_PRESS or action == GLFW_RELEASE))
-        return;
-
-    InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
-    debugCheck(ctx != nullptr, "GLFW key callback: window user pointer is null");
-
-    Key key = KeyboardImplementation::toKeyCode(glfwKey);
-    DiscreteTrigger trigger = action == GLFW_PRESS ? DiscreteTrigger::Press : DiscreteTrigger::Release;
-    ctx->controller->activate({ key, trigger });
-}
-
-void mouseButtonCallback(GLFWwindow* window, int glfwButton, int action, int mods)
-{
-    ImGui_ImplGlfw_MouseButtonCallback(window, glfwButton, action, mods);
-
-    if (ImGui::GetIO().WantCaptureMouse)
-        return;
-
-    if (not (action == GLFW_PRESS or action == GLFW_RELEASE))
-        return;
-
-    InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
-    debugCheck(ctx != nullptr, "GLFW mouse button callback: window user pointer is null");
-
-    MouseButton button = MouseImplementation::toMouseButton(glfwButton);
-    DiscreteTrigger trigger = action == GLFW_PRESS ? DiscreteTrigger::Press : DiscreteTrigger::Release;
-    ctx->controller->activateMouseButton({ button, trigger });
-}
-
-void cursorPosCallback(GLFWwindow* window, double cursorX, double cursorY)
-{
-    ImGui_ImplGlfw_CursorPosCallback(window, cursorX, cursorY);
-
-    InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
-    debugCheck(ctx != nullptr, "GLFW cursor pos callback: window user pointer is null");
-
-    // cursorX/Y are in top-left window coords. Scale to framebuffer pixels (HiDPI).
-    int windowWidth, windowHeight, framebufferWidth, framebufferHeight;
-    glfwGetWindowSize(window, &windowWidth, &windowHeight);
-    glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
-
-    const float scaleX = (windowWidth  > 0) ? static_cast<float>(framebufferWidth)  / static_cast<float>(windowWidth)  : 1.0f;
-    const float scaleY = (windowHeight > 0) ? static_cast<float>(framebufferHeight) / static_cast<float>(windowHeight) : 1.0f;
-
-    // Convert to framebuffer coords with bottom-left origin.
-    const float fbCursorX = static_cast<float>(cursorX) * scaleX;
-    const float fbCursorY = static_cast<float>(framebufferHeight) - static_cast<float>(cursorY) * scaleY;
-
-    // Map through the letterboxed viewport to game canvas coords.
-    const ViewportRect& vp = ctx->viewport;
-    const glm::vec2 gamePosition = {
-        (fbCursorX - static_cast<float>(vp.x)) / static_cast<float>(vp.width)  * static_cast<float>(ctx->screenSize.width),
-        (fbCursorY - static_cast<float>(vp.y)) / static_cast<float>(vp.height) * static_cast<float>(ctx->screenSize.height)
-    };
-
-    ctx->controller->updateMousePosition(gamePosition);
-}
-
-void scrollCallback(GLFWwindow* window, double xoffset, double yoffset)
-{
-    ImGui_ImplGlfw_ScrollCallback(window, xoffset, yoffset);
-
-    if (ImGui::GetIO().WantCaptureMouse)
-        return;
-
-    InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
-    debugCheck(ctx != nullptr, "GLFW scroll callback: window user pointer is null");
-
-    ctx->controller->scrolled({static_cast<float>(xoffset), static_cast<float>(yoffset)});
 }
 
 void initializeTexturePacks(TextureContainer& textures)
@@ -780,20 +668,61 @@ void drawBellotaPacks(
     }
 }
 
+static GamepadButton sdlButtonToGamepadButton(SDL_GamepadButton button)
+{
+    switch (button)
+    {
+    case SDL_GAMEPAD_BUTTON_SOUTH:          return GamepadButton::A;
+    case SDL_GAMEPAD_BUTTON_EAST:           return GamepadButton::B;
+    case SDL_GAMEPAD_BUTTON_WEST:           return GamepadButton::X;
+    case SDL_GAMEPAD_BUTTON_NORTH:          return GamepadButton::Y;
+    case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:  return GamepadButton::LeftBumper;
+    case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return GamepadButton::RightBumper;
+    case SDL_GAMEPAD_BUTTON_BACK:           return GamepadButton::Back;
+    case SDL_GAMEPAD_BUTTON_START:          return GamepadButton::Start;
+    case SDL_GAMEPAD_BUTTON_GUIDE:          return GamepadButton::Guide;
+    case SDL_GAMEPAD_BUTTON_LEFT_STICK:     return GamepadButton::LeftThumb;
+    case SDL_GAMEPAD_BUTTON_RIGHT_STICK:    return GamepadButton::RightThumb;
+    case SDL_GAMEPAD_BUTTON_DPAD_UP:        return GamepadButton::DpadUp;
+    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:     return GamepadButton::DpadRight;
+    case SDL_GAMEPAD_BUTTON_DPAD_DOWN:      return GamepadButton::DpadDown;
+    case SDL_GAMEPAD_BUTTON_DPAD_LEFT:      return GamepadButton::DpadLeft;
+    default:                                return GamepadButton::A;
+    }
+}
+
+static GamepadAxis sdlAxisToGamepadAxis(SDL_GamepadAxis axis)
+{
+    // SDL3 axis enum order matches GamepadAxis order — direct cast is valid.
+    return static_cast<GamepadAxis>(axis);
+}
+
 void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
-    debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
+    debugCheck(mWindow->sdlWindow != nullptr, "SDL Window has not been initialized.");
 
-    InputContext inputContext{ &controller, {}, mScreenSize };
-    glfwSetWindowUserPointer(mWindow->glfwWindow, &inputContext);
-    glfwSetKeyCallback(mWindow->glfwWindow, keyCallback);
-    glfwSetMouseButtonCallback(mWindow->glfwWindow, mouseButtonCallback);
-    glfwSetCursorPosCallback(mWindow->glfwWindow, cursorPosCallback);
-    glfwSetScrollCallback(mWindow->glfwWindow, scrollCallback);
+    mWindow->shouldClose = false;
+
+    // Open any gamepads already connected at startup
+    {
+        int gamepadCount;
+        SDL_JoystickID* gamepads = SDL_GetGamepads(&gamepadCount);
+        if (gamepads)
+        {
+            for (int i = 0; i < gamepadCount; ++i)
+            {
+                SDL_Gamepad* gp = SDL_OpenGamepad(gamepads[i]);
+                if (gp)
+                {
+                    mWindow->openGamepads[gamepads[i]] = gp;
+                    controller.gamepadConnected(static_cast<int>(gamepads[i]));
+                }
+            }
+            SDL_free(gamepads);
+        }
+    }
 
     constexpr float GAMEPAD_AXIS_DEADZONE = 0.1f;
-    std::array<GLFWgamepadstate, GLFW_JOYSTICK_LAST + 1> previousGamepadStates = {};
-    std::array<bool,             GLFW_JOYSTICK_LAST + 1> gamepadConnectedState  = {};
 
     // state variable
     bool fillPolygons = true;
@@ -820,7 +749,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     };
     //clang on
 
-    PerformanceMonitor performanceMonitor(glfwGetTime(), 0.5f);
+    PerformanceMonitor performanceMonitor(static_cast<float>(SDL_GetTicks()) / 1000.0f, 0.5f);
 
     // Dirty fix to sort bellotas by depth as required by transparent objects.
     std::vector<const BellotaPack*> sortedBellotaPacks;
@@ -851,20 +780,17 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
     ScreenSize currentScreenSize = mScreenSize;
 
-    glfwSetWindowShouldClose(mWindow->glfwWindow, false);
-    while (!glfwWindowShouldClose(mWindow->glfwWindow))
+    while (!mWindow->shouldClose)
     {
         controller.processInputs();
 
-        performanceMonitor.update(glfwGetTime());
+        performanceMonitor.update(static_cast<float>(SDL_GetTicks()) / 1000.0f);
         const float deltaTimeMS = performanceMonitor.getMS();
 
         // Get current framebuffer size and compute letterboxed viewport
         int framebufferWidth, framebufferHeight;
-        glfwGetFramebufferSize(mWindow->glfwWindow, &framebufferWidth, &framebufferHeight);
+        SDL_GetWindowSizeInPixels(mWindow->sdlWindow, &framebufferWidth, &framebufferHeight);
         mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, mScreenSize.width, mScreenSize.height);
-        inputContext.viewport   = mGameViewport;
-        inputContext.screenSize = mScreenSize;
 
         // Clear entire framebuffer to black (fills the letterbox/pillarbox bands)
         glViewport(0, 0, framebufferWidth, framebufferHeight);
@@ -879,9 +805,122 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        // Process SDL events
+        SDL_Event event;
+        while (SDL_PollEvent(&event))
+        {
+            ImGui_ImplSDL3_ProcessEvent(&event);
+
+            switch (event.type)
+            {
+            case SDL_EVENT_QUIT:
+            case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+                mWindow->shouldClose = true;
+                break;
+
+            case SDL_EVENT_KEY_DOWN:
+            case SDL_EVENT_KEY_UP:
+                if (!event.key.repeat)
+                {
+                    Key key = KeyboardImplementation::toKeyCode(static_cast<int>(event.key.scancode));
+                    DiscreteTrigger trigger = (event.type == SDL_EVENT_KEY_DOWN) ? DiscreteTrigger::Press : DiscreteTrigger::Release;
+                    if (!ImGui::GetIO().WantCaptureKeyboard)
+                        controller.activate({key, trigger});
+                }
+                break;
+
+            case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            case SDL_EVENT_MOUSE_BUTTON_UP:
+                if (!ImGui::GetIO().WantCaptureMouse)
+                {
+                    MouseButton button = MouseImplementation::toMouseButton(event.button.button);
+                    DiscreteTrigger trigger = (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) ? DiscreteTrigger::Press : DiscreteTrigger::Release;
+                    controller.activateMouseButton({button, trigger});
+                }
+                break;
+
+            case SDL_EVENT_MOUSE_MOTION:
+            {
+                // SDL3 gives window-space floats (top-left origin). Scale to framebuffer pixels (HiDPI).
+                int windowWidth, windowHeight;
+                SDL_GetWindowSize(mWindow->sdlWindow, &windowWidth, &windowHeight);
+                const float scaleX = (windowWidth  > 0) ? static_cast<float>(framebufferWidth)  / windowWidth  : 1.0f;
+                const float scaleY = (windowHeight > 0) ? static_cast<float>(framebufferHeight) / windowHeight : 1.0f;
+
+                // Convert to framebuffer coords with bottom-left origin.
+                const float fbCursorX = event.motion.x * scaleX;
+                const float fbCursorY = static_cast<float>(framebufferHeight) - event.motion.y * scaleY;
+
+                // Map through the letterboxed viewport to game canvas coords.
+                const glm::vec2 gamePosition = {
+                    (fbCursorX - static_cast<float>(mGameViewport.x)) / static_cast<float>(mGameViewport.width)  * static_cast<float>(mScreenSize.width),
+                    (fbCursorY - static_cast<float>(mGameViewport.y)) / static_cast<float>(mGameViewport.height) * static_cast<float>(mScreenSize.height)
+                };
+                controller.updateMousePosition(gamePosition);
+                break;
+            }
+
+            case SDL_EVENT_MOUSE_WHEEL:
+                if (!ImGui::GetIO().WantCaptureMouse)
+                    controller.scrolled({event.wheel.x, event.wheel.y});
+                break;
+
+            case SDL_EVENT_GAMEPAD_ADDED:
+            {
+                SDL_JoystickID id = event.gdevice.which;
+                SDL_Gamepad* gp = SDL_OpenGamepad(id);
+                if (gp)
+                {
+                    mWindow->openGamepads[id] = gp;
+                    controller.gamepadConnected(static_cast<int>(id));
+                }
+                break;
+            }
+            case SDL_EVENT_GAMEPAD_REMOVED:
+            {
+                SDL_JoystickID id = event.gdevice.which;
+                auto it = mWindow->openGamepads.find(id);
+                if (it != mWindow->openGamepads.end())
+                {
+                    SDL_CloseGamepad(it->second);
+                    mWindow->openGamepads.erase(it);
+                }
+                controller.gamepadDisconnected(static_cast<int>(id));
+                break;
+            }
+            case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+            case SDL_EVENT_GAMEPAD_BUTTON_UP:
+            {
+                GamepadButton button = sdlButtonToGamepadButton(static_cast<SDL_GamepadButton>(event.gbutton.button));
+                DiscreteTrigger trigger = (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) ? DiscreteTrigger::Press : DiscreteTrigger::Release;
+                controller.activateGamepadButton({static_cast<int>(event.gbutton.which), button, trigger});
+                break;
+            }
+            case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+            {
+                GamepadAxis axis = sdlAxisToGamepadAxis(static_cast<SDL_GamepadAxis>(event.gaxis.axis));
+                float value = static_cast<float>(event.gaxis.value) / 32767.0f;
+
+                if (axis == GamepadAxis::LeftTrigger || axis == GamepadAxis::RightTrigger)
+                {
+                    // SDL3 triggers are [0, 32767], already [0,1] after normalise
+                    if (value < GAMEPAD_AXIS_DEADZONE) value = 0.0f;
+                }
+                else
+                {
+                    value = std::max(value, -1.0f);
+                    if (axis == GamepadAxis::LeftY || axis == GamepadAxis::RightY) value = -value;
+                    if (std::abs(value) < GAMEPAD_AXIS_DEADZONE) value = 0.0f;
+                }
+                controller.updateGamepadAxis(static_cast<int>(event.gaxis.which), axis, value);
+                break;
+            }
+            } // switch
+        } // SDL_PollEvent loop
+
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
         // executing user provided update
@@ -897,6 +936,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         initializeTexturePacks(mTextures);
         initializeRenderTargets(mRenderTargets, mTextures);
         initializeBellotas(mBellotas, mTextures, mShaderProgram);
+
         sortByDepthOffset(mBellotas, sortedBellotaPacks);
 
         glUseProgram(mShaderProgram);
@@ -946,7 +986,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
             // Restore viewport and clear color to the main framebuffer values.
             {
                 int frameBufferWidth, frameBufferHeight;
-                glfwGetFramebufferSize(mWindow->glfwWindow, &frameBufferWidth, &frameBufferHeight);
+                SDL_GetWindowSizeInPixels(mWindow->sdlWindow, &frameBufferWidth, &frameBufferHeight);
                 glViewport(0, 0, frameBufferWidth, frameBufferHeight);
                 glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
             }
@@ -980,66 +1020,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-        glfwSwapBuffers(mWindow->glfwWindow);
-        glfwPollEvents();
-
-        // Poll gamepad state for all joystick slots.
-        for (int i = 0; i <= GLFW_JOYSTICK_LAST; ++i)
-        {
-            bool nowConnected = glfwJoystickPresent(i) && glfwJoystickIsGamepad(i);
-            if (nowConnected != gamepadConnectedState[i])
-            {
-                gamepadConnectedState[i] = nowConnected;
-                if (nowConnected)
-                {
-                    controller.gamepadConnected(i);
-                }
-                else
-                {
-                    controller.gamepadDisconnected(i);
-                    previousGamepadStates[i] = {};
-                    continue;
-                }
-            }
-            if (!nowConnected)
-                continue;
-
-            GLFWgamepadstate state{};
-            if (!glfwGetGamepadState(i, &state))
-                continue;
-
-            for (int buttonIndex = 0; buttonIndex <= GLFW_GAMEPAD_BUTTON_LAST; ++buttonIndex)
-            {
-                if (state.buttons[buttonIndex] != previousGamepadStates[i].buttons[buttonIndex])
-                {
-                    DiscreteTrigger trigger = (state.buttons[buttonIndex] == GLFW_PRESS)
-                        ? DiscreteTrigger::Press : DiscreteTrigger::Release;
-                    controller.activateGamepadButton({i, static_cast<GamepadButton>(buttonIndex), trigger});
-                }
-            }
-
-            for (int axisIndex = 0; axisIndex <= GLFW_GAMEPAD_AXIS_LAST; ++axisIndex)
-            {
-                GamepadAxis axis = static_cast<GamepadAxis>(axisIndex);
-                float value = state.axes[axisIndex];
-
-                if (axis == GamepadAxis::LeftTrigger || axis == GamepadAxis::RightTrigger)
-                {
-                    value = (value + 1.0f) * 0.5f;
-                    if (value < GAMEPAD_AXIS_DEADZONE) value = 0.0f;
-                }
-                else
-                {
-                    if (axis == GamepadAxis::LeftY || axis == GamepadAxis::RightY)
-                        value = -value;
-                    if (std::abs(value) < GAMEPAD_AXIS_DEADZONE) value = 0.0f;
-                }
-
-                controller.updateGamepadAxis(i, axis, value);
-            }
-
-            previousGamepadStates[i] = state;
-        }
+        SDL_GL_SwapWindow(mWindow->sdlWindow);
     }
 
     for (auto& [bellotaIndex, bellotaPack] : mBellotas)
@@ -1068,7 +1049,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
 void Canvas::CanvasImpl::close()
 {
-    glfwSetWindowShouldClose(mWindow->glfwWindow, true);
+    mWindow->shouldClose = true;
 }
 
 void Canvas::CanvasImpl::replaceBellota(const BellotaId bellotaId, const Bellota& newBellota)
@@ -1101,15 +1082,15 @@ bool AABox::contains(int x_, int y_) const
 
 ScreenSize getPrimaryMonitorSize()
 {
-    glfwInit();  // idempotent — safe if Canvas has already initialised it
-    const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
+    SDL_Init(SDL_INIT_VIDEO);  // idempotent — safe if Canvas has already initialised it
+    SDL_DisplayID primary = SDL_GetPrimaryDisplay();
+    const SDL_DisplayMode* mode = SDL_GetDesktopDisplayMode(primary);
     if (!mode)
     {
         spdlog::warn("getPrimaryMonitorSize: could not query primary monitor, returning default 1920x1080");
         return { 1920, 1080 };
     }
-    return { static_cast<unsigned int>(mode->width),
-             static_cast<unsigned int>(mode->height) };
+    return { static_cast<unsigned int>(mode->w), static_cast<unsigned int>(mode->h) };
 }
 
 }

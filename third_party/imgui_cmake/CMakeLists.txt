@@ -1,6 +1,5 @@
 
 set(IMGUI_PATH "../imgui/")
-set(GLFW_PATH "../glfw/include")
 
 add_library(imgui STATIC
     "${IMGUI_PATH}/imgui.cpp"
@@ -9,10 +8,9 @@ add_library(imgui STATIC
     "${IMGUI_PATH}/imgui_tables.cpp"
     "${IMGUI_PATH}/imgui_widgets.cpp"
     "${IMGUI_PATH}/backends/imgui_impl_opengl3.cpp"
-    "${IMGUI_PATH}/backends/imgui_impl_glfw.cpp"
+    "${IMGUI_PATH}/backends/imgui_impl_sdl3.cpp"
 )
 set_property(TARGET imgui PROPERTY CXX_STANDARD 11)
-target_include_directories(imgui PRIVATE
-    "${IMGUI_PATH}"
-    "${GLFW_PATH}"
-)
+target_include_directories(imgui PRIVATE "${IMGUI_PATH}")
+target_compile_definitions(imgui PRIVATE SDL_ENABLE_OLD_NAMES)
+target_link_libraries(imgui PRIVATE SDL3::SDL3-static)

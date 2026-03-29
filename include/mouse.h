@@ -9,8 +9,8 @@ enum class MouseButton : std::uint8_t { Left, Middle, Right };
 
 namespace MouseImplementation
 {
-MouseButton toMouseButton(int glfwButton);
-int toGLFWMouseButton(MouseButton button);
+MouseButton toMouseButton(int internalButton);
+int toInternalButtonCode(MouseButton button);
 }
 
 }
