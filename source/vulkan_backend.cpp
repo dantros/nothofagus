@@ -1293,11 +1293,12 @@ void VulkanBackend::beginRttPass(DRenderTarget renderTarget, glm::vec4 clearColo
     rpBegin.pClearValues      = clearValues.data();
     vkCmdBeginRenderPass(mActiveCommandBuffer, &rpBegin, VK_SUBPASS_CONTENTS_INLINE);
 
+    // Negative-height viewport for Y-up convention, same as beginMainPass.
     VkViewport vp{};
-    vp.x      = 0.0f;
-    vp.y      = 0.0f;
-    vp.width  = static_cast<float>(rt.size.x);
-    vp.height = static_cast<float>(rt.size.y);
+    vp.x        = 0.0f;
+    vp.y        = static_cast<float>(rt.size.y);
+    vp.width    = static_cast<float>(rt.size.x);
+    vp.height   = -static_cast<float>(rt.size.y);
     vp.minDepth = 0.0f;
     vp.maxDepth = 1.0f;
     vkCmdSetViewport(mActiveCommandBuffer, 0, 1, &vp);
@@ -1369,12 +1370,14 @@ void VulkanBackend::beginMainPass(ViewportRect gameViewport)
         vkCmdClearAttachments(mActiveCommandBuffer, 1, &clearAttachment, 1, &clearRect);
     }
 
-    // Dynamic viewport — Y-flip: ViewportRect.y is from bottom (OpenGL), Vulkan uses top
+    // Negative-height viewport: maps NDC y=-1 → bottom, y=+1 → top, matching
+    // OpenGL convention. ViewportRect.y is the bottom edge in framebuffer pixels
+    // (OpenGL convention); converting to Vulkan top-of-viewport = framebufferHeight - y.
     VkViewport vp{};
     vp.x        = static_cast<float>(gameViewport.x);
-    vp.y        = static_cast<float>(mCurrentFramebufferHeight - gameViewport.y - gameViewport.height);
+    vp.y        = static_cast<float>(mCurrentFramebufferHeight - gameViewport.y);
     vp.width    = static_cast<float>(gameViewport.width);
-    vp.height   = static_cast<float>(gameViewport.height);
+    vp.height   = -static_cast<float>(gameViewport.height);
     vp.minDepth = 0.0f;
     vp.maxDepth = 1.0f;
     vkCmdSetViewport(mActiveCommandBuffer, 0, 1, &vp);
