@@ -724,10 +724,9 @@ void VulkanBackend::initialize(GLFWwindow* window, glm::ivec2 canvasSize)
     imguiInfo.ImageCount      = static_cast<uint32_t>(mSwapchainImages.size());
     imguiInfo.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
     ImGui_ImplVulkan_Init(&imguiInfo);
-
-    // Upload ImGui fonts (newer imgui handles submission internally)
-    ImGui_ImplVulkan_CreateFontsTexture();
-    vkDeviceWaitIdle(mDevice);
+    // Font upload is deferred: ImGui_ImplVulkan_NewFrame() calls
+    // ImGui_ImplVulkan_CreateFontsTexture() automatically on the first frame,
+    // after canvas_impl has finished adding custom fonts (Roboto, etc.).
 }
 
 // ---------------------------------------------------------------------------

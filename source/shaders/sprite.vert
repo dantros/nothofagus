@@ -6,11 +6,11 @@ layout(location = 1) in vec2 inTexCoord;
 layout(location = 0) out vec2 outTexCoord;
 
 layout(push_constant) uniform PushConstants {
-    mat3  transform;      // offset 0,  size 48 (each column padded to vec4)
-    int   layerIndex;     // offset 48, size 4
-    vec3  tintColor;      // offset 52, size 12
-    float tintIntensity;  // offset 64, size 4
-    float opacity;        // offset 68, size 4
+    mat3  transform;         // offset 0,  size 48 (each column padded to vec4)
+    int   layerIndex;        // offset 48, size 4
+    float tintColor[3];      // offset 52, size 12  (float[3] has 4-byte alignment, not 16)
+    float tintIntensity;     // offset 64, size 4
+    float opacity;           // offset 68, size 4
     // Total: 72 bytes
 } pc;
 

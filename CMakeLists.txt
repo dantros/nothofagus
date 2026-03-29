@@ -42,6 +42,9 @@ else()
 endif()
 
 add_subdirectory("third_party/glad")
+if(NOTHOFAGUS_BACKEND_VULKAN)
+    set(IMGUI_VULKAN_BACKEND ON CACHE BOOL "" FORCE)
+endif()
 add_subdirectory("third_party/imgui_cmake")
 
 file(GLOB_RECURSE NOTHOFAGUS_SOURCE_HEADERS "source/*.h")
