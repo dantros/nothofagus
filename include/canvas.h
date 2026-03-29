@@ -215,7 +215,7 @@ public:
      *
      * The bellota must have a Transform3D where scale = {worldWidth, maximumHeight, worldDepth}.
      * The height texture must be a DirectTexture with size {columns, rows}; each pixel stores
-     * one float (written via DirectTexture::setFloat, read via DirectTexture::getFloat).
+     * one float (written via TextureData::setFloat, read via TextureData::getFloat).
      *
      * @param bellotaId      ID of the bellota (must be world-space, i.e. have Transform3D).
      * @param heightTextureId ID of the DirectTexture that holds the height data.
