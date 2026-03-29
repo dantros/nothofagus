@@ -528,6 +528,59 @@ const bool& Canvas::CanvasImpl::stats() const
     return mStats;
 }
 
+DirectTexture Canvas::CanvasImpl::takeScreenshot() const
+{
+    const int gameWidth  = static_cast<int>(mScreenSize.width);
+    const int gameHeight = static_cast<int>(mScreenSize.height);
+
+    // Create a temporary FBO at game resolution.
+    // The game viewport in the framebuffer may be larger than the game canvas
+    // (e.g. a 128x96 canvas at 6x pixel scale produces a 768x576 framebuffer
+    // viewport), so we blit into a game-sized FBO to normalise the dimensions.
+    unsigned int tempFbo, tempColorTex;
+    glGenFramebuffers(1, &tempFbo);
+    glGenTextures(1, &tempColorTex);
+
+    glBindTexture(GL_TEXTURE_2D, tempColorTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, gameWidth, gameHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, tempFbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tempColorTex, 0);
+
+    // Blit the game viewport from the front buffer into the temp FBO, scaling
+    // it down to game resolution. Inverting the destination Y range converts
+    // from OpenGL's bottom-to-top row order to top-to-bottom order so the
+    // resulting pixel data is ready for conventional image use without an
+    // additional flip pass.
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glReadBuffer(GL_FRONT);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, tempFbo);
+    glBlitFramebuffer(
+        mGameViewport.x,
+        mGameViewport.y,
+        mGameViewport.x + mGameViewport.width,
+        mGameViewport.y + mGameViewport.height,
+        0, gameHeight, gameWidth, 0,    // inverted dest Y → flip to top-to-bottom
+        GL_COLOR_BUFFER_BIT, GL_LINEAR
+    );
+
+    // Read the (already top-to-bottom) pixels from the temp FBO.
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, tempFbo);
+    TextureData textureData(gameWidth, gameHeight, 1);
+    glReadPixels(0, 0, gameWidth, gameHeight, GL_RGBA, GL_UNSIGNED_BYTE, textureData.getDataSpan().data());
+
+    // Restore default framebuffer state and release temp objects.
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glReadBuffer(GL_BACK);
+    glDeleteFramebuffers(1, &tempFbo);
+    glDeleteTextures(1, &tempColorTex);
+
+    return DirectTexture(std::move(textureData));
+}
+
 void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
 {
     // Binding VAO to setup

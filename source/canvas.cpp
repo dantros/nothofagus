@@ -193,4 +193,9 @@ void Canvas::close()
     mCanvasImpl->close();
 }
 
+DirectTexture Canvas::takeScreenshot() const
+{
+    return mCanvasImpl->takeScreenshot();
+}
+
 }

@@ -185,6 +185,24 @@ Nothofagus::ViewportRect viewport = canvas.gameViewport();
 // viewport.width, viewport.height  — game area dimensions in framebuffer pixels
 ```
 
+### Screenshot
+
+`takeScreenshot()` reads the front buffer (the last fully rendered and swapped frame) and returns a `DirectTexture` with the game viewport's RGBA pixels, flipped to top-to-bottom row order.
+
+```cpp
+// Call from within the update() callback:
+Nothofagus::DirectTexture screenshot = canvas.takeScreenshot();
+
+// Access raw RGBA bytes for saving with an external image library (e.g. stb_image_plus):
+Nothofagus::TextureData data = screenshot.generateTextureData();
+std::span<std::uint8_t> span = data.getDataSpan(); // width * height * 4 bytes, top-to-bottom
+
+// The screenshot can also be loaded back into the canvas as a texture:
+Nothofagus::TextureId texId = canvas.addTexture(screenshot);
+```
+
+**Note:** reads from `GL_FRONT` — valid only while an OpenGL context is current (i.e. inside `canvas.run()`). On the very first frame before any swap, the front buffer content is undefined.
+
 ## Naming Conventions (C++)
 
 - Variables and functions: **camelCase**
@@ -216,6 +234,7 @@ Nothofagus::ViewportRect viewport = canvas.gameViewport();
 | `hello_tint.cpp` | Color tinting |
 | `test_keyboard.cpp` | Keyboard input handling |
 | `test_create_destroy.cpp` | Object lifecycle |
+| `hello_screenshot.cpp` | `takeScreenshot()` — capture frame as DirectTexture, display thumbnail |
 
 ## Dependencies (third_party/ submodules)
 
