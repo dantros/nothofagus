@@ -14,6 +14,11 @@
 struct VmaAllocator_T;
 typedef VmaAllocator_T* VmaAllocator;
 
+// Forward-declare GLFWwindow to avoid dragging in GLFW headers.
+#if !defined(NOTHOFAGUS_BACKEND_SDL3)
+struct GLFWwindow;
+#endif
+
 namespace Nothofagus
 {
 
@@ -194,7 +199,9 @@ private:
     void destroySwapchainDepthResources();
     void createSwapchainFramebuffers();
     void destroySwapchainResources();
+#if !defined(NOTHOFAGUS_BACKEND_SDL3)
     GLFWwindow* mGlfwWindow = nullptr;
+#endif
 
     void recreateSwapchain();
 
