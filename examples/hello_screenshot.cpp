@@ -38,6 +38,7 @@ int main()
 
     // Screenshot thumbnail state.
     std::optional<Nothofagus::BellotaId> screenshotBellotaId;
+    std::optional<Nothofagus::BellotaId> screenshotFrameBellotaId;
     float screenshotTimer = 0.0f;
     constexpr float screenshotDisplayDurationMs = 2000.0f;
 
@@ -65,6 +66,8 @@ int main()
             {
                 canvas.removeBellota(*screenshotBellotaId);
                 screenshotBellotaId.reset();
+                canvas.removeBellota(*screenshotFrameBellotaId);
+                screenshotFrameBellotaId.reset();
             }
         }
 
@@ -78,11 +81,13 @@ int main()
     Nothofagus::Controller controller;
     controller.registerAction({Nothofagus::Key::SPACE, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
-        // Remove any existing thumbnail so its texture is garbage-collected.
+        // Remove any existing thumbnail so its textures are garbage-collected.
         if (screenshotBellotaId)
         {
             canvas.removeBellota(*screenshotBellotaId);
             screenshotBellotaId.reset();
+            canvas.removeBellota(*screenshotFrameBellotaId);
+            screenshotFrameBellotaId.reset();
         }
 
         // Capture the current frame at game resolution (canvas.screenSize()).
@@ -100,8 +105,7 @@ int main()
         const int sh = screenshot.size().y;
         spdlog::info("Screenshot captured: {}x{} px", sw, sh);
 
-        // Build a bordered version.
-        // The thumbnail is displayed at 20% of the canvas width (scale ~0.2).
+        // The thumbnail is displayed at 20% of the canvas width (scale 0.2).
         // At scale 0.2 one screen pixel = 5 texture pixels, so a 5-pixel white
         // border appears as a clean 1-pixel outline on screen.
         constexpr int   borderSize     = 5;
@@ -110,19 +114,14 @@ int main()
         const int bw = sw + borderSize * 2;
         const int bh = sh + borderSize * 2;
 
-        auto screenshotData = screenshot.generateTextureData();
-        auto screenshotSpan = screenshotData.getDataSpan();
-
-        Nothofagus::TextureData borderedData(bw, bh, 1);
-        auto borderedSpan = borderedData.getDataSpan();
-
-        // Fill with opaque white, then overwrite the interior with screenshot pixels.
-        std::fill(borderedSpan.begin(), borderedSpan.end(), std::uint8_t{255});
-        for (int row = 0; row < sh; ++row)
+        // Build a border frame: opaque white ring with a transparent interior cutout.
+        Nothofagus::TextureData frameData(bw, bh, 1);
+        auto frameSpan = frameData.getDataSpan();
+        std::fill(frameSpan.begin(), frameSpan.end(), std::uint8_t{255});
+        for (int row = borderSize; row < bh - borderSize; ++row)
         {
-            const std::uint8_t* srcRow = screenshotSpan.data() + row * sw * 4;
-            std::uint8_t*       dstRow = borderedSpan.data() + (row + borderSize) * bw * 4 + borderSize * 4;
-            std::copy(srcRow, srcRow + sw * 4, dstRow);
+            std::uint8_t* interiorRow = frameSpan.data() + row * bw * 4 + borderSize * 4;
+            std::fill(interiorRow, interiorRow + (bw - borderSize * 2) * 4, std::uint8_t{0});
         }
 
         // Display in the bottom-right corner, rendered on top of the scene.
@@ -130,9 +129,13 @@ int main()
         const float     thumbnailHalfH = bh * thumbnailScale / 2.0f;
         const glm::vec2 thumbnailPos   = {128.0f - thumbnailHalfW - 2.0f, thumbnailHalfH + 2.0f};
 
-        auto screenshotTexId = canvas.addTexture(Nothofagus::DirectTexture(std::move(borderedData)));
-        screenshotBellotaId  = canvas.addBellota({{thumbnailPos, thumbnailScale}, screenshotTexId, 1});
-        screenshotTimer      = screenshotDisplayDurationMs;
+        auto screenshotTexId     = canvas.addTexture(screenshot);
+        screenshotBellotaId      = canvas.addBellota({{thumbnailPos, thumbnailScale}, screenshotTexId, 1});
+
+        auto frameTexId          = canvas.addTexture(Nothofagus::DirectTexture(std::move(frameData)));
+        screenshotFrameBellotaId = canvas.addBellota({{thumbnailPos, thumbnailScale}, frameTexId, 2});
+
+        screenshotTimer = screenshotDisplayDurationMs;
     });
 
     canvas.run(update, controller);
