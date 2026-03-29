@@ -595,6 +595,11 @@ struct InputContext
 
 void keyCallback(GLFWwindow* window, int glfwKey, int scancode, int action, int mods)
 {
+    ImGui_ImplGlfw_KeyCallback(window, glfwKey, scancode, action, mods);
+
+    if (ImGui::GetIO().WantCaptureKeyboard)
+        return;
+
     if (not (action == GLFW_PRESS or action == GLFW_RELEASE))
         return;
 
@@ -608,6 +613,11 @@ void keyCallback(GLFWwindow* window, int glfwKey, int scancode, int action, int 
 
 void mouseButtonCallback(GLFWwindow* window, int glfwButton, int action, int mods)
 {
+    ImGui_ImplGlfw_MouseButtonCallback(window, glfwButton, action, mods);
+
+    if (ImGui::GetIO().WantCaptureMouse)
+        return;
+
     if (not (action == GLFW_PRESS or action == GLFW_RELEASE))
         return;
 
@@ -621,6 +631,8 @@ void mouseButtonCallback(GLFWwindow* window, int glfwButton, int action, int mod
 
 void cursorPosCallback(GLFWwindow* window, double cursorX, double cursorY)
 {
+    ImGui_ImplGlfw_CursorPosCallback(window, cursorX, cursorY);
+
     InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
     debugCheck(ctx != nullptr, "GLFW cursor pos callback: window user pointer is null");
 
@@ -648,6 +660,11 @@ void cursorPosCallback(GLFWwindow* window, double cursorX, double cursorY)
 
 void scrollCallback(GLFWwindow* window, double xoffset, double yoffset)
 {
+    ImGui_ImplGlfw_ScrollCallback(window, xoffset, yoffset);
+
+    if (ImGui::GetIO().WantCaptureMouse)
+        return;
+
     InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
     debugCheck(ctx != nullptr, "GLFW scroll callback: window user pointer is null");
 
