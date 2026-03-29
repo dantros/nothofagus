@@ -2,14 +2,36 @@ cmake_minimum_required(VERSION 3.26)
 
 project(nothofagus_project CXX)
 
-# Setting up build options for GLFW
-option(GLFW_INSTALL "Disabling installation of GLFW" OFF)
-option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
-option(GLFW_BUILD_EXAMPLES "Build the GLFW example programs" OFF)
-option(GLFW_BUILD_TESTS "Build the GLFW test programs" OFF)
-option(GLFW_BUILD_DOCS "Build the GLFW documentation" OFF)
-option(GLFW_INSTALL "Generate installation target" OFF)
-add_subdirectory("third_party/glfw")
+# ─────────────────────────────────────────────
+# Window backend selection
+# ─────────────────────────────────────────────
+set(NOTHOFAGUS_WINDOW_BACKEND "GLFW" CACHE STRING "Window/input backend: GLFW or SDL3")
+set_property(CACHE NOTHOFAGUS_WINDOW_BACKEND PROPERTY STRINGS "GLFW" "SDL3")
+
+if(NOTHOFAGUS_WINDOW_BACKEND STREQUAL "SDL3")
+    # ── SDL3 ──────────────────────────────────
+    set(SDL_SHARED       OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC       ON  CACHE BOOL "" FORCE)
+    set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+    set(SDL_TESTS        OFF CACHE BOOL "" FORCE)
+    add_subdirectory("third_party/SDL")
+
+    set(NOTHOFAGUS_WIN_LINK SDL3::SDL3-static)
+    set(NOTHOFAGUS_WIN_INCS "third_party/SDL/include")
+    set(NOTHOFAGUS_WIN_DEFS NOTHOFAGUS_BACKEND_SDL3)
+else()
+    # ── GLFW (default) ────────────────────────
+    option(GLFW_INSTALL        "Disabling installation of GLFW"   OFF)
+    option(BUILD_SHARED_LIBS   "Build shared libraries"           OFF)
+    option(GLFW_BUILD_EXAMPLES "Build the GLFW example programs"  OFF)
+    option(GLFW_BUILD_TESTS    "Build the GLFW test programs"     OFF)
+    option(GLFW_BUILD_DOCS     "Build the GLFW documentation"     OFF)
+    add_subdirectory("third_party/glfw")
+
+    set(NOTHOFAGUS_WIN_LINK glfw)
+    set(NOTHOFAGUS_WIN_INCS "third_party/glfw/include")
+    set(NOTHOFAGUS_WIN_DEFS "")
+endif()
 
 add_subdirectory("third_party/glad")
 add_subdirectory("third_party/imgui_cmake")
@@ -43,19 +65,23 @@ add_library(nothofagus
 set_property(TARGET nothofagus PROPERTY CXX_STANDARD 20)
 target_include_directories(nothofagus PRIVATE
     "include"
+    "source"
     "third_party/spdlog/include"
     "third_party/glad/include"
-    "third_party/glfw/include"
+    ${NOTHOFAGUS_WIN_INCS}
     "third_party/glm"
     "third_party/imgui"
     "third_party/font8x8"
 )
-target_link_libraries(nothofagus PRIVATE glad glfw imgui)
+target_link_libraries(nothofagus PRIVATE glad ${NOTHOFAGUS_WIN_LINK} imgui)
 # spdlog uses fmt to format string, this library requires /utf-8 when using MSVC
 # The issue has not been fixed. More info at: https://github.com/gabime/spdlog/issues/3251
 # diabling FMT_UNICODE is a workaround.
 if(MSVC)
     target_compile_definitions(nothofagus PRIVATE FMT_UNICODE=0)
+endif()
+if(NOTHOFAGUS_WIN_DEFS)
+    target_compile_definitions(nothofagus PRIVATE ${NOTHOFAGUS_WIN_DEFS})
 endif()
 
 set(NOTHOFAGUS_HEADERS
@@ -115,7 +141,7 @@ if (${NOTHOFAGUS_INSTALL})
         FILES ${NOTHOFAGUS_PUBLIC_HEADERS}
     )
     install(TARGETS nothofagus FILE_SET nothofagus_Headers)
-    
+
     # Installing examples
     if (${NOTHOFAGUS_BUILD_EXAMPLES})
         install(TARGETS

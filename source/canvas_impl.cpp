@@ -13,13 +13,12 @@
 #include "controller.h"
 #include "roboto_font.h"
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_transform_2d.hpp>
 #include <glm/ext.hpp>
 #include <imgui.h>
-#include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
+#include "backends/window_backend.h"
 #include <ciso646>
 #include <cmath>
 #include <optional>
@@ -30,15 +29,12 @@
 namespace Nothofagus
 {
 
-// Wrapper class forward declared in the .h to avoid including GLFW dependecies in the header file.
-struct Canvas::CanvasImpl::Window
+// Window is the selected backend type. Forward declared in canvas_impl.h;
+// defined here so the backend headers are only included from this translation unit.
+struct Canvas::CanvasImpl::Window : public SelectedWindowBackend
 {
-    GLFWwindow* glfwWindow;
+    using SelectedWindowBackend::SelectedWindowBackend;
 };
-
-// glfw: whenever the window size changed (by OS or user resize) this callback function executes.
-// Viewport is recalculated per-frame in run(), so this callback is intentionally a no-op.
-void framebufferSizeCallback(GLFWwindow* /*window*/, int /*width*/, int /*height*/) {}
 
 static ViewportRect computeLetterboxViewport(int framebufferWidth, int framebufferHeight, unsigned int canvasWidth, unsigned int canvasHeight)
 {
@@ -119,35 +115,12 @@ Canvas::CanvasImpl::CanvasImpl(
     mStats(false),
     mGameViewport{0, 0, 0, 0}
 {
-    // glfw: initialize and configure
-    glfwInit();
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    // glfw window creation
-    GLFWwindow* glfwWindow = glfwCreateWindow(mScreenSize.width * mPixelSize, mScreenSize.height * mPixelSize, mTitle.c_str(), NULL, NULL);
-    if (glfwWindow == nullptr)
-    {
-        spdlog::error("Failed to create GLFW window");
-        glfwTerminate();
-        throw;
-    }
-
-    float scaleWidth, scaleHeight;
-    glfwGetWindowContentScale(glfwWindow, &scaleWidth, &scaleHeight);
-
-    mWindow = std::make_unique<Window>(glfwWindow);
-
-    glfwMakeContextCurrent(mWindow->glfwWindow);
-    glfwSetFramebufferSizeCallback(mWindow->glfwWindow, framebufferSizeCallback);
-
-    // glad: load all OpenGL function pointers
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-    {
-        spdlog::error("Failed to initialize GLAD");
-        throw;
-    }
+    // Initialize the window backend (creates window, GL context, loads GLAD)
+    mWindow = std::make_unique<Window>(
+        mTitle,
+        static_cast<int>(mScreenSize.width  * mPixelSize),
+        static_cast<int>(mScreenSize.height * mPixelSize)
+    );
 
     const std::string vertexShaderSource = R"(
         #version 330 core
@@ -195,110 +168,44 @@ Canvas::CanvasImpl::CanvasImpl(
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_BLEND);
 
-    // ImGui setup
-    ImGui::CreateContext();
-    ImGui::StyleColorsDark();
-    ImGui_ImplGlfw_InitForOpenGL(mWindow->glfwWindow, true);
-    const char* glsl_version = "#version 330";
-    ImGui_ImplOpenGL3_Init(glsl_version);
-
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.ScaleAllSizes(scaleWidth);
-    ImGuiIO& io = ImGui::GetIO();
-    io.Fonts->AddFontFromMemoryTTF(assets_Roboto_VariableFont_wdth_wght_ttf, assets_Roboto_VariableFont_wdth_wght_ttf_len,  imguiFontSize * scaleWidth);
+    // ImGui setup (backend-specific init + font loading)
+    mWindow->initImGui(
+        imguiFontSize,
+        assets_Roboto_VariableFont_wdth_wght_ttf,
+        assets_Roboto_VariableFont_wdth_wght_ttf_len
+    );
 }
 
 Canvas::CanvasImpl::~CanvasImpl()
 {
-    // freeing GPU memorygpuShape.clear();
-    glfwTerminate();
-
+    // Window destructor handles backend cleanup (GL context, ImGui shutdown, etc.)
     // Needs to be defined in the cpp file to avoid incomplete type errors due to the pimpl idiom for struct Window
 }
 
 std::size_t Canvas::CanvasImpl::getCurrentMonitor() const
 {
-    int monitorCount;
-    GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
-
-    if (monitors == nullptr)
-    {
-        spdlog::error("No monitors were found");
-        throw;
-    }
-
-    AABox windowBox = getWindowAABox();;
-
-    for (std::size_t monitorIndex = 0; monitorIndex < monitorCount; ++monitorIndex)
-    {
-        GLFWmonitor* currentMonitor = monitors[monitorIndex];
-        debugCheck(currentMonitor != nullptr, "GLFW returned a null monitor pointer in monitors array");
-        AABox monitorBox;
-        glfwGetMonitorPos(currentMonitor, &monitorBox.x, &monitorBox.y);
-        const GLFWvidmode* videoMode = glfwGetVideoMode(currentMonitor);
-        debugCheck(videoMode != nullptr, "glfwGetVideoMode returned null for current monitor");
-        monitorBox.width = videoMode->width;
-        monitorBox.height = videoMode->height;
-
-        if (monitorBox.contains(windowBox.x, windowBox.y))
-        {
-            return monitorIndex;
-        }
-    }
-
-    spdlog::warn("Top left corner of the window is outside of all monitors. Returning primary monitor.");
-    return 0;
+    return mWindow->getCurrentMonitor();
 }
 
 bool Canvas::CanvasImpl::isFullscreen() const
 {
-    GLFWmonitor* monitor = glfwGetWindowMonitor(mWindow->glfwWindow);
-    return monitor != nullptr;
+    return mWindow->isFullscreen();
 }
 
 void Canvas::CanvasImpl::setFullScreenOnMonitor(std::size_t monitorIndex)
 {
-    int monitorCount;
-    GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
-    debugCheck(monitorIndex < monitorCount, "Monitor index out of range");
-    GLFWmonitor* monitor = monitors[monitorIndex];
-    debugCheck(monitor != nullptr, "GLFW returned a null pointer for the selected monitor index");
-    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-    debugCheck(mode != nullptr, "glfwGetVideoMode returned null for the selected monitor");
-
-    // saving current size to restore it later
-    mLastWindowedAABox = getWindowAABox();
-
-    glfwSetWindowMonitor(
-        mWindow->glfwWindow,
-        monitor,
-        0,
-        0,
-        mode->width, 
-        mode->height, 
-        mode->refreshRate
-    );
+    mLastWindowedAABox = mWindow->getWindowAABox();
+    mWindow->setFullscreenOnMonitor(monitorIndex);
 }
 
 AABox Canvas::CanvasImpl::getWindowAABox() const
 {
-    AABox window;
-    glfwGetWindowPos(mWindow->glfwWindow, &window.x, &window.y);
-    glfwGetWindowSize(mWindow->glfwWindow, &window.width, &window.height);
-    return window;
+    return mWindow->getWindowAABox();
 }
 
 void Canvas::CanvasImpl::setWindowed()
 {
-    glfwSetWindowMonitor(
-        mWindow->glfwWindow,
-        NULL,
-        mLastWindowedAABox.x,
-        mLastWindowedAABox.y,
-        mLastWindowedAABox.width, 
-        mLastWindowedAABox.height, 
-        0
-    );
+    mWindow->setWindowed(mLastWindowedAABox);
 }
 
 const ScreenSize& Canvas::CanvasImpl::screenSize() const
@@ -319,11 +226,7 @@ void Canvas::CanvasImpl::setClearColor(glm::vec3 clearColor)
 ScreenSize Canvas::CanvasImpl::windowSize() const
 {
     debugCheck(mWindow != nullptr, "Canvas window has not been initialized");
-    debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
-
-    int width, height;
-    glfwGetWindowSize(mWindow->glfwWindow, &width, &height);
-    return {static_cast<unsigned int>(width), static_cast<unsigned int>(height)};
+    return mWindow->getWindowSize();
 }
 
 ViewportRect Canvas::CanvasImpl::gameViewport() const { return mGameViewport; }
@@ -638,92 +541,6 @@ GLuint textureArraySimpleSetup(const TextureData& textureData, TextureSampleMode
     return gpuTexture;
 }
 
-// Context passed as the GLFW window user pointer so all input callbacks share it.
-struct InputContext
-{
-    Controller* controller;
-    ViewportRect viewport;
-    ScreenSize screenSize;
-};
-
-void keyCallback(GLFWwindow* window, int glfwKey, int scancode, int action, int mods)
-{
-    ImGui_ImplGlfw_KeyCallback(window, glfwKey, scancode, action, mods);
-
-    if (ImGui::GetIO().WantCaptureKeyboard)
-        return;
-
-    if (not (action == GLFW_PRESS or action == GLFW_RELEASE))
-        return;
-
-    InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
-    debugCheck(ctx != nullptr, "GLFW key callback: window user pointer is null");
-
-    Key key = KeyboardImplementation::toKeyCode(glfwKey);
-    DiscreteTrigger trigger = action == GLFW_PRESS ? DiscreteTrigger::Press : DiscreteTrigger::Release;
-    ctx->controller->activate({ key, trigger });
-}
-
-void mouseButtonCallback(GLFWwindow* window, int glfwButton, int action, int mods)
-{
-    ImGui_ImplGlfw_MouseButtonCallback(window, glfwButton, action, mods);
-
-    if (ImGui::GetIO().WantCaptureMouse)
-        return;
-
-    if (not (action == GLFW_PRESS or action == GLFW_RELEASE))
-        return;
-
-    InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
-    debugCheck(ctx != nullptr, "GLFW mouse button callback: window user pointer is null");
-
-    MouseButton button = MouseImplementation::toMouseButton(glfwButton);
-    DiscreteTrigger trigger = action == GLFW_PRESS ? DiscreteTrigger::Press : DiscreteTrigger::Release;
-    ctx->controller->activateMouseButton({ button, trigger });
-}
-
-void cursorPosCallback(GLFWwindow* window, double cursorX, double cursorY)
-{
-    ImGui_ImplGlfw_CursorPosCallback(window, cursorX, cursorY);
-
-    InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
-    debugCheck(ctx != nullptr, "GLFW cursor pos callback: window user pointer is null");
-
-    // cursorX/Y are in top-left window coords. Scale to framebuffer pixels (HiDPI).
-    int windowWidth, windowHeight, framebufferWidth, framebufferHeight;
-    glfwGetWindowSize(window, &windowWidth, &windowHeight);
-    glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
-
-    const float scaleX = (windowWidth  > 0) ? static_cast<float>(framebufferWidth)  / static_cast<float>(windowWidth)  : 1.0f;
-    const float scaleY = (windowHeight > 0) ? static_cast<float>(framebufferHeight) / static_cast<float>(windowHeight) : 1.0f;
-
-    // Convert to framebuffer coords with bottom-left origin.
-    const float fbCursorX = static_cast<float>(cursorX) * scaleX;
-    const float fbCursorY = static_cast<float>(framebufferHeight) - static_cast<float>(cursorY) * scaleY;
-
-    // Map through the letterboxed viewport to game canvas coords.
-    const ViewportRect& vp = ctx->viewport;
-    const glm::vec2 gamePosition = {
-        (fbCursorX - static_cast<float>(vp.x)) / static_cast<float>(vp.width)  * static_cast<float>(ctx->screenSize.width),
-        (fbCursorY - static_cast<float>(vp.y)) / static_cast<float>(vp.height) * static_cast<float>(ctx->screenSize.height)
-    };
-
-    ctx->controller->updateMousePosition(gamePosition);
-}
-
-void scrollCallback(GLFWwindow* window, double xoffset, double yoffset)
-{
-    ImGui_ImplGlfw_ScrollCallback(window, xoffset, yoffset);
-
-    if (ImGui::GetIO().WantCaptureMouse)
-        return;
-
-    InputContext* ctx = static_cast<InputContext*>(glfwGetWindowUserPointer(window));
-    debugCheck(ctx != nullptr, "GLFW scroll callback: window user pointer is null");
-
-    ctx->controller->scrolled({static_cast<float>(xoffset), static_cast<float>(yoffset)});
-}
-
 void initializeTexturePacks(TextureContainer& textures)
 {
     for (auto& [textureIndex, texturePack] : textures)
@@ -835,18 +652,7 @@ void drawBellotaPacks(
 
 void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
-    debugCheck(mWindow->glfwWindow != nullptr, "GLFW Window has not been initialized.");
-
-    InputContext inputContext{ &controller, {}, mScreenSize };
-    glfwSetWindowUserPointer(mWindow->glfwWindow, &inputContext);
-    glfwSetKeyCallback(mWindow->glfwWindow, keyCallback);
-    glfwSetMouseButtonCallback(mWindow->glfwWindow, mouseButtonCallback);
-    glfwSetCursorPosCallback(mWindow->glfwWindow, cursorPosCallback);
-    glfwSetScrollCallback(mWindow->glfwWindow, scrollCallback);
-
-    constexpr float GAMEPAD_AXIS_DEADZONE = 0.1f;
-    std::array<GLFWgamepadstate, GLFW_JOYSTICK_LAST + 1> previousGamepadStates = {};
-    std::array<bool,             GLFW_JOYSTICK_LAST + 1> gamepadConnectedState  = {};
+    mWindow->beginSession(controller);
 
     // state variable
     bool fillPolygons = true;
@@ -873,7 +679,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     };
     //clang on
 
-    PerformanceMonitor performanceMonitor(glfwGetTime(), 0.5f);
+    PerformanceMonitor performanceMonitor(mWindow->getTime(), 0.5f);
 
     // Dirty fix to sort bellotas by depth as required by transparent objects.
     std::vector<const BellotaPack*> sortedBellotaPacks;
@@ -904,20 +710,16 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
     ScreenSize currentScreenSize = mScreenSize;
 
-    glfwSetWindowShouldClose(mWindow->glfwWindow, false);
-    while (!glfwWindowShouldClose(mWindow->glfwWindow))
+    while (mWindow->isRunning())
     {
         controller.processInputs();
 
-        performanceMonitor.update(glfwGetTime());
+        performanceMonitor.update(mWindow->getTime());
         const float deltaTimeMS = performanceMonitor.getMS();
 
         // Get current framebuffer size and compute letterboxed viewport
-        int framebufferWidth, framebufferHeight;
-        glfwGetFramebufferSize(mWindow->glfwWindow, &framebufferWidth, &framebufferHeight);
+        auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
         mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, mScreenSize.width, mScreenSize.height);
-        inputContext.viewport   = mGameViewport;
-        inputContext.screenSize = mScreenSize;
 
         // Clear entire framebuffer to black (fills the letterbox/pillarbox bands)
         glViewport(0, 0, framebufferWidth, framebufferHeight);
@@ -934,7 +736,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
+        mWindow->newImGuiFrame();
         ImGui::NewFrame();
 
         // executing user provided update
@@ -1004,8 +806,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
             // Restore viewport and clear color to the main framebuffer values.
             {
-                int frameBufferWidth, frameBufferHeight;
-                glfwGetFramebufferSize(mWindow->glfwWindow, &frameBufferWidth, &frameBufferHeight);
+                auto [frameBufferWidth, frameBufferHeight] = mWindow->getFramebufferSize();
                 glViewport(0, 0, frameBufferWidth, frameBufferHeight);
                 glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
             }
@@ -1039,66 +840,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-        glfwSwapBuffers(mWindow->glfwWindow);
-        glfwPollEvents();
-
-        // Poll gamepad state for all joystick slots.
-        for (int i = 0; i <= GLFW_JOYSTICK_LAST; ++i)
-        {
-            bool nowConnected = glfwJoystickPresent(i) && glfwJoystickIsGamepad(i);
-            if (nowConnected != gamepadConnectedState[i])
-            {
-                gamepadConnectedState[i] = nowConnected;
-                if (nowConnected)
-                {
-                    controller.gamepadConnected(i);
-                }
-                else
-                {
-                    controller.gamepadDisconnected(i);
-                    previousGamepadStates[i] = {};
-                    continue;
-                }
-            }
-            if (!nowConnected)
-                continue;
-
-            GLFWgamepadstate state{};
-            if (!glfwGetGamepadState(i, &state))
-                continue;
-
-            for (int buttonIndex = 0; buttonIndex <= GLFW_GAMEPAD_BUTTON_LAST; ++buttonIndex)
-            {
-                if (state.buttons[buttonIndex] != previousGamepadStates[i].buttons[buttonIndex])
-                {
-                    DiscreteTrigger trigger = (state.buttons[buttonIndex] == GLFW_PRESS)
-                        ? DiscreteTrigger::Press : DiscreteTrigger::Release;
-                    controller.activateGamepadButton({i, static_cast<GamepadButton>(buttonIndex), trigger});
-                }
-            }
-
-            for (int axisIndex = 0; axisIndex <= GLFW_GAMEPAD_AXIS_LAST; ++axisIndex)
-            {
-                GamepadAxis axis = static_cast<GamepadAxis>(axisIndex);
-                float value = state.axes[axisIndex];
-
-                if (axis == GamepadAxis::LeftTrigger || axis == GamepadAxis::RightTrigger)
-                {
-                    value = (value + 1.0f) * 0.5f;
-                    if (value < GAMEPAD_AXIS_DEADZONE) value = 0.0f;
-                }
-                else
-                {
-                    if (axis == GamepadAxis::LeftY || axis == GamepadAxis::RightY)
-                        value = -value;
-                    if (std::abs(value) < GAMEPAD_AXIS_DEADZONE) value = 0.0f;
-                }
-
-                controller.updateGamepadAxis(i, axis, value);
-            }
-
-            previousGamepadStates[i] = state;
-        }
+        mWindow->endFrame(controller, mGameViewport, mScreenSize);
     }
 
     for (auto& [bellotaIndex, bellotaPack] : mBellotas)
@@ -1127,7 +869,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
 void Canvas::CanvasImpl::close()
 {
-    glfwSetWindowShouldClose(mWindow->glfwWindow, true);
+    mWindow->requestClose();
 }
 
 void Canvas::CanvasImpl::replaceBellota(const BellotaId bellotaId, const Bellota& newBellota)
@@ -1146,29 +888,9 @@ void Canvas::CanvasImpl::replaceBellota(const BellotaId bellotaId, const Bellota
     bellotaPack.bellota = newBellota;
 }
 
-bool isInRange(int value, int min, int max)
-{
-    return min <= value and value <= max;
-}
-
-bool AABox::contains(int x_, int y_) const
-{
-    return
-        isInRange(x_, x, x + width) and
-        isInRange(y_, y, y + height);
-}
-
 ScreenSize getPrimaryMonitorSize()
 {
-    glfwInit();  // idempotent — safe if Canvas has already initialised it
-    const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
-    if (!mode)
-    {
-        spdlog::warn("getPrimaryMonitorSize: could not query primary monitor, returning default 1920x1080");
-        return { 1920, 1080 };
-    }
-    return { static_cast<unsigned int>(mode->width),
-             static_cast<unsigned int>(mode->height) };
+    return SelectedWindowBackend::getPrimaryMonitorSize();
 }
 
 }
