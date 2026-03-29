@@ -962,7 +962,8 @@ void VulkanBackend::freeTexture(DTexture dtexture)
     if (it == mTextures.end()) return;
 
     VulkanTexture& tex = it->second;
-    mFrames[mCurrentFrame].pendingTextureDeletions.push_back({
+    const int lastSubmittedSlot = (mCurrentFrame - 1 + MAX_FRAMES_IN_FLIGHT) % MAX_FRAMES_IN_FLIGHT;
+    mFrames[lastSubmittedSlot].pendingTextureDeletions.push_back({
         tex.descriptorSet,
         tex.sampler,
         tex.imageView,
@@ -1039,11 +1040,14 @@ void VulkanBackend::freeMesh(DMesh dmesh)
     if (it == mMeshes.end()) return;
 
     VulkanMesh& mesh = it->second;
-    // Defer destruction: the buffers may still be referenced by an in-flight
-    // command buffer from a previous frame. Queue them for the current frame slot;
-    // they will be destroyed at the start of beginFrame() for this slot once the
-    // GPU fence confirms that submission has completed.
-    FrameData& frame = mFrames[mCurrentFrame];
+    // Defer destruction into the slot of the most recently SUBMITTED frame.
+    // That slot's fence covers the last GPU submission, so by the time beginFrame()
+    // comes back to this slot it has waited for all in-flight work to complete.
+    // Using mCurrentFrame directly is wrong when free is called from processInputs()
+    // (before beginFrame), because mCurrentFrame already points to the upcoming slot
+    // whose fence only covers work two frames back — not the just-submitted frame.
+    const int lastSubmittedSlot = (mCurrentFrame - 1 + MAX_FRAMES_IN_FLIGHT) % MAX_FRAMES_IN_FLIGHT;
+    FrameData& frame = mFrames[lastSubmittedSlot];
     frame.pendingBufferDeletions.push_back({mesh.vertexBuffer, mesh.vertexAlloc});
     frame.pendingBufferDeletions.push_back({mesh.indexBuffer,  mesh.indexAlloc});
     mMeshes.erase(it);
@@ -1194,7 +1198,8 @@ void VulkanBackend::freeRenderTarget(DRenderTarget renderTarget, DTexture proxyT
     }
 
     VulkanRenderTarget& rt = rtIt->second;
-    mFrames[mCurrentFrame].pendingRenderTargetDeletions.push_back({
+    const int lastSubmittedSlot = (mCurrentFrame - 1 + MAX_FRAMES_IN_FLIGHT) % MAX_FRAMES_IN_FLIGHT;
+    mFrames[lastSubmittedSlot].pendingRenderTargetDeletions.push_back({
         proxyDescriptorSet, proxySampler,
         rt.framebuffer,
         rt.colorView, rt.depthView,
