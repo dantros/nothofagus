@@ -36,11 +36,59 @@ int main()
 
     auto spriteId = canvas.addBellota({{spritePos, spriteScale}, spriteTexId});
 
+    // Screenshot thumbnail constants.
+    constexpr int   borderSize                  = 5;
+    constexpr float thumbnailScale              = 0.2f;
+    constexpr float screenshotDisplayDurationMs = 2000.0f;
+
     // Screenshot thumbnail state.
     std::optional<Nothofagus::BellotaId> screenshotBellotaId;
     std::optional<Nothofagus::BellotaId> screenshotFrameBellotaId;
-    float screenshotTimer = 0.0f;
-    constexpr float screenshotDisplayDurationMs = 2000.0f;
+    float                  screenshotTimer    = 0.0f;
+    Nothofagus::ScreenSize frameBuiltForSize  = {0, 0};
+    glm::vec2              thumbnailPos       = {0.0f, 0.0f};
+
+    // Builds (or rebuilds) the persistent frame bellota for the current canvas resolution.
+    // The frame is a white ring with a transparent interior. It is kept hidden (opacity 0)
+    // until a screenshot is captured and shown again (opacity 1) while the thumbnail is displayed.
+    // If the canvas resolution changed since the last build, the old bellota is replaced.
+    auto ensureFrame = [&]()
+    {
+        const Nothofagus::ScreenSize currentSize = canvas.screenSize();
+        if (screenshotFrameBellotaId &&
+            frameBuiltForSize.width  == currentSize.width &&
+            frameBuiltForSize.height == currentSize.height)
+            return;
+
+        if (screenshotFrameBellotaId)
+        {
+            canvas.removeBellota(*screenshotFrameBellotaId);
+            screenshotFrameBellotaId.reset();
+        }
+
+        const int sw = static_cast<int>(currentSize.width);
+        const int sh = static_cast<int>(currentSize.height);
+        const int bw = sw + borderSize * 2;
+        const int bh = sh + borderSize * 2;
+
+        Nothofagus::TextureData frameData(bw, bh, 1);
+        auto frameSpan = frameData.getDataSpan();
+        std::fill(frameSpan.begin(), frameSpan.end(), std::uint8_t{255});
+        for (int row = borderSize; row < bh - borderSize; ++row)
+        {
+            std::uint8_t* interiorRow = frameSpan.data() + row * bw * 4 + borderSize * 4;
+            std::fill(interiorRow, interiorRow + (bw - borderSize * 2) * 4, std::uint8_t{0});
+        }
+
+        const float thumbnailHalfW = bw * thumbnailScale / 2.0f;
+        const float thumbnailHalfH = bh * thumbnailScale / 2.0f;
+        thumbnailPos = {static_cast<float>(sw) - thumbnailHalfW - 2.0f, thumbnailHalfH + 2.0f};
+
+        auto frameTexId          = canvas.addTexture(Nothofagus::DirectTexture(std::move(frameData)));
+        screenshotFrameBellotaId = canvas.addBellota({{thumbnailPos, thumbnailScale}, frameTexId, 2});
+        canvas.bellota(*screenshotFrameBellotaId).opacity() = 0.0f;
+        frameBuiltForSize = currentSize;
+    };
 
     auto update = [&](float dt)
     {
@@ -66,8 +114,7 @@ int main()
             {
                 canvas.removeBellota(*screenshotBellotaId);
                 screenshotBellotaId.reset();
-                canvas.removeBellota(*screenshotFrameBellotaId);
-                screenshotFrameBellotaId.reset();
+                canvas.bellota(*screenshotFrameBellotaId).opacity() = 0.0f;
             }
         }
 
@@ -81,14 +128,15 @@ int main()
     Nothofagus::Controller controller;
     controller.registerAction({Nothofagus::Key::SPACE, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
-        // Remove any existing thumbnail so its textures are garbage-collected.
+        // Remove any existing screenshot content so its texture is garbage-collected.
         if (screenshotBellotaId)
         {
             canvas.removeBellota(*screenshotBellotaId);
             screenshotBellotaId.reset();
-            canvas.removeBellota(*screenshotFrameBellotaId);
-            screenshotFrameBellotaId.reset();
         }
+
+        // Ensure the persistent frame bellota exists and matches the current resolution.
+        ensureFrame();
 
         // Capture the current frame at game resolution (canvas.screenSize()).
         // The returned DirectTexture owns its RGBA pixel data (top-to-bottom row order)
@@ -101,40 +149,12 @@ int main()
         //       data.width(), data.height());
         //   img.write("screenshot.png");
         Nothofagus::DirectTexture screenshot = canvas.takeScreenshot();
-        const int sw = screenshot.size().x;
-        const int sh = screenshot.size().y;
-        spdlog::info("Screenshot captured: {}x{} px", sw, sh);
+        spdlog::info("Screenshot captured: {}x{} px", screenshot.size().x, screenshot.size().y);
 
-        // The thumbnail is displayed at 20% of the canvas width (scale 0.2).
-        // At scale 0.2 one screen pixel = 5 texture pixels, so a 5-pixel white
-        // border appears as a clean 1-pixel outline on screen.
-        constexpr int   borderSize     = 5;
-        constexpr float thumbnailScale = 0.2f;
+        auto screenshotTexId = canvas.addTexture(screenshot);
+        screenshotBellotaId  = canvas.addBellota({{thumbnailPos, thumbnailScale}, screenshotTexId, 1});
 
-        const int bw = sw + borderSize * 2;
-        const int bh = sh + borderSize * 2;
-
-        // Build a border frame: opaque white ring with a transparent interior cutout.
-        Nothofagus::TextureData frameData(bw, bh, 1);
-        auto frameSpan = frameData.getDataSpan();
-        std::fill(frameSpan.begin(), frameSpan.end(), std::uint8_t{255});
-        for (int row = borderSize; row < bh - borderSize; ++row)
-        {
-            std::uint8_t* interiorRow = frameSpan.data() + row * bw * 4 + borderSize * 4;
-            std::fill(interiorRow, interiorRow + (bw - borderSize * 2) * 4, std::uint8_t{0});
-        }
-
-        // Display in the bottom-right corner, rendered on top of the scene.
-        const float     thumbnailHalfW = bw * thumbnailScale / 2.0f;
-        const float     thumbnailHalfH = bh * thumbnailScale / 2.0f;
-        const glm::vec2 thumbnailPos   = {128.0f - thumbnailHalfW - 2.0f, thumbnailHalfH + 2.0f};
-
-        auto screenshotTexId     = canvas.addTexture(screenshot);
-        screenshotBellotaId      = canvas.addBellota({{thumbnailPos, thumbnailScale}, screenshotTexId, 1});
-
-        auto frameTexId          = canvas.addTexture(Nothofagus::DirectTexture(std::move(frameData)));
-        screenshotFrameBellotaId = canvas.addBellota({{thumbnailPos, thumbnailScale}, frameTexId, 2});
-
+        canvas.bellota(*screenshotFrameBellotaId).opacity() = 1.0f;
         screenshotTimer = screenshotDisplayDurationMs;
     });
 
