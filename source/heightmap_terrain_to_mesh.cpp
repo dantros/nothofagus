@@ -4,19 +4,17 @@
 namespace Nothofagus
 {
 
-Mesh3D generateHeightmapTerrainMesh(const HeightmapTerrain& terrain)
+Mesh3D generateHeightmapTerrainMesh(const Bellota& bellota, const DirectTexture& heightTexture)
 {
-    const std::size_t rows         = terrain.rows();
-    const std::size_t columns      = terrain.columns();
-    const float       worldWidth   = terrain.worldWidth();
-    const float       worldDepth   = terrain.worldDepth();
-    const float       maximumHeight = terrain.maximumHeight();
-    const auto&       heights      = terrain.heights();
+    const std::size_t columns      = static_cast<std::size_t>(heightTexture.size().x);
+    const std::size_t rows         = static_cast<std::size_t>(heightTexture.size().y);
+    const glm::vec3   scale        = bellota.transform3d().scale();
+    const float       worldWidth   = scale.x;
+    const float       maximumHeight = scale.y;
+    const float       worldDepth   = scale.z;
 
     debugCheck(rows >= 2,    "HeightmapTerrain requires at least 2 rows");
     debugCheck(columns >= 2, "HeightmapTerrain requires at least 2 columns");
-    debugCheck(heights.size() == rows * columns,
-               "HeightmapTerrain heights size must equal rows * columns");
 
     Mesh3D mesh;
     mesh.vertices.reserve(rows * columns * 5);
@@ -29,7 +27,7 @@ Mesh3D generateHeightmapTerrainMesh(const HeightmapTerrain& terrain)
         {
             const float x = static_cast<float>(col) / static_cast<float>(columns - 1) * worldWidth;
             const float z = static_cast<float>(row) / static_cast<float>(rows    - 1) * worldDepth;
-            const float y = heights[row * columns + col] * maximumHeight;
+            const float y = heightTexture.getFloat(col, row) * maximumHeight;
             const float u = static_cast<float>(col) / static_cast<float>(columns - 1);
             const float v = static_cast<float>(row) / static_cast<float>(rows    - 1);
 

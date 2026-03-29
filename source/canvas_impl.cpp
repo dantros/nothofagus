@@ -492,40 +492,29 @@ const Texture& Canvas::CanvasImpl::texture(TextureId textureId) const
 Camera& Canvas::CanvasImpl::camera()             { return mCamera; }
 const Camera& Canvas::CanvasImpl::camera() const { return mCamera; }
 
-HeightmapTerrainId Canvas::CanvasImpl::addHeightmapTerrain(const HeightmapTerrain& terrain)
+HeightmapTerrainId Canvas::CanvasImpl::addBellotaAsTerrain(BellotaId bellotaId, TextureId heightTextureId)
 {
-    HeightmapTerrainId newId{mHeightmapTerrains.add({terrain, std::nullopt, std::nullopt})};
-    // Track texture reference to prevent auto-GC.
-    TextureId colorTexId = terrain.colorTextureId();
-    mTerrainTextureRefCounts[colorTexId]++;
+    HeightmapTerrainId newId{mHeightmapTerrains.add({bellotaId, heightTextureId, std::nullopt, std::nullopt})};
+    // Height texture is not referenced by any bellota, so protect it from auto-GC explicitly.
+    mTerrainTextureRefCounts[heightTextureId]++;
     return newId;
 }
 
 void Canvas::CanvasImpl::removeHeightmapTerrain(HeightmapTerrainId terrainId)
 {
     HeightmapTerrainPack& pack = mHeightmapTerrains.at(terrainId.id);
-    TextureId colorTexId = pack.terrain.colorTextureId();
+    TextureId heightTextureId = pack.heightTextureId;
     pack.clear();
     mHeightmapTerrains.remove(terrainId.id);
 
-    // Decrement texture ref count.
-    auto it = mTerrainTextureRefCounts.find(colorTexId);
+    // Decrement height texture ref count.
+    auto it = mTerrainTextureRefCounts.find(heightTextureId);
     if (it != mTerrainTextureRefCounts.end())
     {
         it->second--;
         if (it->second == 0)
             mTerrainTextureRefCounts.erase(it);
     }
-}
-
-HeightmapTerrain& Canvas::CanvasImpl::heightmapTerrain(HeightmapTerrainId terrainId)
-{
-    return mHeightmapTerrains.at(terrainId.id).terrain;
-}
-
-const HeightmapTerrain& Canvas::CanvasImpl::heightmapTerrain(HeightmapTerrainId terrainId) const
-{
-    return mHeightmapTerrains.at(terrainId.id).terrain;
 }
 
 bool& Canvas::CanvasImpl::stats()
@@ -775,6 +764,7 @@ void initializeBellotas(BellotaContainer& bellotas, TextureContainer& textures,
 
 void initializeHeightmapTerrains(
     HeightmapTerrainContainer& terrains,
+    const BellotaContainer&    bellotas,
     const TextureContainer&    textures,
     unsigned int               shaderProgram)
 {
@@ -783,7 +773,11 @@ void initializeHeightmapTerrains(
         if (not terrainPack.isDirty())
             continue;
 
-        terrainPack.meshOpt = generateHeightmapTerrainMesh(terrainPack.terrain);
+        const Bellota& bellota           = bellotas.at(terrainPack.bellotaId.id).bellota;
+        const Texture& heightTexVariant  = textures.at(terrainPack.heightTextureId.id).texture.value();
+        const DirectTexture& heightTex   = std::get<DirectTexture>(heightTexVariant);
+
+        terrainPack.meshOpt = generateHeightmapTerrainMesh(bellota, heightTex);
 
         terrainPack.dmeshOpt = DMesh3D{};
         DMesh3D& dmesh3d = terrainPack.dmeshOpt.value();
@@ -791,7 +785,7 @@ void initializeHeightmapTerrains(
         setupVAO3D(dmesh3d, shaderProgram);
         dmesh3d.fillBuffers(terrainPack.meshOpt.value(), GL_STATIC_DRAW);
 
-        const TextureId colorTextureId = terrainPack.terrain.colorTextureId();
+        const TextureId colorTextureId = bellota.texture();
         const TexturePack& texturePack = textures.at(colorTextureId.id);
         debugCheck(texturePack.dtextureOpt.has_value(), "Terrain colour texture has not been initialized on GPU.");
         dmesh3d.texture = texturePack.dtextureOpt.value().texture;
@@ -1089,7 +1083,7 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         initializeTexturePacks(mTextures);
         initializeRenderTargets(mRenderTargets, mTextures);
         initializeBellotas(mBellotas, mTextures, mShaderProgram, mWorldBillboardShaderProgram);
-        initializeHeightmapTerrains(mHeightmapTerrains, mTextures, mTerrainShaderProgram);
+        initializeHeightmapTerrains(mHeightmapTerrains, mBellotas, mTextures, mTerrainShaderProgram);
         sortByDepthOffset(mBellotas, sortedBellotaPacks);
 
         glUseProgram(mShaderProgram);

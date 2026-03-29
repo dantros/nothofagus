@@ -1,6 +1,7 @@
 #include "texture.h"
 #include "check.h"
 #include <algorithm>
+#include <cstring>
 
 namespace Nothofagus
 {
@@ -153,6 +154,27 @@ glm::vec4 DirectTexture::color(const std::size_t i, const std::size_t j) const
 TextureData DirectTexture::generateTextureData() const
 {
     return mTextureData;
+}
+
+std::span<std::uint8_t> DirectTexture::getPixelSpan(std::size_t i, std::size_t j) const
+{
+    return mTextureData.getPixelSpan(i, j);
+}
+
+float DirectTexture::getFloat(std::size_t i, std::size_t j) const
+{
+    static_assert(sizeof(float) == TextureData::ColorDepth,
+        "float must be 32 bits to fit in one RGBA pixel slot");
+    float value;
+    std::memcpy(&value, mTextureData.getPixelSpan(i, j).data(), sizeof(float));
+    return value;
+}
+
+void DirectTexture::setFloat(std::size_t i, std::size_t j, float value)
+{
+    static_assert(sizeof(float) == TextureData::ColorDepth,
+        "float must be 32 bits to fit in one RGBA pixel slot");
+    std::memcpy(mTextureData.getPixelSpan(i, j).data(), &value, sizeof(float));
 }
 
 TextureData::TextureData(std::span<std::uint8_t> dataSpan, std::size_t width, std::size_t height, std::size_t layers):

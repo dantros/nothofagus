@@ -29,8 +29,9 @@ int main()
     // ── Heightmap: 16 × 16 grid with a central hill ───────────────────────────
     constexpr std::size_t gridRows    = 16;
     constexpr std::size_t gridColumns = 16;
-    std::vector<float> heights(gridRows * gridColumns, 0.0f);
 
+    // Build height DirectTexture: size = {columns, rows}, each pixel = one float
+    Nothofagus::DirectTexture heightTexture(glm::ivec2{static_cast<int>(gridColumns), static_cast<int>(gridRows)});
     for (std::size_t row = 0; row < gridRows; ++row)
     {
         for (std::size_t col = 0; col < gridColumns; ++col)
@@ -39,20 +40,26 @@ int main()
             const float normZ = static_cast<float>(row) / static_cast<float>(gridRows    - 1) - 0.5f;
             const float distance = std::sqrt(normX * normX + normZ * normZ);
             // Gaussian hill in the centre
-            heights[row * gridColumns + col] = std::exp(-distance * distance * 8.0f);
+            heightTexture.setFloat(col, row, std::exp(-distance * distance * 8.0f));
         }
     }
+    Nothofagus::TextureId heightTexId = canvas.addTexture(heightTexture);
 
-    Nothofagus::HeightmapTerrain terrain(
-        heights,
-        gridRows,
-        gridColumns,
-        /*worldWidth=*/  256.0f,
-        /*worldDepth=*/  240.0f,
-        /*maximumHeight=*/ 40.0f,
-        terrainTexId
+    // ── Terrain bellota: Transform3D scale = {worldWidth, maximumHeight, worldDepth} ──
+    constexpr float worldWidth    = 256.0f;
+    constexpr float maximumHeight =  40.0f;
+    constexpr float worldDepth    = 240.0f;
+
+    Nothofagus::BellotaId terrainBellotaId = canvas.addBellota(
+        Nothofagus::Bellota(
+            Nothofagus::Transform3D(
+                glm::vec3{0.0f, 0.0f, 0.0f},
+                glm::vec3{worldWidth, maximumHeight, worldDepth}
+            ),
+            terrainTexId
+        )
     );
-    canvas.addHeightmapTerrain(terrain);
+    canvas.addBellotaAsTerrain(terrainBellotaId, heightTexId);
 
     // ── Camera ─────────────────────────────────────────────────────────────────
     canvas.camera().position()           = {128.0f, 80.0f, 220.0f};
@@ -81,11 +88,12 @@ int main()
     // Helper: nearest-neighbour sample of the heightmap in world space
     auto sampleTerrainHeight = [&](float worldX, float worldZ) -> float
     {
-        const float normCol = worldX / 256.0f * static_cast<float>(gridColumns - 1);
-        const float normRow = worldZ / 240.0f * static_cast<float>(gridRows    - 1);
+        const auto& heightTex = std::get<Nothofagus::DirectTexture>(canvas.texture(heightTexId));
+        const float normCol = worldX / worldWidth * static_cast<float>(gridColumns - 1);
+        const float normRow = worldZ / worldDepth * static_cast<float>(gridRows    - 1);
         const int col = std::clamp(static_cast<int>(normCol), 0, static_cast<int>(gridColumns) - 1);
         const int row = std::clamp(static_cast<int>(normRow), 0, static_cast<int>(gridRows)    - 1);
-        return heights[row * gridColumns + col] * 40.0f;
+        return heightTex.getFloat(col, row) * maximumHeight;
     };
 
     // Initial character Y: terrain height at spawn + half sprite height so it sits on the surface.

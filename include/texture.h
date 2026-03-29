@@ -454,10 +454,33 @@ public:
 
     /**
      * @brief Generates the raw texture data for the texture.
-     * 
+     *
      * @return A `TextureData` object containing the raw texture data.
      */
     TextureData generateTextureData() const;
+
+    /**
+     * @brief Returns the raw byte span for pixel (i, j).
+     *
+     * Span length equals TextureData::ColorDepth (4 bytes).
+     */
+    std::span<std::uint8_t> getPixelSpan(std::size_t i, std::size_t j) const;
+
+    /**
+     * @brief Reads the pixel at (i, j) as a raw 32-bit float.
+     *
+     * The four RGBA bytes are reinterpreted as IEEE 754 single-precision float.
+     * Requires sizeof(float) == 4 (static_assert enforced).
+     */
+    float getFloat(std::size_t i, std::size_t j) const;
+
+    /**
+     * @brief Writes a raw 32-bit float into pixel (i, j).
+     *
+     * The float bits are stored directly into the four RGBA bytes of the pixel.
+     * Requires sizeof(float) == 4 (static_assert enforced).
+     */
+    void setFloat(std::size_t i, std::size_t j, float value);
 
 private:
     TextureData mTextureData;

@@ -163,24 +163,14 @@ const Texture& Canvas::texture(TextureId textureId) const
 Camera& Canvas::camera()             { return mCanvasImpl->camera(); }
 const Camera& Canvas::camera() const { return mCanvasImpl->camera(); }
 
-HeightmapTerrainId Canvas::addHeightmapTerrain(const HeightmapTerrain& terrain)
+HeightmapTerrainId Canvas::addBellotaAsTerrain(BellotaId bellotaId, TextureId heightTextureId)
 {
-    return mCanvasImpl->addHeightmapTerrain(terrain);
+    return mCanvasImpl->addBellotaAsTerrain(bellotaId, heightTextureId);
 }
 
 void Canvas::removeHeightmapTerrain(HeightmapTerrainId terrainId)
 {
     mCanvasImpl->removeHeightmapTerrain(terrainId);
-}
-
-HeightmapTerrain& Canvas::heightmapTerrain(HeightmapTerrainId terrainId)
-{
-    return mCanvasImpl->heightmapTerrain(terrainId);
-}
-
-const HeightmapTerrain& Canvas::heightmapTerrain(HeightmapTerrainId terrainId) const
-{
-    return mCanvasImpl->heightmapTerrain(terrainId);
 }
 
 bool& Canvas::stats()

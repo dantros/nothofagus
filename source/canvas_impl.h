@@ -120,10 +120,8 @@ public:
     Camera& camera();
     const Camera& camera() const;
 
-    HeightmapTerrainId addHeightmapTerrain(const HeightmapTerrain& terrain);
+    HeightmapTerrainId addBellotaAsTerrain(BellotaId bellotaId, TextureId heightTextureId);
     void removeHeightmapTerrain(HeightmapTerrainId terrainId);
-    HeightmapTerrain& heightmapTerrain(HeightmapTerrainId terrainId);
-    const HeightmapTerrain& heightmapTerrain(HeightmapTerrainId terrainId) const;
 
     /**
      * @brief Retrieves a Bellota by its ID.

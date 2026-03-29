@@ -69,7 +69,6 @@ add_library(nothofagus
     "source/animation_state.cpp"
     "source/camera.cpp"
     "source/dmesh3d.cpp"
-    "source/heightmap_terrain.cpp"
     "source/heightmap_terrain_to_mesh.cpp"
 
     # This is only required to show header files in the Visual Studio IDE solution browser

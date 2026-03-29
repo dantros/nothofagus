@@ -211,23 +211,23 @@ public:
     const Camera& camera() const;
 
     /**
-     * @brief Add a heightmap terrain to the scene.
-     * @param terrain The HeightmapTerrain to add.
-     * @return The ID of the added terrain.
+     * @brief Register an existing canvas bellota as a heightmap terrain.
+     *
+     * The bellota must have a Transform3D where scale = {worldWidth, maximumHeight, worldDepth}.
+     * The height texture must be a DirectTexture with size {columns, rows}; each pixel stores
+     * one float (written via DirectTexture::setFloat, read via DirectTexture::getFloat).
+     *
+     * @param bellotaId      ID of the bellota (must be world-space, i.e. have Transform3D).
+     * @param heightTextureId ID of the DirectTexture that holds the height data.
+     * @return The ID of the registered terrain.
      */
-    HeightmapTerrainId addHeightmapTerrain(const HeightmapTerrain& terrain);
+    HeightmapTerrainId addBellotaAsTerrain(BellotaId bellotaId, TextureId heightTextureId);
 
     /**
      * @brief Remove a heightmap terrain from the scene.
      * @param terrainId The ID of the terrain to remove.
      */
     void removeHeightmapTerrain(HeightmapTerrainId terrainId);
-
-    /**
-     * @brief Get a reference to a heightmap terrain by ID.
-     */
-    HeightmapTerrain& heightmapTerrain(HeightmapTerrainId terrainId);
-    const HeightmapTerrain& heightmapTerrain(HeightmapTerrainId terrainId) const;
 
     /**
      * @brief Start the canvas main loop with the default update function.
