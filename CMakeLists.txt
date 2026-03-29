@@ -76,10 +76,10 @@ if(NOTHOFAGUS_BACKEND_VULKAN)
     # Phase 2: add Vulkan backend sources here
 else()
     target_sources(nothofagus PRIVATE
-        "source/opengl_backend.cpp"
-        "source/opengl_mesh.cpp"
-        "source/opengl_render_target.cpp"
-        "source/opengl_texture.cpp"
+        "source/backends/opengl_backend.cpp"
+        "source/backends/opengl_mesh.cpp"
+        "source/backends/opengl_render_target.cpp"
+        "source/backends/opengl_texture.cpp"
     )
 endif()
 set_property(TARGET nothofagus PROPERTY CXX_STANDARD 20)
