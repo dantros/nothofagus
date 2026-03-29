@@ -31,9 +31,10 @@ public:
     GlfwBackend(const GlfwBackend&)            = delete;
     GlfwBackend& operator=(const GlfwBackend&) = delete;
 
-    void initImGui(float imguiFontSize, const void* fontData, int fontDataLen);
+    void initImGuiPlatform();
 
     float contentScale() const { return mContentScale; }
+    void* nativeHandle() const { return static_cast<void*>(mGlfwWindow); }
 
     void beginSession(Controller& controller);
 

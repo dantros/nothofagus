@@ -6,6 +6,7 @@
 #include "render_target_container.h"
 #include "texture_usage_monitor.h"
 #include "aa_box.h"
+#include "backends/render_backend_select.h"
 #include <vector>
 #include <utility>
 
@@ -15,7 +16,7 @@ namespace Nothofagus
 /**
  * @class Canvas::CanvasImpl
  * @brief Implementation of the Canvas class, responsible for managing the actual window, textures, Bellotas, and rendering.
- * 
+ *
  * This class encapsulates the low-level details of the Canvas, such as handling textures, Bellotas, and the OpenGL context.
  * It provides methods to manage graphical objects, set window properties, and handle the main rendering loop.
  */
@@ -141,7 +142,7 @@ public:
      * @return A const reference to the Texture object.
      */
     const Texture& texture(TextureId textureId) const;
-    
+
     /**
      * @brief Retrieves a TextureArray by its ID.
      * @param textureId The ID of the TextureArray.
@@ -198,7 +199,7 @@ private:
     /// RTT passes queued by renderTo() during the update callback, executed before the main render.
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
 
-    unsigned int mShaderProgram; ///< The OpenGL shader program for rendering.
+    ActiveBackend mBackend; ///< GPU rendering backend (compile-time selected).
 
     bool mStats; ///< Flag to indicate whether stats should be displayed.
 

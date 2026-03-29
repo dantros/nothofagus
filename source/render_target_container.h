@@ -15,14 +15,8 @@ struct RenderTargetPack
 
     bool isDirty() const { return not dRenderTargetOpt.has_value(); }
 
-    void clear()
-    {
-        if (dRenderTargetOpt.has_value())
-        {
-            dRenderTargetOpt.value().clear();
-            dRenderTargetOpt = std::nullopt;
-        }
-    }
+    // GPU cleanup is done externally via the backend before calling clear().
+    void clear() { dRenderTargetOpt = std::nullopt; }
 };
 
 using RenderTargetContainer = IndexedContainer<RenderTargetPack>;

@@ -1,0 +1,70 @@
+#pragma once
+
+#include "render_backend.h"
+#include "opengl_mesh.h"
+#include "opengl_texture.h"
+#include "opengl_render_target.h"
+#include <unordered_map>
+#include <string>
+
+namespace Nothofagus
+{
+
+class OpenGLBackend
+{
+public:
+    void initialize(void* nativeWindowHandle, glm::ivec2 canvasSize);
+    void shutdown();
+    void initImGuiRenderer();
+
+    DTexture      uploadTexture(const Texture& texture,
+                                TextureSampleMode minFilter,
+                                TextureSampleMode magFilter);
+    void          freeTexture(DTexture texture);
+    DMesh         uploadMesh(const Mesh& mesh);
+    void          freeMesh(DMesh mesh);
+    DRenderTarget createRenderTarget(glm::ivec2 size);
+    DTexture      getRenderTargetTexture(DRenderTarget renderTarget);
+    void          freeRenderTarget(DRenderTarget renderTarget, DTexture proxyTexture);
+
+    void beginFrame(glm::vec3 clearColor, ViewportRect gameViewport,
+                    int framebufferWidth, int framebufferHeight);
+    void imguiNewFrame();
+    void beginRttPass(DRenderTarget renderTarget, glm::vec4 clearColor);
+    void endRttPass();
+    void beginMainPass(ViewportRect gameViewport);
+    void drawSprite(DMesh mesh, DTexture texture, const SpriteDrawParams& params);
+    void endFrame(ImDrawData* imguiData,
+                  int framebufferWidth, int framebufferHeight);
+    ScreenshotPixels takeScreenshot(ViewportRect gameViewport, glm::ivec2 gameSize) const;
+
+    /// Allow canvas_impl to update a texture's filter parameters directly after upload.
+    void setTextureMinFilter(DTexture texture, TextureSampleMode mode);
+    void setTextureMagFilter(DTexture texture, TextureSampleMode mode);
+
+private:
+    unsigned int mShaderProgram = 0;
+
+    struct BellotaShaderUniforms
+    {
+        int transform     = -1;
+        int layerIndex    = -1;
+        int tintColor     = -1;
+        int tintIntensity = -1;
+        int opacity       = -1;
+    } mUniforms;
+
+    std::unordered_map<std::size_t, OpenGLMesh>         mMeshes;
+    std::unordered_map<std::size_t, OpenGLTexture>      mTextures;
+    std::unordered_map<std::size_t, OpenGLRenderTarget> mRenderTargets;
+    std::size_t mNextId = 0;
+
+    unsigned int compileShader(unsigned int type, const std::string& source);
+    unsigned int createShaderProgram(unsigned int vertexShader, unsigned int fragmentShader);
+    void setupVAO(OpenGLMesh& glMesh);
+};
+
+static_assert(RenderBackend<OpenGLBackend>,
+    "OpenGLBackend does not satisfy the RenderBackend concept");
+
+} // namespace Nothofagus
