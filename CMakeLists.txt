@@ -47,15 +47,14 @@ add_subdirectory("third_party/imgui_cmake")
 file(GLOB_RECURSE NOTHOFAGUS_SOURCE_HEADERS "source/*.h")
 file(GLOB_RECURSE NOTHOFAGUS_PUBLIC_HEADERS "include/*.h")
 
+option(NOTHOFAGUS_BACKEND_VULKAN "Use Vulkan backend instead of OpenGL" OFF)
+
 add_library(nothofagus
     "source/canvas.cpp"
     "source/canvas_impl.cpp"
     ${NOTHOFAGUS_BACKEND_SRC}
     "source/bellota_to_mesh.cpp"
     "source/mesh.cpp"
-    "source/dmesh.cpp"
-    "source/dtexture.cpp"
-    "source/drender_target.cpp"
     "source/transform.cpp"
     "source/texture.cpp"
     "source/texture_usage_monitor.cpp"
@@ -71,6 +70,18 @@ add_library(nothofagus
     ${NOTHOFAGUS_SOURCE_HEADERS}
     ${NOTHOFAGUS_PUBLIC_HEADERS}
 )
+
+if(NOTHOFAGUS_BACKEND_VULKAN)
+    target_compile_definitions(nothofagus PRIVATE NOTHOFAGUS_BACKEND_VULKAN)
+    # Phase 2: add Vulkan backend sources here
+else()
+    target_sources(nothofagus PRIVATE
+        "source/opengl_backend.cpp"
+        "source/opengl_mesh.cpp"
+        "source/opengl_render_target.cpp"
+        "source/opengl_texture.cpp"
+    )
+endif()
 set_property(TARGET nothofagus PROPERTY CXX_STANDARD 20)
 target_include_directories(nothofagus PRIVATE
     "include"

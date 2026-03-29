@@ -25,10 +25,7 @@ concept WindowBackend = requires(
     const ViewportRect& viewport,
     const ScreenSize& screenSize,
     std::size_t monitorIndex,
-    const AABox& windowedBox,
-    float floatArg,
-    const void* dataPtr,
-    int intArg)
+    const AABox& windowedBox)
 {
     // Session lifecycle
     { backend.beginSession(controller) } -> std::same_as<void>;
@@ -40,9 +37,11 @@ concept WindowBackend = requires(
     { backend.getFramebufferSize()                          } -> std::same_as<std::pair<int, int>>;
     { backend.getTime()                                     } -> std::convertible_to<float>;
 
-    // ImGui + DPI init (called once after glad is loaded)
-    { backend.initImGui(floatArg, dataPtr, intArg) } -> std::same_as<void>;
-    { backend.contentScale()                       } -> std::convertible_to<float>;
+    // ImGui platform init (called once; fonts and renderer init are handled separately)
+    { backend.initImGuiPlatform() } -> std::same_as<void>;
+    { backend.contentScale()      } -> std::convertible_to<float>;
+    // Returns the OS-level window handle (GLFWwindow* or SDL_Window*) as void*.
+    { backend.nativeHandle()      } -> std::same_as<void*>;
 
     // Window management
     { backend.getCurrentMonitor()              } -> std::same_as<std::size_t>;

@@ -1,10 +1,10 @@
-#include "drender_target.h"
+#include "opengl_render_target.h"
 #include <glad/glad.h>
 
 namespace Nothofagus
 {
 
-void DRenderTarget::create(glm::ivec2 size)
+void OpenGLRenderTarget::create(glm::ivec2 size)
 {
     this->size = size;
 
@@ -33,17 +33,17 @@ void DRenderTarget::create(glm::ivec2 size)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void DRenderTarget::bind() const
+void OpenGLRenderTarget::bind() const
 {
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 }
 
-void DRenderTarget::unbind() const
+void OpenGLRenderTarget::unbind() const
 {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void DRenderTarget::clear() const
+void OpenGLRenderTarget::clear() const
 {
     glDeleteFramebuffers(1, &fbo);
     glDeleteTextures(1, &colorTexture);

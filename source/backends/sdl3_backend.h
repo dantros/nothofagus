@@ -21,9 +21,10 @@ public:
     Sdl3Backend(const Sdl3Backend&)            = delete;
     Sdl3Backend& operator=(const Sdl3Backend&) = delete;
 
-    void initImGui(float imguiFontSize, const void* fontData, int fontDataLen);
+    void initImGuiPlatform();
 
     float contentScale() const { return mContentScale; }
+    void* nativeHandle() const { return static_cast<void*>(mSdlWindow); }
 
     void beginSession(Controller& controller);
 

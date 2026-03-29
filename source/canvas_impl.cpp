@@ -2,8 +2,6 @@
 #include "canvas_impl.h"
 #include "check.h"
 #include "bellota_to_mesh.h"
-#include "dmesh.h"
-// #include "dmesh3D.h"
 #include "performance_monitor.h"
 #include "texture_container.h"
 #include "bellota_container.h"
@@ -12,12 +10,11 @@
 #include "mouse.h"
 #include "controller.h"
 #include "roboto_font.h"
-#include <glad/glad.h>
+#include "render_backend_select.h"
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_transform_2d.hpp>
 #include <glm/ext.hpp>
 #include <imgui.h>
-#include <backends/imgui_impl_opengl3.h>
 #include "backends/window_backend.h"
 #include <ciso646>
 #include <cmath>
@@ -58,49 +55,6 @@ static ViewportRect computeLetterboxViewport(int framebufferWidth, int framebuff
     return { viewportX, viewportY, viewportWidth, viewportHeight };
 }
 
-unsigned int compileShader(GLenum shaderType, const std::string& shaderSource)
-{
-    unsigned int shader = glCreateShader(shaderType);
-    const GLchar* shaderSource_c_str = static_cast<const GLchar*>(shaderSource.c_str());
-    glShaderSource(shader, 1, &shaderSource_c_str, nullptr);
-    glCompileShader(shader);
-
-    // Comprobar si la compilación fue exitosa
-    int success;
-    char infoLog[512];
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-    if (!success)
-    {
-        glGetShaderInfoLog(shader, 512, nullptr, infoLog);
-        spdlog::error("Shader compilation failed: {}", infoLog);
-        throw std::runtime_error("Shader compilation failed");
-    }
-
-    return shader;
-}
-
-unsigned int createShaderProgram(const unsigned int& vertexShader, const unsigned int& fragmentShader)
-{
-    // Crear programa de shader
-    unsigned int shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
-
-    // Comprobar si la vinculación fue exitosa
-    int success;
-    char infoLog[512];
-    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
-    if (!success)
-    {
-        glGetProgramInfoLog(shaderProgram, 512, nullptr, infoLog);
-        spdlog::error("Shader program linking failed: {}", infoLog);
-        throw std::runtime_error("Shader program linking failed");
-    }
-
-    return shaderProgram;
-}
-
 Canvas::CanvasImpl::CanvasImpl(
     const ScreenSize& screenSize,
     const std::string& title,
@@ -115,64 +69,32 @@ Canvas::CanvasImpl::CanvasImpl(
     mStats(false),
     mGameViewport{0, 0, 0, 0}
 {
-    // Initialize the window backend (creates window, GL context, loads GLAD)
+    // Initialize the window backend (creates window, GL/Vulkan context, loads GLAD for OpenGL)
     mWindow = std::make_unique<Window>(
         mTitle,
         static_cast<int>(mScreenSize.width  * mPixelSize),
         static_cast<int>(mScreenSize.height * mPixelSize)
     );
 
-    const std::string vertexShaderSource = R"(
-        #version 330 core
-        in vec2 position;
-        in vec2 texture;
-        out vec2 outTextureCoordinates;
-        uniform mat3 transform;
-        void main()
-        {
-            outTextureCoordinates = texture;
-            vec3 world2dPosition = transform * vec3(position.x, position.y, 1.0);
-            gl_Position = vec4(world2dPosition.x, world2dPosition.y, 0.0, 1.0);
-        }
-    )";
-    const std::string fragmentShaderSource = R"(
-        #version 330 core
-        in vec2 outTextureCoordinates;
-        out vec4 outColor;
-        uniform sampler2DArray textureSampler;
-        uniform int layerIndex;
-        uniform vec3 tintColor;
-        uniform float tintIntensity;
-        uniform float opacity;
-        void main()
-        {
-            vec4 textureSample = texture(textureSampler, vec3(outTextureCoordinates, layerIndex));
-            vec3 textureColor = textureSample.xyz;
-            float textureOpacity = textureSample.w;
-            vec3 blendColor = (tintColor * tintIntensity) + (textureColor * (1 - tintIntensity));
-            outColor = vec4(blendColor, textureOpacity * opacity);
-        }
-    )";
+    // ImGui context must be created before platform/renderer bindings.
+    ImGui::CreateContext();
+    ImGui::StyleColorsDark();
 
-    // build and compile our shader program
+    // ImGui platform init (GLFW or SDL3 side).
+    mWindow->initImGuiPlatform();
 
-    unsigned int vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderSource);
-    unsigned int fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSource);
+    // Render backend init (GPU resources, shader compilation, ImGui renderer binding).
+    mBackend.initialize(mWindow->nativeHandle(), {static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)});
+    mBackend.initImGuiRenderer();
 
-    mShaderProgram = createShaderProgram(vertexShader, fragmentShader);
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
-    // Enabling transparency
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_BLEND);
-
-    // ImGui setup (backend-specific init + font loading)
-    mWindow->initImGui(
-        imguiFontSize,
+    // Font loading — must happen after ImGui platform and renderer are initialized.
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.ScaleAllSizes(mWindow->contentScale());
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->AddFontFromMemoryTTF(
         assets_Roboto_VariableFont_wdth_wght_ttf,
-        assets_Roboto_VariableFont_wdth_wght_ttf_len
+        assets_Roboto_VariableFont_wdth_wght_ttf_len,
+        imguiFontSize * mWindow->contentScale()
     );
 }
 
@@ -243,8 +165,9 @@ BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)
 void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
 {
     BellotaPack& bellotaPackToRemove = mBellotas.at(bellotaId.id);
-    Bellota& bellotaToRemove = bellotaPackToRemove.bellota;
-    TextureId textureId = bellotaToRemove.texture();
+    TextureId textureId = bellotaPackToRemove.bellota.texture();
+    if (bellotaPackToRemove.dmeshOpt.has_value())
+        mBackend.freeMesh(bellotaPackToRemove.dmeshOpt.value());
     bellotaPackToRemove.clear();
     mBellotas.remove(bellotaId.id);
     mTextureUsageMonitor.removeEntry(bellotaId, textureId);
@@ -265,6 +188,8 @@ void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
     debugCheck(textureWasRemoved, "Texture is not in the unused set — still referenced by a bellota or already removed");
 
     TexturePack& texturePackToRemove = mTextures.at(textureId.id);
+    if (texturePackToRemove.dtextureOpt.has_value())
+        mBackend.freeTexture(texturePackToRemove.dtextureOpt.value());
     texturePackToRemove.clear();
 
     mTextures.remove(textureId.id);
@@ -301,8 +226,8 @@ void Canvas::CanvasImpl::markTextureAsDirty(const TextureId textureId)
     TexturePack& texturePack = mTextures.at(textureId.id);
     debugCheck(not texturePack.isProxy(), "markTextureAsDirty called on a render target proxy texture.");
 
-    // removing gpu content so it will be generated again with the new data.
-    // TODO: enable a fast path so the same GPU memory gets overwritten instead of a new one.
+    if (texturePack.dtextureOpt.has_value())
+        mBackend.freeTexture(texturePack.dtextureOpt.value());
     texturePack.clear();
 }
 
@@ -311,12 +236,7 @@ void Canvas::CanvasImpl::setTextureMinFilter(const TextureId textureId, TextureS
     TexturePack& texturePack = mTextures.at(textureId.id);
     texturePack.minFilter = mode;
     if (texturePack.dtextureOpt.has_value())
-    {
-        const GLint glFilter = (mode == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
-        glBindTexture(GL_TEXTURE_2D_ARRAY, texturePack.dtextureOpt.value().texture);
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, glFilter);
-        glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
-    }
+        mBackend.setTextureMinFilter(texturePack.dtextureOpt.value(), mode);
 }
 
 void Canvas::CanvasImpl::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)
@@ -324,12 +244,7 @@ void Canvas::CanvasImpl::setTextureMagFilter(const TextureId textureId, TextureS
     TexturePack& texturePack = mTextures.at(textureId.id);
     texturePack.magFilter = mode;
     if (texturePack.dtextureOpt.has_value())
-    {
-        const GLint glFilter = (mode == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
-        glBindTexture(GL_TEXTURE_2D_ARRAY, texturePack.dtextureOpt.value().texture);
-        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, glFilter);
-        glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
-    }
+        mBackend.setTextureMagFilter(texturePack.dtextureOpt.value(), mode);
 }
 
 RenderTargetId Canvas::CanvasImpl::addRenderTarget(ScreenSize size)
@@ -357,11 +272,17 @@ void Canvas::CanvasImpl::removeRenderTarget(RenderTargetId renderTargetId)
     RenderTargetPack& renderTargetPack = mRenderTargets.at(renderTargetId.id);
     const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
 
-    // Destroy the FBO (also frees the colorTexture GL handle).
+    if (renderTargetPack.dRenderTargetOpt.has_value())
+    {
+        const TexturePack& proxyPack = mTextures.at(proxyTexId.id);
+        debugCheck(proxyPack.dtextureOpt.has_value(), "Render target initialized but proxy texture not initialized");
+        mBackend.freeRenderTarget(
+            renderTargetPack.dRenderTargetOpt.value(),
+            proxyPack.dtextureOpt.value()
+        );
+    }
     renderTargetPack.clear();
 
-    // Detach the borrowed GL handle from the proxy TexturePack before removing it.
-    mTextures.at(proxyTexId.id).dtextureOpt = std::nullopt;
     mTextures.remove(proxyTexId.id);
 
     // Remove from usage monitor if currently unused (i.e. no bellotas reference it).
@@ -433,222 +354,13 @@ const bool& Canvas::CanvasImpl::stats() const
 
 DirectTexture Canvas::CanvasImpl::takeScreenshot() const
 {
-    const int gameWidth  = static_cast<int>(mScreenSize.width);
-    const int gameHeight = static_cast<int>(mScreenSize.height);
-
-    // Create a temporary FBO at game resolution.
-    // The game viewport in the framebuffer may be larger than the game canvas
-    // (e.g. a 128x96 canvas at 6x pixel scale produces a 768x576 framebuffer
-    // viewport), so we blit into a game-sized FBO to normalise the dimensions.
-    unsigned int tempFbo, tempColorTex;
-    glGenFramebuffers(1, &tempFbo);
-    glGenTextures(1, &tempColorTex);
-
-    glBindTexture(GL_TEXTURE_2D, tempColorTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, gameWidth, gameHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, tempFbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tempColorTex, 0);
-
-    // Blit the game viewport from the front buffer into the temp FBO, scaling
-    // it down to game resolution. Inverting the destination Y range converts
-    // from OpenGL's bottom-to-top row order to top-to-bottom order so the
-    // resulting pixel data is ready for conventional image use without an
-    // additional flip pass.
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-    glReadBuffer(GL_FRONT);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, tempFbo);
-    glBlitFramebuffer(
-        mGameViewport.x,
-        mGameViewport.y,
-        mGameViewport.x + mGameViewport.width,
-        mGameViewport.y + mGameViewport.height,
-        0, gameHeight, gameWidth, 0,    // inverted dest Y → flip to top-to-bottom
-        GL_COLOR_BUFFER_BIT, GL_LINEAR
-    );
-
-    // Read the (already top-to-bottom) pixels from the temp FBO.
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, tempFbo);
-    TextureData textureData(gameWidth, gameHeight, 1);
-    glReadPixels(0, 0, gameWidth, gameHeight, GL_RGBA, GL_UNSIGNED_BYTE, textureData.getDataSpan().data());
-
-    // Restore default framebuffer state and release temp objects.
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glReadBuffer(GL_BACK);
-    glDeleteFramebuffers(1, &tempFbo);
-    glDeleteTextures(1, &tempColorTex);
-
+    const glm::ivec2 gameSize{static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)};
+    ScreenshotPixels pixels = mBackend.takeScreenshot(mGameViewport, gameSize);
+    TextureData textureData(pixels.width, pixels.height, 1);
+    std::copy(pixels.data.begin(), pixels.data.end(), textureData.getDataSpan().begin());
     return DirectTexture(std::move(textureData));
 }
 
-void setupVAO(DMesh& dmesh, unsigned int shaderProgram)
-{
-    // Binding VAO to setup
-    glBindVertexArray(dmesh.vao);
-
-    // Binding buffers to the current VAO
-    glBindBuffer(GL_ARRAY_BUFFER, dmesh.vbo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dmesh.ebo);
-
-    constexpr unsigned int positionAttribLength = 2;
-    constexpr unsigned int textureAttribLength = 2;
-    constexpr unsigned int stride = positionAttribLength + textureAttribLength;
-
-    const auto positionAttribLocation = glGetAttribLocation(shaderProgram, "position");
-    const auto textureAttribLocation = glGetAttribLocation(shaderProgram, "texture");
-
-    glVertexAttribPointer(positionAttribLocation, positionAttribLength, GL_FLOAT, GL_FALSE, stride * sizeof(GLfloat), (void*)(0 * sizeof(GLfloat)));
-    glEnableVertexAttribArray(positionAttribLocation);  
-    
-    glVertexAttribPointer(textureAttribLocation, textureAttribLength, GL_FLOAT, GL_FALSE, stride * sizeof(GLfloat), (void*)(positionAttribLength * sizeof(GLfloat)));
-    glEnableVertexAttribArray(textureAttribLocation);
-
-    // Unbinding current VAO
-    glBindVertexArray(0);
-}
-
-GLuint textureArraySimpleSetup(const TextureData& textureData, TextureSampleMode minFilter, TextureSampleMode magFilter)
-{
-    // wrapMode: GL_REPEAT, GL_CLAMP_TO_EDGE
-    // filterMode: GL_LINEAR, GL_NEAREST
-
-    GLuint gpuTexture;
-    glGenTextures(1, &gpuTexture);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, gpuTexture);
-
-    GLuint internalFormat = GL_RGBA;
-    GLuint format = GL_RGBA;
-
-    std::span<std::uint8_t> textureDataSpan = textureData.getDataSpan();
-    std::uint8_t& firstTextureValue = textureDataSpan.front();
-    std::uint8_t* pointerToFirstTextureValue = &firstTextureValue;
-
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, internalFormat, textureData.width(), textureData.height(), textureData.layers(), 0, format, GL_UNSIGNED_BYTE, pointerToFirstTextureValue);
-
-    // texture wrapping params
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-    // texture filtering params
-    const GLint glMinFilter = (minFilter == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
-    const GLint glMagFilter = (magFilter == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, glMinFilter);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, glMagFilter);
-
-    return gpuTexture;
-}
-
-void initializeTexturePacks(TextureContainer& textures)
-{
-    for (auto& [textureIndex, texturePack] : textures)
-    {
-        if (not texturePack.isDirty())
-            continue;
-
-        // Proxy entries (render target color attachments) are initialized separately.
-        if (texturePack.isProxy())
-            continue;
-
-        const Texture& texture = texturePack.texture.value();
-        TextureData textureData = std::visit(GenerateTextureDataVisitor(), texture);
-
-        texturePack.dtextureOpt = DTexture{ textureArraySimpleSetup(textureData, texturePack.minFilter, texturePack.magFilter) };
-    }
-}
-
-void initializeRenderTargets(RenderTargetContainer& renderTargets, TextureContainer& textures)
-{
-    for (auto& [renderTargetIndex, renderTargetPack] : renderTargets)
-    {
-        if (not renderTargetPack.isDirty())
-            continue;
-
-        DRenderTarget dRenderTarget;
-        dRenderTarget.create(renderTargetPack.renderTarget.mSize);
-        const unsigned int colorTexture = dRenderTarget.colorTexture;
-        renderTargetPack.dRenderTargetOpt = dRenderTarget;
-
-        // Wire the FBO color attachment into the proxy TexturePack so DMesh can sample it.
-        const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
-        textures.at(proxyTexId.id).dtextureOpt = DTexture{colorTexture};
-    }
-}
-
-void initializeBellotas(BellotaContainer& bellotas, TextureContainer& textures, unsigned int shaderProgram)
-{
-    for (auto& [bellotaIndex, bellotaPack] : bellotas)
-    {
-        if (not bellotaPack.isDirty())
-            continue;
-
-        const Bellota& bellota = bellotaPack.bellota;
-
-        bellotaPack.meshOpt = generateMesh(textures, bellota);
-
-        bellotaPack.dmeshOpt = DMesh();
-        DMesh& dmesh = bellotaPack.dmeshOpt.value();
-        dmesh.initBuffers();
-        setupVAO(dmesh, shaderProgram);
-        dmesh.fillBuffers(bellotaPack.meshOpt.value(), GL_STATIC_DRAW);
-
-        TextureId textureId = bellota.texture();
-        const TexturePack& texturePack = textures.at(textureId.id);
-
-        debugCheck(texturePack.dtextureOpt.has_value(), "Texture has not been initializad on GPU.");
-
-        const DTexture dtexture = texturePack.dtextureOpt.value();
-
-        dmesh.texture = dtexture.texture;
-    }
-}
-
-struct BellotaShaderUniforms
-{
-    GLint transform;
-    GLint layerIndex;
-    GLint tintColor;
-    GLint tintIntensity;
-    GLint opacity;
-};
-
-void drawBellotaPacks(
-    const std::vector<const BellotaPack*>& sortedPacks,
-    const glm::mat3& worldTransform,
-    const BellotaShaderUniforms& uniforms)
-{
-    for (const BellotaPack* packPtr : sortedPacks)
-    {
-        debugCheck(packPtr != nullptr, "invalid pointer to bellota pack.");
-        const Bellota& bellota = packPtr->bellota;
-
-        if (not bellota.visible())
-            continue;
-
-        debugCheck(packPtr->dmeshOpt.has_value(), "DMesh has not been initialized.");
-        const DMesh& dmesh = packPtr->dmeshOpt.value();
-        const glm::mat3 totalTransformMat = worldTransform * bellota.transform().toMat3();
-
-        if (packPtr->tintOpt != std::nullopt)
-        {
-            const Tint& tint = packPtr->tintOpt.value();
-            glUniform3f(uniforms.tintColor, tint.color.r, tint.color.g, tint.color.b);
-            glUniform1f(uniforms.tintIntensity, tint.intensity);
-        }
-        else
-        {
-            glUniform3f(uniforms.tintColor, 1.0f, 1.0f, 1.0f);
-            glUniform1f(uniforms.tintIntensity, 0.0f);
-        }
-        glUniform1f(uniforms.opacity, bellota.opacity());
-        glUniformMatrix3fv(uniforms.transform, 1, GL_FALSE, glm::value_ptr(totalTransformMat));
-        glUniform1i(uniforms.layerIndex, bellota.currentLayer());
-
-        dmesh.drawCall();
-    }
-}
 
 void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
@@ -668,16 +380,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         return glm::scale(worldTransformMat, worldScale);
     };
     glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
-
-    // clang off
-    const BellotaShaderUniforms bellotaShaderUniforms{
-        /*GLint transform;      */ glGetUniformLocation(mShaderProgram, "transform"),
-        /*GLint layerIndex;     */ glGetUniformLocation(mShaderProgram, "layerIndex"),
-        /*GLint tintColor;      */ glGetUniformLocation(mShaderProgram, "tintColor"),
-        /*GLint tintIntensity;  */ glGetUniformLocation(mShaderProgram, "tintIntensity"),
-        /*GLint opacity;        */ glGetUniformLocation(mShaderProgram, "opacity"),
-    };
-    //clang on
 
     PerformanceMonitor performanceMonitor(mWindow->getTime(), 0.5f);
 
@@ -708,6 +410,27 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         );
     };
 
+    // Helper: build SpriteDrawParams from a BellotaPack and world transform.
+    auto makeSpriteDrawParams = [](const BellotaPack& pack, const glm::mat3& worldTransform) -> SpriteDrawParams
+    {
+        const Bellota& bellota = pack.bellota;
+        const glm::mat3 totalTransform = worldTransform * bellota.transform().toMat3();
+        glm::vec3 tintColor{1.0f, 1.0f, 1.0f};
+        float tintIntensity = 0.0f;
+        if (pack.tintOpt.has_value())
+        {
+            tintColor     = pack.tintOpt.value().color;
+            tintIntensity = pack.tintOpt.value().intensity;
+        }
+        return SpriteDrawParams{
+            totalTransform,
+            static_cast<int>(bellota.currentLayer()),
+            tintColor,
+            tintIntensity,
+            bellota.opacity()
+        };
+    };
+
     ScreenSize currentScreenSize = mScreenSize;
 
     while (mWindow->isRunning())
@@ -721,21 +444,10 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
         mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, mScreenSize.width, mScreenSize.height);
 
-        // Clear entire framebuffer to black (fills the letterbox/pillarbox bands)
-        glViewport(0, 0, framebufferWidth, framebufferHeight);
-        glDisable(GL_SCISSOR_TEST);
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        // Clear game area only to the game background color
-        glViewport(mGameViewport.x, mGameViewport.y, mGameViewport.width, mGameViewport.height);
-        glScissor(mGameViewport.x, mGameViewport.y, mGameViewport.width, mGameViewport.height);
-        glEnable(GL_SCISSOR_TEST);
-        glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
 
         // Start the Dear ImGui frame
-        ImGui_ImplOpenGL3_NewFrame();
+        mBackend.imguiNewFrame();
         mWindow->newImGuiFrame();
         ImGui::NewFrame();
 
@@ -749,83 +461,101 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         }
 
         clearUnusedTextures();
-        initializeTexturePacks(mTextures);
-        initializeRenderTargets(mRenderTargets, mTextures);
-        initializeBellotas(mBellotas, mTextures, mShaderProgram);
-        sortByDepthOffset(mBellotas, sortedBellotaPacks);
 
-        glUseProgram(mShaderProgram);
+        // Lazy-initialize dirty GPU resources
+        for (auto& [textureIndex, texturePack] : mTextures)
+        {
+            if (texturePack.isDirty() && !texturePack.isProxy())
+            {
+                texturePack.dtextureOpt = mBackend.uploadTexture(
+                    texturePack.texture.value(), texturePack.minFilter, texturePack.magFilter);
+            }
+        }
+
+        for (auto& [renderTargetIndex, renderTargetPack] : mRenderTargets)
+        {
+            if (renderTargetPack.isDirty())
+            {
+                const glm::ivec2 renderTargetSize = renderTargetPack.renderTarget.mSize;
+                renderTargetPack.dRenderTargetOpt = mBackend.createRenderTarget(renderTargetSize);
+                const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
+                mTextures.at(proxyTexId.id).dtextureOpt =
+                    mBackend.getRenderTargetTexture(renderTargetPack.dRenderTargetOpt.value());
+            }
+        }
+
+        for (auto& [bellotaIndex, bellotaPack] : mBellotas)
+        {
+            if (bellotaPack.isDirty())
+            {
+                bellotaPack.meshOpt  = generateMesh(mTextures, bellotaPack.bellota);
+                bellotaPack.dmeshOpt = mBackend.uploadMesh(bellotaPack.meshOpt.value());
+            }
+        }
+
+        sortByDepthOffset(mBellotas, sortedBellotaPacks);
 
         // RTT pre-passes — render requested bellotas into their render targets
         // before drawing to the main framebuffer.
-        if (not mPendingRttPasses.empty())
+        for (auto& [renderTargetId, bellotaIds] : mPendingRttPasses)
         {
-            // Scissor test was enabled for the game-area clear above.
-            // Each RTT FBO uses its own coordinate space starting at (0,0), so a
-            // letterboxed/pillarboxed scissor rect (offset from the origin) would
-            // clip all draws and clears inside the render target.  Disable it here;
-            // it is restored with the correct game-viewport rect after the loop.
-            glDisable(GL_SCISSOR_TEST);
-            for (auto& [renderTargetId, bellotaIds] : mPendingRttPasses)
+            if (not mRenderTargets.contains(renderTargetId.id))
+                continue;
+
+            RenderTargetPack& renderTargetPack = mRenderTargets.at(renderTargetId.id);
+            if (not renderTargetPack.dRenderTargetOpt.has_value())
+                continue;
+
+            const DRenderTarget& dRenderTarget = renderTargetPack.dRenderTargetOpt.value();
+            const glm::vec4& clearColor = renderTargetPack.renderTarget.mClearColor;
+
+            mBackend.beginRttPass(dRenderTarget, clearColor);
+
+            const glm::ivec2& renderTargetSize = dRenderTarget.size;
+            glm::mat3 renderTargetWorldTransform(1.0f);
+            renderTargetWorldTransform = glm::translate(renderTargetWorldTransform, glm::vec2(-1.0f, -1.0f));
+            renderTargetWorldTransform = glm::scale(renderTargetWorldTransform,
+                glm::vec2(2.0f / renderTargetSize.x, 2.0f / renderTargetSize.y));
+
+            std::vector<const BellotaPack*> renderTargetSortedPacks;
+            for (const BellotaId bellotaId : bellotaIds)
             {
-                if (not mRenderTargets.contains(renderTargetId.id))
-                    continue;
-
-                RenderTargetPack& renderTargetPack = mRenderTargets.at(renderTargetId.id);
-                if (not renderTargetPack.dRenderTargetOpt.has_value())
-                    continue;
-
-                DRenderTarget& dRenderTarget = renderTargetPack.dRenderTargetOpt.value();
-                dRenderTarget.bind();
-                glViewport(0, 0, dRenderTarget.size.x, dRenderTarget.size.y);
-                const glm::vec4& clearColor = renderTargetPack.renderTarget.mClearColor;
-                glClearColor(clearColor.r, clearColor.g, clearColor.b, clearColor.a);
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-                glm::mat3 renderTargetWorldTransform(1.0f);
-                renderTargetWorldTransform = glm::translate(renderTargetWorldTransform, glm::vec2(-1.0f, -1.0f));
-                renderTargetWorldTransform = glm::scale(renderTargetWorldTransform, glm::vec2(2.0f / dRenderTarget.size.x, 2.0f / dRenderTarget.size.y));
-
-                std::vector<const BellotaPack*> renderTargetSortedPacks;
-                for (const BellotaId bellotaId : bellotaIds)
+                if (mBellotas.contains(bellotaId.id))
+                    renderTargetSortedPacks.push_back(&mBellotas.at(bellotaId.id));
+            }
+            std::sort(renderTargetSortedPacks.begin(), renderTargetSortedPacks.end(),
+                [](const BellotaPack* lhs, const BellotaPack* rhs)
                 {
-                    if (mBellotas.contains(bellotaId.id))
-                        renderTargetSortedPacks.push_back(&mBellotas.at(bellotaId.id));
+                    return lhs->bellota.depthOffset() < rhs->bellota.depthOffset();
                 }
-                std::sort(renderTargetSortedPacks.begin(), renderTargetSortedPacks.end(),
-                    [](const BellotaPack* lhs, const BellotaPack* rhs)
-                    {
-                        return lhs->bellota.depthOffset() < rhs->bellota.depthOffset();
-                    }
-                );
+            );
 
-                drawBellotaPacks(renderTargetSortedPacks, renderTargetWorldTransform, bellotaShaderUniforms);
-
-                dRenderTarget.unbind();
-            }
-
-            // Restore viewport and clear color to the main framebuffer values.
+            for (const BellotaPack* packPtr : renderTargetSortedPacks)
             {
-                auto [frameBufferWidth, frameBufferHeight] = mWindow->getFramebufferSize();
-                glViewport(0, 0, frameBufferWidth, frameBufferHeight);
-                glClearColor(mClearColor.x, mClearColor.y, mClearColor.z, 1.0f);
+                if (!packPtr->bellota.visible()) continue;
+                if (!packPtr->dmeshOpt.has_value()) continue;
+                const TexturePack& texturePack = mTextures.at(packPtr->bellota.texture().id);
+                if (!texturePack.dtextureOpt.has_value()) continue;
+                mBackend.drawSprite(packPtr->dmeshOpt.value(), texturePack.dtextureOpt.value(),
+                    makeSpriteDrawParams(*packPtr, renderTargetWorldTransform));
             }
-            mPendingRttPasses.clear();
+
+            mBackend.endRttPass();
         }
+        mPendingRttPasses.clear();
 
-        // Re-establish game viewport + scissor for the main draw pass.
-        // RTT passes bind their own FBOs and change the viewport; restoring here
-        // ensures correct letterboxed rendering whether or not RTT was used.
-        glViewport(mGameViewport.x, mGameViewport.y, mGameViewport.width, mGameViewport.height);
-        glScissor(mGameViewport.x, mGameViewport.y, mGameViewport.width, mGameViewport.height);
-        glEnable(GL_SCISSOR_TEST);
+        mBackend.beginMainPass(mGameViewport);
 
-        // drawing with OpenGL
-        drawBellotaPacks(sortedBellotaPacks, worldTransformMat, bellotaShaderUniforms);
-
-        // Restore full framebuffer viewport for ImGui (header, popups, stats)
-        glDisable(GL_SCISSOR_TEST);
-        glViewport(0, 0, framebufferWidth, framebufferHeight);
+        // Main draw pass
+        for (const BellotaPack* packPtr : sortedBellotaPacks)
+        {
+            if (!packPtr->bellota.visible()) continue;
+            if (!packPtr->dmeshOpt.has_value()) continue;
+            const TexturePack& texturePack = mTextures.at(packPtr->bellota.texture().id);
+            if (!texturePack.dtextureOpt.has_value()) continue;
+            mBackend.drawSprite(packPtr->dmeshOpt.value(), texturePack.dtextureOpt.value(),
+                makeSpriteDrawParams(*packPtr, worldTransformMat));
+        }
 
         if (mStats)
         {
@@ -838,33 +568,51 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
         }
 
         ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        mBackend.endFrame(ImGui::GetDrawData(), framebufferWidth, framebufferHeight);
 
         mWindow->endFrame(controller, mGameViewport, mScreenSize);
     }
 
+    // Teardown: free all GPU resources before shutdown.
     for (auto& [bellotaIndex, bellotaPack] : mBellotas)
     {
+        if (bellotaPack.dmeshOpt.has_value())
+            mBackend.freeMesh(bellotaPack.dmeshOpt.value());
         bellotaPack.clear();
     }
 
-    // Render targets must be cleared before textures: DRenderTarget::clear() deletes
-    // the colorTexture GL handle that the proxy TexturePack's dtextureOpt borrows.
+    // Render targets must be freed before textures: freeRenderTarget also removes the
+    // proxy entry from the backend's texture map (without calling glDeleteTextures on it),
+    // then deletes the FBO + color attachment in one call.
     for (auto& [renderTargetIndex, renderTargetPack] : mRenderTargets)
     {
         if (renderTargetPack.dRenderTargetOpt.has_value())
         {
             const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
             if (mTextures.contains(proxyTexId.id))
-                mTextures.at(proxyTexId.id).dtextureOpt = std::nullopt;
+            {
+                const TexturePack& proxyPack = mTextures.at(proxyTexId.id);
+                if (proxyPack.dtextureOpt.has_value())
+                {
+                    mBackend.freeRenderTarget(
+                        renderTargetPack.dRenderTargetOpt.value(),
+                        proxyPack.dtextureOpt.value()
+                    );
+                    mTextures.at(proxyTexId.id).dtextureOpt = std::nullopt;
+                }
+            }
         }
         renderTargetPack.clear();
     }
 
     for (auto& [textureIndex, texturePack] : mTextures)
     {
+        if (texturePack.dtextureOpt.has_value() && !texturePack.isProxy())
+            mBackend.freeTexture(texturePack.dtextureOpt.value());
         texturePack.clear();
     }
+
+    mBackend.shutdown();
 }
 
 void Canvas::CanvasImpl::close()

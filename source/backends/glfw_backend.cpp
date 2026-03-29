@@ -4,7 +4,6 @@
 #include "mouse.h"
 #include <imgui.h>
 #include <backends/imgui_impl_glfw.h>
-#include <backends/imgui_impl_opengl3.h>
 #include <spdlog/spdlog.h>
 #include <glm/vec2.hpp>
 #include <cmath>
@@ -127,18 +126,9 @@ GlfwBackend::~GlfwBackend()
     glfwTerminate();
 }
 
-void GlfwBackend::initImGui(float imguiFontSize, const void* fontData, int fontDataLen)
+void GlfwBackend::initImGuiPlatform()
 {
-    ImGui::CreateContext();
-    ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(mGlfwWindow, true);
-    ImGui_ImplOpenGL3_Init("#version 330");
-
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.ScaleAllSizes(mContentScale);
-    ImGuiIO& io = ImGui::GetIO();
-    io.Fonts->AddFontFromMemoryTTF(
-        const_cast<void*>(fontData), fontDataLen, imguiFontSize * mContentScale);
 }
 
 void GlfwBackend::beginSession(Controller& controller)
@@ -169,7 +159,9 @@ void GlfwBackend::endFrame(Controller& controller, const ViewportRect& viewport,
     mInputContext.viewport   = viewport;
     mInputContext.screenSize = screenSize;
 
+#if !defined(NOTHOFAGUS_BACKEND_VULKAN)
     glfwSwapBuffers(mGlfwWindow);
+#endif
     glfwPollEvents();
 
     constexpr float GAMEPAD_AXIS_DEADZONE = 0.1f;

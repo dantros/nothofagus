@@ -22,16 +22,8 @@ struct TexturePack
     bool isProxy() const { return not texture.has_value(); }
     bool isDirty() const { return not dtextureOpt.has_value(); }
 
-    void clear()
-    {
-        if (dtextureOpt.has_value())
-        {
-            // Proxy entries borrow the GL handle from DRenderTarget — do not delete it here.
-            if (not isProxy())
-                dtextureOpt.value().clear();
-            dtextureOpt = std::nullopt;
-        }
-    }
+    // GPU cleanup is done externally via the backend before calling clear().
+    void clear() { dtextureOpt = std::nullopt; }
 };
 
 using TextureContainer = IndexedContainer<TexturePack>;

@@ -5,7 +5,6 @@
 #include <glad/glad.h>
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
-#include <backends/imgui_impl_opengl3.h>
 #include <spdlog/spdlog.h>
 #include <glm/vec2.hpp>
 #include <cmath>
@@ -86,18 +85,9 @@ Sdl3Backend::~Sdl3Backend()
     SDL_Quit();
 }
 
-void Sdl3Backend::initImGui(float imguiFontSize, const void* fontData, int fontDataLen)
+void Sdl3Backend::initImGuiPlatform()
 {
-    ImGui::CreateContext();
-    ImGui::StyleColorsDark();
     ImGui_ImplSDL3_InitForOpenGL(mSdlWindow, mGlContext);
-    ImGui_ImplOpenGL3_Init("#version 330");
-
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.ScaleAllSizes(mContentScale);
-    ImGuiIO& io = ImGui::GetIO();
-    io.Fonts->AddFontFromMemoryTTF(
-        const_cast<void*>(fontData), fontDataLen, imguiFontSize * mContentScale);
 }
 
 void Sdl3Backend::beginSession(Controller& controller)
@@ -129,7 +119,9 @@ void Sdl3Backend::newImGuiFrame()
 
 void Sdl3Backend::endFrame(Controller& controller, const ViewportRect& viewport, const ScreenSize& screenSize)
 {
+#if !defined(NOTHOFAGUS_BACKEND_VULKAN)
     SDL_GL_SwapWindow(mSdlWindow);
+#endif
 
     constexpr float GAMEPAD_AXIS_DEADZONE = 0.1f;
 
