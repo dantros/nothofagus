@@ -38,6 +38,7 @@ docs
 
 # ides
 .vscode/
+.claude/
 
 # SCons cache file
 .sconsign.dblite
