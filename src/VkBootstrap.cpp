@@ -1568,17 +1568,11 @@ Result<uint32_t> Device::get_queue_index(QueueType type) const {
             break;
         case QueueType::compute:
             index = detail::get_separate_queue_index(queue_families, VK_QUEUE_COMPUTE_BIT, VK_QUEUE_TRANSFER_BIT);
-            if (index == detail::QUEUE_INDEX_MAX_VALUE) {
-                index = detail::get_first_queue_index(queue_families, VK_QUEUE_COMPUTE_BIT);
-                if (index == detail::QUEUE_INDEX_MAX_VALUE) return Result<uint32_t>{ QueueError::compute_unavailable };
-            }
+            if (index == detail::QUEUE_INDEX_MAX_VALUE) return Result<uint32_t>{ QueueError::compute_unavailable };
             break;
         case QueueType::transfer:
             index = detail::get_separate_queue_index(queue_families, VK_QUEUE_TRANSFER_BIT, VK_QUEUE_COMPUTE_BIT);
-            if (index == detail::QUEUE_INDEX_MAX_VALUE) {
-                index = detail::get_first_queue_index(queue_families, VK_QUEUE_TRANSFER_BIT);
-                if (index == detail::QUEUE_INDEX_MAX_VALUE) return Result<uint32_t>{ QueueError::transfer_unavailable };
-            }
+            if (index == detail::QUEUE_INDEX_MAX_VALUE) return Result<uint32_t>{ QueueError::transfer_unavailable };
             break;
         default:
             return Result<uint32_t>{ QueueError::invalid_queue_family_index };
@@ -1615,22 +1609,6 @@ Result<VkQueue> Device::get_dedicated_queue(QueueType type) const {
     VkQueue out_queue;
     internal_table.fp_vkGetDeviceQueue(device, index.value(), 0, &out_queue);
     return out_queue;
-}
-
-Result<std::pair<VkQueue, uint32_t>> Device::get_queue_and_index(QueueType type) const {
-    auto index = get_queue_index(type);
-    if (!index.has_value()) return { index.error() };
-    VkQueue out_queue;
-    internal_table.fp_vkGetDeviceQueue(device, index.value(), 0, &out_queue);
-    return std::pair<VkQueue, uint32_t>(out_queue, index.value());
-}
-
-Result<std::pair<VkQueue, uint32_t>> Device::get_dedicated_queue_and_index(QueueType type) const {
-    auto index = get_dedicated_queue_index(type);
-    if (!index.has_value()) return { index.error() };
-    VkQueue out_queue;
-    internal_table.fp_vkGetDeviceQueue(device, index.value(), 0, &out_queue);
-    return std::pair<VkQueue, uint32_t>(out_queue, index.value());
 }
 
 // ---- Dispatch ---- //
@@ -1897,8 +1875,8 @@ SwapchainBuilder::SwapchainBuilder(Device const& device) {
     auto present = device.get_queue_index(QueueType::present);
     auto graphics = device.get_queue_index(QueueType::graphics);
     assert(graphics.has_value() && present.has_value() && "Graphics and Present queue indexes must be valid");
-    info.graphics_queue_index = graphics.value();
-    info.present_queue_index = present.value();
+    info.graphics_queue_index = present.value();
+    info.present_queue_index = graphics.value();
 }
 SwapchainBuilder::SwapchainBuilder(Device const& device, VkSurfaceKHR const surface) {
     info.physical_device = device.physical_device.physical_device;
