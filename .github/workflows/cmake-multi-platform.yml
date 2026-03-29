@@ -58,7 +58,7 @@ jobs:
       if: runner.os == 'Linux' && matrix.window_backend == 'SDL3'
       run: |
           sudo apt-get update
-          sudo apt-get install -y libx11-dev libxext-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev
+          sudo apt-get install -y libx11-dev libxext-dev libxcursor-dev libxi-dev libxrandr-dev libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libdbus-1-dev
 
     - name: Set reusable strings
       # Turn repeated input strings (such as the build output directory) into step outputs. These step outputs can be used throughout the workflow file.
