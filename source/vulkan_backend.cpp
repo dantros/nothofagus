@@ -335,6 +335,16 @@ void VulkanBackend::recreateSwapchain(GLFWwindow* window)
 void VulkanBackend::initialize(GLFWwindow* window, glm::ivec2 canvasSize)
 {
     // 1. Instance
+    // Disable Samsung Galaxy overlay implicit layers before the Vulkan loader
+    // enumerates them. They don't follow the VK_LAYER_ naming convention and the
+    // loader prints a direct warning to stderr for each one — those prints happen
+    // before any debug-messenger callback is active, so they can't be filtered
+    // there. VK_LOADER_LAYERS_DISABLE glob support requires loader 1.3.234+.
+#if defined(_WIN32)
+    _putenv_s("VK_LOADER_LAYERS_DISABLE", "*GalaxyOverlay*");
+#else
+    setenv("VK_LOADER_LAYERS_DISABLE", "*GalaxyOverlay*", 1);
+#endif
     vkb::InstanceBuilder instanceBuilder;
     instanceBuilder.set_app_name("Nothofagus").require_api_version(1, 1, 0);
 #ifndef NDEBUG
@@ -730,6 +740,39 @@ void VulkanBackend::initialize(GLFWwindow* window, glm::ivec2 canvasSize)
 }
 
 // ---------------------------------------------------------------------------
+// flushPendingDeletions()
+// ---------------------------------------------------------------------------
+
+void VulkanBackend::flushPendingDeletions(FrameData& frame)
+{
+    for (auto& pending : frame.pendingBufferDeletions)
+        vmaDestroyBuffer(mAllocator, pending.buffer, pending.allocation);
+    frame.pendingBufferDeletions.clear();
+
+    for (auto& pending : frame.pendingTextureDeletions)
+    {
+        vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &pending.descriptorSet);
+        vkDestroySampler(mDevice, pending.sampler, nullptr);
+        vkDestroyImageView(mDevice, pending.imageView, nullptr);
+        if (pending.image != VK_NULL_HANDLE)
+            vmaDestroyImage(mAllocator, pending.image, pending.allocation);
+    }
+    frame.pendingTextureDeletions.clear();
+
+    for (auto& pending : frame.pendingRenderTargetDeletions)
+    {
+        vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &pending.proxyDescriptorSet);
+        vkDestroySampler(mDevice, pending.proxySampler, nullptr);
+        vkDestroyFramebuffer(mDevice, pending.framebuffer, nullptr);
+        vkDestroyImageView(mDevice, pending.colorView, nullptr);
+        vkDestroyImageView(mDevice, pending.depthView, nullptr);
+        vmaDestroyImage(mAllocator, pending.colorImage, pending.colorAlloc);
+        vmaDestroyImage(mAllocator, pending.depthImage, pending.depthAlloc);
+    }
+    frame.pendingRenderTargetDeletions.clear();
+}
+
+// ---------------------------------------------------------------------------
 // shutdown()
 // ---------------------------------------------------------------------------
 
@@ -739,6 +782,12 @@ void VulkanBackend::shutdown()
 
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplGlfw_Shutdown();
+
+    // Flush deferred deletions from all frame slots — these were queued by
+    // freeTexture/freeMesh/freeRenderTarget during the last frames and never
+    // flushed because beginFrame() wasn't called again before shutdown.
+    for (auto& frame : mFrames)
+        flushPendingDeletions(frame);
 
     // Free all GPU resources
     for (auto& [id, mesh] : mMeshes)
@@ -913,12 +962,13 @@ void VulkanBackend::freeTexture(DTexture dtexture)
     if (it == mTextures.end()) return;
 
     VulkanTexture& tex = it->second;
-    vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &tex.descriptorSet);
-    vkDestroySampler(mDevice, tex.sampler, nullptr);
-    vkDestroyImageView(mDevice, tex.imageView, nullptr);
-    if (!tex.isProxy)
-        vmaDestroyImage(mAllocator, tex.image, tex.allocation);
-
+    mFrames[mCurrentFrame].pendingTextureDeletions.push_back({
+        tex.descriptorSet,
+        tex.sampler,
+        tex.imageView,
+        tex.isProxy ? VK_NULL_HANDLE : tex.image,
+        tex.isProxy ? nullptr         : tex.allocation
+    });
     mTextures.erase(it);
 }
 
@@ -1129,27 +1179,28 @@ DTexture VulkanBackend::getRenderTargetTexture(DRenderTarget renderTarget)
 
 void VulkanBackend::freeRenderTarget(DRenderTarget renderTarget, DTexture proxyTexture)
 {
-    // 1. Free the proxy texture entry — image is owned by the RT, so skip vmaDestroyImage
-    auto texIt = mTextures.find(proxyTexture.id);
-    if (texIt != mTextures.end())
-    {
-        VulkanTexture& proxy = texIt->second;
-        vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &proxy.descriptorSet);
-        vkDestroySampler(mDevice, proxy.sampler, nullptr);
-        // imageView is the render target's colorView — destroyed below with the RT
-        mTextures.erase(texIt);
-    }
-
-    // 2. Free the render target itself
     auto rtIt = mRenderTargets.find(renderTarget.id);
     if (rtIt == mRenderTargets.end()) return;
 
+    // Collect proxy texture fields — image is owned by the RT, not the texture entry
+    VkDescriptorSet proxyDescriptorSet = VK_NULL_HANDLE;
+    VkSampler       proxySampler       = VK_NULL_HANDLE;
+    auto texIt = mTextures.find(proxyTexture.id);
+    if (texIt != mTextures.end())
+    {
+        proxyDescriptorSet = texIt->second.descriptorSet;
+        proxySampler       = texIt->second.sampler;
+        mTextures.erase(texIt);
+    }
+
     VulkanRenderTarget& rt = rtIt->second;
-    vkDestroyFramebuffer(mDevice, rt.framebuffer, nullptr);
-    vkDestroyImageView(mDevice, rt.colorView, nullptr);
-    vkDestroyImageView(mDevice, rt.depthView, nullptr);
-    vmaDestroyImage(mAllocator, rt.colorImage, rt.colorAlloc);
-    vmaDestroyImage(mAllocator, rt.depthImage, rt.depthAlloc);
+    mFrames[mCurrentFrame].pendingRenderTargetDeletions.push_back({
+        proxyDescriptorSet, proxySampler,
+        rt.framebuffer,
+        rt.colorView, rt.depthView,
+        rt.colorImage, rt.colorAlloc,
+        rt.depthImage, rt.depthAlloc
+    });
     mRenderTargets.erase(rtIt);
 }
 
@@ -1169,11 +1220,9 @@ void VulkanBackend::beginFrame(
 
     vkWaitForFences(mDevice, 1, &frame.inFlight, VK_TRUE, UINT64_MAX);
 
-    // Safe to destroy buffers queued during the previous use of this frame slot —
+    // Safe to destroy resources queued during the previous use of this frame slot —
     // the fence above guarantees the GPU has finished executing that submission.
-    for (auto& pending : frame.pendingBufferDeletions)
-        vmaDestroyBuffer(mAllocator, pending.buffer, pending.allocation);
-    frame.pendingBufferDeletions.clear();
+    flushPendingDeletions(frame);
 
     VkResult acquireResult = vkAcquireNextImageKHR(
         mDevice, mSwapchain, UINT64_MAX, frame.imageAvailable, VK_NULL_HANDLE,

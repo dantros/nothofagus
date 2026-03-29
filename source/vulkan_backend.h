@@ -25,6 +25,30 @@ struct PendingBufferDeletion
     VmaAllocation allocation;
 };
 
+struct PendingTextureDeletion
+{
+    VkDescriptorSet descriptorSet;
+    VkSampler       sampler;
+    VkImageView     imageView;
+    VkImage         image;       // VK_NULL_HANDLE for proxy textures (image owned by RT)
+    VmaAllocation   allocation;  // nullptr for proxy textures
+};
+
+struct PendingRenderTargetDeletion
+{
+    // Proxy texture fields (descriptor set + sampler; image view is the RT's colorView)
+    VkDescriptorSet proxyDescriptorSet;
+    VkSampler       proxySampler;
+    // Render target fields
+    VkFramebuffer framebuffer;
+    VkImageView   colorView;
+    VkImageView   depthView;
+    VkImage       colorImage;
+    VmaAllocation colorAlloc;
+    VkImage       depthImage;
+    VmaAllocation depthAlloc;
+};
+
 struct FrameData
 {
     VkCommandBuffer commandBuffer  = VK_NULL_HANDLE;
@@ -32,9 +56,11 @@ struct FrameData
     VkSemaphore     renderFinished = VK_NULL_HANDLE;
     VkFence         inFlight       = VK_NULL_HANDLE;
 
-    // Buffers queued for deletion — flushed at the start of the next beginFrame()
+    // Resources queued for deletion — flushed at the start of the next beginFrame()
     // for this slot, after vkWaitForFences guarantees the GPU is done with them.
-    std::vector<PendingBufferDeletion> pendingBufferDeletions;
+    std::vector<PendingBufferDeletion>       pendingBufferDeletions;
+    std::vector<PendingTextureDeletion>      pendingTextureDeletions;
+    std::vector<PendingRenderTargetDeletion> pendingRenderTargetDeletions;
 };
 
 /// Push constant layout for sprite drawing.
@@ -147,6 +173,8 @@ private:
     std::size_t mActiveRttRenderTargetId = 0;
 
     // --- Private helpers ---
+    void flushPendingDeletions(FrameData& frame);
+
     VkCommandBuffer beginOneTimeCommandBuffer() const;
     void            endOneTimeCommandBuffer(VkCommandBuffer commandBuffer) const;
 
