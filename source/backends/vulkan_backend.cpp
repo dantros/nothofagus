@@ -329,6 +329,32 @@ void VulkanBackend::recreateSwapchain()
 
     createSwapchainDepthResources();
     createSwapchainFramebuffers();
+
+    // Resize per-swapchain-image semaphores if the image count changed.
+    VkSemaphoreCreateInfo semInfo{};
+    semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    const uint32_t newImageCount = static_cast<uint32_t>(mSwapchainImages.size());
+
+    auto resizeSemaphoreVector = [&](std::vector<VkSemaphore>& semaphores)
+    {
+        const uint32_t oldCount = static_cast<uint32_t>(semaphores.size());
+        if (newImageCount > oldCount)
+        {
+            semaphores.resize(newImageCount);
+            for (uint32_t i = oldCount; i < newImageCount; ++i)
+                vkCreateSemaphore(mDevice, &semInfo, nullptr, &semaphores[i]);
+        }
+        else if (newImageCount < oldCount)
+        {
+            for (uint32_t i = newImageCount; i < oldCount; ++i)
+                vkDestroySemaphore(mDevice, semaphores[i], nullptr);
+            semaphores.resize(newImageCount);
+        }
+    };
+
+    resizeSemaphoreVector(mImageAvailableSemaphores);
+    resizeSemaphoreVector(mRenderFinishedSemaphores);
+    mAcquireSemaphoreIndex = mAcquireSemaphoreIndex % newImageCount;
 }
 
 // ---------------------------------------------------------------------------
@@ -449,11 +475,23 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
     {
         if (vkAllocateCommandBuffers(mDevice, &cbAllocInfo, &frame.commandBuffer) != VK_SUCCESS)
             throw std::runtime_error("Failed to allocate command buffer");
-        if (vkCreateSemaphore(mDevice, &semInfo, nullptr, &frame.imageAvailable) != VK_SUCCESS ||
-            vkCreateSemaphore(mDevice, &semInfo, nullptr, &frame.renderFinished) != VK_SUCCESS ||
-            vkCreateFence(mDevice, &fenceInfo, nullptr, &frame.inFlight) != VK_SUCCESS)
+        if (vkCreateFence(mDevice, &fenceInfo, nullptr, &frame.inFlight) != VK_SUCCESS)
             throw std::runtime_error("Failed to create frame sync primitives");
     }
+
+    // Per-swapchain-image semaphores to avoid reusing a semaphore that the
+    // presentation engine still holds for a not-yet-re-acquired image.
+    // See https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html
+    const uint32_t imageCount = static_cast<uint32_t>(mSwapchainImages.size());
+    mImageAvailableSemaphores.resize(imageCount);
+    mRenderFinishedSemaphores.resize(imageCount);
+    for (uint32_t i = 0; i < imageCount; ++i)
+    {
+        if (vkCreateSemaphore(mDevice, &semInfo, nullptr, &mImageAvailableSemaphores[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(mDevice, &semInfo, nullptr, &mRenderFinishedSemaphores[i]) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create swapchain semaphore");
+    }
+    mAcquireSemaphoreIndex = 0;
 
     // 9. Depth format + swapchain depth image
     mDepthFormat = findDepthFormat();
@@ -843,11 +881,13 @@ void VulkanBackend::shutdown()
     vkDestroySwapchainKHR(mDevice, mSwapchain, nullptr);
 
     for (auto& frame : mFrames)
-    {
         vkDestroyFence(mDevice, frame.inFlight, nullptr);
-        vkDestroySemaphore(mDevice, frame.renderFinished, nullptr);
-        vkDestroySemaphore(mDevice, frame.imageAvailable, nullptr);
-    }
+    for (auto sem : mImageAvailableSemaphores)
+        vkDestroySemaphore(mDevice, sem, nullptr);
+    mImageAvailableSemaphores.clear();
+    for (auto sem : mRenderFinishedSemaphores)
+        vkDestroySemaphore(mDevice, sem, nullptr);
+    mRenderFinishedSemaphores.clear();
 
     vkDestroyCommandPool(mDevice, mCommandPool, nullptr);
     vmaDestroyAllocator(mAllocator);
@@ -1242,8 +1282,9 @@ void VulkanBackend::beginFrame(
     // the fence above guarantees the GPU has finished executing that submission.
     flushPendingDeletions(frame);
 
+    VkSemaphore acquireSemaphore = mImageAvailableSemaphores[mAcquireSemaphoreIndex];
     VkResult acquireResult = vkAcquireNextImageKHR(
-        mDevice, mSwapchain, UINT64_MAX, frame.imageAvailable, VK_NULL_HANDLE,
+        mDevice, mSwapchain, UINT64_MAX, acquireSemaphore, VK_NULL_HANDLE,
         &mCurrentSwapchainImageIndex);
 
     if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR)
@@ -1373,12 +1414,27 @@ void VulkanBackend::beginMainPass(ViewportRect gameViewport)
 
         VkClearRect clearRect{};
         // y from bottom (OpenGL) → y from top (Vulkan)
-        clearRect.rect.offset = {gameViewport.x, mCurrentFramebufferHeight - gameViewport.y - gameViewport.height};
-        clearRect.rect.extent = {static_cast<uint32_t>(gameViewport.width),
-                                 static_cast<uint32_t>(gameViewport.height)};
-        clearRect.baseArrayLayer = 0;
-        clearRect.layerCount     = 1;
-        vkCmdClearAttachments(mActiveCommandBuffer, 1, &clearAttachment, 1, &clearRect);
+        int32_t clearX = gameViewport.x;
+        int32_t clearY = mCurrentFramebufferHeight - gameViewport.y - gameViewport.height;
+        int32_t clearW = gameViewport.width;
+        int32_t clearH = gameViewport.height;
+
+        // Clamp to render area (swapchain extent) to avoid validation errors during resize.
+        const int32_t renderW = static_cast<int32_t>(mSwapchainExtent.width);
+        const int32_t renderH = static_cast<int32_t>(mSwapchainExtent.height);
+        if (clearX < 0) { clearW += clearX; clearX = 0; }
+        if (clearY < 0) { clearH += clearY; clearY = 0; }
+        if (clearX + clearW > renderW) clearW = renderW - clearX;
+        if (clearY + clearH > renderH) clearH = renderH - clearY;
+
+        if (clearW > 0 && clearH > 0)
+        {
+            clearRect.rect.offset    = {clearX, clearY};
+            clearRect.rect.extent    = {static_cast<uint32_t>(clearW), static_cast<uint32_t>(clearH)};
+            clearRect.baseArrayLayer = 0;
+            clearRect.layerCount     = 1;
+            vkCmdClearAttachments(mActiveCommandBuffer, 1, &clearAttachment, 1, &clearRect);
+        }
     }
 
     // Negative-height viewport: maps NDC y=-1 → bottom, y=+1 → top, matching
@@ -1448,22 +1504,24 @@ void VulkanBackend::endFrame(
 
     FrameData& frame = mFrames[mCurrentFrame];
 
+    VkSemaphore acquireSemaphore        = mImageAvailableSemaphores[mAcquireSemaphoreIndex];
+    VkSemaphore renderFinishedSemaphore = mRenderFinishedSemaphores[mCurrentSwapchainImageIndex];
     VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submitInfo{};
     submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.waitSemaphoreCount   = 1;
-    submitInfo.pWaitSemaphores      = &frame.imageAvailable;
+    submitInfo.pWaitSemaphores      = &acquireSemaphore;
     submitInfo.pWaitDstStageMask    = &waitStage;
     submitInfo.commandBufferCount   = 1;
     submitInfo.pCommandBuffers      = &frame.commandBuffer;
     submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores    = &frame.renderFinished;
+    submitInfo.pSignalSemaphores    = &renderFinishedSemaphore;
     vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, frame.inFlight);
 
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores    = &frame.renderFinished;
+    presentInfo.pWaitSemaphores    = &renderFinishedSemaphore;
     presentInfo.swapchainCount     = 1;
     presentInfo.pSwapchains        = &mSwapchain;
     presentInfo.pImageIndices      = &mCurrentSwapchainImageIndex;
@@ -1473,6 +1531,7 @@ void VulkanBackend::endFrame(
         recreateSwapchain();
 
     mCurrentFrame = (mCurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    mAcquireSemaphoreIndex = (mAcquireSemaphoreIndex + 1) % static_cast<uint32_t>(mImageAvailableSemaphores.size());
     mActiveCommandBuffer = VK_NULL_HANDLE;
 }
 

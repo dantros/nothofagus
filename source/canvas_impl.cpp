@@ -103,8 +103,50 @@ Canvas::CanvasImpl::CanvasImpl(
 
 Canvas::CanvasImpl::~CanvasImpl()
 {
-    // Window destructor handles backend cleanup (GL context, ImGui shutdown, etc.)
-    // Needs to be defined in the cpp file to avoid incomplete type errors due to the pimpl idiom for struct Window
+    // Needs to be defined in the cpp file to avoid incomplete type errors due to the pimpl idiom for struct Window.
+    // GPU resources must be freed while the GL/Vulkan context (owned by mWindow) is still alive.
+    // Member destructors run after this body, so mWindow is valid here.
+
+    // Free meshes
+    for (auto& [bellotaIndex, bellotaPack] : mBellotas)
+    {
+        if (bellotaPack.dmeshOpt.has_value())
+            mBackend.freeMesh(bellotaPack.dmeshOpt.value());
+        bellotaPack.clear();
+    }
+
+    // Render targets must be freed before textures: freeRenderTarget also removes the
+    // proxy entry from the backend's texture map (without calling glDeleteTextures on it),
+    // then deletes the FBO + color attachment in one call.
+    for (auto& [renderTargetIndex, renderTargetPack] : mRenderTargets)
+    {
+        if (renderTargetPack.dRenderTargetOpt.has_value())
+        {
+            const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
+            if (mTextures.contains(proxyTexId.id))
+            {
+                const TexturePack& proxyPack = mTextures.at(proxyTexId.id);
+                if (proxyPack.dtextureOpt.has_value())
+                {
+                    mBackend.freeRenderTarget(
+                        renderTargetPack.dRenderTargetOpt.value(),
+                        proxyPack.dtextureOpt.value()
+                    );
+                    mTextures.at(proxyTexId.id).dtextureOpt = std::nullopt;
+                }
+            }
+        }
+        renderTargetPack.clear();
+    }
+
+    for (auto& [textureIndex, texturePack] : mTextures)
+    {
+        if (texturePack.dtextureOpt.has_value() && !texturePack.isProxy())
+            mBackend.freeTexture(texturePack.dtextureOpt.value());
+        texturePack.clear();
+    }
+
+    mBackend.shutdown();
 }
 
 std::size_t Canvas::CanvasImpl::getCurrentMonitor() const
@@ -575,47 +617,6 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
 
         mWindow->endFrame(controller, mGameViewport, mScreenSize);
     }
-
-    // Teardown: free all GPU resources before shutdown.
-    for (auto& [bellotaIndex, bellotaPack] : mBellotas)
-    {
-        if (bellotaPack.dmeshOpt.has_value())
-            mBackend.freeMesh(bellotaPack.dmeshOpt.value());
-        bellotaPack.clear();
-    }
-
-    // Render targets must be freed before textures: freeRenderTarget also removes the
-    // proxy entry from the backend's texture map (without calling glDeleteTextures on it),
-    // then deletes the FBO + color attachment in one call.
-    for (auto& [renderTargetIndex, renderTargetPack] : mRenderTargets)
-    {
-        if (renderTargetPack.dRenderTargetOpt.has_value())
-        {
-            const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
-            if (mTextures.contains(proxyTexId.id))
-            {
-                const TexturePack& proxyPack = mTextures.at(proxyTexId.id);
-                if (proxyPack.dtextureOpt.has_value())
-                {
-                    mBackend.freeRenderTarget(
-                        renderTargetPack.dRenderTargetOpt.value(),
-                        proxyPack.dtextureOpt.value()
-                    );
-                    mTextures.at(proxyTexId.id).dtextureOpt = std::nullopt;
-                }
-            }
-        }
-        renderTargetPack.clear();
-    }
-
-    for (auto& [textureIndex, texturePack] : mTextures)
-    {
-        if (texturePack.dtextureOpt.has_value() && !texturePack.isProxy())
-            mBackend.freeTexture(texturePack.dtextureOpt.value());
-        texturePack.clear();
-    }
-
-    mBackend.shutdown();
 }
 
 void Canvas::CanvasImpl::close()
