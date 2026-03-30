@@ -174,6 +174,13 @@ if (${NOTHOFAGUS_BUILD_EXAMPLES})
     add_subdirectory("examples")
 endif()
 
+option(NOTHOFAGUS_BUILD_TESTS "Build Nothofagus tests?" OFF)
+if (${NOTHOFAGUS_BUILD_TESTS})
+    add_subdirectory("third_party/Catch2")
+    include(CTest)
+    add_subdirectory("tests")
+endif()
+
 option(NOTHOFAGUS_BUILD_DOCS "Build Nothofagus documentation? [WIP]" OFF)
 if (${NOTHOFAGUS_BUILD_DOCS})
     find_package(Doxygen QUIET)
