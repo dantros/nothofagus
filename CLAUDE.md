@@ -113,6 +113,34 @@ canvas.run([&](float dt) {
 });
 ```
 
+### Headless mode and manual tick
+
+Pass `headless = true` as the last constructor argument to create a canvas with a hidden window (no visible UI). Works with all backend combinations (GLFW/SDL3 + OpenGL/Vulkan). Use `tick()` to drive rendering one frame at a time with a caller-supplied delta time (in milliseconds) instead of the engine's internal loop.
+
+`run()` and `tick()` are mutually exclusive on a given Canvas — do not mix them.
+
+```cpp
+// Headless canvas — no window appears
+Nothofagus::Canvas canvas({15, 10}, "test", {0,0,0}, 1, 14, /*headless=*/true);
+
+// Add textures and bellotas as usual...
+auto texId = canvas.addTexture(tex);
+auto id    = canvas.addBellota({{{x, y}}, texId});
+
+// Drive the loop manually — dt in milliseconds
+for (int i = 0; i < 10; ++i)
+    canvas.tick(16.0f);
+
+// tick() with update callback and controller (same overloads as run()):
+canvas.tick(16.0f, [&](float dt) { /* update logic */ }, controller);
+canvas.tick(16.0f, [&](float dt) { /* update logic */ });
+
+// Screenshot works in headless mode:
+Nothofagus::DirectTexture screenshot = canvas.takeScreenshot();
+```
+
+GPU resources are cleaned up automatically in the `Canvas` destructor — no need to call `run()` or any explicit shutdown.
+
 ### Keyboard input
 ```cpp
 controller.registerAction({Key::W, DiscreteTrigger::Press}, [&]() { ... });
@@ -268,6 +296,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `test_keyboard.cpp` | Keyboard input handling |
 | `test_create_destroy.cpp` | Object lifecycle |
 | `hello_screenshot.cpp` | `takeScreenshot()` — capture frame as DirectTexture, display thumbnail |
+| `hello_headless.cpp` | Headless mode + `tick()` — no window, manual frame stepping, screenshot to terminal |
 
 ## Dependencies (third_party/ submodules)
 
