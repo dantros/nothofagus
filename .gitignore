@@ -45,3 +45,6 @@ docs
 
 # local config files
 imgui.ini
+
+# Generated SPIR-V shader binaries
+*.spv

@@ -9,6 +9,8 @@ Dependencies are vendored via `git subtree`. Use the commands below to update a 
 | `glm`        | https://github.com/g-truc/glm.git             |
 | `imgui`      | https://github.com/ocornut/imgui.git          |
 | `font8x8`    | https://github.com/dantros/font8x8.git        |
+| `vk-bootstrap` | https://github.com/charles-lunarg/vk-bootstrap |
+| `VulkanMemoryAllocator` | https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator |
 
 `glad` and `imgui_cmake` are custom local code — not managed by subtree.
 

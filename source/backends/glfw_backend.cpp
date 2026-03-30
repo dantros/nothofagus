@@ -94,9 +94,13 @@ static void glfwFramebufferSizeCallback(GLFWwindow* /*window*/, int /*width*/, i
 GlfwBackend::GlfwBackend(const std::string& title, int width, int height)
 {
     glfwInit();
+#if defined(NOTHOFAGUS_BACKEND_VULKAN)
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+#else
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#endif
 
     mGlfwWindow = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
     if (!mGlfwWindow)
@@ -110,6 +114,7 @@ GlfwBackend::GlfwBackend(const std::string& title, int width, int height)
     glfwGetWindowContentScale(mGlfwWindow, &scaleWidth, &scaleHeight);
     mContentScale = scaleWidth;
 
+#if !defined(NOTHOFAGUS_BACKEND_VULKAN)
     glfwMakeContextCurrent(mGlfwWindow);
     glfwSetFramebufferSizeCallback(mGlfwWindow, glfwFramebufferSizeCallback);
 
@@ -118,6 +123,9 @@ GlfwBackend::GlfwBackend(const std::string& title, int width, int height)
         spdlog::error("Failed to initialize GLAD");
         throw std::runtime_error("Failed to initialize GLAD");
     }
+#else
+    glfwSetFramebufferSizeCallback(mGlfwWindow, glfwFramebufferSizeCallback);
+#endif
 }
 
 GlfwBackend::~GlfwBackend()
@@ -128,7 +136,11 @@ GlfwBackend::~GlfwBackend()
 
 void GlfwBackend::initImGuiPlatform()
 {
+#if defined(NOTHOFAGUS_BACKEND_VULKAN)
+    ImGui_ImplGlfw_InitForVulkan(mGlfwWindow, true);
+#else
     ImGui_ImplGlfw_InitForOpenGL(mGlfwWindow, true);
+#endif
 }
 
 void GlfwBackend::beginSession(Controller& controller)
