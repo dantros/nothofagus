@@ -174,6 +174,13 @@ if (${NOTHOFAGUS_BUILD_EXAMPLES})
     add_subdirectory("examples")
 endif()
 
+option(NOTHOFAGUS_BUILD_TESTS "Build Nothofagus tests?" OFF)
+if (${NOTHOFAGUS_BUILD_TESTS})
+    add_subdirectory("third_party/Catch2")
+    include(CTest)
+    add_subdirectory("tests")
+endif()
+
 option(NOTHOFAGUS_BUILD_DOCS "Build Nothofagus documentation? [WIP]" OFF)
 if (${NOTHOFAGUS_BUILD_DOCS})
     find_package(Doxygen QUIET)
@@ -226,6 +233,7 @@ if (${NOTHOFAGUS_INSTALL})
             hello_render_to_texture
             hello_nested_render_targets
             hello_screenshot
+            hello_headless
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT NothofagusExamples_Runtime
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

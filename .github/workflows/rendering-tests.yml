@@ -1,0 +1,53 @@
+name: Rendering tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  rendering-tests:
+    runs-on: ubuntu-latest
+
+    env:
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      GOLDEN_DIR: ${{ github.workspace }}/tests/golden_mesa
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
+          libwayland-dev libxkbcommon-dev libegl1-mesa-dev \
+          mesa-utils libosmesa6-dev libgl1-mesa-dev xvfb
+
+    - name: Configure
+      run: >
+        cmake -B build
+        -DCMAKE_BUILD_TYPE=Release
+        -DNOTHOFAGUS_WINDOW_BACKEND=GLFW
+        -DNOTHOFAGUS_BUILD_TESTS=ON
+        -S ${{ github.workspace }}
+
+    - name: Build
+      run: cmake --build build --config Release --target rendering_tests
+
+    - name: Run tests against mesa golden files
+      run: xvfb-run --auto-servernum ./build/tests/rendering_tests
+
+    - name: Update mesa golden files if missing
+      if: failure()
+      run: |
+        echo "Tests failed — regenerating mesa golden files."
+        echo "If this is expected (rendering change), run locally:"
+        echo "  GOLDEN_DIR=tests/golden_mesa UPDATE_GOLDEN=1 xvfb-run ./build/tests/rendering_tests"
+        echo "Then commit the updated golden_mesa/ files."
+        xvfb-run --auto-servernum env UPDATE_GOLDEN=1 ./build/tests/rendering_tests
+        echo "--- Updated golden files ---"
+        ls -la tests/golden_mesa/

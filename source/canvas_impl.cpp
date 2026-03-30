@@ -60,20 +60,23 @@ Canvas::CanvasImpl::CanvasImpl(
     const std::string& title,
     const glm::vec3 clearColor,
     const unsigned int pixelSize,
-    const float imguiFontSize)
+    const float imguiFontSize,
+    bool headless)
     :
     mScreenSize(screenSize),
     mTitle(title),
     mClearColor(clearColor),
     mPixelSize(pixelSize),
     mStats(false),
+    mHeadless(headless),
     mGameViewport{0, 0, 0, 0}
 {
     // Initialize the window backend (creates window, GL/Vulkan context, loads GLAD for OpenGL)
     mWindow = std::make_unique<Window>(
         mTitle,
         static_cast<int>(mScreenSize.width  * mPixelSize),
-        static_cast<int>(mScreenSize.height * mPixelSize)
+        static_cast<int>(mScreenSize.height * mPixelSize),
+        !mHeadless // visible
     );
 
     // ImGui context must be created before platform/renderer bindings.
@@ -100,8 +103,50 @@ Canvas::CanvasImpl::CanvasImpl(
 
 Canvas::CanvasImpl::~CanvasImpl()
 {
-    // Window destructor handles backend cleanup (GL context, ImGui shutdown, etc.)
-    // Needs to be defined in the cpp file to avoid incomplete type errors due to the pimpl idiom for struct Window
+    // Needs to be defined in the cpp file to avoid incomplete type errors due to the pimpl idiom for struct Window.
+    // GPU resources must be freed while the GL/Vulkan context (owned by mWindow) is still alive.
+    // Member destructors run after this body, so mWindow is valid here.
+
+    // Free meshes
+    for (auto& [bellotaIndex, bellotaPack] : mBellotas)
+    {
+        if (bellotaPack.dmeshOpt.has_value())
+            mBackend.freeMesh(bellotaPack.dmeshOpt.value());
+        bellotaPack.clear();
+    }
+
+    // Render targets must be freed before textures: freeRenderTarget also removes the
+    // proxy entry from the backend's texture map (without calling glDeleteTextures on it),
+    // then deletes the FBO + color attachment in one call.
+    for (auto& [renderTargetIndex, renderTargetPack] : mRenderTargets)
+    {
+        if (renderTargetPack.dRenderTargetOpt.has_value())
+        {
+            const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
+            if (mTextures.contains(proxyTexId.id))
+            {
+                const TexturePack& proxyPack = mTextures.at(proxyTexId.id);
+                if (proxyPack.dtextureOpt.has_value())
+                {
+                    mBackend.freeRenderTarget(
+                        renderTargetPack.dRenderTargetOpt.value(),
+                        proxyPack.dtextureOpt.value()
+                    );
+                    mTextures.at(proxyTexId.id).dtextureOpt = std::nullopt;
+                }
+            }
+        }
+        renderTargetPack.clear();
+    }
+
+    for (auto& [textureIndex, texturePack] : mTextures)
+    {
+        if (texturePack.dtextureOpt.has_value() && !texturePack.isProxy())
+            mBackend.freeTexture(texturePack.dtextureOpt.value());
+        texturePack.clear();
+    }
+
+    mBackend.shutdown();
 }
 
 std::size_t Canvas::CanvasImpl::getCurrentMonitor() const
@@ -362,257 +407,228 @@ DirectTexture Canvas::CanvasImpl::takeScreenshot() const
 }
 
 
-void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)
+void Canvas::CanvasImpl::ensureSessionStarted(Controller& controller)
 {
+    if (mSessionStarted)
+        return;
     mWindow->beginSession(controller);
+    mSortedBellotaPacks.reserve(mBellotas.size() * 2);
+    mSessionStarted = true;
+}
 
-    // state variable
-    bool fillPolygons = true;
+static glm::mat3 computeWorldTransformMat(const ScreenSize& screenSize)
+{
+    glm::mat3 worldTransformMat(1.0);
+    worldTransformMat = glm::translate(worldTransformMat, glm::vec2(-1.0, -1.0));
+    const glm::vec2 worldScale(
+        2.0f / screenSize.width,
+        2.0f / screenSize.height
+    );
+    return glm::scale(worldTransformMat, worldScale);
+}
 
-    auto computeWorldTransformMat = [](const ScreenSize& screenSize)
+static SpriteDrawParams makeSpriteDrawParams(const BellotaPack& pack, const glm::mat3& worldTransform)
+{
+    const Bellota& bellota = pack.bellota;
+    const glm::mat3 totalTransform = worldTransform * bellota.transform().toMat3();
+    glm::vec3 tintColor{1.0f, 1.0f, 1.0f};
+    float tintIntensity = 0.0f;
+    if (pack.tintOpt.has_value())
     {
-        glm::mat3 worldTransformMat(1.0);
-        worldTransformMat = glm::translate(worldTransformMat, glm::vec2(-1.0, -1.0));
-        const glm::vec2 worldScale(
-            2.0f / screenSize.width,
-            2.0f / screenSize.height
-        );
-        return glm::scale(worldTransformMat, worldScale);
+        tintColor     = pack.tintOpt.value().color;
+        tintIntensity = pack.tintOpt.value().intensity;
+    }
+    return SpriteDrawParams{
+        totalTransform,
+        static_cast<int>(bellota.currentLayer()),
+        tintColor,
+        tintIntensity,
+        bellota.opacity()
     };
-    glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
+}
 
-    PerformanceMonitor performanceMonitor(mWindow->getTime(), 0.5f);
+static void sortByDepthOffset(const BellotaContainer& bellotas, std::vector<const BellotaPack*>& sortedBellotas)
+{
+    // Per spec, clear does not change the underlaying memory allocation (capacity)
+    sortedBellotas.clear();
 
-    // Dirty fix to sort bellotas by depth as required by transparent objects.
-    std::vector<const BellotaPack*> sortedBellotaPacks;
-
-    // Leaving some room in case more bellotas are created during runtime.
-    sortedBellotaPacks.reserve(mBellotas.size()*2);
-
-    auto sortByDepthOffset = [](const BellotaContainer& bellotas, std::vector<const BellotaPack*>& sortedBellotas)
+    for (const auto& [bellotaIndex, bellotaPack] : bellotas)
     {
-        // Per spec, clear does not change the underlaying memory allocation (capacity)
-        sortedBellotas.clear();
+        sortedBellotas.push_back(&bellotaPack);
+    }
 
-        for (const auto& [bellotaIndex, bellotaPack] : bellotas)
+    std::sort(sortedBellotas.begin(), sortedBellotas.end(),
+        [](const BellotaPack* lhs, const BellotaPack* rhs)
         {
-            sortedBellotas.push_back(&bellotaPack);
+            debugCheck(lhs != nullptr and rhs != nullptr, "invalid pointers");
+            const auto lhsDepthOffset = lhs->bellota.depthOffset();
+            const auto rhsDepthOffset = rhs->bellota.depthOffset();
+            return lhsDepthOffset < rhsDepthOffset;
         }
+    );
+}
 
-        std::sort(sortedBellotas.begin(), sortedBellotas.end(),
+void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+{
+    controller.processInputs();
+
+    // Get current framebuffer size and compute letterboxed viewport
+    auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
+    mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, mScreenSize.width, mScreenSize.height);
+
+    mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
+
+    // Start the Dear ImGui frame
+    mBackend.imguiNewFrame();
+    mWindow->newImGuiFrame();
+    ImGui::NewFrame();
+
+    // executing user provided update
+    update(deltaTimeMS);
+
+    const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
+
+    clearUnusedTextures();
+
+    // Lazy-initialize dirty GPU resources
+    for (auto& [textureIndex, texturePack] : mTextures)
+    {
+        if (texturePack.isDirty() && !texturePack.isProxy())
+        {
+            texturePack.dtextureOpt = mBackend.uploadTexture(
+                texturePack.texture.value(), texturePack.minFilter, texturePack.magFilter);
+        }
+    }
+
+    for (auto& [renderTargetIndex, renderTargetPack] : mRenderTargets)
+    {
+        if (renderTargetPack.isDirty())
+        {
+            const glm::ivec2 renderTargetSize = renderTargetPack.renderTarget.mSize;
+            renderTargetPack.dRenderTargetOpt = mBackend.createRenderTarget(renderTargetSize);
+            const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
+            mTextures.at(proxyTexId.id).dtextureOpt =
+                mBackend.getRenderTargetTexture(renderTargetPack.dRenderTargetOpt.value());
+        }
+    }
+
+    for (auto& [bellotaIndex, bellotaPack] : mBellotas)
+    {
+        if (bellotaPack.isDirty())
+        {
+            bellotaPack.meshOpt  = generateMesh(mTextures, bellotaPack.bellota);
+            bellotaPack.dmeshOpt = mBackend.uploadMesh(bellotaPack.meshOpt.value());
+        }
+    }
+
+    sortByDepthOffset(mBellotas, mSortedBellotaPacks);
+
+    // RTT pre-passes — render requested bellotas into their render targets
+    // before drawing to the main framebuffer.
+    for (auto& [renderTargetId, bellotaIds] : mPendingRttPasses)
+    {
+        if (not mRenderTargets.contains(renderTargetId.id))
+            continue;
+
+        RenderTargetPack& renderTargetPack = mRenderTargets.at(renderTargetId.id);
+        if (not renderTargetPack.dRenderTargetOpt.has_value())
+            continue;
+
+        const DRenderTarget& dRenderTarget = renderTargetPack.dRenderTargetOpt.value();
+        const glm::vec4& clearColor = renderTargetPack.renderTarget.mClearColor;
+
+        mBackend.beginRttPass(dRenderTarget, clearColor);
+
+        const glm::ivec2& renderTargetSize = dRenderTarget.size;
+        glm::mat3 renderTargetWorldTransform(1.0f);
+        renderTargetWorldTransform = glm::translate(renderTargetWorldTransform, glm::vec2(-1.0f, -1.0f));
+        renderTargetWorldTransform = glm::scale(renderTargetWorldTransform,
+            glm::vec2(2.0f / renderTargetSize.x, 2.0f / renderTargetSize.y));
+
+        std::vector<const BellotaPack*> renderTargetSortedPacks;
+        for (const BellotaId bellotaId : bellotaIds)
+        {
+            if (mBellotas.contains(bellotaId.id))
+                renderTargetSortedPacks.push_back(&mBellotas.at(bellotaId.id));
+        }
+        std::sort(renderTargetSortedPacks.begin(), renderTargetSortedPacks.end(),
             [](const BellotaPack* lhs, const BellotaPack* rhs)
             {
-                debugCheck(lhs != nullptr and rhs != nullptr, "invalid pointers");
-                const auto lhsDepthOffset = lhs->bellota.depthOffset();
-                const auto rhsDepthOffset = rhs->bellota.depthOffset();
-                return lhsDepthOffset < rhsDepthOffset;
+                return lhs->bellota.depthOffset() < rhs->bellota.depthOffset();
             }
         );
-    };
 
-    // Helper: build SpriteDrawParams from a BellotaPack and world transform.
-    auto makeSpriteDrawParams = [](const BellotaPack& pack, const glm::mat3& worldTransform) -> SpriteDrawParams
-    {
-        const Bellota& bellota = pack.bellota;
-        const glm::mat3 totalTransform = worldTransform * bellota.transform().toMat3();
-        glm::vec3 tintColor{1.0f, 1.0f, 1.0f};
-        float tintIntensity = 0.0f;
-        if (pack.tintOpt.has_value())
-        {
-            tintColor     = pack.tintOpt.value().color;
-            tintIntensity = pack.tintOpt.value().intensity;
-        }
-        return SpriteDrawParams{
-            totalTransform,
-            static_cast<int>(bellota.currentLayer()),
-            tintColor,
-            tintIntensity,
-            bellota.opacity()
-        };
-    };
-
-    ScreenSize currentScreenSize = mScreenSize;
-
-    while (mWindow->isRunning())
-    {
-        controller.processInputs();
-
-        performanceMonitor.update(mWindow->getTime());
-        const float deltaTimeMS = performanceMonitor.getMS();
-
-        // Get current framebuffer size and compute letterboxed viewport
-        auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
-        mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, mScreenSize.width, mScreenSize.height);
-
-        mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
-
-        // Start the Dear ImGui frame
-        mBackend.imguiNewFrame();
-        mWindow->newImGuiFrame();
-        ImGui::NewFrame();
-
-        // executing user provided update
-        update(deltaTimeMS);
-
-        if (currentScreenSize != mScreenSize)
-        {
-            currentScreenSize = mScreenSize;
-            worldTransformMat = computeWorldTransformMat(mScreenSize);
-        }
-
-        clearUnusedTextures();
-
-        // Lazy-initialize dirty GPU resources
-        for (auto& [textureIndex, texturePack] : mTextures)
-        {
-            if (texturePack.isDirty() && !texturePack.isProxy())
-            {
-                texturePack.dtextureOpt = mBackend.uploadTexture(
-                    texturePack.texture.value(), texturePack.minFilter, texturePack.magFilter);
-            }
-        }
-
-        for (auto& [renderTargetIndex, renderTargetPack] : mRenderTargets)
-        {
-            if (renderTargetPack.isDirty())
-            {
-                const glm::ivec2 renderTargetSize = renderTargetPack.renderTarget.mSize;
-                renderTargetPack.dRenderTargetOpt = mBackend.createRenderTarget(renderTargetSize);
-                const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
-                mTextures.at(proxyTexId.id).dtextureOpt =
-                    mBackend.getRenderTargetTexture(renderTargetPack.dRenderTargetOpt.value());
-            }
-        }
-
-        for (auto& [bellotaIndex, bellotaPack] : mBellotas)
-        {
-            if (bellotaPack.isDirty())
-            {
-                bellotaPack.meshOpt  = generateMesh(mTextures, bellotaPack.bellota);
-                bellotaPack.dmeshOpt = mBackend.uploadMesh(bellotaPack.meshOpt.value());
-            }
-        }
-
-        sortByDepthOffset(mBellotas, sortedBellotaPacks);
-
-        // RTT pre-passes — render requested bellotas into their render targets
-        // before drawing to the main framebuffer.
-        for (auto& [renderTargetId, bellotaIds] : mPendingRttPasses)
-        {
-            if (not mRenderTargets.contains(renderTargetId.id))
-                continue;
-
-            RenderTargetPack& renderTargetPack = mRenderTargets.at(renderTargetId.id);
-            if (not renderTargetPack.dRenderTargetOpt.has_value())
-                continue;
-
-            const DRenderTarget& dRenderTarget = renderTargetPack.dRenderTargetOpt.value();
-            const glm::vec4& clearColor = renderTargetPack.renderTarget.mClearColor;
-
-            mBackend.beginRttPass(dRenderTarget, clearColor);
-
-            const glm::ivec2& renderTargetSize = dRenderTarget.size;
-            glm::mat3 renderTargetWorldTransform(1.0f);
-            renderTargetWorldTransform = glm::translate(renderTargetWorldTransform, glm::vec2(-1.0f, -1.0f));
-            renderTargetWorldTransform = glm::scale(renderTargetWorldTransform,
-                glm::vec2(2.0f / renderTargetSize.x, 2.0f / renderTargetSize.y));
-
-            std::vector<const BellotaPack*> renderTargetSortedPacks;
-            for (const BellotaId bellotaId : bellotaIds)
-            {
-                if (mBellotas.contains(bellotaId.id))
-                    renderTargetSortedPacks.push_back(&mBellotas.at(bellotaId.id));
-            }
-            std::sort(renderTargetSortedPacks.begin(), renderTargetSortedPacks.end(),
-                [](const BellotaPack* lhs, const BellotaPack* rhs)
-                {
-                    return lhs->bellota.depthOffset() < rhs->bellota.depthOffset();
-                }
-            );
-
-            for (const BellotaPack* packPtr : renderTargetSortedPacks)
-            {
-                if (!packPtr->bellota.visible()) continue;
-                if (!packPtr->dmeshOpt.has_value()) continue;
-                const TexturePack& texturePack = mTextures.at(packPtr->bellota.texture().id);
-                if (!texturePack.dtextureOpt.has_value()) continue;
-                mBackend.drawSprite(packPtr->dmeshOpt.value(), texturePack.dtextureOpt.value(),
-                    makeSpriteDrawParams(*packPtr, renderTargetWorldTransform));
-            }
-
-            mBackend.endRttPass();
-        }
-        mPendingRttPasses.clear();
-
-        mBackend.beginMainPass(mGameViewport);
-
-        // Main draw pass
-        for (const BellotaPack* packPtr : sortedBellotaPacks)
+        for (const BellotaPack* packPtr : renderTargetSortedPacks)
         {
             if (!packPtr->bellota.visible()) continue;
             if (!packPtr->dmeshOpt.has_value()) continue;
             const TexturePack& texturePack = mTextures.at(packPtr->bellota.texture().id);
             if (!texturePack.dtextureOpt.has_value()) continue;
             mBackend.drawSprite(packPtr->dmeshOpt.value(), texturePack.dtextureOpt.value(),
-                makeSpriteDrawParams(*packPtr, worldTransformMat));
+                makeSpriteDrawParams(*packPtr, renderTargetWorldTransform));
         }
 
-        if (mStats)
-        {
-            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Appearing);
-            ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
-            ImGui::Begin("stats", NULL, ImGuiWindowFlags_NoTitleBar);
-            ImGui::Text("%.2f fps", performanceMonitor.getFPS());
-            ImGui::Text("%.2f ms", performanceMonitor.getMS());
-            ImGui::End();
-        }
-
-        ImGui::Render();
-        mBackend.endFrame(ImGui::GetDrawData(), framebufferWidth, framebufferHeight);
-
-        mWindow->endFrame(controller, mGameViewport, mScreenSize);
+        mBackend.endRttPass();
     }
+    mPendingRttPasses.clear();
 
-    // Teardown: free all GPU resources before shutdown.
-    for (auto& [bellotaIndex, bellotaPack] : mBellotas)
+    mBackend.beginMainPass(mGameViewport);
+
+    // Main draw pass
+    for (const BellotaPack* packPtr : mSortedBellotaPacks)
     {
-        if (bellotaPack.dmeshOpt.has_value())
-            mBackend.freeMesh(bellotaPack.dmeshOpt.value());
-        bellotaPack.clear();
+        if (!packPtr->bellota.visible()) continue;
+        if (!packPtr->dmeshOpt.has_value()) continue;
+        const TexturePack& texturePack = mTextures.at(packPtr->bellota.texture().id);
+        if (!texturePack.dtextureOpt.has_value()) continue;
+        mBackend.drawSprite(packPtr->dmeshOpt.value(), texturePack.dtextureOpt.value(),
+            makeSpriteDrawParams(*packPtr, worldTransformMat));
     }
 
-    // Render targets must be freed before textures: freeRenderTarget also removes the
-    // proxy entry from the backend's texture map (without calling glDeleteTextures on it),
-    // then deletes the FBO + color attachment in one call.
-    for (auto& [renderTargetIndex, renderTargetPack] : mRenderTargets)
+    if (mStats)
     {
-        if (renderTargetPack.dRenderTargetOpt.has_value())
-        {
-            const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
-            if (mTextures.contains(proxyTexId.id))
-            {
-                const TexturePack& proxyPack = mTextures.at(proxyTexId.id);
-                if (proxyPack.dtextureOpt.has_value())
-                {
-                    mBackend.freeRenderTarget(
-                        renderTargetPack.dRenderTargetOpt.value(),
-                        proxyPack.dtextureOpt.value()
-                    );
-                    mTextures.at(proxyTexId.id).dtextureOpt = std::nullopt;
-                }
-            }
-        }
-        renderTargetPack.clear();
+        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Appearing);
+        ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+        ImGui::Begin("stats", NULL, ImGuiWindowFlags_NoTitleBar);
+        ImGui::Text("%.2f fps", deltaTimeMS > 0.0f ? 1000.0f / deltaTimeMS : 0.0f);
+        ImGui::Text("%.2f ms", deltaTimeMS);
+        ImGui::End();
     }
 
-    for (auto& [textureIndex, texturePack] : mTextures)
+    ImGui::Render();
+    mBackend.endFrame(ImGui::GetDrawData(), framebufferWidth, framebufferHeight);
+
+    mWindow->endFrame(controller, mGameViewport, mScreenSize);
+}
+
+void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)
+{
+    ensureSessionStarted(controller);
+
+    PerformanceMonitor performanceMonitor(mWindow->getTime(), 0.5f);
+
+    while (mWindow->isRunning())
     {
-        if (texturePack.dtextureOpt.has_value() && !texturePack.isProxy())
-            mBackend.freeTexture(texturePack.dtextureOpt.value());
-        texturePack.clear();
+        performanceMonitor.update(mWindow->getTime());
+        runOneFrame(performanceMonitor.getMS(), update, controller);
     }
+}
 
-    mBackend.shutdown();
+void Canvas::CanvasImpl::tick(float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+{
+    ensureSessionStarted(controller);
+    runOneFrame(deltaTimeMS, update, controller);
+}
+
+void Canvas::CanvasImpl::tick(float deltaTimeMS, std::function<void(float)> update)
+{
+    Controller controller;
+    tick(deltaTimeMS, update, controller);
+}
+
+void Canvas::CanvasImpl::tick(float deltaTimeMS)
+{
+    tick(deltaTimeMS, [](float){});
 }
 
 void Canvas::CanvasImpl::close()

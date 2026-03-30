@@ -9,10 +9,11 @@ Canvas::Canvas(
     const std::string& title,
     const glm::vec3 clearColor,
     const unsigned int pixelSize,
-    const float imguiFontSize
+    const float imguiFontSize,
+    bool headless
 )
 {
-    mCanvasImpl = std::make_unique<CanvasImpl>(screenSize, title, clearColor, pixelSize, imguiFontSize);
+    mCanvasImpl = std::make_unique<CanvasImpl>(screenSize, title, clearColor, pixelSize, imguiFontSize, headless);
 }
 
 Canvas::~Canvas()
@@ -186,6 +187,21 @@ void Canvas::run(std::function<void(float deltaTime)> update)
 void Canvas::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
     mCanvasImpl->run(update, controller);
+}
+
+void Canvas::tick(float deltaTime, std::function<void(float)> update, Controller& controller)
+{
+    mCanvasImpl->tick(deltaTime, update, controller);
+}
+
+void Canvas::tick(float deltaTime, std::function<void(float)> update)
+{
+    mCanvasImpl->tick(deltaTime, update);
+}
+
+void Canvas::tick(float deltaTime)
+{
+    mCanvasImpl->tick(deltaTime);
 }
 
 void Canvas::close()

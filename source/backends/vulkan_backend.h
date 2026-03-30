@@ -57,8 +57,6 @@ struct PendingRenderTargetDeletion
 struct FrameData
 {
     VkCommandBuffer commandBuffer  = VK_NULL_HANDLE;
-    VkSemaphore     imageAvailable = VK_NULL_HANDLE;
-    VkSemaphore     renderFinished = VK_NULL_HANDLE;
     VkFence         inFlight       = VK_NULL_HANDLE;
 
     // Resources queued for deletion — flushed at the start of the next beginFrame()
@@ -157,6 +155,13 @@ private:
     mutable VkCommandPool mCommandPool = VK_NULL_HANDLE;
     std::array<FrameData, MAX_FRAMES_IN_FLIGHT> mFrames;
     int mCurrentFrame = 0;
+
+    // Per-swapchain-image semaphores to avoid reusing a semaphore that the
+    // presentation engine still holds for a not-yet-re-acquired image.
+    // See https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html
+    std::vector<VkSemaphore> mImageAvailableSemaphores;  // cycled with mAcquireSemaphoreIndex
+    std::vector<VkSemaphore> mRenderFinishedSemaphores;  // indexed by acquired image index
+    uint32_t                 mAcquireSemaphoreIndex = 0;
 
     // --- Memory allocator ---
     mutable VmaAllocator mAllocator = VK_NULL_HANDLE;

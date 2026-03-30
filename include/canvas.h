@@ -76,7 +76,8 @@ public:
         const std::string& title = DEFAULT_TITLE,
         const glm::vec3 clearColor = DEFAULT_CLEAR_COLOR,
         const unsigned int pixelSize = DEFAULT_PIXEL_SIZE,
-        const float imguiFontSize = DEFAULT_IMGUI_FONT_SIZE
+        const float imguiFontSize = DEFAULT_IMGUI_FONT_SIZE,
+        bool headless = false
     );
 
     /// Destructor
@@ -218,6 +219,11 @@ public:
      * @param controller The controller object to handle inputs.
      */
     void run(std::function<void(float deltaTime)> update, Controller& controller);
+
+    /// Execute a single frame with a caller-supplied delta time (in milliseconds).
+    void tick(float deltaTime, std::function<void(float)> update, Controller& controller);
+    void tick(float deltaTime, std::function<void(float)> update);
+    void tick(float deltaTime);
 
     /// Close the canvas and clean up resources.
     void close();
