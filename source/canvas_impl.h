@@ -186,6 +186,8 @@ public:
 private:
     void replaceBellota(const BellotaId bellotaId, const Bellota& bellota);
     void clearUnusedTextures();
+    void ensureSessionStarted(Controller& controller);
+    void runOneFrame(float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
     ScreenSize mScreenSize; ///< The screen size of the canvas.
     std::string mTitle; ///< The title of the canvas window.
@@ -204,6 +206,8 @@ private:
 
     bool mStats; ///< Flag to indicate whether stats should be displayed.
     bool mHeadless{false}; ///< When true, the window is hidden (no visible UI).
+    bool mSessionStarted{false}; ///< True after ensureSessionStarted() has been called.
+    std::vector<const BellotaPack*> mSortedBellotaPacks; ///< Reusable depth-sorted draw list.
 
     struct Window; ///< Forward declaration for window management.
     std::unique_ptr<Window> mWindow; ///< Pointer to the window object.
