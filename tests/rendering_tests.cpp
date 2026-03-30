@@ -6,14 +6,21 @@
 #include <string>
 #include <cstdlib>
 
-// Golden files live next to the test binary. NOTHOFAGUS_GOLDEN_DIR is set by CMake.
+// Default golden directory is set by CMake. Override at runtime with GOLDEN_DIR env var
+// to target a different set (e.g. golden_mesa/ for software rendering).
 #ifndef NOTHOFAGUS_GOLDEN_DIR
     #define NOTHOFAGUS_GOLDEN_DIR "."
 #endif
 
+static std::string goldenDir()
+{
+    const char* env = std::getenv("GOLDEN_DIR");
+    return (env != nullptr && env[0] != '\0') ? env : NOTHOFAGUS_GOLDEN_DIR;
+}
+
 static std::string goldenPath(const std::string& name)
 {
-    return std::string(NOTHOFAGUS_GOLDEN_DIR) + "/" + name + ".bin";
+    return goldenDir() + "/" + name + ".bin";
 }
 
 static bool shouldUpdateGolden()
