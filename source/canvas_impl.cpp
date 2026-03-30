@@ -60,20 +60,23 @@ Canvas::CanvasImpl::CanvasImpl(
     const std::string& title,
     const glm::vec3 clearColor,
     const unsigned int pixelSize,
-    const float imguiFontSize)
+    const float imguiFontSize,
+    bool headless)
     :
     mScreenSize(screenSize),
     mTitle(title),
     mClearColor(clearColor),
     mPixelSize(pixelSize),
     mStats(false),
+    mHeadless(headless),
     mGameViewport{0, 0, 0, 0}
 {
     // Initialize the window backend (creates window, GL/Vulkan context, loads GLAD for OpenGL)
     mWindow = std::make_unique<Window>(
         mTitle,
         static_cast<int>(mScreenSize.width  * mPixelSize),
-        static_cast<int>(mScreenSize.height * mPixelSize)
+        static_cast<int>(mScreenSize.height * mPixelSize),
+        !mHeadless // visible
     );
 
     // ImGui context must be created before platform/renderer bindings.

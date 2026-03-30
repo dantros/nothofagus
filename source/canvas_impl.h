@@ -29,7 +29,8 @@ public:
         const std::string& title,
         const glm::vec3 clearColor,
         const unsigned int pixelSize,
-        const float imguiFontSize
+        const float imguiFontSize,
+        bool headless = false
     );
 
     /// Destructor to clean up resources and terminate the window backend
@@ -202,6 +203,7 @@ private:
     ActiveBackend mBackend; ///< GPU rendering backend (compile-time selected).
 
     bool mStats; ///< Flag to indicate whether stats should be displayed.
+    bool mHeadless{false}; ///< When true, the window is hidden (no visible UI).
 
     struct Window; ///< Forward declaration for window management.
     std::unique_ptr<Window> mWindow; ///< Pointer to the window object.

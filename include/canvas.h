@@ -76,7 +76,8 @@ public:
         const std::string& title = DEFAULT_TITLE,
         const glm::vec3 clearColor = DEFAULT_CLEAR_COLOR,
         const unsigned int pixelSize = DEFAULT_PIXEL_SIZE,
-        const float imguiFontSize = DEFAULT_IMGUI_FONT_SIZE
+        const float imguiFontSize = DEFAULT_IMGUI_FONT_SIZE,
+        bool headless = false
     );
 
     /// Destructor
