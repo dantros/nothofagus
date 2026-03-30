@@ -90,17 +90,30 @@ if(NOTHOFAGUS_BACKEND_VULKAN)
     )
 
     # SPIR-V shader compilation
-    find_program(GLSLC glslc REQUIRED)
-    set(SHADER_VERT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/source/shaders/sprite.vert")
-    set(SHADER_FRAG_SRC "${CMAKE_CURRENT_SOURCE_DIR}/source/shaders/sprite.frag")
+    option(NOTHOFAGUS_USE_GLSLANG "Use glslangValidator instead of glslc for shader compilation" OFF)
+
+    set(shaderVertSrc "${CMAKE_CURRENT_SOURCE_DIR}/source/shaders/sprite.vert")
+    set(shaderFragSrc "${CMAKE_CURRENT_SOURCE_DIR}/source/shaders/sprite.frag")
     set(SHADER_VERT_SPV "${CMAKE_CURRENT_BINARY_DIR}/sprite.vert.spv")
     set(SHADER_FRAG_SPV "${CMAKE_CURRENT_BINARY_DIR}/sprite.frag.spv")
-    add_custom_command(OUTPUT "${SHADER_VERT_SPV}"
-        COMMAND "${GLSLC}" "${SHADER_VERT_SRC}" -o "${SHADER_VERT_SPV}"
-        DEPENDS "${SHADER_VERT_SRC}" VERBATIM)
-    add_custom_command(OUTPUT "${SHADER_FRAG_SPV}"
-        COMMAND "${GLSLC}" "${SHADER_FRAG_SRC}" -o "${SHADER_FRAG_SPV}"
-        DEPENDS "${SHADER_FRAG_SRC}" VERBATIM)
+
+    if(NOTHOFAGUS_USE_GLSLANG)
+        find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
+        add_custom_command(OUTPUT "${SHADER_VERT_SPV}"
+            COMMAND "${GLSLANG_VALIDATOR}" -V "${shaderVertSrc}" -o "${SHADER_VERT_SPV}"
+            DEPENDS "${shaderVertSrc}" VERBATIM)
+        add_custom_command(OUTPUT "${SHADER_FRAG_SPV}"
+            COMMAND "${GLSLANG_VALIDATOR}" -V "${shaderFragSrc}" -o "${SHADER_FRAG_SPV}"
+            DEPENDS "${shaderFragSrc}" VERBATIM)
+    else()
+        find_program(GLSLC glslc REQUIRED)
+        add_custom_command(OUTPUT "${SHADER_VERT_SPV}"
+            COMMAND "${GLSLC}" "${shaderVertSrc}" -o "${SHADER_VERT_SPV}"
+            DEPENDS "${shaderVertSrc}" VERBATIM)
+        add_custom_command(OUTPUT "${SHADER_FRAG_SPV}"
+            COMMAND "${GLSLC}" "${shaderFragSrc}" -o "${SHADER_FRAG_SPV}"
+            DEPENDS "${shaderFragSrc}" VERBATIM)
+    endif()
     add_custom_target(spirv_shaders DEPENDS "${SHADER_VERT_SPV}" "${SHADER_FRAG_SPV}")
     add_dependencies(nothofagus spirv_shaders)
     target_compile_definitions(nothofagus PRIVATE
