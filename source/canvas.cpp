@@ -189,6 +189,21 @@ void Canvas::run(std::function<void(float deltaTime)> update, Controller& contro
     mCanvasImpl->run(update, controller);
 }
 
+void Canvas::tick(float deltaTime, std::function<void(float)> update, Controller& controller)
+{
+    mCanvasImpl->tick(deltaTime, update, controller);
+}
+
+void Canvas::tick(float deltaTime, std::function<void(float)> update)
+{
+    mCanvasImpl->tick(deltaTime, update);
+}
+
+void Canvas::tick(float deltaTime)
+{
+    mCanvasImpl->tick(deltaTime);
+}
+
 void Canvas::close()
 {
     mCanvasImpl->close();

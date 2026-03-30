@@ -177,6 +177,11 @@ public:
      */
     void run(std::function<void(float deltaTime)> update, Controller& controller);
 
+    /// Execute a single frame with a caller-supplied delta time (in milliseconds).
+    void tick(float deltaTimeMS, std::function<void(float)> update, Controller& controller);
+    void tick(float deltaTimeMS, std::function<void(float)> update);
+    void tick(float deltaTimeMS);
+
     /// Close the canvas and release resources.
     void close();
 
