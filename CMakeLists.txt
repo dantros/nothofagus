@@ -41,13 +41,16 @@ else()
         "source/backends/glfw_mouse.cpp")
 endif()
 
+option(NOTHOFAGUS_BACKEND_VULKAN "Use Vulkan backend instead of OpenGL" OFF)
+
 add_subdirectory("third_party/glad")
+if(NOTHOFAGUS_BACKEND_VULKAN)
+    set(IMGUI_VULKAN_BACKEND ON CACHE BOOL "" FORCE)
+endif()
 add_subdirectory("third_party/imgui_cmake")
 
 file(GLOB_RECURSE NOTHOFAGUS_SOURCE_HEADERS "source/*.h")
 file(GLOB_RECURSE NOTHOFAGUS_PUBLIC_HEADERS "include/*.h")
-
-option(NOTHOFAGUS_BACKEND_VULKAN "Use Vulkan backend instead of OpenGL" OFF)
 
 add_library(nothofagus
     "source/canvas.cpp"
@@ -72,8 +75,56 @@ add_library(nothofagus
 )
 
 if(NOTHOFAGUS_BACKEND_VULKAN)
+    find_package(Vulkan REQUIRED)
+    add_subdirectory("third_party/vk-bootstrap")
+
+    # VMA: header-only interface target
+    add_library(VulkanMemoryAllocator INTERFACE)
+    target_include_directories(VulkanMemoryAllocator INTERFACE
+        "third_party/VulkanMemoryAllocator/include")
+
     target_compile_definitions(nothofagus PRIVATE NOTHOFAGUS_BACKEND_VULKAN)
-    # Phase 2: add Vulkan backend sources here
+    target_sources(nothofagus PRIVATE
+        "source/backends/vulkan_backend.cpp"
+        "source/backends/vma_impl.cpp"
+    )
+
+    # SPIR-V shader compilation
+    option(NOTHOFAGUS_USE_GLSLANG "Use glslangValidator instead of glslc for shader compilation" OFF)
+
+    set(shaderVertSrc "${CMAKE_CURRENT_SOURCE_DIR}/source/shaders/sprite.vert")
+    set(shaderFragSrc "${CMAKE_CURRENT_SOURCE_DIR}/source/shaders/sprite.frag")
+    set(SHADER_VERT_SPV "${CMAKE_CURRENT_BINARY_DIR}/sprite.vert.spv")
+    set(SHADER_FRAG_SPV "${CMAKE_CURRENT_BINARY_DIR}/sprite.frag.spv")
+
+    if(NOTHOFAGUS_USE_GLSLANG)
+        find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
+        add_custom_command(OUTPUT "${SHADER_VERT_SPV}"
+            COMMAND "${GLSLANG_VALIDATOR}" -V "${shaderVertSrc}" -o "${SHADER_VERT_SPV}"
+            DEPENDS "${shaderVertSrc}" VERBATIM)
+        add_custom_command(OUTPUT "${SHADER_FRAG_SPV}"
+            COMMAND "${GLSLANG_VALIDATOR}" -V "${shaderFragSrc}" -o "${SHADER_FRAG_SPV}"
+            DEPENDS "${shaderFragSrc}" VERBATIM)
+    else()
+        find_program(GLSLC glslc REQUIRED)
+        add_custom_command(OUTPUT "${SHADER_VERT_SPV}"
+            COMMAND "${GLSLC}" "${shaderVertSrc}" -o "${SHADER_VERT_SPV}"
+            DEPENDS "${shaderVertSrc}" VERBATIM)
+        add_custom_command(OUTPUT "${SHADER_FRAG_SPV}"
+            COMMAND "${GLSLC}" "${shaderFragSrc}" -o "${SHADER_FRAG_SPV}"
+            DEPENDS "${shaderFragSrc}" VERBATIM)
+    endif()
+    add_custom_target(spirv_shaders DEPENDS "${SHADER_VERT_SPV}" "${SHADER_FRAG_SPV}")
+    add_dependencies(nothofagus spirv_shaders)
+    target_compile_definitions(nothofagus PRIVATE
+        NOTHOFAGUS_SPRITE_VERT_SPV="${SHADER_VERT_SPV}"
+        NOTHOFAGUS_SPRITE_FRAG_SPV="${SHADER_FRAG_SPV}")
+
+    target_link_libraries(nothofagus PRIVATE
+        Vulkan::Vulkan vk-bootstrap::vk-bootstrap VulkanMemoryAllocator)
+    target_include_directories(nothofagus PRIVATE
+        "third_party/VulkanMemoryAllocator/include"
+        "third_party/vk-bootstrap/src")
 else()
     target_sources(nothofagus PRIVATE
         "source/backends/opengl_backend.cpp"
