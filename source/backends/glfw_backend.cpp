@@ -91,7 +91,7 @@ static void glfwScrollCallback(GLFWwindow* window, double xoffset, double yoffse
 
 static void glfwFramebufferSizeCallback(GLFWwindow* /*window*/, int /*width*/, int /*height*/) {}
 
-GlfwBackend::GlfwBackend(const std::string& title, int width, int height)
+GlfwBackend::GlfwBackend(const std::string& title, int width, int height, bool visible)
 {
     glfwInit();
 #if defined(NOTHOFAGUS_BACKEND_VULKAN)
@@ -101,6 +101,9 @@ GlfwBackend::GlfwBackend(const std::string& title, int width, int height)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #endif
+
+    if (!visible)
+        glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
     mGlfwWindow = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
     if (!mGlfwWindow)

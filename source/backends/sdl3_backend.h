@@ -14,7 +14,7 @@ namespace Nothofagus
 class Sdl3Backend
 {
 public:
-    Sdl3Backend(const std::string& title, int width, int height);
+    Sdl3Backend(const std::string& title, int width, int height, bool visible = true);
     ~Sdl3Backend();
 
     // Non-copyable, non-movable (owns SDL handles)

@@ -42,18 +42,22 @@ static GamepadAxis sdlAxisToGamepadAxis(SDL_GamepadAxis axis)
     return static_cast<GamepadAxis>(axis);
 }
 
-Sdl3Backend::Sdl3Backend(const std::string& title, int width, int height)
+Sdl3Backend::Sdl3Backend(const std::string& title, int width, int height, bool visible)
 {
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
+    SDL_WindowFlags windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
+    if (!visible)
+        windowFlags |= SDL_WINDOW_HIDDEN;
+
     mSdlWindow = SDL_CreateWindow(
         title.c_str(),
         width,
         height,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE
+        windowFlags
     );
     if (!mSdlWindow)
     {

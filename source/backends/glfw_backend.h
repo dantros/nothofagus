@@ -24,7 +24,7 @@ struct GlfwInputContext
 class GlfwBackend
 {
 public:
-    GlfwBackend(const std::string& title, int width, int height);
+    GlfwBackend(const std::string& title, int width, int height, bool visible = true);
     ~GlfwBackend();
 
     // Non-copyable, non-movable (owns a GLFW window handle)
