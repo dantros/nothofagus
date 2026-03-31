@@ -603,7 +603,15 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
 
 void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
-    ensureSessionStarted(controller);
+    // Always call beginSession — it resets the window close flag and rebinds
+    // input callbacks, which is required after a manifest switch (canvas.close()
+    // sets shouldClose=true; without reset, isRunning() returns false immediately).
+    mWindow->beginSession(controller);
+    if (!mSessionStarted)
+    {
+        mSortedBellotaPacks.reserve(mBellotas.size() * 2);
+        mSessionStarted = true;
+    }
 
     PerformanceMonitor performanceMonitor(mWindow->getTime(), 0.5f);
 
