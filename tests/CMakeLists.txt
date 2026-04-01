@@ -4,7 +4,6 @@ add_executable(rendering_tests
 )
 set_property(TARGET rendering_tests PROPERTY CXX_STANDARD 20)
 target_include_directories(rendering_tests PRIVATE
-    ${NOTHOFAGUS_INCLUDE}
     "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 target_link_libraries(rendering_tests PRIVATE nothofagus Catch2::Catch2WithMain)
