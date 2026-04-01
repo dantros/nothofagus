@@ -62,6 +62,8 @@ public:
 
     void requestClose();
 
+    void setWindowTitle(const std::string& title);
+
     static ScreenSize getPrimaryMonitorSize();
 
 private:

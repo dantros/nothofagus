@@ -325,6 +325,11 @@ void GlfwBackend::requestClose()
     glfwSetWindowShouldClose(mGlfwWindow, true);
 }
 
+void GlfwBackend::setWindowTitle(const std::string& title)
+{
+    glfwSetWindowTitle(mGlfwWindow, title.c_str());
+}
+
 ScreenSize GlfwBackend::getPrimaryMonitorSize()
 {
     glfwInit();  // idempotent — safe if Canvas has already initialised it

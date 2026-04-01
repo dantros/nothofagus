@@ -336,6 +336,11 @@ void Sdl3Backend::requestClose()
     mShouldClose = true;
 }
 
+void Sdl3Backend::setWindowTitle(const std::string& title)
+{
+    SDL_SetWindowTitle(mSdlWindow, title.c_str());
+}
+
 ScreenSize Sdl3Backend::getPrimaryMonitorSize()
 {
     SDL_Init(SDL_INIT_VIDEO);  // idempotent — safe if Canvas has already initialised it

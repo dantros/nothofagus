@@ -190,6 +190,12 @@ void Canvas::CanvasImpl::setClearColor(glm::vec3 clearColor)
     mClearColor = clearColor;
 }
 
+void Canvas::CanvasImpl::setWindowTitle(const std::string& title)
+{
+    mTitle = title;
+    mWindow->setWindowTitle(title);
+}
+
 ScreenSize Canvas::CanvasImpl::windowSize() const
 {
     debugCheck(mWindow != nullptr, "Canvas window has not been initialized");

@@ -25,7 +25,8 @@ concept WindowBackend = requires(
     const ViewportRect& viewport,
     const ScreenSize& screenSize,
     std::size_t monitorIndex,
-    const AABox& windowedBox)
+    const AABox& windowedBox,
+    const std::string& title)
 {
     // Session lifecycle
     { backend.beginSession(controller) } -> std::same_as<void>;
@@ -51,6 +52,7 @@ concept WindowBackend = requires(
     { backend.setWindowed(windowedBox)         } -> std::same_as<void>;
     { backend.getWindowSize()                  } -> std::same_as<ScreenSize>;
     { backend.requestClose()                   } -> std::same_as<void>;
+    { backend.setWindowTitle(title)            } -> std::same_as<void>;
 };
 
 } // namespace Nothofagus

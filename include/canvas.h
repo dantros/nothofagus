@@ -102,6 +102,8 @@ public:
 
     void setClearColor(glm::vec3 clearColor);
 
+    void setWindowTitle(const std::string& title);
+
     ScreenSize windowSize() const;
 
     /// Returns the current game viewport in framebuffer pixels (letterboxed or pillarboxed).
