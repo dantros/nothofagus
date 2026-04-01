@@ -14,12 +14,13 @@
             "installDir": "${sourceDir}/install/${presetName}",
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "Yes",
-                "CMAKE_CXX_COMPILER": "cl",
+                "CMAKE_C_COMPILER": "clang-cl",
+                "CMAKE_CXX_COMPILER": "clang-cl",
                 "NOTHOFAGUS_INSTALL": "ON"
             }
         },
         {
-            "name": "windows-ninja-glfw-opengl",
+            "name": "windows-glfw-opengl",
             "hidden": true,
             "inherits": "base",
             "cacheVariables": {
@@ -27,7 +28,7 @@
             }
         },
         {
-            "name": "windows-ninja-glfw-vulkan",
+            "name": "windows-glfw-vulkan",
             "hidden": true,
             "inherits": "base",
             "cacheVariables": {
@@ -36,7 +37,7 @@
             }
         },
         {
-            "name": "windows-ninja-sdl3-opengl",
+            "name": "windows-sdl3-opengl",
             "hidden": true,
             "inherits": "base",
             "cacheVariables": {
@@ -44,7 +45,7 @@
             }
         },
         {
-            "name": "windows-ninja-sdl3-vulkan",
+            "name": "windows-sdl3-vulkan",
             "hidden": true,
             "inherits": "base",
             "cacheVariables": {
@@ -53,212 +54,201 @@
             }
         },
         {
-            "name": "linux-make-glfw-opengl",
+            "name": "linux-glfw-opengl",
             "hidden": true,
             "inherits": "base",
-            "generator": "Unix Makefiles",
             "cacheVariables": {
-                "CMAKE_CXX_COMPILER": "g++",
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
                 "CMAKE_CXX_FLAGS": "-Wno-narrowing",
                 "NOTHOFAGUS_WINDOW_BACKEND": "GLFW"
             }
         },
         {
-            "name": "linux-make-glfw-vulkan",
+            "name": "linux-glfw-vulkan",
             "hidden": true,
-            "inherits": "linux-make-glfw-opengl",
+            "inherits": "linux-glfw-opengl",
             "cacheVariables": {
                 "NOTHOFAGUS_BACKEND_VULKAN": "ON"
             }
         },
         {
-            "name": "linux-make-sdl3-opengl",
+            "name": "linux-sdl3-opengl",
             "hidden": true,
             "inherits": "base",
-            "generator": "Unix Makefiles",
             "cacheVariables": {
-                "CMAKE_CXX_COMPILER": "g++",
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
                 "CMAKE_CXX_FLAGS": "-Wno-narrowing",
                 "NOTHOFAGUS_WINDOW_BACKEND": "SDL3"
             }
         },
         {
-            "name": "linux-make-sdl3-vulkan",
+            "name": "linux-sdl3-vulkan",
             "hidden": true,
-            "inherits": "linux-make-sdl3-opengl",
+            "inherits": "linux-sdl3-opengl",
             "cacheVariables": {
                 "NOTHOFAGUS_BACKEND_VULKAN": "ON"
             }
         },
         {
-            "name": "windows-ninja-debug-glfw-opengl",
-            "inherits": "windows-ninja-glfw-opengl",
+            "name": "windows-debug-glfw-opengl",
+            "inherits": "windows-glfw-opengl",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
         },
         {
-            "name": "windows-ninja-debug-glfw-opengl-examples",
-            "inherits": "windows-ninja-debug-glfw-opengl",
+            "name": "windows-debug-glfw-opengl-examples",
+            "inherits": "windows-debug-glfw-opengl",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "windows-ninja-release-glfw-opengl",
-            "inherits": "windows-ninja-glfw-opengl",
+            "name": "windows-release-glfw-opengl",
+            "inherits": "windows-glfw-opengl",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
         },
         {
-            "name": "windows-ninja-release-glfw-opengl-examples",
-            "inherits": "windows-ninja-release-glfw-opengl",
+            "name": "windows-release-glfw-opengl-examples",
+            "inherits": "windows-release-glfw-opengl",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "windows-ninja-debug-glfw-vulkan",
-            "inherits": "windows-ninja-glfw-vulkan",
+            "name": "windows-debug-glfw-vulkan",
+            "inherits": "windows-glfw-vulkan",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
         },
         {
-            "name": "windows-ninja-debug-glfw-vulkan-examples",
-            "inherits": "windows-ninja-debug-glfw-vulkan",
+            "name": "windows-debug-glfw-vulkan-examples",
+            "inherits": "windows-debug-glfw-vulkan",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "windows-ninja-release-glfw-vulkan",
-            "inherits": "windows-ninja-glfw-vulkan",
+            "name": "windows-release-glfw-vulkan",
+            "inherits": "windows-glfw-vulkan",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
         },
         {
-            "name": "windows-ninja-release-glfw-vulkan-examples",
-            "inherits": "windows-ninja-release-glfw-vulkan",
+            "name": "windows-release-glfw-vulkan-examples",
+            "inherits": "windows-release-glfw-vulkan",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "windows-ninja-debug-sdl3-opengl",
-            "inherits": "windows-ninja-sdl3-opengl",
+            "name": "windows-debug-sdl3-opengl",
+            "inherits": "windows-sdl3-opengl",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
         },
         {
-            "name": "windows-ninja-debug-sdl3-opengl-examples",
-            "inherits": "windows-ninja-debug-sdl3-opengl",
+            "name": "windows-debug-sdl3-opengl-examples",
+            "inherits": "windows-debug-sdl3-opengl",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "windows-ninja-release-sdl3-opengl",
-            "inherits": "windows-ninja-sdl3-opengl",
+            "name": "windows-release-sdl3-opengl",
+            "inherits": "windows-sdl3-opengl",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
         },
         {
-            "name": "windows-ninja-release-sdl3-opengl-examples",
-            "inherits": "windows-ninja-release-sdl3-opengl",
+            "name": "windows-release-sdl3-opengl-examples",
+            "inherits": "windows-release-sdl3-opengl",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "windows-ninja-debug-sdl3-vulkan",
-            "inherits": "windows-ninja-sdl3-vulkan",
+            "name": "windows-debug-sdl3-vulkan",
+            "inherits": "windows-sdl3-vulkan",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
         },
         {
-            "name": "windows-ninja-debug-sdl3-vulkan-examples",
-            "inherits": "windows-ninja-debug-sdl3-vulkan",
+            "name": "windows-debug-sdl3-vulkan-examples",
+            "inherits": "windows-debug-sdl3-vulkan",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "windows-ninja-release-sdl3-vulkan",
-            "inherits": "windows-ninja-sdl3-vulkan",
+            "name": "windows-release-sdl3-vulkan",
+            "inherits": "windows-sdl3-vulkan",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
         },
         {
-            "name": "windows-ninja-release-sdl3-vulkan-examples",
-            "inherits": "windows-ninja-release-sdl3-vulkan",
+            "name": "windows-release-sdl3-vulkan-examples",
+            "inherits": "windows-release-sdl3-vulkan",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "windows-vs-debug-glfw-opengl",
-            "inherits": "windows-ninja-glfw-opengl",
-            "generator": "Visual Studio 17 2022",
+            "name": "linux-debug-glfw-opengl",
+            "inherits": "linux-glfw-opengl",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
         },
         {
-            "name": "windows-vs-debug-glfw-opengl-examples",
-            "inherits": "windows-vs-debug-glfw-opengl",
+            "name": "linux-debug-glfw-opengl-examples",
+            "inherits": "linux-debug-glfw-opengl",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "linux-make-debug-glfw-opengl",
-            "inherits": "linux-make-glfw-opengl",
-            "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
-        },
-        {
-            "name": "linux-make-debug-glfw-opengl-examples",
-            "inherits": "linux-make-debug-glfw-opengl",
-            "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
-        },
-        {
-            "name": "linux-make-release-glfw-opengl",
-            "inherits": "linux-make-glfw-opengl",
+            "name": "linux-release-glfw-opengl",
+            "inherits": "linux-glfw-opengl",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
         },
         {
-            "name": "linux-make-release-glfw-opengl-examples",
-            "inherits": "linux-make-release-glfw-opengl",
+            "name": "linux-release-glfw-opengl-examples",
+            "inherits": "linux-release-glfw-opengl",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "linux-make-debug-glfw-vulkan",
-            "inherits": "linux-make-glfw-vulkan",
+            "name": "linux-debug-glfw-vulkan",
+            "inherits": "linux-glfw-vulkan",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
         },
         {
-            "name": "linux-make-debug-glfw-vulkan-examples",
-            "inherits": "linux-make-debug-glfw-vulkan",
+            "name": "linux-debug-glfw-vulkan-examples",
+            "inherits": "linux-debug-glfw-vulkan",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "linux-make-release-glfw-vulkan",
-            "inherits": "linux-make-glfw-vulkan",
+            "name": "linux-release-glfw-vulkan",
+            "inherits": "linux-glfw-vulkan",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
         },
         {
-            "name": "linux-make-release-glfw-vulkan-examples",
-            "inherits": "linux-make-release-glfw-vulkan",
+            "name": "linux-release-glfw-vulkan-examples",
+            "inherits": "linux-release-glfw-vulkan",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "linux-make-debug-sdl3-opengl",
-            "inherits": "linux-make-sdl3-opengl",
+            "name": "linux-debug-sdl3-opengl",
+            "inherits": "linux-sdl3-opengl",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
         },
         {
-            "name": "linux-make-debug-sdl3-opengl-examples",
-            "inherits": "linux-make-debug-sdl3-opengl",
+            "name": "linux-debug-sdl3-opengl-examples",
+            "inherits": "linux-debug-sdl3-opengl",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "linux-make-release-sdl3-opengl",
-            "inherits": "linux-make-sdl3-opengl",
+            "name": "linux-release-sdl3-opengl",
+            "inherits": "linux-sdl3-opengl",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
         },
         {
-            "name": "linux-make-release-sdl3-opengl-examples",
-            "inherits": "linux-make-release-sdl3-opengl",
+            "name": "linux-release-sdl3-opengl-examples",
+            "inherits": "linux-release-sdl3-opengl",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "linux-make-debug-sdl3-vulkan",
-            "inherits": "linux-make-sdl3-vulkan",
+            "name": "linux-debug-sdl3-vulkan",
+            "inherits": "linux-sdl3-vulkan",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
         },
         {
-            "name": "linux-make-debug-sdl3-vulkan-examples",
-            "inherits": "linux-make-debug-sdl3-vulkan",
+            "name": "linux-debug-sdl3-vulkan-examples",
+            "inherits": "linux-debug-sdl3-vulkan",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
-            "name": "linux-make-release-sdl3-vulkan",
-            "inherits": "linux-make-sdl3-vulkan",
+            "name": "linux-release-sdl3-vulkan",
+            "inherits": "linux-sdl3-vulkan",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
         },
         {
-            "name": "linux-make-release-sdl3-vulkan-examples",
-            "inherits": "linux-make-release-sdl3-vulkan",
+            "name": "linux-release-sdl3-vulkan-examples",
+            "inherits": "linux-release-sdl3-vulkan",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         }
     ]

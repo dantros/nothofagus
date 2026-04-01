@@ -35,23 +35,25 @@ Canvas (public API)
 
 **Presets (CMakePresets.json):**
 
-| Preset | Platform | Backend | Build |
-|--------|----------|---------|-------|
-| `ninja-release` / `ninja-debug` | Windows | GLFW | Ninja + MSVC |
-| `ninja-release-examples` / `ninja-debug-examples` | Windows | GLFW | Same + examples |
-| `ninja-debug-sdl3` / `ninja-release-sdl3` | Windows | SDL3 | Ninja + MSVC |
-| `ninja-debug-sdl3-examples` / `ninja-release-sdl3-examples` | Windows | SDL3 | Same + examples |
-| `vs-debug` / `vs-debug-examples` | Windows | GLFW | Visual Studio 17 2022 |
-| `linux-debug` / `linux-release` | Linux | GLFW | Unix Makefiles + GCC |
-| `linux-debug-examples` / `linux-release-examples` | Linux | GLFW | Same + examples |
-| `linux-debug-sdl3` / `linux-debug-sdl3-examples` | Linux | SDL3 | Same + examples |
+Preset naming: `{platform}-{buildtype}-{window}-{graphics}[-examples]`. All use Ninja.
+
+| Preset pattern | Platform | Compiler | Window | Graphics |
+|----------------|----------|----------|--------|----------|
+| `windows-{debug,release}-glfw-opengl[-examples]` | Windows | clang-cl | GLFW | OpenGL |
+| `windows-{debug,release}-glfw-vulkan[-examples]` | Windows | clang-cl | GLFW | Vulkan |
+| `windows-{debug,release}-sdl3-opengl[-examples]` | Windows | clang-cl | SDL3 | OpenGL |
+| `windows-{debug,release}-sdl3-vulkan[-examples]` | Windows | clang-cl | SDL3 | Vulkan |
+| `linux-{debug,release}-glfw-opengl[-examples]` | Linux | clang++ | GLFW | OpenGL |
+| `linux-{debug,release}-glfw-vulkan[-examples]` | Linux | clang++ | GLFW | Vulkan |
+| `linux-{debug,release}-sdl3-opengl[-examples]` | Linux | clang++ | SDL3 | OpenGL |
+| `linux-{debug,release}-sdl3-vulkan[-examples]` | Linux | clang++ | SDL3 | Vulkan |
 
 **Build and install (examples):**
 ```bash
-cmake --preset ninja-debug-examples
-cd ../build/ninja-debug-examples/
-ninja install
-# Artifacts land in ../install/ninja-debug-examples/
+cmake --preset windows-debug-glfw-opengl-examples
+cmake --build build/windows-debug-glfw-opengl-examples
+cmake --install build/windows-debug-glfw-opengl-examples
+# Artifacts land in install/windows-debug-glfw-opengl-examples/
 ```
 
 **CMake options:**
@@ -277,7 +279,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 - **Opacity**: `bellota.mOpacity` (0.0–1.0)
 - **Layers**: multi-layer textures use `bellota.currentLayer()` (managed automatically by `AnimationStateMachine::update()`, or set manually)
 - **Angles**: degrees, not radians
-- **MSVC workaround**: `FMT_UNICODE=0` in CMake for spdlog on Windows
+- **MSVC/clang-cl workaround**: `FMT_UNICODE=0` in CMake for spdlog on Windows
 - **C++ standard**: C++20 required
 - **Aspect ratio**: in fullscreen and on manual window resize, game content is letterboxed/pillarboxed to preserve the canvas aspect ratio — black bands fill unused screen area. Viewport is recomputed every frame from `mWindow->getFramebufferSize()`, so it adapts automatically.
 - **Automatic texture GC**: `TextureUsageMonitor` tracks which textures are referenced by bellotas. After each `update()` callback, `clearUnusedTextures()` automatically removes any texture not referenced by at least one bellota. Calling `canvas.removeTexture()` on a texture still in use triggers a `debugCheck` assert. Use `canvas.setTexture(bellotaId, newTexId)` to swap textures — the old one is marked unused and removed automatically next frame.
