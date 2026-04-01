@@ -142,15 +142,17 @@ else()
     )
 endif()
 set_property(TARGET nothofagus PROPERTY CXX_STANDARD 20)
-target_include_directories(nothofagus PRIVATE
-    "include"
-    "source"
-    "third_party/spdlog/include"
-    "third_party/glad/include"
-    ${NOTHOFAGUS_WIN_INCS}
-    "third_party/glm"
-    "third_party/imgui"
-    "third_party/font8x8"
+target_include_directories(nothofagus
+    PUBLIC
+        "include"
+        "third_party/glm"
+        "third_party/imgui"
+        "third_party/spdlog/include"
+    PRIVATE
+        "source"
+        "third_party/glad/include"
+        ${NOTHOFAGUS_WIN_INCS}
+        "third_party/font8x8"
 )
 target_link_libraries(nothofagus PRIVATE glad ${NOTHOFAGUS_WIN_LINK} imgui)
 # spdlog uses fmt to format string, this library requires /utf-8 when using MSVC
@@ -161,20 +163,6 @@ if(MSVC)
 endif()
 if(NOTHOFAGUS_WIN_DEFS)
     target_compile_definitions(nothofagus PRIVATE ${NOTHOFAGUS_WIN_DEFS})
-endif()
-
-set(NOTHOFAGUS_HEADERS
-    "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glm"
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui"
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include"
-)
-
-get_directory_property(hasParent PARENT_DIRECTORY)
-if(hasParent)
-    set(NOTHOFAGUS_INCLUDE ${NOTHOFAGUS_HEADERS} PARENT_SCOPE)
-else()
-    set(NOTHOFAGUS_INCLUDE ${NOTHOFAGUS_HEADERS})
 endif()
 
 option(NOTHOFAGUS_BUILD_EXAMPLES "Build Nothofagus examples?" OFF)
