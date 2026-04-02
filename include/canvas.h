@@ -227,6 +227,10 @@ public:
     void tick(float deltaTime, std::function<void(float)> update);
     void tick(float deltaTime);
 
+    /// Enable or disable automatic removal of unreferenced textures each frame.
+    /// Enabled by default. Disable during bulk asset loading to prevent premature removal.
+    void setAutoRemoveUnusedTextures(bool enabled);
+
     /// Close the canvas and clean up resources.
     void close();
 

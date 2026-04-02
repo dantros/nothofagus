@@ -184,6 +184,8 @@ public:
     void tick(float deltaTimeMS, std::function<void(float)> update);
     void tick(float deltaTimeMS);
 
+    void setAutoRemoveUnusedTextures(bool enabled);
+
     /// Close the canvas and release resources.
     void close();
 
@@ -214,6 +216,7 @@ private:
     bool mStats; ///< Flag to indicate whether stats should be displayed.
     bool mHeadless{false}; ///< When true, the window is hidden (no visible UI).
     bool mSessionStarted{false}; ///< True after ensureSessionStarted() has been called.
+    bool mAutoTextureGC{true}; ///< When true, unreferenced textures are removed each frame.
     std::vector<const BellotaPack*> mSortedBellotaPacks; ///< Reusable depth-sorted draw list.
 
     struct Window; ///< Forward declaration for window management.

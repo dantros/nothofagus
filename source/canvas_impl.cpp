@@ -190,6 +190,11 @@ void Canvas::CanvasImpl::setClearColor(glm::vec3 clearColor)
     mClearColor = clearColor;
 }
 
+void Canvas::CanvasImpl::setAutoRemoveUnusedTextures(bool enabled)
+{
+    mAutoTextureGC = enabled;
+}
+
 void Canvas::CanvasImpl::setWindowTitle(const std::string& title)
 {
     mTitle = title;
@@ -494,7 +499,8 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
 
     const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
 
-    clearUnusedTextures();
+    if (mAutoTextureGC)
+        clearUnusedTextures();
 
     // Lazy-initialize dirty GPU resources
     for (auto& [textureIndex, texturePack] : mTextures)

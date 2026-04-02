@@ -56,6 +56,11 @@ void Canvas::setClearColor(glm::vec3 clearColor)
     mCanvasImpl->setClearColor(clearColor);
 }
 
+void Canvas::setAutoRemoveUnusedTextures(bool enabled)
+{
+    mCanvasImpl->setAutoRemoveUnusedTextures(enabled);
+}
+
 void Canvas::setWindowTitle(const std::string& title)
 {
     mCanvasImpl->setWindowTitle(title);
