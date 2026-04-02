@@ -384,17 +384,48 @@ public:
     IndirectTexture& setPallete(const ColorPallete& pallete);
 
     /**
-     * @brief Generates the raw texture data for the texture.
-     * 
-     * @return A `TextureData` object containing the raw texture data.
+     * @brief Generates the raw texture data for the texture (CPU-side palette bake).
+     *
+     * @return A `TextureData` object containing the raw RGBA texture data.
      */
     TextureData generateTextureData() const;
+
+    /**
+     * @brief Generates raw index data for GPU-side palette lookup.
+     *
+     * Returns one byte per pixel (the palette index), with all layers concatenated.
+     * Used by the indirect shader path — no palette resolution is performed.
+     *
+     * @return A flat vector of color indices (width * height * layers bytes).
+     */
+    std::vector<std::uint8_t> generateIndexData() const;
+
+    /**
+     * @brief Generates palette data padded to 256 entries for GPU upload.
+     *
+     * Copies the current palette colors and pads with transparent black
+     * up to 256 entries.
+     *
+     * @return A 256-element vector of RGBA colors.
+     */
+    std::vector<glm::vec4> generatePaletteData() const;
+
+    /**
+     * @brief Returns whether the palette has been modified since the last clearPaletteDirty().
+     */
+    bool isPaletteDirty() const { return mPaletteDirty; }
+
+    /**
+     * @brief Clears the palette dirty flag.
+     */
+    void clearPaletteDirty() { mPaletteDirty = false; }
 
 private:
     std::size_t mLayers; /**< The number of layers in the texture. */
     glm::ivec2 mSize; /**< The size of the texture (width and height). */
     std::vector<Pixel> mPixels; /**< The pixel data of the texture. */
     ColorPallete mPallete; /**< The color palette used by the texture. */
+    bool mPaletteDirty = false; /**< Set by setPallete(), cleared after GPU upload. */
 };
 
 std::ostream& operator<<(std::ostream& os, const IndirectTexture& texture);

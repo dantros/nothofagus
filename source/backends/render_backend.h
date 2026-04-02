@@ -23,6 +23,8 @@ struct SpriteDrawParams
     glm::vec3 tintColor;
     float     tintIntensity;
     float     opacity;
+    bool      isIndirect = false;   ///< True when the sprite uses an indirect (palette-based) texture.
+    DTexture  paletteTexture{};     ///< GPU palette texture handle (only valid when isIndirect).
 };
 
 /// Pixel buffer returned by takeScreenshot(). RGBA, top-to-bottom row order.
@@ -50,7 +52,8 @@ concept RenderBackend = requires(
     int framebufferWidth,
     int framebufferHeight,
     const SpriteDrawParams& params,
-    ImDrawData* imguiData)
+    ImDrawData* imguiData,
+    const std::vector<glm::vec4>& paletteColors)
 {
     // Lifecycle
     { backend.initialize(nativeWindowHandle, canvasSize) } -> std::same_as<void>;
@@ -60,6 +63,10 @@ concept RenderBackend = requires(
     // GPU resource management
     { backend.uploadTexture(texture, samplerMode, samplerMode) } -> std::same_as<DTexture>;
     { backend.freeTexture(dtexture)                            } -> std::same_as<void>;
+    { backend.uploadPaletteTexture(paletteColors)              } -> std::same_as<DTexture>;
+    { backend.updatePaletteTexture(dtexture, paletteColors)    } -> std::same_as<void>;
+    { backend.freePaletteTexture(dtexture)                     } -> std::same_as<void>;
+    { backend.linkIndirectTextures(dtexture, dtexture)         } -> std::same_as<void>;
     { backend.uploadMesh(mesh)                                 } -> std::same_as<DMesh>;
     { backend.freeMesh(dmesh)                                  } -> std::same_as<void>;
     { backend.createRenderTarget(targetSize)                   } -> std::same_as<DRenderTarget>;

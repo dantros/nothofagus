@@ -21,6 +21,11 @@ public:
                                 TextureSampleMode minFilter,
                                 TextureSampleMode magFilter);
     void          freeTexture(DTexture texture);
+    DTexture      uploadPaletteTexture(const std::vector<glm::vec4>& paletteColors);
+    void          updatePaletteTexture(DTexture paletteTexture,
+                                       const std::vector<glm::vec4>& paletteColors);
+    void          freePaletteTexture(DTexture paletteTexture);
+    void          linkIndirectTextures(DTexture indexTexture, DTexture paletteTexture);
     DMesh         uploadMesh(const Mesh& mesh);
     void          freeMesh(DMesh mesh);
     DRenderTarget createRenderTarget(glm::ivec2 size);
@@ -44,6 +49,8 @@ public:
 
 private:
     unsigned int mShaderProgram = 0;
+    unsigned int mIndirectShaderProgram = 0;
+    unsigned int mActiveShaderProgram = 0;
 
     struct BellotaShaderUniforms
     {
@@ -53,6 +60,17 @@ private:
         int tintIntensity = -1;
         int opacity       = -1;
     } mUniforms;
+
+    struct IndirectShaderUniforms
+    {
+        int transform      = -1;
+        int layerIndex     = -1;
+        int tintColor      = -1;
+        int tintIntensity  = -1;
+        int opacity        = -1;
+        int indexSampler   = -1;
+        int paletteSampler = -1;
+    } mIndirectUniforms;
 
     std::unordered_map<std::size_t, OpenGLMesh>         mMeshes;
     std::unordered_map<std::size_t, OpenGLTexture>      mTextures;

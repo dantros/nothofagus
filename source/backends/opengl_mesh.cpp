@@ -25,9 +25,7 @@ void OpenGLMesh::fillBuffers(const Mesh& mesh, unsigned int usage)
 void OpenGLMesh::drawCall() const
 {
     glBindVertexArray(vao);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, texture);
     glDrawElements(GL_TRIANGLES, size, GL_UNSIGNED_INT, nullptr);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     glBindVertexArray(0);
 }
 

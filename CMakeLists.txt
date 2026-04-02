@@ -105,8 +105,10 @@ if(NOTHOFAGUS_BACKEND_VULKAN)
 
     set(shaderVertSrc "${CMAKE_CURRENT_SOURCE_DIR}/source/shaders/sprite.vert")
     set(shaderFragSrc "${CMAKE_CURRENT_SOURCE_DIR}/source/shaders/sprite.frag")
+    set(shaderIndirectFragSrc "${CMAKE_CURRENT_SOURCE_DIR}/source/shaders/sprite_indirect.frag")
     set(SHADER_VERT_SPV "${CMAKE_CURRENT_BINARY_DIR}/sprite.vert.spv")
     set(SHADER_FRAG_SPV "${CMAKE_CURRENT_BINARY_DIR}/sprite.frag.spv")
+    set(SHADER_INDIRECT_FRAG_SPV "${CMAKE_CURRENT_BINARY_DIR}/sprite_indirect.frag.spv")
 
     if(NOTHOFAGUS_USE_GLSLANG)
         find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
@@ -116,6 +118,9 @@ if(NOTHOFAGUS_BACKEND_VULKAN)
         add_custom_command(OUTPUT "${SHADER_FRAG_SPV}"
             COMMAND "${GLSLANG_VALIDATOR}" -V "${shaderFragSrc}" -o "${SHADER_FRAG_SPV}"
             DEPENDS "${shaderFragSrc}" VERBATIM)
+        add_custom_command(OUTPUT "${SHADER_INDIRECT_FRAG_SPV}"
+            COMMAND "${GLSLANG_VALIDATOR}" -V "${shaderIndirectFragSrc}" -o "${SHADER_INDIRECT_FRAG_SPV}"
+            DEPENDS "${shaderIndirectFragSrc}" VERBATIM)
     else()
         find_program(GLSLC glslc REQUIRED)
         add_custom_command(OUTPUT "${SHADER_VERT_SPV}"
@@ -124,12 +129,16 @@ if(NOTHOFAGUS_BACKEND_VULKAN)
         add_custom_command(OUTPUT "${SHADER_FRAG_SPV}"
             COMMAND "${GLSLC}" "${shaderFragSrc}" -o "${SHADER_FRAG_SPV}"
             DEPENDS "${shaderFragSrc}" VERBATIM)
+        add_custom_command(OUTPUT "${SHADER_INDIRECT_FRAG_SPV}"
+            COMMAND "${GLSLC}" "${shaderIndirectFragSrc}" -o "${SHADER_INDIRECT_FRAG_SPV}"
+            DEPENDS "${shaderIndirectFragSrc}" VERBATIM)
     endif()
-    add_custom_target(spirv_shaders DEPENDS "${SHADER_VERT_SPV}" "${SHADER_FRAG_SPV}")
+    add_custom_target(spirv_shaders DEPENDS "${SHADER_VERT_SPV}" "${SHADER_FRAG_SPV}" "${SHADER_INDIRECT_FRAG_SPV}")
     add_dependencies(nothofagus spirv_shaders)
     target_compile_definitions(nothofagus PRIVATE
         NOTHOFAGUS_SPRITE_VERT_SPV="${SHADER_VERT_SPV}"
-        NOTHOFAGUS_SPRITE_FRAG_SPV="${SHADER_FRAG_SPV}")
+        NOTHOFAGUS_SPRITE_FRAG_SPV="${SHADER_FRAG_SPV}"
+        NOTHOFAGUS_SPRITE_INDIRECT_FRAG_SPV="${SHADER_INDIRECT_FRAG_SPV}")
 
     target_link_libraries(nothofagus PRIVATE
         Vulkan::Vulkan vk-bootstrap::vk-bootstrap VulkanMemoryAllocator)

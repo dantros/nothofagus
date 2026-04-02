@@ -77,6 +77,7 @@ IndirectTexture& IndirectTexture::setPallete(const ColorPallete& pallete)
 {
     debugCheck(mPallete.size() <= pallete.size(), "");
     mPallete = pallete;
+    mPaletteDirty = true;
     return *this;
 }
 
@@ -103,6 +104,37 @@ TextureData IndirectTexture::generateTextureData() const
     }
 
     return out;
+}
+
+std::vector<std::uint8_t> IndirectTexture::generateIndexData() const
+{
+    const std::size_t pixelsPerLayer = static_cast<std::size_t>(mSize.x) * static_cast<std::size_t>(mSize.y);
+    std::vector<std::uint8_t> indexData(pixelsPerLayer * mLayers);
+
+    for (std::size_t layer = 0; layer < mLayers; ++layer)
+    {
+        const std::size_t layerIndexStart = layer * pixelsPerLayer;
+        for (std::size_t pixelIndex = 0; pixelIndex < pixelsPerLayer; ++pixelIndex)
+        {
+            indexData[layerIndexStart + pixelIndex] = mPixels[layerIndexStart + pixelIndex].colorId;
+        }
+    }
+
+    return indexData;
+}
+
+std::vector<glm::vec4> IndirectTexture::generatePaletteData() const
+{
+    static constexpr std::size_t paletteSize = 256;
+    std::vector<glm::vec4> paletteData(paletteSize, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
+
+    const std::size_t count = std::min(mPallete.colors.size(), paletteSize);
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        paletteData[i] = mPallete.colors[i];
+    }
+
+    return paletteData;
 }
 
 std::ostream& operator<<(std::ostream& os, const IndirectTexture& texture)

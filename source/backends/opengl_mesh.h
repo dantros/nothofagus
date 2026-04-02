@@ -10,7 +10,7 @@ constexpr unsigned int SIZE_IN_BYTES = 4;
 
 struct OpenGLMesh
 {
-    unsigned int vao, vbo, ebo, texture;
+    unsigned int vao, vbo, ebo;
     std::size_t size;
     glm::mat3 transform;
 
