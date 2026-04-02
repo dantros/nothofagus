@@ -10,6 +10,7 @@
 #include "controller.h"
 #include "keyboard.h"
 #include "mouse.h"
+#include "gamepad.h"
 #include "text.h"
 #include "animation_state.h"
 #include "animation_state_machine.h"

@@ -2,6 +2,7 @@
 #include "check.h"
 #include "keyboard.h"
 #include "mouse.h"
+#include "gamepad.h"
 #include <glad/glad.h>
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
@@ -13,34 +14,6 @@
 namespace Nothofagus
 {
 
-static GamepadButton sdlButtonToGamepadButton(SDL_GamepadButton button)
-{
-    switch (button)
-    {
-    case SDL_GAMEPAD_BUTTON_SOUTH:          return GamepadButton::A;
-    case SDL_GAMEPAD_BUTTON_EAST:           return GamepadButton::B;
-    case SDL_GAMEPAD_BUTTON_WEST:           return GamepadButton::X;
-    case SDL_GAMEPAD_BUTTON_NORTH:          return GamepadButton::Y;
-    case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:  return GamepadButton::LeftBumper;
-    case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return GamepadButton::RightBumper;
-    case SDL_GAMEPAD_BUTTON_BACK:           return GamepadButton::Back;
-    case SDL_GAMEPAD_BUTTON_START:          return GamepadButton::Start;
-    case SDL_GAMEPAD_BUTTON_GUIDE:          return GamepadButton::Guide;
-    case SDL_GAMEPAD_BUTTON_LEFT_STICK:     return GamepadButton::LeftThumb;
-    case SDL_GAMEPAD_BUTTON_RIGHT_STICK:    return GamepadButton::RightThumb;
-    case SDL_GAMEPAD_BUTTON_DPAD_UP:        return GamepadButton::DpadUp;
-    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:     return GamepadButton::DpadRight;
-    case SDL_GAMEPAD_BUTTON_DPAD_DOWN:      return GamepadButton::DpadDown;
-    case SDL_GAMEPAD_BUTTON_DPAD_LEFT:      return GamepadButton::DpadLeft;
-    default:                                return GamepadButton::A;
-    }
-}
-
-static GamepadAxis sdlAxisToGamepadAxis(SDL_GamepadAxis axis)
-{
-    // SDL3 axis enum order matches GamepadAxis order — direct cast is valid.
-    return static_cast<GamepadAxis>(axis);
-}
 
 Sdl3Backend::Sdl3Backend(const std::string& title, int width, int height, bool visible)
 {
@@ -220,8 +193,8 @@ void Sdl3Backend::endFrame(Controller& controller, const ViewportRect& viewport,
         case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
         case SDL_EVENT_GAMEPAD_BUTTON_UP:
         {
-            GamepadButton button = sdlButtonToGamepadButton(
-                static_cast<SDL_GamepadButton>(event.gbutton.button));
+            GamepadButton button = GamepadImplementation::toGamepadButton(
+                static_cast<int>(event.gbutton.button));
             DiscreteTrigger trigger = (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN)
                 ? DiscreteTrigger::Press : DiscreteTrigger::Release;
             controller.activateGamepadButton({static_cast<int>(event.gbutton.which), button, trigger});
@@ -229,8 +202,8 @@ void Sdl3Backend::endFrame(Controller& controller, const ViewportRect& viewport,
         }
         case SDL_EVENT_GAMEPAD_AXIS_MOTION:
         {
-            GamepadAxis axis = sdlAxisToGamepadAxis(
-                static_cast<SDL_GamepadAxis>(event.gaxis.axis));
+            GamepadAxis axis = GamepadImplementation::toGamepadAxis(
+                static_cast<int>(event.gaxis.axis));
             float value = static_cast<float>(event.gaxis.value) / 32767.0f;
 
             if (axis == GamepadAxis::LeftTrigger || axis == GamepadAxis::RightTrigger)

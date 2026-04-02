@@ -75,3 +75,9 @@ add_executable(hello_headless
 )
 set_property(TARGET hello_headless PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_headless PRIVATE nothofagus)
+
+add_executable(test_gamepad
+    "test_gamepad.cpp"
+)
+set_property(TARGET test_gamepad PROPERTY CXX_STANDARD 20)
+target_link_libraries(test_gamepad PRIVATE nothofagus)

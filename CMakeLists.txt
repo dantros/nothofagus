@@ -26,7 +26,8 @@ if(NOTHOFAGUS_WINDOW_BACKEND STREQUAL "SDL3")
     set(NOTHOFAGUS_BACKEND_SRC
         "source/backends/sdl3_backend.cpp"
         "source/backends/sdl3_keyboard.cpp"
-        "source/backends/sdl3_mouse.cpp")
+        "source/backends/sdl3_mouse.cpp"
+        "source/backends/sdl3_gamepad.cpp")
 else()
     # ── GLFW (default) ────────────────────────
     option(GLFW_INSTALL        "Disabling installation of GLFW"   OFF)
@@ -46,7 +47,8 @@ else()
     set(NOTHOFAGUS_BACKEND_SRC
         "source/backends/glfw_backend.cpp"
         "source/backends/glfw_keyboard.cpp"
-        "source/backends/glfw_mouse.cpp")
+        "source/backends/glfw_mouse.cpp"
+        "source/backends/glfw_gamepad.cpp")
 endif()
 
 option(NOTHOFAGUS_BACKEND_VULKAN "Use Vulkan backend instead of OpenGL" OFF)
@@ -73,6 +75,7 @@ add_library(nothofagus
     "source/controller.cpp"
     "source/keyboard.cpp"
     "source/mouse.cpp"
+    "source/gamepad.cpp"
     "source/text.cpp"
     "source/animation_state_machine.cpp"
     "source/animation_state.cpp"
@@ -230,6 +233,7 @@ if (${NOTHOFAGUS_INSTALL})
             hello_nested_render_targets
             hello_screenshot
             hello_headless
+            test_gamepad
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT NothofagusExamples_Runtime
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

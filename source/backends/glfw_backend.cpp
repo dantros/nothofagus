@@ -2,6 +2,7 @@
 #include "check.h"
 #include "keyboard.h"
 #include "mouse.h"
+#include "gamepad.h"
 #include <imgui.h>
 #include <backends/imgui_impl_glfw.h>
 #include <spdlog/spdlog.h>
@@ -211,13 +212,13 @@ void GlfwBackend::endFrame(Controller& controller, const ViewportRect& viewport,
             {
                 DiscreteTrigger trigger = (state.buttons[buttonIndex] == GLFW_PRESS)
                     ? DiscreteTrigger::Press : DiscreteTrigger::Release;
-                controller.activateGamepadButton({i, static_cast<GamepadButton>(buttonIndex), trigger});
+                controller.activateGamepadButton({i, GamepadImplementation::toGamepadButton(buttonIndex), trigger});
             }
         }
 
         for (int axisIndex = 0; axisIndex <= GLFW_GAMEPAD_AXIS_LAST; ++axisIndex)
         {
-            GamepadAxis axis = static_cast<GamepadAxis>(axisIndex);
+            GamepadAxis axis = GamepadImplementation::toGamepadAxis(axisIndex);
             float value = state.axes[axisIndex];
 
             if (axis == GamepadAxis::LeftTrigger || axis == GamepadAxis::RightTrigger)

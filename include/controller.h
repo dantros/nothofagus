@@ -11,6 +11,7 @@
 #include <vector>
 #include "keyboard.h"
 #include "mouse.h"
+#include "gamepad.h"
 #include <glm/vec2.hpp>
 
 namespace Nothofagus
@@ -84,24 +85,6 @@ using ActiveActions = std::deque<KeyboardTrigger>;
 using MouseTriggerActions = std::unordered_map<MouseButtonTrigger, Action, MouseButtonTriggerHash, MouseButtonTriggerEqual>;
 using ActiveMouseActions = std::deque<MouseButtonTrigger>;
 
-// ---------------------------------------------------------------------------
-// Gamepad types
-// ---------------------------------------------------------------------------
-
-enum class GamepadButton : std::uint8_t
-{
-    A, B, X, Y,
-    LeftBumper, RightBumper,
-    Back, Start, Guide,
-    LeftThumb, RightThumb,
-    DpadUp, DpadRight, DpadDown, DpadLeft
-};
-
-enum class GamepadAxis : std::uint8_t
-{
-    LeftX, LeftY, RightX, RightY,
-    LeftTrigger, RightTrigger
-};
 
 struct GamepadButtonTrigger
 {

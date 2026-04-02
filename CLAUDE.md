@@ -10,8 +10,10 @@ Pixel art real-time renderer built on OpenGL 3.3, written in C++20. Outputs a st
 - **IndirectTexture** — paletted texture: pixels hold color indices into a `ColorPallete`
 - **DirectTexture** — raw RGBA texture
 - **Transform** — position (`mLocation`), scale (`mScale`), rotation (`mAngle` in degrees)
-- **Controller** — keyboard and mouse input handler; maps `KeyboardTrigger`/`MouseButtonTrigger` → `Action` callbacks and tracks mouse position as `glm::vec2`
+- **Controller** — keyboard, mouse, and gamepad input handler; maps `KeyboardTrigger`/`MouseButtonTrigger`/`GamepadButtonTrigger` → `Action` callbacks and tracks mouse position as `glm::vec2`
 - **MouseButton** — enum with values `Left`, `Middle`, `Right`
+- **GamepadButton** — enum with values `A`, `B`, `X`, `Y`, `LeftBumper`, `RightBumper`, `Back`, `Start`, `Guide`, `LeftThumb`, `RightThumb`, `DpadUp`, `DpadRight`, `DpadDown`, `DpadLeft`
+- **GamepadAxis** — enum with values `LeftX`, `LeftY`, `RightX`, `RightY`, `LeftTrigger`, `RightTrigger`
 - **AnimationState** — frame sequence with per-frame durations, loops automatically
 - **AnimationStateMachine** — manages multiple states with named event-based transitions
 
@@ -27,7 +29,7 @@ Canvas (public API)
 
 - `include/` — public API headers
 - `source/` — implementation + internal headers (never expose to users)
-- `source/backends/` — window/input backend implementations (`glfw_backend`, `sdl3_backend`, per-backend keyboard/mouse mappers)
+- `source/backends/` — window/input backend implementations (`glfw_backend`, `sdl3_backend`, per-backend keyboard/mouse/gamepad mappers)
 - `examples/` — standalone demo executables
 - `third_party/` — git submodules (glfw, glad, glm, imgui, spdlog, font8x8, SDL)
 
@@ -74,9 +76,11 @@ source/backends/
 ├── glfw_backend.h/.cpp    — GLFW implementation
 ├── glfw_keyboard.h/.cpp   — GLFW key-code ↔ Key mapping
 ├── glfw_mouse.h/.cpp      — GLFW button ↔ MouseButton mapping
+├── glfw_gamepad.h/.cpp    — GLFW button/axis ↔ GamepadButton/GamepadAxis mapping
 ├── sdl3_backend.h/.cpp    — SDL3 implementation
 ├── sdl3_keyboard.h/.cpp   — SDL3 key-code ↔ Key mapping
-└── sdl3_mouse.h/.cpp      — SDL3 button ↔ MouseButton mapping
+├── sdl3_mouse.h/.cpp      — SDL3 button ↔ MouseButton mapping
+└── sdl3_gamepad.h/.cpp    — SDL3 button/axis ↔ GamepadButton/GamepadAxis mapping
 ```
 
 `CanvasImpl` owns a `Window` that inherits from `SelectedWindowBackend` (PIMPL). The `window_backend.h` header is only included in `canvas_impl.cpp`, keeping backend headers entirely out of the public API.
@@ -296,6 +300,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_text.cpp` | Text rendering |
 | `hello_tint.cpp` | Color tinting |
 | `test_keyboard.cpp` | Keyboard input handling |
+| `test_gamepad.cpp` | Gamepad input: stick movement, D-pad, buttons, ImGui status |
 | `test_create_destroy.cpp` | Object lifecycle |
 | `hello_screenshot.cpp` | `takeScreenshot()` — capture frame as DirectTexture, display thumbnail |
 | `hello_headless.cpp` | Headless mode + `tick()` — no window, manual frame stepping, screenshot to terminal |
