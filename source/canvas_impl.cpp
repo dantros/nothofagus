@@ -232,7 +232,9 @@ void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
 TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
 {
     glm::ivec2 textureSize = std::visit(GetTextureSizeVisitor(), texture);
-    TextureId newTextureId{mTextures.add({texture, std::nullopt, textureSize})};
+    TexturePack texturePack{texture, std::nullopt, std::nullopt, textureSize};
+    texturePack.isIndirect = std::holds_alternative<IndirectTexture>(texture);
+    TextureId newTextureId{mTextures.add(std::move(texturePack))};
     const bool textureWasAdded = mTextureUsageMonitor.addUnusedTexture(newTextureId);
     debugCheck(textureWasAdded, "Texture ID already present in usage monitor — duplicate addTexture call");
     return newTextureId;
@@ -244,6 +246,8 @@ void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
     debugCheck(textureWasRemoved, "Texture is not in the unused set — still referenced by a bellota or already removed");
 
     TexturePack& texturePackToRemove = mTextures.at(textureId.id);
+    if (texturePackToRemove.dpaletteTextureOpt.has_value())
+        mBackend.freePaletteTexture(texturePackToRemove.dpaletteTextureOpt.value());
     if (texturePackToRemove.dtextureOpt.has_value())
         mBackend.freeTexture(texturePackToRemove.dtextureOpt.value());
     texturePackToRemove.clear();
@@ -282,6 +286,8 @@ void Canvas::CanvasImpl::markTextureAsDirty(const TextureId textureId)
     TexturePack& texturePack = mTextures.at(textureId.id);
     debugCheck(not texturePack.isProxy(), "markTextureAsDirty called on a render target proxy texture.");
 
+    if (texturePack.dpaletteTextureOpt.has_value())
+        mBackend.freePaletteTexture(texturePack.dpaletteTextureOpt.value());
     if (texturePack.dtextureOpt.has_value())
         mBackend.freeTexture(texturePack.dtextureOpt.value());
     texturePack.clear();
@@ -291,6 +297,8 @@ void Canvas::CanvasImpl::setTextureMinFilter(const TextureId textureId, TextureS
 {
     TexturePack& texturePack = mTextures.at(textureId.id);
     texturePack.minFilter = mode;
+    // Indirect index textures require GL_NEAREST — skip filter updates for them.
+    if (texturePack.isIndirect) return;
     if (texturePack.dtextureOpt.has_value())
         mBackend.setTextureMinFilter(texturePack.dtextureOpt.value(), mode);
 }
@@ -299,6 +307,8 @@ void Canvas::CanvasImpl::setTextureMagFilter(const TextureId textureId, TextureS
 {
     TexturePack& texturePack = mTextures.at(textureId.id);
     texturePack.magFilter = mode;
+    // Indirect index textures require GL_NEAREST — skip filter updates for them.
+    if (texturePack.isIndirect) return;
     if (texturePack.dtextureOpt.has_value())
         mBackend.setTextureMagFilter(texturePack.dtextureOpt.value(), mode);
 }
@@ -509,6 +519,27 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
         {
             texturePack.dtextureOpt = mBackend.uploadTexture(
                 texturePack.texture.value(), texturePack.minFilter, texturePack.magFilter);
+
+            if (texturePack.isIndirect)
+            {
+                auto& indirectTexture = std::get<IndirectTexture>(texturePack.texture.value());
+                texturePack.dpaletteTextureOpt = mBackend.uploadPaletteTexture(
+                    indirectTexture.generatePaletteData());
+                mBackend.linkIndirectTextures(
+                    texturePack.dtextureOpt.value(), texturePack.dpaletteTextureOpt.value());
+                indirectTexture.clearPaletteDirty();
+            }
+        }
+        else if (texturePack.isIndirect && !texturePack.isProxy() && texturePack.dpaletteTextureOpt.has_value())
+        {
+            auto& indirectTexture = std::get<IndirectTexture>(texturePack.texture.value());
+            if (indirectTexture.isPaletteDirty())
+            {
+                mBackend.updatePaletteTexture(
+                    texturePack.dpaletteTextureOpt.value(),
+                    indirectTexture.generatePaletteData());
+                indirectTexture.clearPaletteDirty();
+            }
         }
     }
 
@@ -576,8 +607,11 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
             if (!packPtr->dmeshOpt.has_value()) continue;
             const TexturePack& texturePack = mTextures.at(packPtr->bellota.texture().id);
             if (!texturePack.dtextureOpt.has_value()) continue;
-            mBackend.drawSprite(packPtr->dmeshOpt.value(), texturePack.dtextureOpt.value(),
-                makeSpriteDrawParams(*packPtr, renderTargetWorldTransform));
+            SpriteDrawParams drawParams = makeSpriteDrawParams(*packPtr, renderTargetWorldTransform);
+            drawParams.isIndirect = texturePack.isIndirect;
+            if (texturePack.isIndirect && texturePack.dpaletteTextureOpt.has_value())
+                drawParams.paletteTexture = texturePack.dpaletteTextureOpt.value();
+            mBackend.drawSprite(packPtr->dmeshOpt.value(), texturePack.dtextureOpt.value(), drawParams);
         }
 
         mBackend.endRttPass();
@@ -593,8 +627,11 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
         if (!packPtr->dmeshOpt.has_value()) continue;
         const TexturePack& texturePack = mTextures.at(packPtr->bellota.texture().id);
         if (!texturePack.dtextureOpt.has_value()) continue;
-        mBackend.drawSprite(packPtr->dmeshOpt.value(), texturePack.dtextureOpt.value(),
-            makeSpriteDrawParams(*packPtr, worldTransformMat));
+        SpriteDrawParams drawParams = makeSpriteDrawParams(*packPtr, worldTransformMat);
+        drawParams.isIndirect = texturePack.isIndirect;
+        if (texturePack.isIndirect && texturePack.dpaletteTextureOpt.has_value())
+            drawParams.paletteTexture = texturePack.dpaletteTextureOpt.value();
+        mBackend.drawSprite(packPtr->dmeshOpt.value(), texturePack.dtextureOpt.value(), drawParams);
     }
 
     if (mStats)

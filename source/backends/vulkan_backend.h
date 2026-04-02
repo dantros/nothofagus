@@ -37,6 +37,12 @@ struct PendingTextureDeletion
     VkImageView     imageView;
     VkImage         image;       // VK_NULL_HANDLE for proxy textures (image owned by RT)
     VmaAllocation   allocation;  // nullptr for proxy textures
+
+    // Palette resources (only populated for indirect textures).
+    VkSampler       paletteSampler    = VK_NULL_HANDLE;
+    VkImageView     paletteImageView  = VK_NULL_HANDLE;
+    VkImage         paletteImage      = VK_NULL_HANDLE;
+    VmaAllocation   paletteAllocation = VK_NULL_HANDLE;
 };
 
 struct PendingRenderTargetDeletion
@@ -92,6 +98,10 @@ public:
 
     DTexture      uploadTexture(const Texture& texture, TextureSampleMode minFilter, TextureSampleMode magFilter);
     void          freeTexture(DTexture dtexture);
+    DTexture      uploadPaletteTexture(const std::vector<glm::vec4>& paletteColors);
+    void          updatePaletteTexture(DTexture paletteTexture, const std::vector<glm::vec4>& paletteColors);
+    void          freePaletteTexture(DTexture paletteTexture);
+    void          linkIndirectTextures(DTexture indexTexture, DTexture paletteTexture);
     DMesh         uploadMesh(const Mesh& mesh);
     void          freeMesh(DMesh dmesh);
     DRenderTarget createRenderTarget(glm::ivec2 size);
@@ -142,10 +152,15 @@ private:
     VkRenderPass mMainRenderPass = VK_NULL_HANDLE;  // swapchain output
     VkRenderPass mRttRenderPass  = VK_NULL_HANDLE;  // off-screen output
 
-    // --- Pipeline ---
+    // --- Pipeline (direct textures) ---
     VkDescriptorSetLayout mDescriptorSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout      mPipelineLayout      = VK_NULL_HANDLE;
     VkPipeline            mSpritePipeline      = VK_NULL_HANDLE;
+
+    // --- Pipeline (indirect / palette-based textures) ---
+    VkDescriptorSetLayout mIndirectDescriptorSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout      mIndirectPipelineLayout      = VK_NULL_HANDLE;
+    VkPipeline            mIndirectSpritePipeline      = VK_NULL_HANDLE;
 
     // --- Descriptor pools ---
     VkDescriptorPool mDescriptorPool      = VK_NULL_HANDLE;  // per-texture combined image sampler
@@ -198,6 +213,9 @@ private:
     VkShaderModule  createShaderModule(const char* spirvPath) const;
     VkSampler       createSampler(TextureSampleMode minFilter, TextureSampleMode magFilter) const;
     VkDescriptorSet allocateAndUpdateDescriptorSet(VkImageView imageView, VkSampler sampler) const;
+    VkDescriptorSet allocateAndUpdateIndirectDescriptorSet(
+        VkImageView indexView, VkSampler indexSampler,
+        VkImageView paletteView, VkSampler paletteSampler) const;
     VkFormat        findDepthFormat() const;
 
     void createSwapchainDepthResources();

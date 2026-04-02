@@ -762,8 +762,63 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
         if (vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &mSpritePipeline) != VK_SUCCESS)
             throw std::runtime_error("Failed to create graphics pipeline");
 
-        vkDestroyShaderModule(mDevice, vertModule, nullptr);
         vkDestroyShaderModule(mDevice, fragModule, nullptr);
+
+        // 17. Indirect (palette-based) descriptor set layout — 2 bindings
+        {
+            std::array<VkDescriptorSetLayoutBinding, 2> indirectBindings{};
+            // binding 0: index texture (usampler2DArray)
+            indirectBindings[0].binding         = 0;
+            indirectBindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            indirectBindings[0].descriptorCount = 1;
+            indirectBindings[0].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+            // binding 1: palette texture (sampler1D)
+            indirectBindings[1].binding         = 1;
+            indirectBindings[1].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            indirectBindings[1].descriptorCount = 1;
+            indirectBindings[1].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+            VkDescriptorSetLayoutCreateInfo indirectLayoutInfo{};
+            indirectLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            indirectLayoutInfo.bindingCount = static_cast<uint32_t>(indirectBindings.size());
+            indirectLayoutInfo.pBindings    = indirectBindings.data();
+
+            if (vkCreateDescriptorSetLayout(mDevice, &indirectLayoutInfo, nullptr, &mIndirectDescriptorSetLayout) != VK_SUCCESS)
+                throw std::runtime_error("Failed to create indirect descriptor set layout");
+        }
+
+        // 18. Indirect pipeline layout (same push constants, different descriptor set layout)
+        {
+            VkPushConstantRange indirectPushRange{};
+            indirectPushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+            indirectPushRange.offset     = 0;
+            indirectPushRange.size       = sizeof(SpritePushConstants);
+
+            VkPipelineLayoutCreateInfo indirectPipelineLayoutInfo{};
+            indirectPipelineLayoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+            indirectPipelineLayoutInfo.setLayoutCount         = 1;
+            indirectPipelineLayoutInfo.pSetLayouts            = &mIndirectDescriptorSetLayout;
+            indirectPipelineLayoutInfo.pushConstantRangeCount = 1;
+            indirectPipelineLayoutInfo.pPushConstantRanges    = &indirectPushRange;
+            if (vkCreatePipelineLayout(mDevice, &indirectPipelineLayoutInfo, nullptr, &mIndirectPipelineLayout) != VK_SUCCESS)
+                throw std::runtime_error("Failed to create indirect pipeline layout");
+        }
+
+        // 19. Indirect graphics pipeline (same vertex shader, indirect fragment shader)
+        {
+            VkShaderModule indirectFragModule = createShaderModule(NOTHOFAGUS_SPRITE_INDIRECT_FRAG_SPV);
+
+            stages[1].module = indirectFragModule;
+
+            pipelineInfo.layout = mIndirectPipelineLayout;
+
+            if (vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &mIndirectSpritePipeline) != VK_SUCCESS)
+                throw std::runtime_error("Failed to create indirect graphics pipeline");
+
+            vkDestroyShaderModule(mDevice, indirectFragModule, nullptr);
+        }
+
+        vkDestroyShaderModule(mDevice, vertModule, nullptr);
     }
 
 }
@@ -808,6 +863,13 @@ void VulkanBackend::flushPendingDeletions(FrameData& frame)
         vkDestroyImageView(mDevice, pending.imageView, nullptr);
         if (pending.image != VK_NULL_HANDLE)
             vmaDestroyImage(mAllocator, pending.image, pending.allocation);
+        // Palette resources (indirect textures only).
+        if (pending.paletteSampler != VK_NULL_HANDLE)
+            vkDestroySampler(mDevice, pending.paletteSampler, nullptr);
+        if (pending.paletteImageView != VK_NULL_HANDLE)
+            vkDestroyImageView(mDevice, pending.paletteImageView, nullptr);
+        if (pending.paletteImage != VK_NULL_HANDLE)
+            vmaDestroyImage(mAllocator, pending.paletteImage, pending.paletteAllocation);
     }
     frame.pendingTextureDeletions.clear();
 
@@ -855,6 +917,12 @@ void VulkanBackend::shutdown()
         vkDestroyImageView(mDevice, tex.imageView, nullptr);
         if (!tex.isProxy)
             vmaDestroyImage(mAllocator, tex.image, tex.allocation);
+        if (tex.isIndirect)
+        {
+            vkDestroySampler(mDevice, tex.paletteSampler, nullptr);
+            vkDestroyImageView(mDevice, tex.paletteImageView, nullptr);
+            vmaDestroyImage(mAllocator, tex.paletteImage, tex.paletteAllocation);
+        }
     }
     mTextures.clear();
 
@@ -868,6 +936,9 @@ void VulkanBackend::shutdown()
     }
     mRenderTargets.clear();
 
+    vkDestroyPipeline(mDevice, mIndirectSpritePipeline, nullptr);
+    vkDestroyPipelineLayout(mDevice, mIndirectPipelineLayout, nullptr);
+    vkDestroyDescriptorSetLayout(mDevice, mIndirectDescriptorSetLayout, nullptr);
     vkDestroyPipeline(mDevice, mSpritePipeline, nullptr);
     vkDestroyPipelineLayout(mDevice, mPipelineLayout, nullptr);
     vkDestroyDescriptorSetLayout(mDevice, mDescriptorSetLayout, nullptr);
@@ -912,11 +983,37 @@ void VulkanBackend::shutdown()
 DTexture VulkanBackend::uploadTexture(
     const Texture& texture, TextureSampleMode minFilter, TextureSampleMode magFilter)
 {
-    const TextureData textureData = std::visit(GenerateTextureDataVisitor{}, texture);
-    const uint32_t    width       = static_cast<uint32_t>(textureData.width());
-    const uint32_t    height      = static_cast<uint32_t>(textureData.height());
-    const uint32_t    layers      = static_cast<uint32_t>(textureData.layers());
-    const VkDeviceSize imageSize  = textureData.getDataSpan().size();
+    const bool isIndirect = std::holds_alternative<IndirectTexture>(texture);
+
+    // Determine upload data and format based on texture type.
+    VkFormat imageFormat;
+    const void* uploadData;
+    VkDeviceSize imageSize;
+    uint32_t width, height, layers;
+    std::vector<std::uint8_t> indexData;  // kept alive until after staging copy
+    TextureData directTextureData(1, 1);  // kept alive until after staging copy
+
+    if (isIndirect)
+    {
+        const auto& indirectTexture = std::get<IndirectTexture>(texture);
+        indexData  = indirectTexture.generateIndexData();
+        width      = static_cast<uint32_t>(indirectTexture.size().x);
+        height     = static_cast<uint32_t>(indirectTexture.size().y);
+        layers     = static_cast<uint32_t>(indirectTexture.layers());
+        imageSize  = indexData.size();
+        uploadData = indexData.data();
+        imageFormat = VK_FORMAT_R8_UINT;
+    }
+    else
+    {
+        directTextureData = std::visit(GenerateTextureDataVisitor{}, texture);
+        width      = static_cast<uint32_t>(directTextureData.width());
+        height     = static_cast<uint32_t>(directTextureData.height());
+        layers     = static_cast<uint32_t>(directTextureData.layers());
+        imageSize  = directTextureData.getDataSpan().size();
+        uploadData = directTextureData.getDataSpan().data();
+        imageFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    }
 
     // Staging buffer
     VkBufferCreateInfo stagingBufferInfo{};
@@ -935,13 +1032,13 @@ DTexture VulkanBackend::uploadTexture(
     vmaCreateBuffer(mAllocator, &stagingBufferInfo, &stagingAllocInfo,
                     &stagingBuffer, &stagingAlloc, &stagingInfo);
 
-    std::memcpy(stagingInfo.pMappedData, textureData.getDataSpan().data(), imageSize);
+    std::memcpy(stagingInfo.pMappedData, uploadData, imageSize);
 
     // Device-local image
     VkImageCreateInfo imageInfo{};
     imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType     = VK_IMAGE_TYPE_2D;
-    imageInfo.format        = VK_FORMAT_R8G8B8A8_UNORM;
+    imageInfo.format        = imageFormat;
     imageInfo.extent        = {width, height, 1};
     imageInfo.mipLevels     = 1;
     imageInfo.arrayLayers   = layers;
@@ -987,7 +1084,7 @@ DTexture VulkanBackend::uploadTexture(
     viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image                           = image;
     viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-    viewInfo.format                          = VK_FORMAT_R8G8B8A8_UNORM;
+    viewInfo.format                          = imageFormat;
     viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.levelCount     = 1;
     viewInfo.subresourceRange.baseArrayLayer = 0;
@@ -997,11 +1094,34 @@ DTexture VulkanBackend::uploadTexture(
     if (vkCreateImageView(mDevice, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
         throw std::runtime_error("Failed to create texture image view");
 
-    VkSampler       sampler       = createSampler(minFilter, magFilter);
-    VkDescriptorSet descriptorSet = allocateAndUpdateDescriptorSet(imageView, sampler);
+    // For indirect textures, force NEAREST filter (integer textures require it).
+    const TextureSampleMode effectiveMinFilter = isIndirect ? TextureSampleMode::Nearest : minFilter;
+    const TextureSampleMode effectiveMagFilter = isIndirect ? TextureSampleMode::Nearest : magFilter;
+    VkSampler sampler = createSampler(effectiveMinFilter, effectiveMagFilter);
+
+    VulkanTexture vulkanTexture{};
+    vulkanTexture.image       = image;
+    vulkanTexture.allocation  = imageAlloc;
+    vulkanTexture.imageView   = imageView;
+    vulkanTexture.sampler     = sampler;
+    vulkanTexture.isProxy     = false;
+    vulkanTexture.isIndirect  = isIndirect;
+
+    if (isIndirect)
+    {
+        // For indirect textures, the descriptor set uses the indirect layout
+        // and will be created when uploadPaletteTexture provides the palette image.
+        // For now, create a placeholder single-binding descriptor set so drawSprite
+        // doesn't crash if called before the palette is uploaded.
+        vulkanTexture.descriptorSet = allocateAndUpdateDescriptorSet(imageView, sampler);
+    }
+    else
+    {
+        vulkanTexture.descriptorSet = allocateAndUpdateDescriptorSet(imageView, sampler);
+    }
 
     const std::size_t newId = mNextId++;
-    mTextures[newId] = VulkanTexture{image, imageAlloc, imageView, sampler, descriptorSet, false};
+    mTextures[newId] = vulkanTexture;
     return DTexture{newId};
 }
 
@@ -1016,14 +1136,239 @@ void VulkanBackend::freeTexture(DTexture dtexture)
 
     VulkanTexture& tex = it->second;
     const int lastSubmittedSlot = (mCurrentFrame - 1 + MAX_FRAMES_IN_FLIGHT) % MAX_FRAMES_IN_FLIGHT;
-    mFrames[lastSubmittedSlot].pendingTextureDeletions.push_back({
-        tex.descriptorSet,
-        tex.sampler,
-        tex.imageView,
-        tex.isProxy ? VK_NULL_HANDLE : tex.image,
-        tex.isProxy ? nullptr         : tex.allocation
-    });
+    PendingTextureDeletion pending{};
+    pending.descriptorSet = tex.descriptorSet;
+    pending.sampler       = tex.sampler;
+    pending.imageView     = tex.imageView;
+    pending.image         = tex.isProxy ? VK_NULL_HANDLE : tex.image;
+    pending.allocation    = tex.isProxy ? nullptr         : tex.allocation;
+    if (tex.isIndirect)
+    {
+        pending.paletteSampler    = tex.paletteSampler;
+        pending.paletteImageView  = tex.paletteImageView;
+        pending.paletteImage      = tex.paletteImage;
+        pending.paletteAllocation = tex.paletteAllocation;
+    }
+    mFrames[lastSubmittedSlot].pendingTextureDeletions.push_back(pending);
     mTextures.erase(it);
+}
+
+// ---------------------------------------------------------------------------
+// Palette texture upload (indirect textures)
+// ---------------------------------------------------------------------------
+
+DTexture VulkanBackend::uploadPaletteTexture(const std::vector<glm::vec4>& paletteColors)
+{
+    // This is a stub — for Vulkan, palette data is stored inside the VulkanTexture
+    // alongside the index texture. The actual upload happens in uploadTexture() via
+    // the canvas integration calling this after uploadTexture. We create a 1D image
+    // and store it with a dummy DTexture so the canvas can track it.
+
+    const uint32_t paletteSize = static_cast<uint32_t>(paletteColors.size());
+    const VkDeviceSize dataSize = paletteSize * sizeof(glm::vec4);
+
+    // Staging buffer
+    VkBufferCreateInfo stagingBufferInfo{};
+    stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    stagingBufferInfo.size  = dataSize;
+    stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+    VmaAllocationCreateInfo stagingAllocInfo{};
+    stagingAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                             VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VkBuffer      stagingBuffer;
+    VmaAllocation stagingAlloc;
+    VmaAllocationInfo stagingInfo;
+    vmaCreateBuffer(mAllocator, &stagingBufferInfo, &stagingAllocInfo,
+                    &stagingBuffer, &stagingAlloc, &stagingInfo);
+    std::memcpy(stagingInfo.pMappedData, paletteColors.data(), dataSize);
+
+    // 1D device-local image
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType     = VK_IMAGE_TYPE_1D;
+    imageInfo.format        = VK_FORMAT_R32G32B32A32_SFLOAT;
+    imageInfo.extent        = {paletteSize, 1, 1};
+    imageInfo.mipLevels     = 1;
+    imageInfo.arrayLayers   = 1;
+    imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage         = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VmaAllocationCreateInfo imageAllocInfo{};
+    imageAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    VkImage       paletteImage;
+    VmaAllocation paletteAlloc;
+    vmaCreateImage(mAllocator, &imageInfo, &imageAllocInfo, &paletteImage, &paletteAlloc, nullptr);
+
+    VkCommandBuffer commandBuffer = beginOneTimeCommandBuffer();
+
+    transitionImageLayout(commandBuffer, paletteImage,
+        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, VK_ACCESS_TRANSFER_WRITE_BIT);
+
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent      = {paletteSize, 1, 1};
+    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, paletteImage,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    transitionImageLayout(commandBuffer, paletteImage,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+
+    endOneTimeCommandBuffer(commandBuffer);
+    vmaDestroyBuffer(mAllocator, stagingBuffer, stagingAlloc);
+
+    // 1D image view
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image                           = paletteImage;
+    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_1D;
+    viewInfo.format                          = VK_FORMAT_R32G32B32A32_SFLOAT;
+    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.levelCount     = 1;
+    viewInfo.subresourceRange.layerCount     = 1;
+
+    VkImageView paletteImageView;
+    if (vkCreateImageView(mDevice, &viewInfo, nullptr, &paletteImageView) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create palette image view");
+
+    VkSampler paletteSampler = createSampler(TextureSampleMode::Nearest, TextureSampleMode::Nearest);
+
+    // Store as a regular texture entry so DTexture handle works.
+    std::size_t newId = mNextId++;
+    VulkanTexture paletteTex{};
+    paletteTex.image         = paletteImage;
+    paletteTex.allocation    = paletteAlloc;
+    paletteTex.imageView     = paletteImageView;
+    paletteTex.sampler       = paletteSampler;
+    paletteTex.descriptorSet = allocateAndUpdateDescriptorSet(paletteImageView, paletteSampler);
+    mTextures[newId] = paletteTex;
+    return DTexture{newId};
+}
+
+void VulkanBackend::updatePaletteTexture(DTexture paletteTexture,
+                                          const std::vector<glm::vec4>& paletteColors)
+{
+    auto it = mTextures.find(paletteTexture.id);
+    if (it == mTextures.end()) return;
+
+    VulkanTexture& tex = it->second;
+    const uint32_t paletteSize = static_cast<uint32_t>(paletteColors.size());
+    const VkDeviceSize dataSize = paletteSize * sizeof(glm::vec4);
+
+    // Staging buffer
+    VkBufferCreateInfo stagingBufferInfo{};
+    stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    stagingBufferInfo.size  = dataSize;
+    stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+    VmaAllocationCreateInfo stagingAllocInfo{};
+    stagingAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                             VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VkBuffer      stagingBuffer;
+    VmaAllocation stagingAlloc;
+    VmaAllocationInfo stagingInfo;
+    vmaCreateBuffer(mAllocator, &stagingBufferInfo, &stagingAllocInfo,
+                    &stagingBuffer, &stagingAlloc, &stagingInfo);
+    std::memcpy(stagingInfo.pMappedData, paletteColors.data(), dataSize);
+
+    VkCommandBuffer commandBuffer = beginOneTimeCommandBuffer();
+
+    transitionImageLayout(commandBuffer, tex.image,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent      = {paletteSize, 1, 1};
+    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, tex.image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    transitionImageLayout(commandBuffer, tex.image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+
+    endOneTimeCommandBuffer(commandBuffer);
+    vmaDestroyBuffer(mAllocator, stagingBuffer, stagingAlloc);
+}
+
+void VulkanBackend::freePaletteTexture(DTexture paletteTexture)
+{
+    freeTexture(paletteTexture);
+}
+
+void VulkanBackend::linkIndirectTextures(DTexture indexTexture, DTexture paletteTexture)
+{
+    auto indexIt   = mTextures.find(indexTexture.id);
+    auto paletteIt = mTextures.find(paletteTexture.id);
+    if (indexIt == mTextures.end() || paletteIt == mTextures.end()) return;
+
+    VulkanTexture& indexTex   = indexIt->second;
+    VulkanTexture& paletteTex = paletteIt->second;
+
+    // Free the old single-binding descriptor set on the index texture.
+    if (indexTex.descriptorSet != VK_NULL_HANDLE)
+        vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &indexTex.descriptorSet);
+
+    // Create a 2-binding descriptor set using the indirect layout.
+    indexTex.descriptorSet = allocateAndUpdateIndirectDescriptorSet(
+        indexTex.imageView, indexTex.sampler,
+        paletteTex.imageView, paletteTex.sampler);
+}
+
+VkDescriptorSet VulkanBackend::allocateAndUpdateIndirectDescriptorSet(
+    VkImageView indexView, VkSampler indexSampler,
+    VkImageView paletteView, VkSampler paletteSampler) const
+{
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool     = mDescriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts        = &mIndirectDescriptorSetLayout;
+
+    VkDescriptorSet descriptorSet;
+    if (vkAllocateDescriptorSets(mDevice, &allocInfo, &descriptorSet) != VK_SUCCESS)
+        throw std::runtime_error("Failed to allocate indirect descriptor set");
+
+    VkDescriptorImageInfo indexImageInfo{};
+    indexImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    indexImageInfo.imageView   = indexView;
+    indexImageInfo.sampler     = indexSampler;
+
+    VkDescriptorImageInfo paletteImageInfo{};
+    paletteImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    paletteImageInfo.imageView   = paletteView;
+    paletteImageInfo.sampler     = paletteSampler;
+
+    std::array<VkWriteDescriptorSet, 2> writes{};
+    writes[0].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet          = descriptorSet;
+    writes[0].dstBinding      = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].pImageInfo      = &indexImageInfo;
+
+    writes[1].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet          = descriptorSet;
+    writes[1].dstBinding      = 1;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].pImageInfo      = &paletteImageInfo;
+
+    vkUpdateDescriptorSets(mDevice, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    return descriptorSet;
 }
 
 // ---------------------------------------------------------------------------
@@ -1471,13 +1816,29 @@ void VulkanBackend::drawSprite(DMesh dmesh, DTexture dtexture, const SpriteDrawP
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(mActiveCommandBuffer, 0, 1, &mesh.vertexBuffer, &offset);
     vkCmdBindIndexBuffer(mActiveCommandBuffer, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdBindDescriptorSets(mActiveCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            mPipelineLayout, 0, 1, &tex.descriptorSet, 0, nullptr);
 
-    const SpritePushConstants pushConstants = packPushConstants(params);
-    vkCmdPushConstants(mActiveCommandBuffer, mPipelineLayout,
-                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                       0, sizeof(SpritePushConstants), &pushConstants);
+    if (params.isIndirect)
+    {
+        vkCmdBindPipeline(mActiveCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mIndirectSpritePipeline);
+        vkCmdBindDescriptorSets(mActiveCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                mIndirectPipelineLayout, 0, 1, &tex.descriptorSet, 0, nullptr);
+
+        const SpritePushConstants pushConstants = packPushConstants(params);
+        vkCmdPushConstants(mActiveCommandBuffer, mIndirectPipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(SpritePushConstants), &pushConstants);
+    }
+    else
+    {
+        vkCmdBindPipeline(mActiveCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mSpritePipeline);
+        vkCmdBindDescriptorSets(mActiveCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                mPipelineLayout, 0, 1, &tex.descriptorSet, 0, nullptr);
+
+        const SpritePushConstants pushConstants = packPushConstants(params);
+        vkCmdPushConstants(mActiveCommandBuffer, mPipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(SpritePushConstants), &pushConstants);
+    }
 
     vkCmdDrawIndexed(mActiveCommandBuffer, mesh.indexCount, 1, 0, 0, 0);
 }

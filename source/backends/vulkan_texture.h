@@ -17,6 +17,13 @@ struct VulkanTexture
     VkSampler       sampler       = VK_NULL_HANDLE;
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     bool            isProxy       = false;  // owned by VulkanRenderTarget — skip vmaDestroyImage on free
+    bool            isIndirect    = false;  // true for palette-based textures
+
+    // Palette texture resources (only populated when isIndirect == true).
+    VkImage         paletteImage      = VK_NULL_HANDLE;
+    VmaAllocation   paletteAllocation = VK_NULL_HANDLE;
+    VkImageView     paletteImageView  = VK_NULL_HANDLE;
+    VkSampler       paletteSampler    = VK_NULL_HANDLE;
 };
 
 }

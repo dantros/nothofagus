@@ -112,7 +112,6 @@ void OpenGLBackend::initialize(void* /*nativeWindowHandle*/, glm::ivec2 /*canvas
     unsigned int vertexShader   = compileShader(GL_VERTEX_SHADER, vertexShaderSource);
     unsigned int fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSource);
     mShaderProgram = createShaderProgram(vertexShader, fragmentShader);
-    glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
     mUniforms.transform     = glGetUniformLocation(mShaderProgram, "transform");
@@ -120,6 +119,49 @@ void OpenGLBackend::initialize(void* /*nativeWindowHandle*/, glm::ivec2 /*canvas
     mUniforms.tintColor     = glGetUniformLocation(mShaderProgram, "tintColor");
     mUniforms.tintIntensity = glGetUniformLocation(mShaderProgram, "tintIntensity");
     mUniforms.opacity       = glGetUniformLocation(mShaderProgram, "opacity");
+
+    // --- Indirect (palette-based) shader ---
+    const std::string indirectFragmentShaderSource = R"(
+        #version 330 core
+        in vec2 outTextureCoordinates;
+        out vec4 outColor;
+        uniform usampler2DArray indexSampler;
+        uniform sampler1D paletteSampler;
+        uniform int layerIndex;
+        uniform vec3 tintColor;
+        uniform float tintIntensity;
+        uniform float opacity;
+        void main()
+        {
+            ivec3 texSize = textureSize(indexSampler, 0);
+            uint colorIndex = texelFetch(indexSampler,
+                ivec3(int(outTextureCoordinates.x * float(texSize.x)),
+                      int(outTextureCoordinates.y * float(texSize.y)),
+                      layerIndex), 0).r;
+            vec4 paletteColor = texelFetch(paletteSampler, int(colorIndex), 0);
+            vec3 blendColor = tintColor * tintIntensity + paletteColor.rgb * (1.0 - tintIntensity);
+            outColor = vec4(blendColor, paletteColor.a * opacity);
+        }
+    )";
+
+    unsigned int indirectFragmentShader = compileShader(GL_FRAGMENT_SHADER, indirectFragmentShaderSource);
+    mIndirectShaderProgram = createShaderProgram(vertexShader, indirectFragmentShader);
+    glDeleteShader(vertexShader);
+    glDeleteShader(indirectFragmentShader);
+
+    mIndirectUniforms.transform      = glGetUniformLocation(mIndirectShaderProgram, "transform");
+    mIndirectUniforms.layerIndex     = glGetUniformLocation(mIndirectShaderProgram, "layerIndex");
+    mIndirectUniforms.tintColor      = glGetUniformLocation(mIndirectShaderProgram, "tintColor");
+    mIndirectUniforms.tintIntensity  = glGetUniformLocation(mIndirectShaderProgram, "tintIntensity");
+    mIndirectUniforms.opacity        = glGetUniformLocation(mIndirectShaderProgram, "opacity");
+    mIndirectUniforms.indexSampler   = glGetUniformLocation(mIndirectShaderProgram, "indexSampler");
+    mIndirectUniforms.paletteSampler = glGetUniformLocation(mIndirectShaderProgram, "paletteSampler");
+
+    // Set sampler uniform values for the indirect program (texture units 0 and 1).
+    glUseProgram(mIndirectShaderProgram);
+    glUniform1i(mIndirectUniforms.indexSampler, 0);
+    glUniform1i(mIndirectUniforms.paletteSampler, 1);
+    glUseProgram(0);
 
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_BLEND);
@@ -135,30 +177,54 @@ void OpenGLBackend::shutdown()
     ImGui_ImplOpenGL3_Shutdown();
     glDeleteProgram(mShaderProgram);
     mShaderProgram = 0;
+    glDeleteProgram(mIndirectShaderProgram);
+    mIndirectShaderProgram = 0;
+    mActiveShaderProgram = 0;
 }
 
 DTexture OpenGLBackend::uploadTexture(const Texture& texture,
                                        TextureSampleMode minFilter,
                                        TextureSampleMode magFilter)
 {
-    TextureData textureData = std::visit(GenerateTextureDataVisitor(), texture);
-
     GLuint gpuTexture;
     glGenTextures(1, &gpuTexture);
     glBindTexture(GL_TEXTURE_2D_ARRAY, gpuTexture);
 
-    std::span<std::uint8_t> dataSpan = textureData.getDataSpan();
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA,
-                 textureData.width(), textureData.height(), textureData.layers(),
-                 0, GL_RGBA, GL_UNSIGNED_BYTE, dataSpan.data());
+    if (std::holds_alternative<IndirectTexture>(texture))
+    {
+        // Upload raw color indices as an R8UI integer texture.
+        const auto& indirectTexture = std::get<IndirectTexture>(texture);
+        const std::vector<std::uint8_t> indexData = indirectTexture.generateIndexData();
+        const glm::ivec2 textureSize = indirectTexture.size();
+        const GLsizei layerCount = static_cast<GLsizei>(indirectTexture.layers());
 
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_R8UI,
+                     textureSize.x, textureSize.y, layerCount,
+                     0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, indexData.data());
 
-    const GLint glMinFilter = (minFilter == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
-    const GLint glMagFilter = (magFilter == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, glMinFilter);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, glMagFilter);
+        // Integer textures require GL_NEAREST — linear filtering is not supported.
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    }
+    else
+    {
+        // Direct texture: upload pre-resolved RGBA data.
+        TextureData textureData = std::visit(GenerateTextureDataVisitor(), texture);
+        std::span<std::uint8_t> dataSpan = textureData.getDataSpan();
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA,
+                     textureData.width(), textureData.height(), textureData.layers(),
+                     0, GL_RGBA, GL_UNSIGNED_BYTE, dataSpan.data());
+
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+        const GLint glMinFilter = (minFilter == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
+        const GLint glMagFilter = (magFilter == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, glMinFilter);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, glMagFilter);
+    }
 
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 
@@ -175,6 +241,50 @@ void OpenGLBackend::freeTexture(DTexture texture)
         it->second.clear();
         mTextures.erase(it);
     }
+}
+
+DTexture OpenGLBackend::uploadPaletteTexture(const std::vector<glm::vec4>& paletteColors)
+{
+    GLuint gpuTexture;
+    glGenTextures(1, &gpuTexture);
+    glBindTexture(GL_TEXTURE_1D, gpuTexture);
+
+    glTexImage1D(GL_TEXTURE_1D, 0, GL_RGBA32F,
+                 static_cast<GLsizei>(paletteColors.size()),
+                 0, GL_RGBA, GL_FLOAT, paletteColors.data());
+
+    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    glBindTexture(GL_TEXTURE_1D, 0);
+
+    std::size_t newId = mNextId++;
+    mTextures[newId] = OpenGLTexture{gpuTexture};
+    return DTexture{newId};
+}
+
+void OpenGLBackend::updatePaletteTexture(DTexture paletteTexture,
+                                          const std::vector<glm::vec4>& paletteColors)
+{
+    auto it = mTextures.find(paletteTexture.id);
+    if (it == mTextures.end()) return;
+
+    glBindTexture(GL_TEXTURE_1D, it->second.texture);
+    glTexSubImage1D(GL_TEXTURE_1D, 0, 0,
+                    static_cast<GLsizei>(paletteColors.size()),
+                    GL_RGBA, GL_FLOAT, paletteColors.data());
+    glBindTexture(GL_TEXTURE_1D, 0);
+}
+
+void OpenGLBackend::freePaletteTexture(DTexture paletteTexture)
+{
+    freeTexture(paletteTexture);
+}
+
+void OpenGLBackend::linkIndirectTextures(DTexture /*indexTexture*/, DTexture /*paletteTexture*/)
+{
+    // No-op for OpenGL — texture binding is handled per-draw in drawSprite().
 }
 
 DMesh OpenGLBackend::uploadMesh(const Mesh& mesh)
@@ -252,6 +362,7 @@ void OpenGLBackend::beginFrame(glm::vec3 clearColor, ViewportRect gameViewport,
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glUseProgram(mShaderProgram);
+    mActiveShaderProgram = mShaderProgram;
 }
 
 void OpenGLBackend::imguiNewFrame()
@@ -296,15 +407,61 @@ void OpenGLBackend::drawSprite(DMesh mesh, DTexture texture, const SpriteDrawPar
     debugCheck(texIt != mTextures.end(), "drawSprite: texture not found");
 
     OpenGLMesh& glMesh = meshIt->second;
-    glMesh.texture = texIt->second.texture;
+    const GLuint glTexture = texIt->second.texture;
 
-    glUniform3f(mUniforms.tintColor, params.tintColor.r, params.tintColor.g, params.tintColor.b);
-    glUniform1f(mUniforms.tintIntensity, params.tintIntensity);
-    glUniform1f(mUniforms.opacity, params.opacity);
-    glUniformMatrix3fv(mUniforms.transform, 1, GL_FALSE, glm::value_ptr(params.transform));
-    glUniform1i(mUniforms.layerIndex, params.layerIndex);
+    if (params.isIndirect)
+    {
+        if (mActiveShaderProgram != mIndirectShaderProgram)
+        {
+            glUseProgram(mIndirectShaderProgram);
+            mActiveShaderProgram = mIndirectShaderProgram;
+        }
+
+        // Bind index texture to unit 0.
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, glTexture);
+
+        // Bind palette texture to unit 1.
+        auto paletteIt = mTextures.find(params.paletteTexture.id);
+        debugCheck(paletteIt != mTextures.end(), "drawSprite: palette texture not found");
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_1D, paletteIt->second.texture);
+
+        glUniform3f(mIndirectUniforms.tintColor, params.tintColor.r, params.tintColor.g, params.tintColor.b);
+        glUniform1f(mIndirectUniforms.tintIntensity, params.tintIntensity);
+        glUniform1f(mIndirectUniforms.opacity, params.opacity);
+        glUniformMatrix3fv(mIndirectUniforms.transform, 1, GL_FALSE, glm::value_ptr(params.transform));
+        glUniform1i(mIndirectUniforms.layerIndex, params.layerIndex);
+    }
+    else
+    {
+        if (mActiveShaderProgram != mShaderProgram)
+        {
+            glUseProgram(mShaderProgram);
+            mActiveShaderProgram = mShaderProgram;
+        }
+
+        // Bind RGBA texture to unit 0.
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, glTexture);
+
+        glUniform3f(mUniforms.tintColor, params.tintColor.r, params.tintColor.g, params.tintColor.b);
+        glUniform1f(mUniforms.tintIntensity, params.tintIntensity);
+        glUniform1f(mUniforms.opacity, params.opacity);
+        glUniformMatrix3fv(mUniforms.transform, 1, GL_FALSE, glm::value_ptr(params.transform));
+        glUniform1i(mUniforms.layerIndex, params.layerIndex);
+    }
 
     glMesh.drawCall();
+
+    // Unbind textures.
+    if (params.isIndirect)
+    {
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_1D, 0);
+    }
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 }
 
 void OpenGLBackend::endFrame(ImDrawData* imguiData,
