@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Pixel art real-time renderer built on OpenGL 3.3, written in C++20. Outputs a static library (`nothofagus`) consumed by user projects.
+Pixel art real-time renderer with OpenGL 3.3 and Vulkan backends, written in C++20. Outputs a static library (`nothofagus`) consumed by user projects.
 
 ## Key Terminology
 
@@ -21,17 +21,20 @@ Pixel art real-time renderer built on OpenGL 3.3, written in C++20. Outputs a st
 
 ```
 Canvas (public API)
-└── CanvasImpl (Pimpl, hidden windowing/OpenGL details)
-    ├── Window : SelectedWindowBackend   → GlfwBackend or Sdl3Backend (compile-time)
+└── CanvasImpl (Pimpl, hidden windowing/rendering details)
+    ├── Window : SelectedWindowBackend   → GlfwBackend, Sdl3Backend, or HeadlessBackend (compile-time)
+    ├── ActiveBackend (RenderBackend)    → OpenGLBackend or VulkanBackend (compile-time)
+    │   └── VulkanBackend
+    │       └── ActiveVulkanPresentation → WindowedVulkanPresentation or HeadlessVulkanPresentation (compile-time)
     ├── IndexedContainer<BellotaPack>    → Bellota + Mesh + DMesh + Tint
     └── IndexedContainer<TexturePack>   → Texture + DTexture
 ```
 
 - `include/` — public API headers
 - `source/` — implementation + internal headers (never expose to users)
-- `source/backends/` — window/input backend implementations (`glfw_backend`, `sdl3_backend`, per-backend keyboard/mouse/gamepad mappers)
+- `source/backends/` — window/input backend implementations (`glfw_backend`, `sdl3_backend`, `headless_backend`, per-backend keyboard/mouse/gamepad mappers), render backends (`opengl_backend`, `vulkan_backend`), and Vulkan presentation policies (`vulkan_presentation`)
 - `examples/` — standalone demo executables
-- `third_party/` — git submodules (glfw, glad, glm, imgui, spdlog, font8x8, SDL)
+- `third_party/` — git submodules (glfw, glad, glm, imgui, spdlog, font8x8, SDL, vk-bootstrap, VulkanMemoryAllocator)
 
 ## Build System
 
@@ -45,10 +48,12 @@ Preset naming: `{platform}-{buildtype}-{window}-{graphics}[-examples]`. All use 
 | `windows-{debug,release}-glfw-vulkan[-examples]` | Windows | clang-cl | GLFW | Vulkan |
 | `windows-{debug,release}-sdl3-opengl[-examples]` | Windows | clang-cl | SDL3 | OpenGL |
 | `windows-{debug,release}-sdl3-vulkan[-examples]` | Windows | clang-cl | SDL3 | Vulkan |
+| `windows-{debug,release}-headless-vulkan[-examples]` | Windows | clang-cl | None | Vulkan (offscreen) |
 | `linux-{debug,release}-glfw-opengl[-examples]` | Linux | clang++ | GLFW | OpenGL |
 | `linux-{debug,release}-glfw-vulkan[-examples]` | Linux | clang++ | GLFW | Vulkan |
 | `linux-{debug,release}-sdl3-opengl[-examples]` | Linux | clang++ | SDL3 | OpenGL |
 | `linux-{debug,release}-sdl3-vulkan[-examples]` | Linux | clang++ | SDL3 | Vulkan |
+| `linux-{debug,release}-headless-vulkan[-examples]` | Linux | clang++ | None | Vulkan (offscreen) |
 
 **Build and install (examples):**
 ```bash
@@ -63,12 +68,14 @@ cmake --install build/windows-debug-glfw-opengl-examples
 - `NOTHOFAGUS_INSTALL` — install artifacts (default OFF, presets set ON)
 - `NOTHOFAGUS_BUILD_DOCS` — generate Doxygen docs (default OFF)
 - `NOTHOFAGUS_WINDOW_BACKEND` — `"GLFW"` (default) or `"SDL3"`; selects the window/input backend at configure time
+- `NOTHOFAGUS_BACKEND_VULKAN` — use the Vulkan render backend instead of OpenGL (default OFF)
+- `NOTHOFAGUS_HEADLESS_VULKAN` — pure offscreen Vulkan rendering with no window or display server (default OFF; requires `NOTHOFAGUS_BACKEND_VULKAN=ON`). Replaces the window backend with `HeadlessBackend` and the Vulkan presentation policy with `HeadlessVulkanPresentation`. Intended for CI/CD rendering tests.
 
 ## Window Backend Abstraction
 
 The windowing and input layer is abstracted behind a **C++20 concept** (`WindowBackend`) so the rest of the engine is completely decoupled from both GLFW and SDL3.
 
-**Selection is compile-time** — `NOTHOFAGUS_WINDOW_BACKEND=SDL3` sets the `NOTHOFAGUS_BACKEND_SDL3` preprocessor define, which swaps in `Sdl3Backend`. Without it, `GlfwBackend` is used. A `static_assert` verifies the chosen class satisfies the concept at build time.
+**Selection is compile-time** — `NOTHOFAGUS_WINDOW_BACKEND=SDL3` sets the `NOTHOFAGUS_BACKEND_SDL3` preprocessor define, which swaps in `Sdl3Backend`. `NOTHOFAGUS_HEADLESS_VULKAN` swaps in `HeadlessBackend`. Without either, `GlfwBackend` is used. A `static_assert` verifies the chosen class satisfies the concept at build time.
 
 ```
 source/backends/
@@ -80,7 +87,8 @@ source/backends/
 ├── sdl3_backend.h/.cpp    — SDL3 implementation
 ├── sdl3_keyboard.h/.cpp   — SDL3 key-code ↔ Key mapping
 ├── sdl3_mouse.h/.cpp      — SDL3 button ↔ MouseButton mapping
-└── sdl3_gamepad.h/.cpp    — SDL3 button/axis ↔ GamepadButton/GamepadAxis mapping
+├── sdl3_gamepad.h/.cpp    — SDL3 button/axis ↔ GamepadButton/GamepadAxis mapping
+└── headless_backend.h/.cpp — No-op stub for headless Vulkan (no window, no display server)
 ```
 
 `CanvasImpl` owns a `Window` that inherits from `SelectedWindowBackend` (PIMPL). The `window_backend.h` header is only included in `canvas_impl.cpp`, keeping backend headers entirely out of the public API.
@@ -91,7 +99,52 @@ source/backends/
 - ImGui/DPI: `initImGui(fontSize, fontData, fontDataLen)`, `contentScale()`
 - Window management: `getCurrentMonitor()`, `isFullscreen()`, `setFullscreenOnMonitor(index)`, `getWindowAABox()`, `setWindowed(AABox)`, `getWindowSize()`, `requestClose()`
 
-Both backends route all keyboard, mouse, scroll, and gamepad events into `Controller` using the same public API (`activate`, `activateMouseButton`, `updateMousePosition`, `scrolled`, `activateGamepadButton`, `updateGamepadAxis`).
+Both windowed backends route all keyboard, mouse, scroll, and gamepad events into `Controller` using the same public API (`activate`, `activateMouseButton`, `updateMousePosition`, `scrolled`, `activateGamepadButton`, `updateGamepadAxis`). The `HeadlessBackend` provides no input — it returns no-op/defaults for all input and window management methods, sets `ImGuiIO::DisplaySize` manually, and uses `std::chrono::steady_clock` for timing.
+
+## Vulkan Presentation Policy
+
+When the Vulkan render backend is active, `VulkanBackend` delegates all surface/swapchain/present operations to a **presentation policy** — a compile-time selected struct that encapsulates the differences between windowed and headless rendering.
+
+```
+source/backends/
+├── vulkan_presentation.h   — Policy structs + ActiveVulkanPresentation type alias
+├── vulkan_presentation.cpp — Implementations (only the active policy is compiled via #ifdef)
+├── vulkan_backend.h        — VulkanBackend class (holds ActiveVulkanPresentation mPresentation)
+└── vulkan_backend.cpp      — Core rendering logic, delegates to mPresentation at 7 points
+```
+
+**Two policies:**
+
+| Policy | Selected when | Surface | Swapchain | Present | Screenshot source |
+|--------|---------------|---------|-----------|---------|-------------------|
+| `WindowedVulkanPresentation` | `NOTHOFAGUS_HEADLESS_VULKAN` is not defined | VkSurfaceKHR via GLFW/SDL | VkSwapchainKHR | vkQueuePresentKHR with semaphores | Swapchain image (blit to intermediate for format conversion) |
+| `HeadlessVulkanPresentation` | `NOTHOFAGUS_HEADLESS_VULKAN` is defined | None | None | Submit with fence only, no present | Offscreen VkImage (direct vkCmdCopyImageToBuffer, no format conversion) |
+
+**Policy interface (duck-typed, not virtual):**
+
+| Method | Called from | Purpose |
+|--------|------------|---------|
+| `createSurface()` | `initialize()` | Create VkSurfaceKHR or no-op |
+| `configurePhysicalDeviceSelector()` | `initialize()` | Add `.set_surface().require_present()` or `.require_present(false).defer_surface_initialization()` |
+| `retrieveQueues()` | `initialize()` | Get graphics + present queues, or graphics only |
+| `createPresentationTarget()` | `initialize()` | Create swapchain (determines format/extent) or offscreen VkImage |
+| `createPresentationFramebuffers()` | `initialize()` | Create framebuffers using the main render pass (called after render pass creation) |
+| `colorFormat()` / `mainPassFinalLayout()` | `initialize()` | Provide format and final layout for main render pass creation |
+| `acquireImage()` | `beginFrame()` | vkAcquireNextImageKHR or no-op (always succeeds) |
+| `mainFramebuffer()` / `extent()` | `beginMainPass()` | Return the active framebuffer and render area |
+| `submitAndPresent()` | `endFrame()` | Submit + present with semaphores, or submit with fence only |
+| `takeScreenshot()` | `takeScreenshot()` | Copy pixels from swapchain or offscreen image to CPU |
+| `shutdown()` | `shutdown()` | Destroy surface/swapchain or offscreen resources |
+
+**Initialization order** (critical — render pass depends on format from the presentation target):
+1. Instance → surface → physical device → logical device → VMA → command pool → fences
+2. `createPresentationTarget()` — creates swapchain or offscreen image, determines color format
+3. Main render pass — uses `colorFormat()` and `mainPassFinalLayout()` from the policy
+4. `createPresentationFramebuffers()` — creates framebuffers using the render pass from step 3
+
+The `#ifdef NOTHOFAGUS_HEADLESS_VULKAN` appears only in two places: the `ActiveVulkanPresentation` type alias (in `vulkan_presentation.h`) and the implementation guard (in `vulkan_presentation.cpp`). All other code is free of headless conditionals.
+
+**Headless offscreen image:** created with `VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT` in `VK_FORMAT_R8G8B8A8_UNORM`. The main render pass uses `VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL` as the final layout (not `PRESENT_SRC_KHR`). Screenshots transition to `TRANSFER_SRC_OPTIMAL`, copy via `vkCmdCopyImageToBuffer`, then restore to `COLOR_ATTACHMENT_OPTIMAL`.
 
 ## Public API Patterns
 
@@ -146,6 +199,15 @@ Nothofagus::DirectTexture screenshot = canvas.takeScreenshot();
 ```
 
 GPU resources are cleaned up automatically in the `Canvas` destructor — no need to call `run()` or any explicit shutdown.
+
+**Two headless modes exist:**
+
+| Mode | CMake flag | Window | Display server | Use case |
+|------|-----------|--------|----------------|----------|
+| Hidden window | `headless=true` at runtime | Created but invisible (GLFW/SDL) | Required (X11/xvfb on Linux) | Local testing with real GPU |
+| Pure offscreen | `NOTHOFAGUS_HEADLESS_VULKAN=ON` at build time | None (`HeadlessBackend`) | Not required | CI/CD with software Vulkan (SwiftShader/lavapipe) |
+
+Both modes use the same `Canvas` API — the difference is entirely at the build/link level. Code that works with `headless=true` works unchanged when built with `NOTHOFAGUS_HEADLESS_VULKAN=ON`.
 
 ### Keyboard input
 ```cpp
@@ -268,7 +330,11 @@ std::span<std::uint8_t> span = data.getDataSpan(); // width * height * 4 bytes, 
 Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 ```
 
-**Note:** reads from `GL_FRONT` — valid only while an OpenGL context is current (i.e. inside `canvas.run()`). On the very first frame before any swap, the front buffer content is undefined.
+**OpenGL note:** reads from `GL_FRONT` — valid only while an OpenGL context is current (i.e. inside `canvas.run()`). On the very first frame before any swap, the front buffer content is undefined.
+
+**Vulkan windowed:** blits from the swapchain image through an intermediate R8G8B8A8 image (handles B8G8R8A8 format conversion) to a CPU-visible staging buffer.
+
+**Vulkan headless:** copies directly from the offscreen R8G8B8A8 image to a staging buffer via `vkCmdCopyImageToBuffer` — no intermediate blit or format conversion needed.
 
 ## Naming Conventions (C++)
 
