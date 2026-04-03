@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      GOLDEN_DIR: ${{ github.workspace }}/tests/golden_vulkan
+      GOLDEN_DIR: ${{ github.workspace }}/tests/golden_headless_vulkan
 
     steps:
     - uses: actions/checkout@v4
@@ -24,6 +24,38 @@ jobs:
         vulkan-query-version: 1.4.341.1
         vulkan-components: Vulkan-Headers, Vulkan-Loader, SPIRV-Tools, Glslang
         vulkan-use-cache: true
+
+    - name: Cache SwiftShader
+      id: cache-swiftshader
+      uses: actions/cache@v4
+      with:
+        path: /usr/local/share/swiftshader
+        key: swiftshader-89556131bf9d
+
+    - name: Build SwiftShader (software Vulkan ICD)
+      if: steps.cache-swiftshader.outputs.cache-hit != 'true'
+      run: |
+        git clone https://swiftshader.googlesource.com/SwiftShader /tmp/swiftshader
+        git -C /tmp/swiftshader checkout 89556131bf9d48af3c5c9fbb9a3322e706da89a3
+        cmake -S /tmp/swiftshader -B /tmp/swiftshader/build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DSWIFTSHADER_BUILD_TESTS=OFF \
+          -DSWIFTSHADER_BUILD_BENCHMARKS=OFF
+        cmake --build /tmp/swiftshader/build --config Release -j$(nproc)
+        sudo mkdir -p /usr/local/share/swiftshader
+        sudo cp /tmp/swiftshader/build/Linux/libvk_swiftshader.so /usr/local/share/swiftshader/
+        sudo cp /tmp/swiftshader/build/Linux/vk_swiftshader_icd.json /usr/local/share/swiftshader/
+
+    - name: Register SwiftShader ICD
+      run: |
+        sudo mkdir -p /etc/vulkan/icd.d
+        echo '{
+          "file_format_version": "1.0.0",
+          "ICD": {
+            "library_path": "/usr/local/share/swiftshader/libvk_swiftshader.so",
+            "api_version": "1.1.0"
+          }
+        }' | sudo tee /etc/vulkan/icd.d/swiftshader.json
 
     - name: Configure
       run: >
@@ -46,8 +78,8 @@ jobs:
       run: |
         echo "Tests failed — regenerating Vulkan golden files."
         echo "If this is expected (rendering change), run locally:"
-        echo "  GOLDEN_DIR=tests/golden_vulkan UPDATE_GOLDEN=1 ./build/tests/rendering_tests"
-        echo "Then commit the updated golden_vulkan/ files."
+        echo "  GOLDEN_DIR=tests/golden_headless_vulkan UPDATE_GOLDEN=1 ./build/tests/rendering_tests"
+        echo "Then commit the updated golden_headless_vulkan/ files."
         UPDATE_GOLDEN=1 ./build/tests/rendering_tests
         echo "--- Updated golden files ---"
-        ls -la tests/golden_vulkan/
+        ls -la tests/golden_headless_vulkan/
