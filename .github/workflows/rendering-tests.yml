@@ -29,22 +29,21 @@ jobs:
       id: cache-swiftshader
       uses: actions/cache@v4
       with:
-        path: /usr/local/share/swiftshader
+        path: ${{ runner.temp }}/swiftshader
         key: swiftshader-89556131bf9d
 
     - name: Build SwiftShader (software Vulkan ICD)
       if: steps.cache-swiftshader.outputs.cache-hit != 'true'
       run: |
-        git clone https://swiftshader.googlesource.com/SwiftShader /tmp/swiftshader
-        git -C /tmp/swiftshader checkout 89556131bf9d48af3c5c9fbb9a3322e706da89a3
-        cmake -S /tmp/swiftshader -B /tmp/swiftshader/build \
+        git clone https://swiftshader.googlesource.com/SwiftShader /tmp/swiftshader-src
+        git -C /tmp/swiftshader-src checkout 89556131bf9d48af3c5c9fbb9a3322e706da89a3
+        cmake -S /tmp/swiftshader-src -B /tmp/swiftshader-src/build \
           -DCMAKE_BUILD_TYPE=Release \
           -DSWIFTSHADER_BUILD_TESTS=OFF \
           -DSWIFTSHADER_BUILD_BENCHMARKS=OFF
-        cmake --build /tmp/swiftshader/build --config Release -j$(nproc)
-        sudo mkdir -p /usr/local/share/swiftshader
-        sudo cp /tmp/swiftshader/build/Linux/libvk_swiftshader.so /usr/local/share/swiftshader/
-        sudo cp /tmp/swiftshader/build/Linux/vk_swiftshader_icd.json /usr/local/share/swiftshader/
+        cmake --build /tmp/swiftshader-src/build --config Release -j$(nproc)
+        mkdir -p ${{ runner.temp }}/swiftshader
+        cp /tmp/swiftshader-src/build/Linux/libvk_swiftshader.so ${{ runner.temp }}/swiftshader/
 
     - name: Register SwiftShader ICD
       run: |
@@ -52,7 +51,7 @@ jobs:
         echo '{
           "file_format_version": "1.0.0",
           "ICD": {
-            "library_path": "/usr/local/share/swiftshader/libvk_swiftshader.so",
+            "library_path": "${{ runner.temp }}/swiftshader/libvk_swiftshader.so",
             "api_version": "1.1.0"
           }
         }' | sudo tee /etc/vulkan/icd.d/swiftshader.json
