@@ -169,6 +169,12 @@ else()
         "source/backends/opengl_texture.cpp"
     )
 endif()
+
+option(NOTHOFAGUS_ENABLE_TRACY "Enable Tracy profiler zones (consumer must link TracyClient)" OFF)
+if(NOTHOFAGUS_ENABLE_TRACY)
+    target_compile_definitions(nothofagus PUBLIC TRACY_ENABLE)
+endif()
+
 set_property(TARGET nothofagus PROPERTY CXX_STANDARD 20)
 target_include_directories(nothofagus
     PUBLIC
