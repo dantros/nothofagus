@@ -549,9 +549,10 @@ void HeadlessVulkanPresentation::createSurface(VkInstance /*instance*/, void* /*
     // No surface needed for headless rendering.
 }
 
-void HeadlessVulkanPresentation::configurePhysicalDeviceSelector(vkb::PhysicalDeviceSelector& /*selector*/)
+void HeadlessVulkanPresentation::configurePhysicalDeviceSelector(vkb::PhysicalDeviceSelector& selector)
 {
     // No surface or present capability required — just a graphics queue.
+    selector.require_present(false).defer_surface_initialization();
 }
 
 void HeadlessVulkanPresentation::retrieveQueues(
