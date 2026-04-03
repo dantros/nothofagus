@@ -92,6 +92,27 @@
             }
         },
         {
+            "name": "windows-headless-vulkan",
+            "hidden": true,
+            "inherits": "base",
+            "cacheVariables": {
+                "NOTHOFAGUS_BACKEND_VULKAN": "ON",
+                "NOTHOFAGUS_HEADLESS_VULKAN": "ON"
+            }
+        },
+        {
+            "name": "linux-headless-vulkan",
+            "hidden": true,
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "CMAKE_CXX_FLAGS": "-Wno-narrowing",
+                "NOTHOFAGUS_BACKEND_VULKAN": "ON",
+                "NOTHOFAGUS_HEADLESS_VULKAN": "ON"
+            }
+        },
+        {
             "name": "windows-debug-glfw-opengl",
             "inherits": "windows-glfw-opengl",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
@@ -249,6 +270,46 @@
         {
             "name": "linux-release-sdl3-vulkan-examples",
             "inherits": "linux-release-sdl3-vulkan",
+            "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
+        },
+        {
+            "name": "windows-debug-headless-vulkan",
+            "inherits": "windows-headless-vulkan",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+        },
+        {
+            "name": "windows-debug-headless-vulkan-examples",
+            "inherits": "windows-debug-headless-vulkan",
+            "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
+        },
+        {
+            "name": "windows-release-headless-vulkan",
+            "inherits": "windows-headless-vulkan",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+        },
+        {
+            "name": "windows-release-headless-vulkan-examples",
+            "inherits": "windows-release-headless-vulkan",
+            "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
+        },
+        {
+            "name": "linux-debug-headless-vulkan",
+            "inherits": "linux-headless-vulkan",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+        },
+        {
+            "name": "linux-debug-headless-vulkan-examples",
+            "inherits": "linux-debug-headless-vulkan",
+            "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
+        },
+        {
+            "name": "linux-release-headless-vulkan",
+            "inherits": "linux-headless-vulkan",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+        },
+        {
+            "name": "linux-release-headless-vulkan-examples",
+            "inherits": "linux-release-headless-vulkan",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         }
     ]
