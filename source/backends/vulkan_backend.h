@@ -6,6 +6,15 @@
 #include "vulkan_render_target.h"
 #include "vulkan_presentation.h"
 #include <vulkan/vulkan.h>
+#ifdef TRACY_ENABLE
+#include <tracy/TracyVulkan.hpp>
+#else
+using TracyVkCtx = void*;
+#define TracyVkContext(x,y,z,w) nullptr
+#define TracyVkDestroy(x)
+#define TracyVkZone(c,x,y)
+#define TracyVkCollect(c,x)
+#endif
 #include <unordered_map>
 #include <array>
 #include <vector>
@@ -120,6 +129,9 @@ public:
 private:
     // --- Presentation policy (windowed or headless, selected at compile time) ---
     ActiveVulkanPresentation mPresentation;
+
+    // --- Tracy GPU profiling context ---
+    TracyVkCtx mTracyVkContext = nullptr;
 
     // --- Device objects ---
     VkInstance               mInstance            = VK_NULL_HANDLE;

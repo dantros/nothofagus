@@ -636,6 +636,11 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
         vkDestroyShaderModule(mDevice, vertModule, nullptr);
     }
 
+    {
+        VkCommandBuffer tracyInitCommandBuffer = beginOneTimeCommandBuffer();
+        mTracyVkContext = TracyVkContext(mPhysicalDevice, mDevice, mGraphicsQueue, tracyInitCommandBuffer);
+        endOneTimeCommandBuffer(tracyInitCommandBuffer);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -768,6 +773,7 @@ void VulkanBackend::shutdown()
     for (auto& frame : mFrames)
         vkDestroyFence(mDevice, frame.inFlight, nullptr);
 
+    TracyVkDestroy(mTracyVkContext);
     vkDestroyCommandPool(mDevice, mCommandPool, nullptr);
     vmaDestroyAllocator(mAllocator);
     vkDestroyDevice(mDevice, nullptr);
@@ -1469,6 +1475,7 @@ void VulkanBackend::imguiNewFrame()
 void VulkanBackend::beginRttPass(DRenderTarget renderTarget, glm::vec4 clearColor)
 {
     if (mActiveCommandBuffer == VK_NULL_HANDLE) return;
+    TracyVkZone(mTracyVkContext, mActiveCommandBuffer, "Vk RttPass");
 
     VulkanRenderTarget& rt = mRenderTargets.at(renderTarget.id);
     mActiveRttRenderTargetId = renderTarget.id;
@@ -1612,6 +1619,7 @@ void VulkanBackend::beginMainPass(ViewportRect gameViewport)
 void VulkanBackend::drawSprite(DMesh dmesh, DTexture dtexture, const SpriteDrawParams& params)
 {
     if (mActiveCommandBuffer == VK_NULL_HANDLE) return;
+    TracyVkZone(mTracyVkContext, mActiveCommandBuffer, "Vk DrawSprite");
 
     const VulkanMesh&    mesh = mMeshes.at(dmesh.id);
     const VulkanTexture& tex  = mTextures.at(dtexture.id);
@@ -1661,7 +1669,12 @@ void VulkanBackend::endFrame(
     vkCmdSetViewport(mActiveCommandBuffer, 0, 1, &fullVp);
     vkCmdSetScissor(mActiveCommandBuffer, 0, 1, &fullScissor);
 
-    ImGui_ImplVulkan_RenderDrawData(imguiData, mActiveCommandBuffer);
+    {
+        TracyVkZone(mTracyVkContext, mActiveCommandBuffer, "Vk ImGui");
+        ImGui_ImplVulkan_RenderDrawData(imguiData, mActiveCommandBuffer);
+    }
+
+    TracyVkCollect(mTracyVkContext, mActiveCommandBuffer);
 
     vkCmdEndRenderPass(mActiveCommandBuffer);
     vkEndCommandBuffer(mActiveCommandBuffer);

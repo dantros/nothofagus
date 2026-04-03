@@ -7,6 +7,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <stdexcept>
 #include <span>
+#include <tracy/TracyOpenGL.hpp>
 
 namespace Nothofagus
 {
@@ -165,6 +166,8 @@ void OpenGLBackend::initialize(void* /*nativeWindowHandle*/, glm::ivec2 /*canvas
 
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_BLEND);
+
+    TracyGpuContext;
 }
 
 void OpenGLBackend::initImGuiRenderer()
@@ -372,6 +375,7 @@ void OpenGLBackend::imguiNewFrame()
 
 void OpenGLBackend::beginRttPass(DRenderTarget renderTarget, glm::vec4 clearColor)
 {
+    TracyGpuZone("GL RttPass");
     auto it = mRenderTargets.find(renderTarget.id);
     debugCheck(it != mRenderTargets.end(), "beginRttPass: render target not found");
     OpenGLRenderTarget& glRenderTarget = it->second;
@@ -401,6 +405,7 @@ void OpenGLBackend::beginMainPass(ViewportRect gameViewport)
 
 void OpenGLBackend::drawSprite(DMesh mesh, DTexture texture, const SpriteDrawParams& params)
 {
+    TracyGpuZone("GL DrawSprite");
     auto meshIt = mMeshes.find(mesh.id);
     debugCheck(meshIt != mMeshes.end(), "drawSprite: mesh not found");
     auto texIt = mTextures.find(texture.id);
@@ -470,7 +475,11 @@ void OpenGLBackend::endFrame(ImDrawData* imguiData,
     // Restore full framebuffer viewport for ImGui (header, popups, stats).
     glDisable(GL_SCISSOR_TEST);
     glViewport(0, 0, framebufferWidth, framebufferHeight);
-    ImGui_ImplOpenGL3_RenderDrawData(imguiData);
+    {
+        TracyGpuZone("GL ImGui");
+        ImGui_ImplOpenGL3_RenderDrawData(imguiData);
+    }
+    TracyGpuCollect;
     // Buffer swap is performed by the window backend's endFrame().
 }
 
