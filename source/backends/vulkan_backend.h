@@ -4,6 +4,7 @@
 #include "vulkan_mesh.h"
 #include "vulkan_texture.h"
 #include "vulkan_render_target.h"
+#include "vulkan_presentation.h"
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <array>
@@ -13,11 +14,6 @@
 // Forward-declare VmaAllocator to avoid including vk_mem_alloc.h in every TU.
 struct VmaAllocator_T;
 typedef VmaAllocator_T* VmaAllocator;
-
-// Forward-declare GLFWwindow to avoid dragging in GLFW headers.
-#if !defined(NOTHOFAGUS_BACKEND_SDL3)
-struct GLFWwindow;
-#endif
 
 namespace Nothofagus
 {
@@ -122,35 +118,23 @@ public:
     void setTextureMagFilter(DTexture dtexture, TextureSampleMode mode);
 
 private:
+    // --- Presentation policy (windowed or headless, selected at compile time) ---
+    ActiveVulkanPresentation mPresentation;
+
     // --- Device objects ---
     VkInstance               mInstance            = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT mDebugMessenger       = VK_NULL_HANDLE;
-    VkSurfaceKHR             mSurface              = VK_NULL_HANDLE;
     mutable VkPhysicalDevice mPhysicalDevice       = VK_NULL_HANDLE;
     mutable VkDevice         mDevice               = VK_NULL_HANDLE;
     mutable VkQueue          mGraphicsQueue        = VK_NULL_HANDLE;
-    VkQueue                  mPresentQueue         = VK_NULL_HANDLE;
     uint32_t                 mGraphicsQueueFamily  = 0;
-
-    // --- Swapchain ---
-    VkSwapchainKHR             mSwapchain            = VK_NULL_HANDLE;
-    VkFormat                   mSwapchainFormat      = VK_FORMAT_UNDEFINED;
-    VkExtent2D                 mSwapchainExtent      = {};
-    std::vector<VkImage>       mSwapchainImages;
-    std::vector<VkImageView>   mSwapchainImageViews;
-    std::vector<VkFramebuffer> mSwapchainFramebuffers;
-
-    // Shared depth image for swapchain framebuffers
-    VkImage       mSwapchainDepthImage = VK_NULL_HANDLE;
-    VmaAllocation mSwapchainDepthAlloc = VK_NULL_HANDLE;
-    VkImageView   mSwapchainDepthView  = VK_NULL_HANDLE;
 
     // Depth format shared by both render passes (D24_UNORM_S8_UINT or D32_SFLOAT fallback)
     VkFormat mDepthFormat = VK_FORMAT_UNDEFINED;
 
     // --- Render passes ---
-    VkRenderPass mMainRenderPass = VK_NULL_HANDLE;  // swapchain output
-    VkRenderPass mRttRenderPass  = VK_NULL_HANDLE;  // off-screen output
+    VkRenderPass mMainRenderPass = VK_NULL_HANDLE;  // main output (windowed: swapchain, headless: offscreen)
+    VkRenderPass mRttRenderPass  = VK_NULL_HANDLE;  // off-screen render-to-texture
 
     // --- Pipeline (direct textures) ---
     VkDescriptorSetLayout mDescriptorSetLayout = VK_NULL_HANDLE;
@@ -171,13 +155,6 @@ private:
     std::array<FrameData, MAX_FRAMES_IN_FLIGHT> mFrames;
     int mCurrentFrame = 0;
 
-    // Per-swapchain-image semaphores to avoid reusing a semaphore that the
-    // presentation engine still holds for a not-yet-re-acquired image.
-    // See https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html
-    std::vector<VkSemaphore> mImageAvailableSemaphores;  // cycled with mAcquireSemaphoreIndex
-    std::vector<VkSemaphore> mRenderFinishedSemaphores;  // indexed by acquired image index
-    uint32_t                 mAcquireSemaphoreIndex = 0;
-
     // --- Memory allocator ---
     mutable VmaAllocator mAllocator = VK_NULL_HANDLE;
 
@@ -188,12 +165,11 @@ private:
     std::size_t mNextId = 0;
 
     // --- Per-frame state (set in beginFrame/beginRttPass, consumed by draw calls and endFrame) ---
-    glm::vec3       mClearColor                 = {};
-    uint32_t        mCurrentSwapchainImageIndex = 0;
-    VkCommandBuffer mActiveCommandBuffer        = VK_NULL_HANDLE;
-    ViewportRect    mCurrentGameViewport        = {};
-    int             mCurrentFramebufferWidth    = 0;
-    int             mCurrentFramebufferHeight   = 0;
+    glm::vec3       mClearColor              = {};
+    VkCommandBuffer mActiveCommandBuffer     = VK_NULL_HANDLE;
+    ViewportRect    mCurrentGameViewport     = {};
+    int             mCurrentFramebufferWidth  = 0;
+    int             mCurrentFramebufferHeight = 0;
 
     // Active RTT render target id (0 = none), stored by beginRttPass, cleared by endRttPass
     std::size_t mActiveRttRenderTargetId = 0;
@@ -217,16 +193,6 @@ private:
         VkImageView indexView, VkSampler indexSampler,
         VkImageView paletteView, VkSampler paletteSampler) const;
     VkFormat        findDepthFormat() const;
-
-    void createSwapchainDepthResources();
-    void destroySwapchainDepthResources();
-    void createSwapchainFramebuffers();
-    void destroySwapchainResources();
-#if !defined(NOTHOFAGUS_BACKEND_SDL3)
-    GLFWwindow* mGlfwWindow = nullptr;
-#endif
-
-    void recreateSwapchain();
 
     void rebuildSampler(VulkanTexture& tex, TextureSampleMode minFilter, TextureSampleMode magFilter);
 };

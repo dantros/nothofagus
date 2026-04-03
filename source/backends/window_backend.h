@@ -58,7 +58,10 @@ concept WindowBackend = requires(
 } // namespace Nothofagus
 
 // Include and alias the selected backend
-#ifdef NOTHOFAGUS_BACKEND_SDL3
+#if defined(NOTHOFAGUS_HEADLESS_VULKAN)
+    #include "headless_backend.h"
+    namespace Nothofagus { using SelectedWindowBackend = HeadlessBackend; }
+#elif defined(NOTHOFAGUS_BACKEND_SDL3)
     #include "sdl3_backend.h"
     namespace Nothofagus { using SelectedWindowBackend = Sdl3Backend; }
 #else

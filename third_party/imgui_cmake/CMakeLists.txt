@@ -1,7 +1,13 @@
 
 set(IMGUI_PATH "../imgui/")
 
-if(NOTHOFAGUS_WINDOW_BACKEND STREQUAL "SDL3")
+if(NOTHOFAGUS_HEADLESS_VULKAN)
+    # Headless: no platform backend — ImGui display size is set manually
+    set(IMGUI_BACKEND_SRC "")
+    set(IMGUI_BACKEND_LINK "")
+    set(IMGUI_BACKEND_INC "")
+    set(IMGUI_BACKEND_DEFS "")
+elseif(NOTHOFAGUS_WINDOW_BACKEND STREQUAL "SDL3")
     set(IMGUI_BACKEND_SRC "${IMGUI_PATH}/backends/imgui_impl_sdl3.cpp")
     set(IMGUI_BACKEND_LINK SDL3::SDL3-static)
     set(IMGUI_BACKEND_INC "")

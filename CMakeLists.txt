@@ -3,12 +3,29 @@ cmake_minimum_required(VERSION 3.26)
 project(nothofagus_project CXX)
 
 # ─────────────────────────────────────────────
+# Graphics backend selection
+# ─────────────────────────────────────────────
+option(NOTHOFAGUS_BACKEND_VULKAN "Use Vulkan backend instead of OpenGL" OFF)
+option(NOTHOFAGUS_HEADLESS_VULKAN "Pure offscreen Vulkan rendering (no window/display server)" OFF)
+
+if(NOTHOFAGUS_HEADLESS_VULKAN AND NOT NOTHOFAGUS_BACKEND_VULKAN)
+    message(FATAL_ERROR "NOTHOFAGUS_HEADLESS_VULKAN requires NOTHOFAGUS_BACKEND_VULKAN=ON")
+endif()
+
+# ─────────────────────────────────────────────
 # Window backend selection
 # ─────────────────────────────────────────────
 set(NOTHOFAGUS_WINDOW_BACKEND "GLFW" CACHE STRING "Window/input backend: GLFW or SDL3")
 set_property(CACHE NOTHOFAGUS_WINDOW_BACKEND PROPERTY STRINGS "GLFW" "SDL3")
 
-if(NOTHOFAGUS_WINDOW_BACKEND STREQUAL "SDL3")
+if(NOTHOFAGUS_HEADLESS_VULKAN)
+    # ── Headless (no window library) ─────────
+    set(NOTHOFAGUS_WIN_LINK "")
+    set(NOTHOFAGUS_WIN_INCS "")
+    set(NOTHOFAGUS_WIN_DEFS NOTHOFAGUS_HEADLESS_VULKAN)
+    set(NOTHOFAGUS_BACKEND_SRC
+        "source/backends/headless_backend.cpp")
+elseif(NOTHOFAGUS_WINDOW_BACKEND STREQUAL "SDL3")
     # ── SDL3 ──────────────────────────────────
     set(SDL_SHARED       OFF CACHE BOOL "" FORCE)
     set(SDL_STATIC       ON  CACHE BOOL "" FORCE)
@@ -50,8 +67,6 @@ else()
         "source/backends/glfw_mouse.cpp"
         "source/backends/glfw_gamepad.cpp")
 endif()
-
-option(NOTHOFAGUS_BACKEND_VULKAN "Use Vulkan backend instead of OpenGL" OFF)
 
 add_subdirectory("third_party/glad")
 if(NOTHOFAGUS_BACKEND_VULKAN)
@@ -97,6 +112,7 @@ if(NOTHOFAGUS_BACKEND_VULKAN)
     target_compile_definitions(nothofagus PRIVATE NOTHOFAGUS_BACKEND_VULKAN)
     target_sources(nothofagus PRIVATE
         "source/backends/vulkan_backend.cpp"
+        "source/backends/vulkan_presentation.cpp"
         "source/backends/vma_impl.cpp"
     )
 

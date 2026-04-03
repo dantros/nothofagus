@@ -1,11 +1,6 @@
 #include "vulkan_backend.h"
 #include <VkBootstrap.h>
 #include <vk_mem_alloc.h>
-#if defined(NOTHOFAGUS_BACKEND_SDL3)
-#  include <SDL3/SDL_vulkan.h>
-#else
-#  include <GLFW/glfw3.h>
-#endif
 #include <backends/imgui_impl_vulkan.h>
 #include <imgui.h>
 #include <spdlog/spdlog.h>
@@ -216,148 +211,6 @@ VkFormat VulkanBackend::findDepthFormat() const
 }
 
 // ---------------------------------------------------------------------------
-// Swapchain depth resources
-// ---------------------------------------------------------------------------
-
-void VulkanBackend::createSwapchainDepthResources()
-{
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType     = VK_IMAGE_TYPE_2D;
-    imageInfo.format        = mDepthFormat;
-    imageInfo.extent        = {mSwapchainExtent.width, mSwapchainExtent.height, 1};
-    imageInfo.mipLevels     = 1;
-    imageInfo.arrayLayers   = 1;
-    imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-    if (vmaCreateImage(mAllocator, &imageInfo, &allocInfo,
-                       &mSwapchainDepthImage, &mSwapchainDepthAlloc, nullptr) != VK_SUCCESS)
-        throw std::runtime_error("Failed to create swapchain depth image");
-
-    const bool hasStencil = (mDepthFormat == VK_FORMAT_D24_UNORM_S8_UINT);
-    const VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT |
-                                          (hasStencil ? VK_IMAGE_ASPECT_STENCIL_BIT : 0u);
-
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image                           = mSwapchainDepthImage;
-    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format                          = mDepthFormat;
-    viewInfo.subresourceRange.aspectMask     = aspectMask;
-    viewInfo.subresourceRange.levelCount     = 1;
-    viewInfo.subresourceRange.layerCount     = 1;
-
-    if (vkCreateImageView(mDevice, &viewInfo, nullptr, &mSwapchainDepthView) != VK_SUCCESS)
-        throw std::runtime_error("Failed to create swapchain depth image view");
-}
-
-void VulkanBackend::destroySwapchainDepthResources()
-{
-    if (mSwapchainDepthView  != VK_NULL_HANDLE) vkDestroyImageView(mDevice, mSwapchainDepthView, nullptr);
-    if (mSwapchainDepthImage != VK_NULL_HANDLE) vmaDestroyImage(mAllocator, mSwapchainDepthImage, mSwapchainDepthAlloc);
-    mSwapchainDepthView  = VK_NULL_HANDLE;
-    mSwapchainDepthImage = VK_NULL_HANDLE;
-    mSwapchainDepthAlloc = VK_NULL_HANDLE;
-}
-
-// ---------------------------------------------------------------------------
-// Swapchain framebuffers
-// ---------------------------------------------------------------------------
-
-void VulkanBackend::createSwapchainFramebuffers()
-{
-    mSwapchainFramebuffers.resize(mSwapchainImageViews.size());
-    for (std::size_t i = 0; i < mSwapchainImageViews.size(); ++i)
-    {
-        std::array<VkImageView, 2> attachments = {mSwapchainImageViews[i], mSwapchainDepthView};
-
-        VkFramebufferCreateInfo fbInfo{};
-        fbInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        fbInfo.renderPass      = mMainRenderPass;
-        fbInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-        fbInfo.pAttachments    = attachments.data();
-        fbInfo.width           = mSwapchainExtent.width;
-        fbInfo.height          = mSwapchainExtent.height;
-        fbInfo.layers          = 1;
-
-        if (vkCreateFramebuffer(mDevice, &fbInfo, nullptr, &mSwapchainFramebuffers[i]) != VK_SUCCESS)
-            throw std::runtime_error("Failed to create swapchain framebuffer");
-    }
-}
-
-void VulkanBackend::destroySwapchainResources()
-{
-    for (auto framebuffer : mSwapchainFramebuffers)
-        vkDestroyFramebuffer(mDevice, framebuffer, nullptr);
-    mSwapchainFramebuffers.clear();
-
-    destroySwapchainDepthResources();
-
-    for (auto imageView : mSwapchainImageViews)
-        vkDestroyImageView(mDevice, imageView, nullptr);
-    mSwapchainImageViews.clear();
-}
-
-void VulkanBackend::recreateSwapchain()
-{
-    vkDeviceWaitIdle(mDevice);
-    destroySwapchainResources();
-
-    vkb::SwapchainBuilder builder{mPhysicalDevice, mDevice, mSurface};
-    auto swapchainResult = builder
-        .set_desired_format({VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
-        .add_fallback_format({VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
-        .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
-        .set_old_swapchain(mSwapchain)
-        .build();
-    if (!swapchainResult)
-        throw std::runtime_error("Failed to recreate swapchain");
-
-    vkDestroySwapchainKHR(mDevice, mSwapchain, nullptr);
-    vkb::Swapchain vkbSwapchain = swapchainResult.value();
-    mSwapchain         = vkbSwapchain.swapchain;
-    mSwapchainFormat   = vkbSwapchain.image_format;
-    mSwapchainExtent   = vkbSwapchain.extent;
-    mSwapchainImages   = vkbSwapchain.get_images().value();
-    mSwapchainImageViews = vkbSwapchain.get_image_views().value();
-
-    createSwapchainDepthResources();
-    createSwapchainFramebuffers();
-
-    // Resize per-swapchain-image semaphores if the image count changed.
-    VkSemaphoreCreateInfo semInfo{};
-    semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    const uint32_t newImageCount = static_cast<uint32_t>(mSwapchainImages.size());
-
-    auto resizeSemaphoreVector = [&](std::vector<VkSemaphore>& semaphores)
-    {
-        const uint32_t oldCount = static_cast<uint32_t>(semaphores.size());
-        if (newImageCount > oldCount)
-        {
-            semaphores.resize(newImageCount);
-            for (uint32_t i = oldCount; i < newImageCount; ++i)
-                vkCreateSemaphore(mDevice, &semInfo, nullptr, &semaphores[i]);
-        }
-        else if (newImageCount < oldCount)
-        {
-            for (uint32_t i = newImageCount; i < oldCount; ++i)
-                vkDestroySemaphore(mDevice, semaphores[i], nullptr);
-            semaphores.resize(newImageCount);
-        }
-    };
-
-    resizeSemaphoreVector(mImageAvailableSemaphores);
-    resizeSemaphoreVector(mRenderFinishedSemaphores);
-    mAcquireSemaphoreIndex = mAcquireSemaphoreIndex % newImageCount;
-}
-
-// ---------------------------------------------------------------------------
 // initialize()
 // ---------------------------------------------------------------------------
 
@@ -387,22 +240,14 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
     mInstance       = vkbInstance.instance;
     mDebugMessenger = vkbInstance.debug_messenger;
 
-    // 2. Surface
-#if defined(NOTHOFAGUS_BACKEND_SDL3)
-    if (!SDL_Vulkan_CreateSurface(static_cast<SDL_Window*>(nativeWindowHandle), mInstance, nullptr, &mSurface))
-        throw std::runtime_error("Failed to create Vulkan window surface (SDL3)");
-#else
-    mGlfwWindow = static_cast<GLFWwindow*>(nativeWindowHandle);
-    if (glfwCreateWindowSurface(mInstance, mGlfwWindow, nullptr, &mSurface) != VK_SUCCESS)
-        throw std::runtime_error("Failed to create Vulkan window surface (GLFW)");
-#endif
+    // 2. Surface (delegated to presentation policy — no-op in headless mode)
+    mPresentation.createSurface(mInstance, nativeWindowHandle);
 
     // 3. Physical device
     vkb::PhysicalDeviceSelector physSelector{vkbInstance};
+    mPresentation.configurePhysicalDeviceSelector(physSelector);
     auto physResult = physSelector
-        .set_surface(mSurface)
         .set_minimum_version(1, 1)
-        .require_present()
         .select();
     if (!physResult)
         throw std::runtime_error("Failed to select physical device: " + physResult.error().message());
@@ -410,7 +255,7 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
     vkb::PhysicalDevice vkbPhysical = physResult.value();
     mPhysicalDevice = vkbPhysical.physical_device;
 
-    // 4. Logical device
+    // 4. Logical device + queues
     vkb::DeviceBuilder deviceBuilder{vkbPhysical};
     auto deviceResult = deviceBuilder.build();
     if (!deviceResult)
@@ -418,10 +263,7 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
 
     vkb::Device vkbDevice = deviceResult.value();
     mDevice = vkbDevice.device;
-
-    mGraphicsQueue       = vkbDevice.get_queue(vkb::QueueType::graphics).value();
-    mGraphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
-    mPresentQueue        = vkbDevice.get_queue(vkb::QueueType::present).value();
+    mPresentation.retrieveQueues(vkbDevice, mGraphicsQueue, mGraphicsQueueFamily);
 
     // 5. VMA
     VmaAllocatorCreateInfo allocatorInfo{};
@@ -432,24 +274,7 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
     if (vmaCreateAllocator(&allocatorInfo, &mAllocator) != VK_SUCCESS)
         throw std::runtime_error("Failed to create VMA allocator");
 
-    // 6. Swapchain
-    vkb::SwapchainBuilder swapchainBuilder{vkbDevice};
-    auto swapchainResult = swapchainBuilder
-        .set_desired_format({VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
-        .add_fallback_format({VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
-        .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
-        .build();
-    if (!swapchainResult)
-        throw std::runtime_error("Failed to create swapchain: " + swapchainResult.error().message());
-
-    vkb::Swapchain vkbSwapchain = swapchainResult.value();
-    mSwapchain         = vkbSwapchain.swapchain;
-    mSwapchainFormat   = vkbSwapchain.image_format;
-    mSwapchainExtent   = vkbSwapchain.extent;
-    mSwapchainImages   = vkbSwapchain.get_images().value();
-    mSwapchainImageViews = vkbSwapchain.get_image_views().value();
-
-    // 7. Command pool
+    // 6. Command pool
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.queueFamilyIndex = mGraphicsQueueFamily;
@@ -457,15 +282,12 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
     if (vkCreateCommandPool(mDevice, &poolInfo, nullptr, &mCommandPool) != VK_SUCCESS)
         throw std::runtime_error("Failed to create command pool");
 
-    // 8. Per-frame command buffers + sync primitives
+    // 7. Per-frame command buffers + fences
     VkCommandBufferAllocateInfo cbAllocInfo{};
     cbAllocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     cbAllocInfo.commandPool        = mCommandPool;
     cbAllocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cbAllocInfo.commandBufferCount = 1;
-
-    VkSemaphoreCreateInfo semInfo{};
-    semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
     VkFenceCreateInfo fenceInfo{};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -479,35 +301,20 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
             throw std::runtime_error("Failed to create frame sync primitives");
     }
 
-    // Per-swapchain-image semaphores to avoid reusing a semaphore that the
-    // presentation engine still holds for a not-yet-re-acquired image.
-    // See https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html
-    const uint32_t imageCount = static_cast<uint32_t>(mSwapchainImages.size());
-    mImageAvailableSemaphores.resize(imageCount);
-    mRenderFinishedSemaphores.resize(imageCount);
-    for (uint32_t i = 0; i < imageCount; ++i)
-    {
-        if (vkCreateSemaphore(mDevice, &semInfo, nullptr, &mImageAvailableSemaphores[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(mDevice, &semInfo, nullptr, &mRenderFinishedSemaphores[i]) != VK_SUCCESS)
-            throw std::runtime_error("Failed to create swapchain semaphore");
-    }
-    mAcquireSemaphoreIndex = 0;
-
-    // 9. Depth format + swapchain depth image
+    // 8. Depth format
     mDepthFormat = findDepthFormat();
-    createSwapchainDepthResources();
 
-    // 10. Main render pass (swapchain → PRESENT_SRC_KHR)
+    // 9. Main render pass (format and final layout come from the presentation policy)
     {
         VkAttachmentDescription colorAttachment{};
-        colorAttachment.format         = mSwapchainFormat;
+        colorAttachment.format         = mPresentation.colorFormat();
         colorAttachment.samples        = VK_SAMPLE_COUNT_1_BIT;
         colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        colorAttachment.finalLayout    = mPresentation.mainPassFinalLayout();
 
         VkAttachmentDescription depthAttachment{};
         depthAttachment.format         = mDepthFormat;
@@ -603,8 +410,10 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
             throw std::runtime_error("Failed to create RTT render pass");
     }
 
-    // 12. Swapchain framebuffers
-    createSwapchainFramebuffers();
+    // 12. Presentation target (swapchain + framebuffers, or offscreen image)
+    mPresentation.createPresentationTarget(mPhysicalDevice, mDevice, mAllocator,
+                                           mDepthFormat, mMainRenderPass, canvasSize);
+    mPresentation.createSyncObjects(mDevice);
 
     // 13. Descriptor set layout (binding 0 = combined image sampler, fragment stage)
     {
@@ -838,7 +647,7 @@ void VulkanBackend::initImGuiRenderer()
     imguiInfo.DescriptorPool  = mImguiDescriptorPool;
     imguiInfo.RenderPass      = mMainRenderPass;
     imguiInfo.MinImageCount   = 2;
-    imguiInfo.ImageCount      = static_cast<uint32_t>(mSwapchainImages.size());
+    imguiInfo.ImageCount      = mPresentation.imageCount();
     imguiInfo.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
     ImGui_ImplVulkan_Init(&imguiInfo);
     // Font upload is deferred: ImGui_ImplVulkan_NewFrame() calls
@@ -948,22 +757,14 @@ void VulkanBackend::shutdown()
     vkDestroyRenderPass(mDevice, mRttRenderPass, nullptr);
     vkDestroyRenderPass(mDevice, mMainRenderPass, nullptr);
 
-    destroySwapchainResources();
-    vkDestroySwapchainKHR(mDevice, mSwapchain, nullptr);
+    mPresentation.shutdown(mDevice, mAllocator, mInstance);
 
     for (auto& frame : mFrames)
         vkDestroyFence(mDevice, frame.inFlight, nullptr);
-    for (auto sem : mImageAvailableSemaphores)
-        vkDestroySemaphore(mDevice, sem, nullptr);
-    mImageAvailableSemaphores.clear();
-    for (auto sem : mRenderFinishedSemaphores)
-        vkDestroySemaphore(mDevice, sem, nullptr);
-    mRenderFinishedSemaphores.clear();
 
     vkDestroyCommandPool(mDevice, mCommandPool, nullptr);
     vmaDestroyAllocator(mAllocator);
     vkDestroyDevice(mDevice, nullptr);
-    vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
 
     if (mDebugMessenger != VK_NULL_HANDLE)
     {
@@ -1627,14 +1428,9 @@ void VulkanBackend::beginFrame(
     // the fence above guarantees the GPU has finished executing that submission.
     flushPendingDeletions(frame);
 
-    VkSemaphore acquireSemaphore = mImageAvailableSemaphores[mAcquireSemaphoreIndex];
-    VkResult acquireResult = vkAcquireNextImageKHR(
-        mDevice, mSwapchain, UINT64_MAX, acquireSemaphore, VK_NULL_HANDLE,
-        &mCurrentSwapchainImageIndex);
-
-    if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR)
+    AcquireResult acquireResult = mPresentation.acquireImage(mDevice);
+    if (acquireResult == AcquireResult::Recreated)
     {
-        recreateSwapchain();
         mActiveCommandBuffer = VK_NULL_HANDLE;
         return;
     }
@@ -1743,8 +1539,8 @@ void VulkanBackend::beginMainPass(ViewportRect gameViewport)
     VkRenderPassBeginInfo rpBegin{};
     rpBegin.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     rpBegin.renderPass        = mMainRenderPass;
-    rpBegin.framebuffer       = mSwapchainFramebuffers[mCurrentSwapchainImageIndex];
-    rpBegin.renderArea.extent = mSwapchainExtent;
+    rpBegin.framebuffer       = mPresentation.mainFramebuffer();
+    rpBegin.renderArea.extent = mPresentation.extent();
     rpBegin.clearValueCount   = static_cast<uint32_t>(clearValues.size());
     rpBegin.pClearValues      = clearValues.data();
     vkCmdBeginRenderPass(mActiveCommandBuffer, &rpBegin, VK_SUBPASS_CONTENTS_INLINE);
@@ -1764,9 +1560,10 @@ void VulkanBackend::beginMainPass(ViewportRect gameViewport)
         int32_t clearW = gameViewport.width;
         int32_t clearH = gameViewport.height;
 
-        // Clamp to render area (swapchain extent) to avoid validation errors during resize.
-        const int32_t renderW = static_cast<int32_t>(mSwapchainExtent.width);
-        const int32_t renderH = static_cast<int32_t>(mSwapchainExtent.height);
+        // Clamp to render area to avoid validation errors during resize.
+        const VkExtent2D presentExtent = mPresentation.extent();
+        const int32_t renderW = static_cast<int32_t>(presentExtent.width);
+        const int32_t renderH = static_cast<int32_t>(presentExtent.height);
         if (clearX < 0) { clearW += clearX; clearX = 0; }
         if (clearY < 0) { clearH += clearY; clearY = 0; }
         if (clearX + clearW > renderW) clearW = renderW - clearX;
@@ -1864,35 +1661,9 @@ void VulkanBackend::endFrame(
     vkEndCommandBuffer(mActiveCommandBuffer);
 
     FrameData& frame = mFrames[mCurrentFrame];
-
-    VkSemaphore acquireSemaphore        = mImageAvailableSemaphores[mAcquireSemaphoreIndex];
-    VkSemaphore renderFinishedSemaphore = mRenderFinishedSemaphores[mCurrentSwapchainImageIndex];
-    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount   = 1;
-    submitInfo.pWaitSemaphores      = &acquireSemaphore;
-    submitInfo.pWaitDstStageMask    = &waitStage;
-    submitInfo.commandBufferCount   = 1;
-    submitInfo.pCommandBuffers      = &frame.commandBuffer;
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores    = &renderFinishedSemaphore;
-    vkQueueSubmit(mGraphicsQueue, 1, &submitInfo, frame.inFlight);
-
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores    = &renderFinishedSemaphore;
-    presentInfo.swapchainCount     = 1;
-    presentInfo.pSwapchains        = &mSwapchain;
-    presentInfo.pImageIndices      = &mCurrentSwapchainImageIndex;
-
-    VkResult presentResult = vkQueuePresentKHR(mPresentQueue, &presentInfo);
-    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)
-        recreateSwapchain();
+    mPresentation.submitAndPresent(mDevice, mGraphicsQueue, frame.commandBuffer, frame.inFlight);
 
     mCurrentFrame = (mCurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
-    mAcquireSemaphoreIndex = (mAcquireSemaphoreIndex + 1) % static_cast<uint32_t>(mImageAvailableSemaphores.size());
     mActiveCommandBuffer = VK_NULL_HANDLE;
 }
 
@@ -1902,145 +1673,8 @@ void VulkanBackend::endFrame(
 
 ScreenshotPixels VulkanBackend::takeScreenshot(ViewportRect gameViewport, glm::ivec2 gameSize) const
 {
-    vkDeviceWaitIdle(mDevice);
-
-    const uint32_t    width     = static_cast<uint32_t>(gameSize.x);
-    const uint32_t    height    = static_cast<uint32_t>(gameSize.y);
-    const VkDeviceSize bufSize  = VkDeviceSize(width) * height * 4;
-
-    // Staging buffer (host-visible, host-coherent)
-    VkBufferCreateInfo bufInfo{};
-    bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufInfo.size  = bufSize;
-    bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-
-    VmaAllocationCreateInfo stagingAllocInfo{};
-    stagingAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                             VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    VkBuffer stagingBuffer; VmaAllocation stagingAlloc; VmaAllocationInfo stagingMapped;
-    vmaCreateBuffer(mAllocator, &bufInfo, &stagingAllocInfo, &stagingBuffer, &stagingAlloc, &stagingMapped);
-
-    // Intermediate R8G8B8A8 image to blit into (handles B8G8R8A8 → R8G8B8A8 format conversion)
-    VkImageCreateInfo intermediateInfo{};
-    intermediateInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    intermediateInfo.imageType     = VK_IMAGE_TYPE_2D;
-    intermediateInfo.format        = VK_FORMAT_R8G8B8A8_UNORM;
-    intermediateInfo.extent        = {width, height, 1};
-    intermediateInfo.mipLevels     = 1;
-    intermediateInfo.arrayLayers   = 1;
-    intermediateInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
-    intermediateInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
-    intermediateInfo.usage         = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    intermediateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-    VmaAllocationCreateInfo intermediateAllocInfo{};
-    intermediateAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-    VkImage intermediateImage; VmaAllocation intermediateAlloc;
-    vmaCreateImage(mAllocator, &intermediateInfo, &intermediateAllocInfo,
-                   &intermediateImage, &intermediateAlloc, nullptr);
-
-    VkCommandBuffer commandBuffer = beginOneTimeCommandBuffer();
-
-    // Transition swapchain image to TRANSFER_SRC
-    {
-        VkImageMemoryBarrier barrier{};
-        barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.oldLayout                       = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        barrier.newLayout                       = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image                           = mSwapchainImages[mCurrentSwapchainImageIndex];
-        barrier.subresourceRange                = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        barrier.srcAccessMask                   = VK_ACCESS_MEMORY_READ_BIT;
-        barrier.dstAccessMask                   = VK_ACCESS_TRANSFER_READ_BIT;
-        vkCmdPipelineBarrier(commandBuffer,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-            0, 0, nullptr, 0, nullptr, 1, &barrier);
-    }
-
-    // Transition intermediate image to TRANSFER_DST
-    transitionImageLayout(commandBuffer, intermediateImage,
-        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0, VK_ACCESS_TRANSFER_WRITE_BIT);
-
-    // gameViewport.y is in OpenGL convention (from bottom). Convert to Vulkan image
-    // coordinates (Y from top) before blitting. No Y-flip needed: reading top→bottom
-    // maps directly to the top-to-bottom output required by ScreenshotPixels.
-    const int framebufferHeight = static_cast<int>(mSwapchainExtent.height);
-    const int vulkanGameTop     = framebufferHeight - gameViewport.y - gameViewport.height;
-    const int vulkanGameBottom  = framebufferHeight - gameViewport.y;
-
-    VkImageBlit blit{};
-    blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    blit.srcOffsets[0]  = {gameViewport.x, vulkanGameTop, 0};
-    blit.srcOffsets[1]  = {gameViewport.x + gameViewport.width, vulkanGameBottom, 1};
-    blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    blit.dstOffsets[0]  = {0, 0, 0};
-    blit.dstOffsets[1]  = {static_cast<int32_t>(width), static_cast<int32_t>(height), 1};
-    vkCmdBlitImage(commandBuffer,
-        mSwapchainImages[mCurrentSwapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        intermediateImage,                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        1, &blit, VK_FILTER_NEAREST);
-
-    // Transition intermediate to TRANSFER_SRC for copy to buffer
-    transitionImageLayout(commandBuffer, intermediateImage,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT);
-
-    VkBufferImageCopy copyRegion{};
-    copyRegion.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    copyRegion.imageExtent      = {width, height, 1};
-    vkCmdCopyImageToBuffer(commandBuffer, intermediateImage,
-                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &copyRegion);
-
-    // Host-read barrier
-    {
-        VkBufferMemoryBarrier barrier{};
-        barrier.sType         = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-        barrier.buffer        = stagingBuffer;
-        barrier.size          = bufSize;
-        vkCmdPipelineBarrier(commandBuffer,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
-            0, 0, nullptr, 1, &barrier, 0, nullptr);
-    }
-
-    // Restore swapchain image to PRESENT_SRC
-    {
-        VkImageMemoryBarrier barrier{};
-        barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.oldLayout                       = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        barrier.newLayout                       = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image                           = mSwapchainImages[mCurrentSwapchainImageIndex];
-        barrier.subresourceRange                = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        barrier.srcAccessMask                   = VK_ACCESS_TRANSFER_READ_BIT;
-        barrier.dstAccessMask                   = VK_ACCESS_MEMORY_READ_BIT;
-        vkCmdPipelineBarrier(commandBuffer,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-            0, 0, nullptr, 0, nullptr, 1, &barrier);
-    }
-
-    endOneTimeCommandBuffer(commandBuffer);
-
-    // Copy from staging buffer to result
-    ScreenshotPixels result;
-    result.width  = static_cast<int>(width);
-    result.height = static_cast<int>(height);
-    result.data.resize(bufSize);
-    std::memcpy(result.data.data(), stagingMapped.pMappedData, bufSize);
-
-    vmaDestroyBuffer(mAllocator, stagingBuffer, stagingAlloc);
-    vmaDestroyImage(mAllocator, intermediateImage, intermediateAlloc);
-
-    return result;
+    return mPresentation.takeScreenshot(mDevice, mAllocator, mCommandPool, mGraphicsQueue,
+                                        gameViewport, gameSize);
 }
 
 // ---------------------------------------------------------------------------
