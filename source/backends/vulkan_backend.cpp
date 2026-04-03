@@ -304,7 +304,11 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
     // 8. Depth format
     mDepthFormat = findDepthFormat();
 
-    // 9. Main render pass (format and final layout come from the presentation policy)
+    // 9. Presentation target (swapchain or offscreen image — determines color format)
+    mPresentation.createPresentationTarget(mPhysicalDevice, mDevice, mAllocator,
+                                           mDepthFormat, canvasSize);
+
+    // 10. Main render pass (format and final layout come from the presentation policy)
     {
         VkAttachmentDescription colorAttachment{};
         colorAttachment.format         = mPresentation.colorFormat();
@@ -410,9 +414,8 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
             throw std::runtime_error("Failed to create RTT render pass");
     }
 
-    // 12. Presentation target (swapchain + framebuffers, or offscreen image)
-    mPresentation.createPresentationTarget(mPhysicalDevice, mDevice, mAllocator,
-                                           mDepthFormat, mMainRenderPass, canvasSize);
+    // 12. Presentation framebuffers (need the render pass created above)
+    mPresentation.createPresentationFramebuffers(mMainRenderPass);
     mPresentation.createSyncObjects(mDevice);
 
     // 13. Descriptor set layout (binding 0 = combined image sampler, fragment stage)

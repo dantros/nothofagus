@@ -89,14 +89,13 @@ void WindowedVulkanPresentation::retrieveQueues(
 
 void WindowedVulkanPresentation::createPresentationTarget(
     VkPhysicalDevice physicalDevice, VkDevice device, VmaAllocator allocator,
-    VkFormat depthFormat, VkRenderPass mainRenderPass, glm::ivec2 /*canvasSize*/)
+    VkFormat depthFormat, glm::ivec2 /*canvasSize*/)
 {
     // Store handles for recreateSwapchain.
     mPhysicalDevice = physicalDevice;
     mDevice         = device;
     mAllocator      = allocator;
     mDepthFormat    = depthFormat;
-    mRenderPass     = mainRenderPass;
 
     vkb::SwapchainBuilder swapchainBuilder{physicalDevice, device, mSurface};
     auto swapchainResult = swapchainBuilder
@@ -115,6 +114,11 @@ void WindowedVulkanPresentation::createPresentationTarget(
     mSwapchainImageViews = vkbSwapchain.get_image_views().value();
 
     createDepthResources();
+}
+
+void WindowedVulkanPresentation::createPresentationFramebuffers(VkRenderPass mainRenderPass)
+{
+    mRenderPass = mainRenderPass;
     createFramebuffers();
 }
 
@@ -560,9 +564,12 @@ void HeadlessVulkanPresentation::retrieveQueues(
 
 void HeadlessVulkanPresentation::createPresentationTarget(
     VkPhysicalDevice /*physicalDevice*/, VkDevice device, VmaAllocator allocator,
-    VkFormat depthFormat, VkRenderPass mainRenderPass, glm::ivec2 canvasSize)
+    VkFormat depthFormat, glm::ivec2 canvasSize)
 {
-    mExtent = {static_cast<uint32_t>(canvasSize.x), static_cast<uint32_t>(canvasSize.y)};
+    mDevice      = device;
+    mAllocator   = allocator;
+    mDepthFormat = depthFormat;
+    mExtent      = {static_cast<uint32_t>(canvasSize.x), static_cast<uint32_t>(canvasSize.y)};
 
     // --- Color image ---
     VkImageCreateInfo colorInfo{};
@@ -629,8 +636,10 @@ void HeadlessVulkanPresentation::createPresentationTarget(
 
     if (vkCreateImageView(device, &depthViewInfo, nullptr, &mDepthView) != VK_SUCCESS)
         throw std::runtime_error("Failed to create offscreen depth image view");
+}
 
-    // --- Framebuffer ---
+void HeadlessVulkanPresentation::createPresentationFramebuffers(VkRenderPass mainRenderPass)
+{
     std::array<VkImageView, 2> attachments = {mColorView, mDepthView};
     VkFramebufferCreateInfo fbInfo{};
     fbInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -641,7 +650,7 @@ void HeadlessVulkanPresentation::createPresentationTarget(
     fbInfo.height          = mExtent.height;
     fbInfo.layers          = 1;
 
-    if (vkCreateFramebuffer(device, &fbInfo, nullptr, &mFramebuffer) != VK_SUCCESS)
+    if (vkCreateFramebuffer(mDevice, &fbInfo, nullptr, &mFramebuffer) != VK_SUCCESS)
         throw std::runtime_error("Failed to create offscreen framebuffer");
 }
 

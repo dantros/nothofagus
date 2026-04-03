@@ -45,14 +45,15 @@ enum class AcquireResult
 /// Presentation policy for windowed rendering via a VkSurfaceKHR + VkSwapchainKHR.
 struct WindowedVulkanPresentation
 {
-    // --- Initialization ---
+    // --- Initialization (two-phase: target determines format, framebuffers need render pass) ---
     void createSurface(VkInstance instance, void* nativeWindowHandle);
     void configurePhysicalDeviceSelector(vkb::PhysicalDeviceSelector& selector);
     void retrieveQueues(vkb::Device& vkbDevice,
                         VkQueue& outGraphicsQueue, uint32_t& outGraphicsQueueFamily);
     void createPresentationTarget(VkPhysicalDevice physicalDevice, VkDevice device,
                                   VmaAllocator allocator, VkFormat depthFormat,
-                                  VkRenderPass mainRenderPass, glm::ivec2 canvasSize);
+                                  glm::ivec2 canvasSize);
+    void createPresentationFramebuffers(VkRenderPass mainRenderPass);
     void createSyncObjects(VkDevice device);
 
     // --- Render pass configuration ---
@@ -128,14 +129,15 @@ using ActiveVulkanPresentation = WindowedVulkanPresentation;
 /// Renders into a standard VkImage with TRANSFER_SRC_BIT for CPU readback.
 struct HeadlessVulkanPresentation
 {
-    // --- Initialization ---
+    // --- Initialization (two-phase: target determines format, framebuffers need render pass) ---
     void createSurface(VkInstance instance, void* nativeWindowHandle);
     void configurePhysicalDeviceSelector(vkb::PhysicalDeviceSelector& selector);
     void retrieveQueues(vkb::Device& vkbDevice,
                         VkQueue& outGraphicsQueue, uint32_t& outGraphicsQueueFamily);
     void createPresentationTarget(VkPhysicalDevice physicalDevice, VkDevice device,
                                   VmaAllocator allocator, VkFormat depthFormat,
-                                  VkRenderPass mainRenderPass, glm::ivec2 canvasSize);
+                                  glm::ivec2 canvasSize);
+    void createPresentationFramebuffers(VkRenderPass mainRenderPass);
     void createSyncObjects(VkDevice device);
 
     // --- Render pass configuration ---
@@ -159,6 +161,10 @@ struct HeadlessVulkanPresentation
     void shutdown(VkDevice device, VmaAllocator allocator, VkInstance instance);
 
 private:
+    VkDevice      mDevice      = VK_NULL_HANDLE;
+    VmaAllocator  mAllocator   = VK_NULL_HANDLE;
+    VkFormat      mDepthFormat = VK_FORMAT_UNDEFINED;
+
     VkImage       mColorImage = VK_NULL_HANDLE;
     VmaAllocation mColorAlloc = VK_NULL_HANDLE;
     VkImageView   mColorView  = VK_NULL_HANDLE;
