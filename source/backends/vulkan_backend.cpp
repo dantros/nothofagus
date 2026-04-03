@@ -229,6 +229,9 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
 #endif
     vkb::InstanceBuilder instanceBuilder;
     instanceBuilder.set_app_name("Nothofagus").require_api_version(1, 1, 0);
+#ifdef NOTHOFAGUS_HEADLESS_VULKAN
+    instanceBuilder.set_headless();
+#endif
 #ifndef NDEBUG
     instanceBuilder.enable_validation_layers().use_default_debug_messenger();
 #endif
