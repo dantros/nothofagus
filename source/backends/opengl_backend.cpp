@@ -7,7 +7,13 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <stdexcept>
 #include <span>
+#ifdef TRACY_ENABLE
 #include <tracy/TracyOpenGL.hpp>
+#else
+#define TracyGpuContext
+#define TracyGpuZone(x)
+#define TracyGpuCollect
+#endif
 
 namespace Nothofagus
 {
