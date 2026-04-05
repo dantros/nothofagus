@@ -86,8 +86,8 @@ void OpenGLBackend::initialize(void* /*nativeWindowHandle*/, glm::ivec2 /*canvas
 
     const std::string vertexShaderSource = R"(
         #version 330 core
-        in vec2 position;
-        in vec2 texture;
+        layout(location = 0) in vec2 position;
+        layout(location = 1) in vec2 texture;
         out vec2 outTextureCoordinates;
         uniform mat3 transform;
         void main()
@@ -207,9 +207,14 @@ DTexture OpenGLBackend::uploadTexture(const Texture& texture,
         const glm::ivec2 textureSize = indirectTexture.size();
         const GLsizei layerCount = static_cast<GLsizei>(indirectTexture.layers());
 
+        // R8UI rows are 1 byte per pixel — the default GL_UNPACK_ALIGNMENT of 4 would
+        // add padding after each row unless the width is a multiple of 4.  Set alignment
+        // to 1 so OpenGL reads the raw tightly-packed index bytes we provide.
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_R8UI,
                      textureSize.x, textureSize.y, layerCount,
                      0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, indexData.data());
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
         // Integer textures require GL_NEAREST — linear filtering is not supported.
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
