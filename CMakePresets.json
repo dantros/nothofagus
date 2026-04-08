@@ -33,7 +33,8 @@
             "inherits": "base",
             "cacheVariables": {
                 "NOTHOFAGUS_WINDOW_BACKEND": "GLFW",
-                "NOTHOFAGUS_BACKEND_VULKAN": "ON"
+                "NOTHOFAGUS_BACKEND_VULKAN": "ON",
+                "NOTHOFAGUS_VMA_USE_CL": "ON"
             }
         },
         {
@@ -50,7 +51,8 @@
             "inherits": "base",
             "cacheVariables": {
                 "NOTHOFAGUS_WINDOW_BACKEND": "SDL3",
-                "NOTHOFAGUS_BACKEND_VULKAN": "ON"
+                "NOTHOFAGUS_BACKEND_VULKAN": "ON",
+                "NOTHOFAGUS_VMA_USE_CL": "ON"
             }
         },
         {
@@ -97,7 +99,8 @@
             "inherits": "base",
             "cacheVariables": {
                 "NOTHOFAGUS_BACKEND_VULKAN": "ON",
-                "NOTHOFAGUS_HEADLESS_VULKAN": "ON"
+                "NOTHOFAGUS_HEADLESS_VULKAN": "ON",
+                "NOTHOFAGUS_VMA_USE_CL": "ON"
             }
         },
         {
