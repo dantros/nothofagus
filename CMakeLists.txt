@@ -116,34 +116,36 @@ if(NOTHOFAGUS_BACKEND_VULKAN)
         "source/backends/vulkan_presentation.cpp"
     )
 
-    if(WIN32 AND NOTHOFAGUS_VMA_USE_CL)
-        include(ExternalProject)
-        set(_vma_install_dir "${CMAKE_CURRENT_BINARY_DIR}/vma_cl_install")
+    # Build VMA as a separate ExternalProject using the same compiler, with all warnings
+    # suppressed (-w). Works on both Windows (clang-cl) and Linux (clang++).
+    include(ExternalProject)
+    set(_vma_install_dir "${CMAKE_CURRENT_BINARY_DIR}/vma_install")
+    if(WIN32)
         set(_vma_lib "${_vma_install_dir}/lib/vma_impl.lib")
-
-        ExternalProject_Add(vma_cl_project
-            SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/third_party/VulkanMemoryAllocator_cl"
-            BINARY_DIR  "${CMAKE_CURRENT_BINARY_DIR}/vma_cl_build"
-            INSTALL_DIR "${_vma_install_dir}"
-            CMAKE_ARGS
-                -DCMAKE_CXX_COMPILER=cl
-                -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-                "-DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>"
-                "-DVMA_IMPL_SRC=${CMAKE_CURRENT_SOURCE_DIR}/source/backends/vma_impl.cpp"
-                "-DVMA_INCLUDE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/VulkanMemoryAllocator/include"
-                "-DVMA_VULKAN_INCLUDE_DIR=${Vulkan_INCLUDE_DIRS}"
-            BUILD_BYPRODUCTS "${_vma_lib}"
-        )
-
-        add_library(vma_impl_cl STATIC IMPORTED GLOBAL)
-        set_target_properties(vma_impl_cl PROPERTIES IMPORTED_LOCATION "${_vma_lib}")
-        add_dependencies(vma_impl_cl vma_cl_project)
-        add_dependencies(nothofagus vma_cl_project)
-
-        target_link_libraries(nothofagus PRIVATE vma_impl_cl)
     else()
-        target_sources(nothofagus PRIVATE "source/backends/vma_impl.cpp")
+        set(_vma_lib "${_vma_install_dir}/lib/libvma_impl.a")
     endif()
+
+    ExternalProject_Add(vma_project
+        SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/third_party/VulkanMemoryAllocator_project"
+        BINARY_DIR  "${CMAKE_CURRENT_BINARY_DIR}/vma_build"
+        INSTALL_DIR "${_vma_install_dir}"
+        CMAKE_ARGS
+            -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+            "-DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>"
+            "-DCMAKE_CXX_FLAGS=-w"
+            "-DVMA_IMPL_SRC=${CMAKE_CURRENT_SOURCE_DIR}/source/backends/vma_impl.cpp"
+            "-DVMA_INCLUDE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/VulkanMemoryAllocator/include"
+            "-DVMA_VULKAN_INCLUDE_DIR=${Vulkan_INCLUDE_DIRS}"
+        BUILD_BYPRODUCTS "${_vma_lib}"
+    )
+
+    add_library(vma_impl_project STATIC IMPORTED GLOBAL)
+    set_target_properties(vma_impl_project PROPERTIES IMPORTED_LOCATION "${_vma_lib}")
+    add_dependencies(vma_impl_project vma_project)
+    add_dependencies(nothofagus vma_project)
+    target_link_libraries(nothofagus PRIVATE vma_impl_project)
 
     # SPIR-V shader compilation
     option(NOTHOFAGUS_USE_GLSLANG "Use glslangValidator instead of glslc for shader compilation" OFF)
