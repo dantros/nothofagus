@@ -15,7 +15,7 @@ typedef VmaAllocation_T* VmaAllocation;
 // Forward-declare vk-bootstrap types used in the policy interface.
 namespace vkb { class PhysicalDeviceSelector; struct Device; }
 
-// Forward-declare GLFWwindow outside any namespace so it matches the GLFW header.
+// Forward-declare GLFWwindow outside any namespace so it matches the GLFW header (used by GLFW backend).
 #if !defined(NOTHOFAGUS_HEADLESS_VULKAN) && !defined(NOTHOFAGUS_BACKEND_SDL3)
 struct GLFWwindow;
 #endif
@@ -78,6 +78,7 @@ struct WindowedVulkanPresentation
 
 private:
     void recreateSwapchain();
+    ScreenSize queryFramebufferSize() const;
     void createDepthResources();
     void destroyDepthResources();
     void createFramebuffers();
@@ -112,9 +113,9 @@ private:
 
     VkQueue mPresentQueue = VK_NULL_HANDLE;
 
-#if !defined(NOTHOFAGUS_BACKEND_SDL3)
-    ::GLFWwindow* mGlfwWindow = nullptr;
-#endif
+    // Store the native window handle for framebuffer size queries during
+    // swapchain creation/recreation (Wayland doesn't provide currentExtent).
+    void* mNativeWindowHandle = nullptr;
 };
 
 using ActiveVulkanPresentation = WindowedVulkanPresentation;

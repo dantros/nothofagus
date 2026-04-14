@@ -8,6 +8,7 @@
 
 #ifndef NOTHOFAGUS_HEADLESS_VULKAN
 #  if defined(NOTHOFAGUS_BACKEND_SDL3)
+#    include <SDL3/SDL.h>
 #    include <SDL3/SDL_vulkan.h>
 #  else
 #    include <GLFW/glfw3.h>
@@ -64,12 +65,12 @@ static void endOneTimeCommand(VkDevice device, VkCommandPool commandPool,
 
 void WindowedVulkanPresentation::createSurface(VkInstance instance, void* nativeWindowHandle)
 {
+    mNativeWindowHandle = nativeWindowHandle;
 #if defined(NOTHOFAGUS_BACKEND_SDL3)
     if (!SDL_Vulkan_CreateSurface(static_cast<SDL_Window*>(nativeWindowHandle), instance, nullptr, &mSurface))
         throw std::runtime_error("Failed to create Vulkan window surface (SDL3)");
 #else
-    mGlfwWindow = static_cast<GLFWwindow*>(nativeWindowHandle);
-    if (glfwCreateWindowSurface(instance, mGlfwWindow, nullptr, &mSurface) != VK_SUCCESS)
+    if (glfwCreateWindowSurface(instance, static_cast<GLFWwindow*>(nativeWindowHandle), nullptr, &mSurface) != VK_SUCCESS)
         throw std::runtime_error("Failed to create Vulkan window surface (GLFW)");
 #endif
 }
@@ -87,6 +88,17 @@ void WindowedVulkanPresentation::retrieveQueues(
     mPresentQueue          = vkbDevice.get_queue(vkb::QueueType::present).value();
 }
 
+ScreenSize WindowedVulkanPresentation::queryFramebufferSize() const
+{
+    int width, height;
+#if defined(NOTHOFAGUS_BACKEND_SDL3)
+    SDL_GetWindowSizeInPixels(static_cast<SDL_Window*>(mNativeWindowHandle), &width, &height);
+#else
+    glfwGetFramebufferSize(static_cast<GLFWwindow*>(mNativeWindowHandle), &width, &height);
+#endif
+    return {static_cast<unsigned int>(width), static_cast<unsigned int>(height)};
+}
+
 void WindowedVulkanPresentation::createPresentationTarget(
     VkPhysicalDevice physicalDevice, VkDevice device, VmaAllocator allocator,
     VkFormat depthFormat, glm::ivec2 /*canvasSize*/)
@@ -97,11 +109,13 @@ void WindowedVulkanPresentation::createPresentationTarget(
     mAllocator      = allocator;
     mDepthFormat    = depthFormat;
 
+    const ScreenSize framebufferSize = queryFramebufferSize();
     vkb::SwapchainBuilder swapchainBuilder{physicalDevice, device, mSurface};
     auto swapchainResult = swapchainBuilder
         .set_desired_format({VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
         .add_fallback_format({VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
         .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
+        .set_desired_extent(framebufferSize.width, framebufferSize.height)
         .build();
     if (!swapchainResult)
         throw std::runtime_error("Failed to create swapchain: " + swapchainResult.error().message());
@@ -490,11 +504,13 @@ void WindowedVulkanPresentation::recreateSwapchain()
     vkDeviceWaitIdle(mDevice);
     destroySwapchainResources();
 
+    const ScreenSize framebufferSize = queryFramebufferSize();
     vkb::SwapchainBuilder builder{mPhysicalDevice, mDevice, mSurface};
     auto swapchainResult = builder
         .set_desired_format({VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
         .add_fallback_format({VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
         .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
+        .set_desired_extent(framebufferSize.width, framebufferSize.height)
         .set_old_swapchain(mSwapchain)
         .build();
     if (!swapchainResult)

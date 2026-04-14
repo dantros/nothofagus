@@ -58,7 +58,9 @@ public:
 
 private:
     SDL_Window*   mSdlWindow    = nullptr;
+#if !defined(NOTHOFAGUS_BACKEND_VULKAN)
     SDL_GLContext mGlContext    = nullptr;
+#endif
     bool          mShouldClose  = false;
     float         mContentScale = 1.0f;
     std::unordered_map<SDL_JoystickID, SDL_Gamepad*> mOpenGamepads;

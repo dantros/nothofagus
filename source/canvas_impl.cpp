@@ -92,14 +92,18 @@ Canvas::CanvasImpl::CanvasImpl(
     mBackend.initImGuiRenderer();
 
     // Font loading — must happen after ImGui platform and renderer are initialized.
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.ScaleAllSizes(mWindow->contentScale());
+    // ImGui's DisplayFramebufferScale already maps display coordinates to framebuffer
+    // pixels, so do NOT call style.ScaleAllSizes(contentScale) — that would double-scale
+    // padding/borders on HiDPI displays. Rasterize the font at framebuffer resolution for
+    // crisp glyphs, then compensate with FontGlobalScale so layout proportions stay correct.
     ImGuiIO& io = ImGui::GetIO();
+    const float contentScale = mWindow->contentScale();
     io.Fonts->AddFontFromMemoryTTF(
         assets_Roboto_VariableFont_wdth_wght_ttf,
         assets_Roboto_VariableFont_wdth_wght_ttf_len,
-        imguiFontSize * mWindow->contentScale()
+        imguiFontSize * contentScale
     );
+    io.FontGlobalScale = 1.0f / contentScale;
 }
 
 Canvas::CanvasImpl::~CanvasImpl()

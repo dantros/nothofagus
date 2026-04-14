@@ -5,7 +5,7 @@
 #include "drender_target.h"
 #include "texture.h"       // Texture (CPU-side), TextureSampleMode
 #include "mesh.h"          // Mesh (CPU-side)
-#include "canvas.h"        // ViewportRect
+#include "screen_size.h"   // ScreenSize, ViewportRect
 #include <glm/glm.hpp>
 #include <concepts>
 #include <cstdint>

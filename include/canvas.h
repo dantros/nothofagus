@@ -6,6 +6,7 @@
 #include "render_target.h"
 #include "controller.h"
 #include "tint.h"
+#include "screen_size.h"
 #include <memory>
 #include <functional>
 #include <string>
@@ -13,27 +14,6 @@
 
 namespace Nothofagus
 {
-
-/// @struct ScreenSize
-/// @brief Structure representing the size of the screen in pixels.
-struct ScreenSize
-{
-    unsigned int width, height;
-};
-
-constexpr inline bool operator!=(const ScreenSize& lhs, const ScreenSize& rhs)
-{
-    return lhs.width != rhs.width or lhs.height != rhs.height;
-}
-
-constexpr inline bool operator==(const ScreenSize& lhs, const ScreenSize& rhs)
-{
-    return lhs.width == rhs.width and lhs.height == rhs.height;
-}
-
-/// @struct ViewportRect
-/// @brief Game viewport rectangle in framebuffer pixels (OpenGL convention: y from bottom).
-struct ViewportRect { int x, y, width, height; };
 
 // Default screen size for the canvas.
 constexpr static ScreenSize DEFAULT_SCREEN_SIZE{256, 240};

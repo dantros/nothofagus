@@ -3,7 +3,9 @@
 #include "keyboard.h"
 #include "mouse.h"
 #include "gamepad.h"
+#if !defined(NOTHOFAGUS_BACKEND_VULKAN)
 #include <glad/glad.h>
+#endif
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <spdlog/spdlog.h>
@@ -18,11 +20,16 @@ namespace Nothofagus
 Sdl3Backend::Sdl3Backend(const std::string& title, int width, int height, bool visible)
 {
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD);
+
+#if defined(NOTHOFAGUS_BACKEND_VULKAN)
+    SDL_WindowFlags windowFlags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
+#else
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
     SDL_WindowFlags windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
+#endif
     if (!visible)
         windowFlags |= SDL_WINDOW_HIDDEN;
 
@@ -38,16 +45,18 @@ Sdl3Backend::Sdl3Backend(const std::string& title, int width, int height, bool v
         throw std::runtime_error("Failed to create SDL window");
     }
 
+    mContentScale = SDL_GetWindowDisplayScale(mSdlWindow);
+
+#if !defined(NOTHOFAGUS_BACKEND_VULKAN)
     mGlContext = SDL_GL_CreateContext(mSdlWindow);
     SDL_GL_MakeCurrent(mSdlWindow, mGlContext);
-
-    mContentScale = SDL_GetWindowDisplayScale(mSdlWindow);
 
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress)))
     {
         spdlog::error("Failed to initialize GLAD");
         throw std::runtime_error("Failed to initialize GLAD");
     }
+#endif
 }
 
 Sdl3Backend::~Sdl3Backend()
@@ -57,14 +66,20 @@ Sdl3Backend::~Sdl3Backend()
     mOpenGamepads.clear();
 
     ImGui_ImplSDL3_Shutdown();
+#if !defined(NOTHOFAGUS_BACKEND_VULKAN)
     SDL_GL_DestroyContext(mGlContext);
+#endif
     SDL_DestroyWindow(mSdlWindow);
     SDL_Quit();
 }
 
 void Sdl3Backend::initImGuiPlatform()
 {
+#if defined(NOTHOFAGUS_BACKEND_VULKAN)
+    ImGui_ImplSDL3_InitForVulkan(mSdlWindow);
+#else
     ImGui_ImplSDL3_InitForOpenGL(mSdlWindow, mGlContext);
+#endif
 }
 
 void Sdl3Backend::beginSession(Controller& controller)
