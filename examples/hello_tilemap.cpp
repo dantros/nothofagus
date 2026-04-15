@@ -66,17 +66,15 @@ int main()
 
     Nothofagus::TextureId tileMapTexId = canvas.addTexture(tileMap);
 
-    // Place a bellota that covers the entire canvas
-    const glm::vec2 spriteLocation{
+    // Place a bellota centred on the canvas at scale 1:1.
+    // The mesh is already sized to the texture dimensions (mapSize * tileSize),
+    // so scale = 1 fills the canvas exactly.
+    const glm::vec2 centre{
         static_cast<float>(mapSize.x * tileSize.x) * 0.5f,
         static_cast<float>(mapSize.y * tileSize.y) * 0.5f
     };
-    const glm::vec2 spriteScale{
-        static_cast<float>(mapSize.x * tileSize.x),
-        static_cast<float>(mapSize.y * tileSize.y)
-    };
     Nothofagus::BellotaId spriteId = canvas.addBellota({
-        Nothofagus::Transform(spriteLocation, spriteScale, 0.0f),
+        Nothofagus::Transform(centre),
         tileMapTexId
     });
 
