@@ -496,7 +496,61 @@ private:
 
 std::ostream& operator<<(std::ostream& os, const DirectTexture& texture);
 
-using Texture = std::variant<IndirectTexture, DirectTexture>;
+/// A memory-efficient tile-map texture.
+/// The atlas stores up to 256 distinct RGBA tiles as layers of a 2D array texture.
+/// The map stores one uint8_t per cell (column-major: col fast, row slow) that indexes
+/// into the atlas.  The GPU resolves the correct tile per fragment via UV remapping in
+/// the sprite_tilemap shader, analogous to how IndirectTexture resolves colour indices.
+class TileMapTexture
+{
+public:
+    /// Construct a tile-map with a given tile size and grid dimensions.
+    /// @param tileSize  Width × height of each individual tile in pixels.
+    /// @param mapSize   Width (columns) × height (rows) of the cell grid.
+    TileMapTexture(glm::ivec2 tileSize, glm::ivec2 mapSize);
+
+    /// Replace the RGBA pixels for one tile slot.
+    /// @param tileIndex  Index of the tile to update (must be < 256).
+    /// @param rgbaData   tileSize.x * tileSize.y * 4 bytes of RGBA data.
+    void setTilePixels(std::size_t tileIndex, std::span<const std::uint8_t> rgbaData);
+
+    /// Number of tile slots that have been populated via setTilePixels().
+    std::size_t tileCount() const { return mTileCount; }
+
+    /// Set the tile index at a specific cell.
+    void setCell(int col, int row, std::uint8_t tileIndex);
+
+    /// Get the tile index at a specific cell.
+    std::uint8_t cell(int col, int row) const;
+
+    glm::ivec2 tileSize() const { return mTileSize; }
+    glm::ivec2 mapSize()  const { return mMapSize; }
+
+    /// World pixel dimensions of the full tile map (mapSize * tileSize).
+    glm::ivec2 size() const { return mMapSize * mTileSize; }
+
+    bool isAtlasDirty() const { return mAtlasDirty; }
+    bool isMapDirty()   const { return mMapDirty; }
+    void clearAtlasDirty() { mAtlasDirty = false; }
+    void clearMapDirty()   { mMapDirty   = false; }
+
+    /// Generate atlas TextureData for GPU upload (layers = tileCount, RGBA).
+    TextureData generateTextureData() const;
+
+    /// Generate flat map data for GPU upload (mapW * mapH bytes, R8UI).
+    std::vector<std::uint8_t> generateMapData() const;
+
+private:
+    glm::ivec2            mTileSize;
+    glm::ivec2            mMapSize;
+    std::size_t           mTileCount = 0;
+    std::vector<std::uint8_t> mAtlas; ///< RGBA: tileW * tileH * 4 * mTileCount
+    std::vector<std::uint8_t> mMap;   ///< uint8_t: mapW * mapH
+    bool mAtlasDirty = true;
+    bool mMapDirty   = true;
+};
+
+using Texture = std::variant<IndirectTexture, DirectTexture, TileMapTexture>;
 
 enum class TextureSampleMode : std::uint8_t
 {
@@ -508,12 +562,14 @@ struct GetTextureSizeVisitor
 {
     glm::ivec2 operator()(const IndirectTexture& texture) const { return texture.size(); };
     glm::ivec2 operator()(const DirectTexture& texture) const { return texture.size(); };
+    glm::ivec2 operator()(const TileMapTexture& texture) const { return texture.size(); };
 };
 
 struct GenerateTextureDataVisitor
 {
     TextureData operator()(const IndirectTexture& texture) const { return texture.generateTextureData(); };
     TextureData operator()(const DirectTexture& texture) const { return texture.generateTextureData(); };
+    TextureData operator()(const TileMapTexture& texture) const { return texture.generateTextureData(); };
 };
 
 }

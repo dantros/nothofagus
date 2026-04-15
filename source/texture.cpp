@@ -187,6 +187,64 @@ TextureData DirectTexture::generateTextureData() const
     return mTextureData;
 }
 
+// ─── TileMapTexture ────────────────────────────────────────────────────────────
+
+TileMapTexture::TileMapTexture(glm::ivec2 tileSize, glm::ivec2 mapSize)
+    : mTileSize(tileSize)
+    , mMapSize(mapSize)
+    , mMap(static_cast<std::size_t>(mapSize.x) * static_cast<std::size_t>(mapSize.y), 0)
+{
+}
+
+void TileMapTexture::setTilePixels(std::size_t tileIndex, std::span<const std::uint8_t> rgbaData)
+{
+    const std::size_t bytesPerTile = static_cast<std::size_t>(mTileSize.x) * static_cast<std::size_t>(mTileSize.y) * 4;
+    debugCheck(rgbaData.size() == bytesPerTile, "rgbaData size does not match tileSize.");
+
+    if (tileIndex >= mTileCount)
+    {
+        mTileCount = tileIndex + 1;
+        mAtlas.resize(mTileCount * bytesPerTile, 0);
+    }
+
+    const std::size_t offset = tileIndex * bytesPerTile;
+    std::copy(rgbaData.begin(), rgbaData.end(), mAtlas.begin() + static_cast<std::ptrdiff_t>(offset));
+    mAtlasDirty = true;
+}
+
+void TileMapTexture::setCell(int col, int row, std::uint8_t tileIndex)
+{
+    debugCheck(col >= 0 && col < mMapSize.x && row >= 0 && row < mMapSize.y, "Cell out of bounds.");
+    mMap[static_cast<std::size_t>(row) * static_cast<std::size_t>(mMapSize.x) + static_cast<std::size_t>(col)] = tileIndex;
+    mMapDirty = true;
+}
+
+std::uint8_t TileMapTexture::cell(int col, int row) const
+{
+    debugCheck(col >= 0 && col < mMapSize.x && row >= 0 && row < mMapSize.y, "Cell out of bounds.");
+    return mMap[static_cast<std::size_t>(row) * static_cast<std::size_t>(mMapSize.x) + static_cast<std::size_t>(col)];
+}
+
+TextureData TileMapTexture::generateTextureData() const
+{
+    const std::size_t tileCount = (mTileCount > 0) ? mTileCount : 1;
+    TextureData out(static_cast<std::size_t>(mTileSize.x), static_cast<std::size_t>(mTileSize.y), tileCount);
+    std::span<std::uint8_t> dataSpan = out.getDataSpan();
+    if (!mAtlas.empty())
+    {
+        const std::size_t bytesToCopy = std::min(mAtlas.size(), dataSpan.size());
+        std::copy(mAtlas.begin(), mAtlas.begin() + static_cast<std::ptrdiff_t>(bytesToCopy), dataSpan.begin());
+    }
+    return out;
+}
+
+std::vector<std::uint8_t> TileMapTexture::generateMapData() const
+{
+    return mMap;
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+
 TextureData::TextureData(std::span<std::uint8_t> dataSpan, std::size_t width, std::size_t height, std::size_t layers):
         mDataOpt(std::nullopt),
         mDataSpan(dataSpan),

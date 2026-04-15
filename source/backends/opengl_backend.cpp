@@ -153,7 +153,6 @@ void OpenGLBackend::initialize(void* /*nativeWindowHandle*/, glm::ivec2 /*canvas
 
     unsigned int indirectFragmentShader = compileShader(GL_FRAGMENT_SHADER, indirectFragmentShaderSource);
     mIndirectShaderProgram = createShaderProgram(vertexShader, indirectFragmentShader);
-    glDeleteShader(vertexShader);
     glDeleteShader(indirectFragmentShader);
 
     mIndirectUniforms.transform      = glGetUniformLocation(mIndirectShaderProgram, "transform");
@@ -168,6 +167,50 @@ void OpenGLBackend::initialize(void* /*nativeWindowHandle*/, glm::ivec2 /*canvas
     glUseProgram(mIndirectShaderProgram);
     glUniform1i(mIndirectUniforms.indexSampler, 0);
     glUniform1i(mIndirectUniforms.paletteSampler, 1);
+    glUseProgram(0);
+
+    // --- Tilemap shader ---
+    const std::string tilemapFragmentShaderSource = R"(
+        #version 330 core
+        in vec2 outTextureCoordinates;
+        out vec4 outColor;
+        uniform sampler2DArray atlasSampler;
+        uniform usampler2D     mapSampler;
+        uniform vec3  tintColor;
+        uniform float tintIntensity;
+        uniform float opacity;
+        void main()
+        {
+            ivec2 mapSize    = textureSize(mapSampler, 0);
+            vec2  cellF      = outTextureCoordinates * vec2(mapSize);
+            ivec2 cellI      = clamp(ivec2(cellF), ivec2(0), mapSize - ivec2(1));
+            vec2  withinCell = fract(cellF);
+            uint  tileIdx    = texelFetch(mapSampler, cellI, 0).r;
+            vec4  color      = texture(atlasSampler, vec3(withinCell, float(tileIdx)));
+            vec3  blendColor = tintColor * tintIntensity + color.rgb * (1.0 - tintIntensity);
+            outColor         = vec4(blendColor, color.a * opacity);
+        }
+    )";
+
+    // Reuse the shared vertex shader (still alive — deleted after all programs are linked).
+    unsigned int tilemapFragmentShader = compileShader(GL_FRAGMENT_SHADER, tilemapFragmentShaderSource);
+    mTilemapShaderProgram = createShaderProgram(vertexShader, tilemapFragmentShader);
+    glDeleteShader(tilemapFragmentShader);
+
+    // Now safe to delete the shared vertex shader — all three programs have been linked.
+    glDeleteShader(vertexShader);
+
+    mTilemapUniforms.transform     = glGetUniformLocation(mTilemapShaderProgram, "transform");
+    mTilemapUniforms.tintColor     = glGetUniformLocation(mTilemapShaderProgram, "tintColor");
+    mTilemapUniforms.tintIntensity = glGetUniformLocation(mTilemapShaderProgram, "tintIntensity");
+    mTilemapUniforms.opacity       = glGetUniformLocation(mTilemapShaderProgram, "opacity");
+    mTilemapUniforms.atlasSampler  = glGetUniformLocation(mTilemapShaderProgram, "atlasSampler");
+    mTilemapUniforms.mapSampler    = glGetUniformLocation(mTilemapShaderProgram, "mapSampler");
+
+    // Set sampler uniform values for the tilemap program (texture units 0 and 1).
+    glUseProgram(mTilemapShaderProgram);
+    glUniform1i(mTilemapUniforms.atlasSampler, 0);
+    glUniform1i(mTilemapUniforms.mapSampler,   1);
     glUseProgram(0);
 
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -188,6 +231,8 @@ void OpenGLBackend::shutdown()
     mShaderProgram = 0;
     glDeleteProgram(mIndirectShaderProgram);
     mIndirectShaderProgram = 0;
+    glDeleteProgram(mTilemapShaderProgram);
+    mTilemapShaderProgram = 0;
     mActiveShaderProgram = 0;
 }
 
@@ -297,6 +342,42 @@ void OpenGLBackend::freePaletteTexture(DTexture paletteTexture)
 }
 
 void OpenGLBackend::linkIndirectTextures(DTexture /*indexTexture*/, DTexture /*paletteTexture*/)
+{
+    // No-op for OpenGL — texture binding is handled per-draw in drawSprite().
+}
+
+DTexture OpenGLBackend::uploadTileMapTexture(std::span<const std::uint8_t> mapData, glm::ivec2 mapSize)
+{
+    GLuint gpuTexture;
+    glGenTextures(1, &gpuTexture);
+    glBindTexture(GL_TEXTURE_2D, gpuTexture);
+
+    // R8UI — 1 byte per cell; rows may not be 4-byte aligned
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI,
+                 mapSize.x, mapSize.y,
+                 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, mapData.data());
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+
+    // Integer textures require NEAREST — linear filtering is not supported
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    std::size_t newId = mNextId++;
+    mTextures[newId] = OpenGLTexture{gpuTexture};
+    return DTexture{newId};
+}
+
+void OpenGLBackend::freeTileMapTexture(DTexture mapTexture)
+{
+    freeTexture(mapTexture);
+}
+
+void OpenGLBackend::linkTileMapTextures(DTexture /*atlasTexture*/, DTexture /*mapTexture*/)
 {
     // No-op for OpenGL — texture binding is handled per-draw in drawSprite().
 }
@@ -425,7 +506,30 @@ void OpenGLBackend::drawSprite(DMesh mesh, DTexture texture, const SpriteDrawPar
     OpenGLMesh& glMesh = meshIt->second;
     const GLuint glTexture = texIt->second.texture;
 
-    if (params.isIndirect)
+    if (params.isTileMap)
+    {
+        if (mActiveShaderProgram != mTilemapShaderProgram)
+        {
+            glUseProgram(mTilemapShaderProgram);
+            mActiveShaderProgram = mTilemapShaderProgram;
+        }
+
+        // Bind atlas (RGBA 2D array) to unit 0.
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, glTexture);
+
+        // Bind map (R8UI 2D) to unit 1.
+        auto mapIt = mTextures.find(params.mapTexture.id);
+        debugCheck(mapIt != mTextures.end(), "drawSprite: map texture not found");
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, mapIt->second.texture);
+
+        glUniform3f(mTilemapUniforms.tintColor, params.tintColor.r, params.tintColor.g, params.tintColor.b);
+        glUniform1f(mTilemapUniforms.tintIntensity, params.tintIntensity);
+        glUniform1f(mTilemapUniforms.opacity, params.opacity);
+        glUniformMatrix3fv(mTilemapUniforms.transform, 1, GL_FALSE, glm::value_ptr(params.transform));
+    }
+    else if (params.isIndirect)
     {
         if (mActiveShaderProgram != mIndirectShaderProgram)
         {

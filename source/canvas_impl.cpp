@@ -237,8 +237,9 @@ void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
 TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
 {
     glm::ivec2 textureSize = std::visit(GetTextureSizeVisitor(), texture);
-    TexturePack texturePack{texture, std::nullopt, std::nullopt, textureSize};
+    TexturePack texturePack{texture, std::nullopt, std::nullopt, std::nullopt, textureSize};
     texturePack.isIndirect = std::holds_alternative<IndirectTexture>(texture);
+    texturePack.isTileMap  = std::holds_alternative<TileMapTexture>(texture);
     TextureId newTextureId{mTextures.add(std::move(texturePack))};
     const bool textureWasAdded = mTextureUsageMonitor.addUnusedTexture(newTextureId);
     debugCheck(textureWasAdded, "Texture ID already present in usage monitor — duplicate addTexture call");
@@ -253,6 +254,8 @@ void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
     TexturePack& texturePackToRemove = mTextures.at(textureId.id);
     if (texturePackToRemove.dpaletteTextureOpt.has_value())
         mBackend.freePaletteTexture(texturePackToRemove.dpaletteTextureOpt.value());
+    if (texturePackToRemove.dmapTextureOpt.has_value())
+        mBackend.freeTileMapTexture(texturePackToRemove.dmapTextureOpt.value());
     if (texturePackToRemove.dtextureOpt.has_value())
         mBackend.freeTexture(texturePackToRemove.dtextureOpt.value());
     texturePackToRemove.clear();
@@ -293,6 +296,8 @@ void Canvas::CanvasImpl::markTextureAsDirty(const TextureId textureId)
 
     if (texturePack.dpaletteTextureOpt.has_value())
         mBackend.freePaletteTexture(texturePack.dpaletteTextureOpt.value());
+    if (texturePack.dmapTextureOpt.has_value())
+        mBackend.freeTileMapTexture(texturePack.dmapTextureOpt.value());
     if (texturePack.dtextureOpt.has_value())
         mBackend.freeTexture(texturePack.dtextureOpt.value());
     texturePack.clear();
@@ -542,6 +547,17 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
                         texturePack.dtextureOpt.value(), texturePack.dpaletteTextureOpt.value());
                     indirectTexture.clearPaletteDirty();
                 }
+                else if (texturePack.isTileMap)
+                {
+                    auto& tileMapTexture = std::get<TileMapTexture>(texturePack.texture.value());
+                    const auto mapData = tileMapTexture.generateMapData();
+                    texturePack.dmapTextureOpt = mBackend.uploadTileMapTexture(
+                        std::span<const std::uint8_t>(mapData), tileMapTexture.mapSize());
+                    mBackend.linkTileMapTextures(
+                        texturePack.dtextureOpt.value(), texturePack.dmapTextureOpt.value());
+                    tileMapTexture.clearAtlasDirty();
+                    tileMapTexture.clearMapDirty();
+                }
             }
             else if (texturePack.isIndirect && !texturePack.isProxy() && texturePack.dpaletteTextureOpt.has_value())
             {
@@ -552,6 +568,31 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
                         texturePack.dpaletteTextureOpt.value(),
                         indirectTexture.generatePaletteData());
                     indirectTexture.clearPaletteDirty();
+                }
+            }
+            else if (texturePack.isTileMap && !texturePack.isProxy() && texturePack.dtextureOpt.has_value())
+            {
+                auto& tileMapTexture = std::get<TileMapTexture>(texturePack.texture.value());
+                if (tileMapTexture.isAtlasDirty())
+                {
+                    // Re-upload atlas and re-link
+                    mBackend.freeTexture(texturePack.dtextureOpt.value());
+                    texturePack.dtextureOpt = mBackend.uploadTexture(
+                        texturePack.texture.value(), texturePack.minFilter, texturePack.magFilter);
+                    if (texturePack.dmapTextureOpt.has_value())
+                        mBackend.linkTileMapTextures(
+                            texturePack.dtextureOpt.value(), texturePack.dmapTextureOpt.value());
+                    tileMapTexture.clearAtlasDirty();
+                }
+                if (tileMapTexture.isMapDirty() && texturePack.dmapTextureOpt.has_value())
+                {
+                    mBackend.freeTileMapTexture(texturePack.dmapTextureOpt.value());
+                    const auto mapData = tileMapTexture.generateMapData();
+                    texturePack.dmapTextureOpt = mBackend.uploadTileMapTexture(
+                        std::span<const std::uint8_t>(mapData), tileMapTexture.mapSize());
+                    mBackend.linkTileMapTextures(
+                        texturePack.dtextureOpt.value(), texturePack.dmapTextureOpt.value());
+                    tileMapTexture.clearMapDirty();
                 }
             }
         }
@@ -631,8 +672,11 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
                 if (!texturePack.dtextureOpt.has_value()) continue;
                 SpriteDrawParams drawParams = makeSpriteDrawParams(*packPtr, renderTargetWorldTransform);
                 drawParams.isIndirect = texturePack.isIndirect;
+                drawParams.isTileMap  = texturePack.isTileMap;
                 if (texturePack.isIndirect && texturePack.dpaletteTextureOpt.has_value())
                     drawParams.paletteTexture = texturePack.dpaletteTextureOpt.value();
+                if (texturePack.isTileMap && texturePack.dmapTextureOpt.has_value())
+                    drawParams.mapTexture = texturePack.dmapTextureOpt.value();
                 mBackend.drawSprite(packPtr->dmeshOpt.value(), texturePack.dtextureOpt.value(), drawParams);
             }
 
@@ -653,8 +697,11 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
             if (!texturePack.dtextureOpt.has_value()) continue;
             SpriteDrawParams drawParams = makeSpriteDrawParams(*packPtr, worldTransformMat);
             drawParams.isIndirect = texturePack.isIndirect;
+            drawParams.isTileMap  = texturePack.isTileMap;
             if (texturePack.isIndirect && texturePack.dpaletteTextureOpt.has_value())
                 drawParams.paletteTexture = texturePack.dpaletteTextureOpt.value();
+            if (texturePack.isTileMap && texturePack.dmapTextureOpt.has_value())
+                drawParams.mapTexture = texturePack.dmapTextureOpt.value();
             mBackend.drawSprite(packPtr->dmeshOpt.value(), texturePack.dtextureOpt.value(), drawParams);
         }
     }
