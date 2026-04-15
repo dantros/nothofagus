@@ -1,8 +1,8 @@
 /// hello_tilemap2.cpp
-/// Demonstrates TileMapTexture with two handcrafted 8×8 tiles arranged in a
-/// 3×4 checkerboard grid:
+/// Demonstrates TileMapTexture with two handcrafted 16×16 tiles arranged in a
+/// 4×3 checkerboard grid (wider than tall):
 ///   Tile 0 — white circle on a black background
-///   Tile 1 — blue→cyan diagonal ordered-dithered gradient (2×2 Bayer matrix)
+///   Tile 1 — red→yellow diagonal ordered-dithered gradient (2×2 Bayer matrix)
 
 #include <nothofagus.h>
 #include <cstdint>
@@ -37,9 +37,9 @@ static std::vector<std::uint8_t> makeCircleTile(glm::ivec2 tileSize)
 }
 
 // ---------------------------------------------------------------------------
-// Tile 1: blue→cyan diagonal gradient dithered with a 2×2 Bayer matrix.
-//         Blue  = (0,   0, 255)   top-left corner
-//         Cyan  = (0, 255, 255)   bottom-right corner
+// Tile 1: red→yellow diagonal gradient dithered with a 2×2 Bayer matrix.
+//         Red    = (255,   0, 0)   top-left corner
+//         Yellow = (255, 255, 0)   bottom-right corner
 //         Only the green channel differs; the Bayer threshold decides per pixel.
 // ---------------------------------------------------------------------------
 static std::vector<std::uint8_t> makeDitherGradientTile(glm::ivec2 tileSize)
@@ -55,14 +55,14 @@ static std::vector<std::uint8_t> makeDitherGradientTile(glm::ivec2 tileSize)
     {
         for (int x = 0; x < w; ++x)
         {
-            const float d         = static_cast<float>(x + y) / maxD;
-            const float threshold = kBayer[y % 2][x % 2];
-            const bool  isCyan    = (d > threshold);
+            const float d          = static_cast<float>(x + y) / maxD;
+            const float threshold  = kBayer[y % 2][x % 2];
+            const bool  isYellow   = (d > threshold);
 
             const std::size_t i = static_cast<std::size_t>((y * w + x) * 4);
-            data[i + 0] = 0;                   // R: always 0
-            data[i + 1] = isCyan ? 255 : 0;    // G: 255 for cyan, 0 for blue
-            data[i + 2] = 255;                  // B: always 255
+            data[i + 0] = 255;                  // R: always 255
+            data[i + 1] = isYellow ? 255 : 0;  // G: 255 for yellow, 0 for red
+            data[i + 2] = 0;                    // B: always 0
             data[i + 3] = 255;                  // A: opaque
         }
     }
@@ -73,8 +73,8 @@ static std::vector<std::uint8_t> makeDitherGradientTile(glm::ivec2 tileSize)
 int main()
 {
     constexpr glm::ivec2 tileSize {8, 8};
-    constexpr glm::ivec2 mapSize  {3, 4};   // 3 columns × 4 rows
-    constexpr int        pixelScale = 8;    // 8× zoom → 192×256 window
+    constexpr glm::ivec2 mapSize  {4, 3};   // 4 columns × 3 rows (horizontal layout)
+    constexpr int        pixelScale = 16;   // 16× zoom → 512×384 window
 
     Nothofagus::Canvas canvas(
         { mapSize.x * tileSize.x, mapSize.y * tileSize.y },

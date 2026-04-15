@@ -26,15 +26,15 @@ static std::vector<std::uint8_t> makeSolidTile(glm::ivec2 tileSize, std::uint8_t
 
 int main()
 {
-    constexpr glm::ivec2 tileSize{8, 8};      // pixels per tile
-    constexpr glm::ivec2 mapSize{20, 15};     // cells (columns × rows)
+    constexpr glm::ivec2 tileSize{8, 8};       // pixels per tile
+    constexpr glm::ivec2 mapSize{20, 15};      // cells (columns × rows)
 
-    // Canvas: mapSize * tileSize pixels, 4× pixel scale → 640×480 window
+    // Canvas: mapSize * tileSize pixels, 8× pixel scale → 1280×960 window
     Nothofagus::Canvas canvas(
         {mapSize.x * tileSize.x, mapSize.y * tileSize.y},
         "Hello TileMap!",
         {0.1f, 0.1f, 0.1f},
-        4
+        8
     );
 
     // --- Build a TileMapTexture ---
