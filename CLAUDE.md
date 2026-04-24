@@ -346,6 +346,73 @@ Nothofagus::ViewportRect viewport = canvas.gameViewport();
 // viewport.width, viewport.height  — game area dimensions in framebuffer pixels
 ```
 
+### Render to texture
+
+Render sprites into an off-screen texture (a **render target**) and then sample that texture from another bellota — the basis for diegetic UI, mirrors, mini-maps, post-processing, etc.
+
+```cpp
+// Create a 64×64 RTT with a semi-transparent dark-blue clear color.
+Nothofagus::RenderTargetId renderTargetId = canvas.addRenderTarget({64, 64});
+canvas.setRenderTargetClearColor(renderTargetId, {0.0f, 0.0f, 0.0f, 0.5f});
+Nothofagus::TextureId renderTargetTextureId = canvas.renderTargetTexture(renderTargetId);
+
+// Display bellota — samples the RTT and shows it on the main canvas.
+Nothofagus::BellotaId displayId = canvas.addBellota({{{64.0f, 64.0f}}, renderTargetTextureId});
+
+canvas.run([&](float dt) {
+    // Schedule these bellotas to be drawn into the RTT this frame.
+    // They are rendered in the RTT's coordinate space (origin bottom-left, size 64×64)
+    // and also appear on the main canvas at their own positions (dual rendering).
+    canvas.renderTo(renderTargetId, {redBellotaId, blueBellotaId});
+});
+```
+
+**Rules:**
+- Call `renderTo(...)` from inside the `run()` / `tick()` update callback. It enqueues the pass; execution happens before the main draw each frame.
+- The bellotas passed to `renderTo` render **both** into the RTT and onto the main canvas — they don't disappear from the main view.
+- The RTT uses its own coordinate space: bottom-left = (0, 0), top-right = (width, height), in RTT pixels. The bellotas' own `x, y` are interpreted in that space when rendered into the RTT.
+- `renderTargetTexture(renderTargetId)` returns a `TextureId` proxy valid for the lifetime of the RTT. Do **not** call `removeTexture()` on it — the RTT owns the underlying GPU texture.
+- `removeRenderTarget(renderTargetId)` frees the FBO / VkImage + framebuffer and the proxy texture in one call.
+
+### Render ImGui into a render target
+
+Draw an interactive ImGui panel into an RTT that a bellota samples — enabling *diegetic* UI (ImGui text and widgets living inside the game world).
+
+```cpp
+auto renderTargetId = canvas.addRenderTarget({160, 120});
+canvas.setRenderTargetClearColor(renderTargetId, {0.02f, 0.04f, 0.12f, 1.0f});
+auto displayId = canvas.addBellota({{{96.0f, 80.0f}}, canvas.renderTargetTexture(renderTargetId)});
+
+float sliderValue = 0.42f;
+int   clickCount  = 0;
+
+canvas.run([&](float dt) {
+    // Queue ImGui draws for the RTT. The callback runs on a secondary ImGuiContext
+    // owned by this render target — state is isolated from the main UI.
+    canvas.renderImguiTo(renderTargetId, [&] {
+        ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(160, 120), ImGuiCond_Always);
+        ImGui::Begin("In-World Panel", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+        ImGui::SliderFloat("value", &sliderValue, 0.0f, 1.0f);
+        if (ImGui::Button("click")) clickCount++;
+        ImGui::End();
+    });
+
+    // Main-canvas ImGui draws normally on the main context.
+    ImGui::Begin("stats"); ImGui::Text("clicks=%d", clickCount); ImGui::End();
+});
+```
+
+**How it works (multi-context design):**
+- Each RTT that calls `renderImguiTo` owns its own secondary `ImGuiContext`, lazily created on first use and torn down in `removeRenderTarget()` / the `Canvas` destructor. The font atlas is shared with the main context.
+- The callback runs during the pre-main RTT pass phase on the secondary context — `ImGui::Begin/End/Text/...` calls inside it target that context's draw list only.
+- The OpenGL ImGui backend is FBO-agnostic; the Vulkan backend's per-context pipeline is built against `mRttRenderPass`, so it is render-pass-compatible with `beginRttPass`. **No changes to `imgui_impl_opengl3.*` / `imgui_impl_vulkan.*` are required.**
+- The platform backend (GLFW/SDL3) is skipped for secondary contexts — they run headless-style with `IO.DisplaySize` / `IO.DeltaTime` set manually. This means the feature works identically across GLFW+OpenGL, GLFW+Vulkan, SDL3+OpenGL, SDL3+Vulkan, and headless Vulkan.
+
+**Limitations (v1):**
+- **Input is not forwarded** to the secondary context — widgets render correctly but mouse/keyboard events only reach the main context. Forwarding canvas-space mouse coords into the RTT's `IO.MousePos` is a natural follow-up.
+- Each secondary context has its own ID stack, window state, and widget values — widgets with the same name in different RTTs do not collide, and neither inherits state from the main UI.
+
 ### Screenshot
 
 `takeScreenshot()` reads the front buffer (the last fully rendered and swapped frame) and returns a `DirectTexture` with the game viewport's RGBA pixels, flipped to top-to-bottom row order.
@@ -404,6 +471,9 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_screenshot.cpp` | `takeScreenshot()` — capture frame as DirectTexture, display thumbnail |
 | `hello_headless.cpp` | Headless mode + `tick()` — no window, manual frame stepping, screenshot to terminal |
 | `hello_tilemap.cpp` | Tile-map mode of `IndirectTexture` — `setMap` + `setCell` over a layered atlas |
+| `hello_render_to_texture.cpp` | `addRenderTarget` / `renderTo` — sprites drawn into an off-screen texture sampled by another bellota |
+| `hello_nested_render_targets.cpp` | Nested RTTs — one render target's output feeds another |
+| `hello_imgui_rtt.cpp` | `renderImguiTo` — diegetic ImGui panel drawn into an RTT, sampled by a rotating bellota |
 
 ## Dependencies (third_party/ submodules)
 
