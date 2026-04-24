@@ -129,6 +129,15 @@ public:
     void beginMainPass(ViewportRect gameViewport);
     void drawSprite(DMesh dmesh, DTexture dtexture, const SpriteDrawParams& params);
     void endFrame(ImDrawData* imguiData, int framebufferWidth, int framebufferHeight);
+
+    // ImGui-to-render-target: each secondary ImGuiContext gets its own
+    // ImGui_ImplVulkan backend instance, initialized against mRttRenderPass so the
+    // pipeline is compatible with beginRttPass. Called with that context active.
+    void initImguiForRenderTarget(DRenderTarget renderTarget);
+    void shutdownImguiForRenderTarget(DRenderTarget renderTarget);
+    void imguiNewFrameForRenderTarget(DRenderTarget renderTarget);
+    void renderImguiDrawDataToRenderTarget(ImDrawData* imguiData, DRenderTarget renderTarget);
+
     ScreenshotPixels takeScreenshot(ViewportRect gameViewport, glm::ivec2 gameSize) const;
 
     // Not part of the concept — called by canvas_impl to update filter after upload
@@ -175,6 +184,11 @@ private:
     // --- Descriptor pools ---
     VkDescriptorPool mDescriptorPool      = VK_NULL_HANDLE;  // per-texture combined image sampler
     VkDescriptorPool mImguiDescriptorPool = VK_NULL_HANDLE;
+
+    // One ImGui descriptor pool per render target that hosts a secondary ImGuiContext.
+    // ImGui_ImplVulkan stores its state (pipeline + descriptor sets) per-context, so
+    // each context needs its own pool. Keyed by DRenderTarget::id.
+    std::unordered_map<std::size_t, VkDescriptorPool> mRttImguiDescriptorPools;
 
     // --- Commands + per-frame sync ---
     mutable VkCommandPool mCommandPool = VK_NULL_HANDLE;

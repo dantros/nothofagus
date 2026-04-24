@@ -45,6 +45,14 @@ public:
     void drawSprite(DMesh mesh, DTexture texture, const SpriteDrawParams& params);
     void endFrame(ImDrawData* imguiData,
                   int framebufferWidth, int framebufferHeight);
+
+    // ImGui-to-render-target: each secondary ImGuiContext gets its own
+    // ImGui_ImplOpenGL3 backend instance. Called with that context active.
+    void initImguiForRenderTarget(DRenderTarget renderTarget);
+    void shutdownImguiForRenderTarget(DRenderTarget renderTarget);
+    void imguiNewFrameForRenderTarget(DRenderTarget renderTarget);
+    void renderImguiDrawDataToRenderTarget(ImDrawData* imguiData, DRenderTarget renderTarget);
+
     ScreenshotPixels takeScreenshot(ViewportRect gameViewport, glm::ivec2 gameSize) const;
 
     /// Allow canvas_impl to update a texture's filter parameters directly after upload.

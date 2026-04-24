@@ -9,6 +9,9 @@
 #include "backends/render_backend_select.h"
 #include <vector>
 #include <utility>
+#include <unordered_map>
+
+struct ImGuiContext;
 
 namespace Nothofagus
 {
@@ -102,6 +105,8 @@ public:
     TextureId renderTargetTexture(RenderTargetId renderTargetId) const;
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
+
+    void renderImguiTo(RenderTargetId renderTargetId, Canvas::ImguiDrawCallback imguiDrawCallback);
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 
@@ -210,6 +215,15 @@ private:
 
     /// RTT passes queued by renderTo() during the update callback, executed before the main render.
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
+
+    /// ImGui RTT passes queued by renderImguiTo() during the update callback.
+    /// Each entry is rendered after the sprite RTT loop and before the main pass.
+    std::vector<std::pair<RenderTargetId, Canvas::ImguiDrawCallback>> mPendingImguiRttPasses;
+
+    /// Lazily-created secondary ImGuiContexts, one per render target that hosts ImGui.
+    /// Created on first renderImguiTo() for that RTT, destroyed in removeRenderTarget()
+    /// and in the destructor. Font atlas is shared with the main context.
+    std::unordered_map<std::size_t /*RenderTargetId*/, ImGuiContext*> mRenderTargetImguiContexts;
 
     ActiveBackend mBackend; ///< GPU rendering backend (compile-time selected).
 

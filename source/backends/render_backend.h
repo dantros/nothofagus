@@ -92,6 +92,15 @@ concept RenderBackend = requires(
     // Renders ImGui draw data. Buffer swap is handled by the window backend.
     { backend.endFrame(imguiData, framebufferWidth, framebufferHeight) } -> std::same_as<void>;
 
+    // ImGui-to-render-target hooks — called with a secondary ImGuiContext active
+    // (created per render target by canvas_impl). See renderImguiTo() in canvas.h.
+    // Init/shutdown run once per render target that hosts ImGui content; the new-frame
+    // and render hooks run every frame between beginRttPass/endRttPass.
+    { backend.initImguiForRenderTarget(renderTarget)           } -> std::same_as<void>;
+    { backend.shutdownImguiForRenderTarget(renderTarget)       } -> std::same_as<void>;
+    { backend.imguiNewFrameForRenderTarget(renderTarget)       } -> std::same_as<void>;
+    { backend.renderImguiDrawDataToRenderTarget(imguiData, renderTarget) } -> std::same_as<void>;
+
     // Screenshot: reads from the front buffer, returns RGBA pixels top-to-bottom.
     { backend.takeScreenshot(viewport, canvasSize)             } -> std::same_as<ScreenshotPixels>;
 };

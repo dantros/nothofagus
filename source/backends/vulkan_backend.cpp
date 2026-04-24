@@ -827,6 +827,12 @@ void VulkanBackend::shutdown()
     vkDestroyDescriptorPool(mDevice, mDescriptorPool, nullptr);
     vkDestroyDescriptorPool(mDevice, mImguiDescriptorPool, nullptr);
 
+    // Per-RTT ImGui descriptor pools (secondary contexts were already shut down by
+    // CanvasImpl before freeing the render targets, so only the pool remains).
+    for (auto& [id, pool] : mRttImguiDescriptorPools)
+        vkDestroyDescriptorPool(mDevice, pool, nullptr);
+    mRttImguiDescriptorPools.clear();
+
     vkDestroyRenderPass(mDevice, mRttRenderPass, nullptr);
     vkDestroyRenderPass(mDevice, mMainRenderPass, nullptr);
 
@@ -1932,6 +1938,77 @@ void VulkanBackend::endFrame(
 
     mCurrentFrame = (mCurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     mActiveCommandBuffer = VK_NULL_HANDLE;
+}
+
+// ---------------------------------------------------------------------------
+// ImGui-to-render-target hooks
+// ---------------------------------------------------------------------------
+// Each secondary ImGuiContext owns its own ImGui_ImplVulkan backend instance +
+// descriptor pool. Pipelines are initialized against mRttRenderPass so ImGui
+// draws are compatible with the render pass active between beginRttPass/endRttPass.
+
+void VulkanBackend::initImguiForRenderTarget(DRenderTarget renderTarget)
+{
+    // One descriptor pool per RTT context (same shape as mImguiDescriptorPool).
+    VkDescriptorPool pool = VK_NULL_HANDLE;
+    {
+        VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100};
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        poolInfo.maxSets       = 100;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes    = &poolSize;
+        if (vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &pool) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create RTT ImGui descriptor pool");
+    }
+    mRttImguiDescriptorPools[renderTarget.id] = pool;
+
+    ImGui_ImplVulkan_InitInfo imguiInfo{};
+    imguiInfo.Instance        = mInstance;
+    imguiInfo.PhysicalDevice  = mPhysicalDevice;
+    imguiInfo.Device          = mDevice;
+    imguiInfo.QueueFamily     = mGraphicsQueueFamily;
+    imguiInfo.Queue           = mGraphicsQueue;
+    imguiInfo.DescriptorPool  = pool;
+    imguiInfo.RenderPass      = mRttRenderPass;  // KEY: pipeline is RTT-compatible
+    imguiInfo.MinImageCount   = 2;
+    imguiInfo.ImageCount      = 2;
+    imguiInfo.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
+    ImGui_ImplVulkan_Init(&imguiInfo);
+    // Fonts upload is deferred to the first ImGui_ImplVulkan_NewFrame().
+}
+
+void VulkanBackend::shutdownImguiForRenderTarget(DRenderTarget renderTarget)
+{
+    // Must be called with the secondary ImGuiContext active.
+    // Wait for GPU idle so any descriptor sets held by in-flight frames are released
+    // before we destroy the backend and its pool.
+    vkDeviceWaitIdle(mDevice);
+    ImGui_ImplVulkan_Shutdown();
+
+    auto it = mRttImguiDescriptorPools.find(renderTarget.id);
+    if (it != mRttImguiDescriptorPools.end())
+    {
+        vkDestroyDescriptorPool(mDevice, it->second, nullptr);
+        mRttImguiDescriptorPools.erase(it);
+    }
+}
+
+void VulkanBackend::imguiNewFrameForRenderTarget(DRenderTarget /*renderTarget*/)
+{
+    ImGui_ImplVulkan_NewFrame();
+}
+
+void VulkanBackend::renderImguiDrawDataToRenderTarget(ImDrawData* imguiData,
+                                                       DRenderTarget /*renderTarget*/)
+{
+    if (mActiveCommandBuffer == VK_NULL_HANDLE) return;
+    TracyVkZone(mTracyVkContext, mActiveCommandBuffer, "Vk ImGui RTT");
+    // beginRttPass has begun mRttRenderPass on the active command buffer. ImGui's
+    // Vulkan backend sets its own viewport + scissor from draw_data->DisplaySize
+    // inside SetupRenderState, so we don't need to configure them here.
+    ImGui_ImplVulkan_RenderDrawData(imguiData, mActiveCommandBuffer);
 }
 
 // ---------------------------------------------------------------------------
