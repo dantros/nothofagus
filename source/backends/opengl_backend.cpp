@@ -598,6 +598,42 @@ void OpenGLBackend::endFrame(ImDrawData* imguiData,
     // Buffer swap is performed by the window backend's endFrame().
 }
 
+// ---------------------------------------------------------------------------
+// ImGui-to-render-target hooks
+// ---------------------------------------------------------------------------
+// The OpenGL ImGui backend stores its state in the currently-active ImGuiContext,
+// so these hooks are context-driven — the caller (canvas_impl) must SetCurrentContext
+// to the secondary context before invoking them. The render target argument is not
+// needed by the GL backend (the FBO is already bound by beginRttPass), but it is
+// part of the shared concept to keep Vulkan parity.
+
+void OpenGLBackend::initImguiForRenderTarget(DRenderTarget /*renderTarget*/)
+{
+    ImGui_ImplOpenGL3_Init("#version 330");
+}
+
+void OpenGLBackend::shutdownImguiForRenderTarget(DRenderTarget /*renderTarget*/)
+{
+    ImGui_ImplOpenGL3_Shutdown();
+}
+
+void OpenGLBackend::imguiNewFrameForRenderTarget(DRenderTarget /*renderTarget*/)
+{
+    ImGui_ImplOpenGL3_NewFrame();
+}
+
+void OpenGLBackend::renderImguiDrawDataToRenderTarget(ImDrawData* imguiData,
+                                                       DRenderTarget renderTarget)
+{
+    TracyGpuZone("GL ImGui RTT");
+    // beginRttPass has already bound the RTT FBO and set the viewport to the RTT size.
+    // ImGui_ImplOpenGL3 uses the currently-bound FBO and draw_data->DisplaySize
+    // (set by the caller on IO.DisplaySize before NewFrame) — nothing to bind here.
+    glViewport(0, 0, renderTarget.size.x, renderTarget.size.y);
+    glDisable(GL_SCISSOR_TEST);
+    ImGui_ImplOpenGL3_RenderDrawData(imguiData);
+}
+
 ScreenshotPixels OpenGLBackend::takeScreenshot(ViewportRect gameViewport, glm::ivec2 gameSize) const
 {
     const int gameWidth  = gameSize.x;

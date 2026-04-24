@@ -129,6 +129,24 @@ public:
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 
+    using ImguiDrawCallback = std::function<void()>;
+
+    /**
+     * @brief Queue an ImGui draw callback to be rendered into the given render target.
+     *
+     * The callback runs on a secondary ImGuiContext owned by this render target —
+     * window positions, widget values and open/closed state are isolated from the main
+     * UI and from other RTTs. Coordinate space matches the render target size in pixels.
+     *
+     * Call from inside the update() callback, same phase as renderTo() for sprites.
+     * The callback itself is invoked later (during the pre-main RTT pass phase) on the
+     * secondary context — do NOT call ImGui functions on the main context from inside it.
+     *
+     * Limitation (v1): input events (mouse, keyboard) are not forwarded to the secondary
+     * context. Widgets inside the RTT are displayed but not interactive.
+     */
+    void renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);
+
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 
     /**
