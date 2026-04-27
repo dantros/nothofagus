@@ -791,7 +791,7 @@ void VulkanBackend::shutdown()
         vkDestroyImageView(mDevice, tex.imageView, nullptr);
         if (!tex.isProxy)
             vmaDestroyImage(mAllocator, tex.image, tex.allocation);
-        if (tex.isIndirect)
+        if (tex.mode == TextureMode::Indirect)
         {
             vkDestroySampler(mDevice, tex.paletteSampler, nullptr);
             vkDestroyImageView(mDevice, tex.paletteImageView, nullptr);
@@ -853,7 +853,7 @@ void VulkanBackend::shutdown()
 DTexture VulkanBackend::uploadTexture(
     const Texture& texture, TextureSampleMode minFilter, TextureSampleMode magFilter)
 {
-    const bool isIndirect = std::holds_alternative<IndirectTexture>(texture);
+    const TextureMode mode = textureModeOf(texture);
 
     // Determine upload data and format based on texture type.
     VkFormat imageFormat;
@@ -863,7 +863,7 @@ DTexture VulkanBackend::uploadTexture(
     std::vector<std::uint8_t> indexData;  // kept alive until after staging copy
     TextureData directTextureData(1, 1);  // kept alive until after staging copy
 
-    if (isIndirect)
+    if (mode == TextureMode::Indirect)
     {
         const auto& indirectTexture = std::get<IndirectTexture>(texture);
         indexData  = indirectTexture.generateIndexData();
@@ -965,8 +965,8 @@ DTexture VulkanBackend::uploadTexture(
         throw std::runtime_error("Failed to create texture image view");
 
     // For indirect textures, force NEAREST filter (integer textures require it).
-    const TextureSampleMode effectiveMinFilter = isIndirect ? TextureSampleMode::Nearest : minFilter;
-    const TextureSampleMode effectiveMagFilter = isIndirect ? TextureSampleMode::Nearest : magFilter;
+    const TextureSampleMode effectiveMinFilter = (mode == TextureMode::Indirect) ? TextureSampleMode::Nearest : minFilter;
+    const TextureSampleMode effectiveMagFilter = (mode == TextureMode::Indirect) ? TextureSampleMode::Nearest : magFilter;
     VkSampler sampler = createSampler(effectiveMinFilter, effectiveMagFilter);
 
     VulkanTexture vulkanTexture{};
@@ -975,9 +975,9 @@ DTexture VulkanBackend::uploadTexture(
     vulkanTexture.imageView   = imageView;
     vulkanTexture.sampler     = sampler;
     vulkanTexture.isProxy     = false;
-    vulkanTexture.isIndirect  = isIndirect;
+    vulkanTexture.mode        = mode;
 
-    if (isIndirect)
+    if (mode == TextureMode::Indirect)
     {
         // For indirect textures, the descriptor set uses the indirect layout
         // and will be created when uploadPaletteTexture provides the palette image.
@@ -1012,7 +1012,7 @@ void VulkanBackend::freeTexture(DTexture dtexture)
     pending.imageView     = tex.imageView;
     pending.image         = tex.isProxy ? VK_NULL_HANDLE : tex.image;
     pending.allocation    = tex.isProxy ? nullptr         : tex.allocation;
-    if (tex.isIndirect)
+    if (tex.mode == TextureMode::Indirect)
     {
         pending.paletteSampler    = tex.paletteSampler;
         pending.paletteImageView  = tex.paletteImageView;
@@ -1850,7 +1850,7 @@ void VulkanBackend::drawSprite(DMesh dmesh, DTexture dtexture, const SpriteDrawP
     vkCmdBindVertexBuffers(mActiveCommandBuffer, 0, 1, &mesh.vertexBuffer, &offset);
     vkCmdBindIndexBuffer(mActiveCommandBuffer, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-    if (params.isTileMap)
+    if (params.mode == TextureMode::TileMap)
     {
         vkCmdBindPipeline(mActiveCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mTilemapSpritePipeline);
         vkCmdBindDescriptorSets(mActiveCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -1861,7 +1861,7 @@ void VulkanBackend::drawSprite(DMesh dmesh, DTexture dtexture, const SpriteDrawP
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(SpritePushConstants), &pushConstants);
     }
-    else if (params.isIndirect)
+    else if (params.mode == TextureMode::Indirect)
     {
         vkCmdBindPipeline(mActiveCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mIndirectSpritePipeline);
         vkCmdBindDescriptorSets(mActiveCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,

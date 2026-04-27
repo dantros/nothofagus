@@ -506,7 +506,7 @@ void OpenGLBackend::drawSprite(DMesh mesh, DTexture texture, const SpriteDrawPar
     OpenGLMesh& glMesh = meshIt->second;
     const GLuint glTexture = texIt->second.texture;
 
-    if (params.isTileMap)
+    if (params.mode == TextureMode::TileMap)
     {
         if (mActiveShaderProgram != mTilemapShaderProgram)
         {
@@ -529,7 +529,7 @@ void OpenGLBackend::drawSprite(DMesh mesh, DTexture texture, const SpriteDrawPar
         glUniform1f(mTilemapUniforms.opacity, params.opacity);
         glUniformMatrix3fv(mTilemapUniforms.transform, 1, GL_FALSE, glm::value_ptr(params.transform));
     }
-    else if (params.isIndirect)
+    else if (params.mode == TextureMode::Indirect)
     {
         if (mActiveShaderProgram != mIndirectShaderProgram)
         {
@@ -575,7 +575,7 @@ void OpenGLBackend::drawSprite(DMesh mesh, DTexture texture, const SpriteDrawPar
     glMesh.drawCall();
 
     // Unbind textures.
-    if (params.isIndirect)
+    if (params.mode == TextureMode::Indirect)
     {
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_1D, 0);
