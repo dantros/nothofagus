@@ -1,27 +1,20 @@
 /// hello_tilemap.cpp
-/// Demonstrates TileMapTexture: a memory-efficient tile map built from a
-/// small atlas of RGBA tiles.  Three distinct tiles (grass, water, dirt) are
-/// placed on a 20×15 grid.  Pressing SPACE cycles the center cell through the
-/// three tile types, verifying dynamic map updates at runtime.
+/// Demonstrates TileMapTexture: a palette-indexed tile map.  The atlas stores
+/// palette indices (1 byte per pixel); a single shared 256-colour palette
+/// resolves the final RGBA per fragment.  Three distinct tiles (grass, water,
+/// dirt) are placed on a 20×15 grid.  Pressing SPACE cycles the center cell
+/// through the three tile types, verifying dynamic map updates at runtime.
 
 #include <nothofagus.h>
 #include <cstdint>
 #include <vector>
 #include <array>
 
-// Build one solid-colour RGBA tile (tileSize.x * tileSize.y * 4 bytes)
-static std::vector<std::uint8_t> makeSolidTile(glm::ivec2 tileSize, std::uint8_t r, std::uint8_t g, std::uint8_t b)
+// Build one solid palette-index tile (tileSize.x * tileSize.y bytes).
+static std::vector<std::uint8_t> makeSolidTile(glm::ivec2 tileSize, std::uint8_t paletteIndex)
 {
     const std::size_t numPixels = static_cast<std::size_t>(tileSize.x) * static_cast<std::size_t>(tileSize.y);
-    std::vector<std::uint8_t> data(numPixels * 4);
-    for (std::size_t i = 0; i < numPixels; ++i)
-    {
-        data[i * 4 + 0] = r;
-        data[i * 4 + 1] = g;
-        data[i * 4 + 2] = b;
-        data[i * 4 + 3] = 255;
-    }
-    return data;
+    return std::vector<std::uint8_t>(numPixels, paletteIndex);
 }
 
 int main()
@@ -37,20 +30,25 @@ int main()
         8
     );
 
-    // --- Build a TileMapTexture ---
-    Nothofagus::TileMapTexture tileMap(tileSize, mapSize);
+    // --- Build a palette-indexed TileMapTexture ---
+    // Palette index 0 — transparent placeholder (default).
+    // Palette index 1 — grass (green), 2 — water (blue), 3 — dirt (brown).
+    Nothofagus::TileMapTexture tileMap(tileSize, mapSize, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
+    tileMap.setPallete(Nothofagus::ColorPallete{
+        {0.0f, 0.0f, 0.0f, 0.0f},                                  // 0 transparent
+        {34.0f / 255.0f,  139.0f / 255.0f, 34.0f / 255.0f,  1.0f}, // 1 grass
+        {30.0f / 255.0f,  144.0f / 255.0f, 255.0f / 255.0f, 1.0f}, // 2 water
+        {139.0f / 255.0f, 90.0f / 255.0f,  43.0f / 255.0f,  1.0f}, // 3 dirt
+    });
 
-    // Tile 0 — grass (green)
-    auto grassPixels = makeSolidTile(tileSize, 34,  139, 34);
-    tileMap.setTilePixels(0, grassPixels);
+    // Tile 0 — grass (palette index 1)
+    tileMap.setTilePixels(0, makeSolidTile(tileSize, 1));
 
-    // Tile 1 — water (blue)
-    auto waterPixels = makeSolidTile(tileSize, 30,  144, 255);
-    tileMap.setTilePixels(1, waterPixels);
+    // Tile 1 — water (palette index 2)
+    tileMap.setTilePixels(1, makeSolidTile(tileSize, 2));
 
-    // Tile 2 — dirt (brown)
-    auto dirtPixels  = makeSolidTile(tileSize, 139, 90,  43);
-    tileMap.setTilePixels(2, dirtPixels);
+    // Tile 2 — dirt (palette index 3)
+    tileMap.setTilePixels(2, makeSolidTile(tileSize, 3));
 
     // Fill the map: alternating grass (0) with a band of water (1) and dirt (2)
     for (int row = 0; row < mapSize.y; ++row)

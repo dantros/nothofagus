@@ -115,7 +115,7 @@ public:
     void          linkIndirectTextures(DTexture indexTexture, DTexture paletteTexture);
     DTexture      uploadTileMapTexture(std::span<const std::uint8_t> mapData, glm::ivec2 mapSize);
     void          freeTileMapTexture(DTexture mapTexture);
-    void          linkTileMapTextures(DTexture atlasTexture, DTexture mapTexture);
+    void          linkTileMapTextures(DTexture atlasTexture, DTexture mapTexture, DTexture paletteTexture);
     DMesh         uploadMesh(const Mesh& mesh);
     void          freeMesh(DMesh dmesh);
     DRenderTarget createRenderTarget(glm::ivec2 size);
@@ -219,8 +219,9 @@ private:
         VkImageView indexView, VkSampler indexSampler,
         VkImageView paletteView, VkSampler paletteSampler) const;
     VkDescriptorSet allocateAndUpdateTilemapDescriptorSet(
-        VkImageView atlasView, VkSampler atlasSampler,
-        VkImageView mapView,   VkSampler mapSampler) const;
+        VkImageView atlasView,   VkSampler atlasSampler,
+        VkImageView mapView,     VkSampler mapSampler,
+        VkImageView paletteView, VkSampler paletteSampler) const;
     VkFormat        findDepthFormat() const;
 
     void rebuildSampler(VulkanTexture& tex, TextureSampleMode minFilter, TextureSampleMode magFilter);

@@ -169,13 +169,14 @@ void OpenGLBackend::initialize(void* /*nativeWindowHandle*/, glm::ivec2 /*canvas
     glUniform1i(mIndirectUniforms.paletteSampler, 1);
     glUseProgram(0);
 
-    // --- Tilemap shader ---
+    // --- Tilemap shader (palette-indexed: map -> atlas[indices] -> palette) ---
     const std::string tilemapFragmentShaderSource = R"(
         #version 330 core
         in vec2 outTextureCoordinates;
         out vec4 outColor;
-        uniform sampler2DArray atlasSampler;
-        uniform usampler2D     mapSampler;
+        uniform usampler2DArray atlasSampler;   // R8UI palette indices
+        uniform usampler2D      mapSampler;     // R8UI tile indices
+        uniform sampler1D       paletteSampler; // RGBA palette
         uniform vec3  tintColor;
         uniform float tintIntensity;
         uniform float opacity;
@@ -184,11 +185,16 @@ void OpenGLBackend::initialize(void* /*nativeWindowHandle*/, glm::ivec2 /*canvas
             ivec2 mapSize    = textureSize(mapSampler, 0);
             vec2  cellF      = outTextureCoordinates * vec2(mapSize);
             ivec2 cellI      = clamp(ivec2(cellF), ivec2(0), mapSize - ivec2(1));
-            vec2  withinCell = fract(cellF);
+            vec2  inCell     = fract(cellF);
+
             uint  tileIdx    = texelFetch(mapSampler, cellI, 0).r;
-            vec4  color      = texture(atlasSampler, vec3(withinCell, float(tileIdx)));
-            vec3  blendColor = tintColor * tintIntensity + color.rgb * (1.0 - tintIntensity);
-            outColor         = vec4(blendColor, color.a * opacity);
+            ivec3 atlasSize  = textureSize(atlasSampler, 0);
+            ivec2 atlasPx    = clamp(ivec2(inCell * vec2(atlasSize.xy)), ivec2(0), atlasSize.xy - ivec2(1));
+            uint  colorIdx   = texelFetch(atlasSampler, ivec3(atlasPx, int(tileIdx)), 0).r;
+
+            vec4  paletteColor = texelFetch(paletteSampler, int(colorIdx), 0);
+            vec3  blendColor   = tintColor * tintIntensity + paletteColor.rgb * (1.0 - tintIntensity);
+            outColor           = vec4(blendColor, paletteColor.a * opacity);
         }
     )";
 
@@ -200,17 +206,19 @@ void OpenGLBackend::initialize(void* /*nativeWindowHandle*/, glm::ivec2 /*canvas
     // Now safe to delete the shared vertex shader — all three programs have been linked.
     glDeleteShader(vertexShader);
 
-    mTilemapUniforms.transform     = glGetUniformLocation(mTilemapShaderProgram, "transform");
-    mTilemapUniforms.tintColor     = glGetUniformLocation(mTilemapShaderProgram, "tintColor");
-    mTilemapUniforms.tintIntensity = glGetUniformLocation(mTilemapShaderProgram, "tintIntensity");
-    mTilemapUniforms.opacity       = glGetUniformLocation(mTilemapShaderProgram, "opacity");
-    mTilemapUniforms.atlasSampler  = glGetUniformLocation(mTilemapShaderProgram, "atlasSampler");
-    mTilemapUniforms.mapSampler    = glGetUniformLocation(mTilemapShaderProgram, "mapSampler");
+    mTilemapUniforms.transform      = glGetUniformLocation(mTilemapShaderProgram, "transform");
+    mTilemapUniforms.tintColor      = glGetUniformLocation(mTilemapShaderProgram, "tintColor");
+    mTilemapUniforms.tintIntensity  = glGetUniformLocation(mTilemapShaderProgram, "tintIntensity");
+    mTilemapUniforms.opacity        = glGetUniformLocation(mTilemapShaderProgram, "opacity");
+    mTilemapUniforms.atlasSampler   = glGetUniformLocation(mTilemapShaderProgram, "atlasSampler");
+    mTilemapUniforms.mapSampler     = glGetUniformLocation(mTilemapShaderProgram, "mapSampler");
+    mTilemapUniforms.paletteSampler = glGetUniformLocation(mTilemapShaderProgram, "paletteSampler");
 
-    // Set sampler uniform values for the tilemap program (texture units 0 and 1).
+    // Set sampler uniform values for the tilemap program (texture units 0, 1, and 2).
     glUseProgram(mTilemapShaderProgram);
-    glUniform1i(mTilemapUniforms.atlasSampler, 0);
-    glUniform1i(mTilemapUniforms.mapSampler,   1);
+    glUniform1i(mTilemapUniforms.atlasSampler,   0);
+    glUniform1i(mTilemapUniforms.mapSampler,     1);
+    glUniform1i(mTilemapUniforms.paletteSampler, 2);
     glUseProgram(0);
 
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -244,13 +252,20 @@ DTexture OpenGLBackend::uploadTexture(const Texture& texture,
     glGenTextures(1, &gpuTexture);
     glBindTexture(GL_TEXTURE_2D_ARRAY, gpuTexture);
 
-    if (std::holds_alternative<IndirectTexture>(texture))
+    const TextureMode mode = textureModeOf(texture);
+    if (mode == TextureMode::Indirect || mode == TextureMode::TileMap)
     {
         // Upload raw color indices as an R8UI integer texture.
-        const auto& indirectTexture = std::get<IndirectTexture>(texture);
-        const std::vector<std::uint8_t> indexData = indirectTexture.generateIndexData();
-        const glm::ivec2 textureSize = indirectTexture.size();
-        const GLsizei layerCount = static_cast<GLsizei>(indirectTexture.layers());
+        // For Indirect: source is the index pixels; for TileMap: source is the tile atlas as palette indices.
+        const std::vector<std::uint8_t> indexData = (mode == TextureMode::Indirect)
+            ? std::get<IndirectTexture>(texture).generateIndexData()
+            : std::get<TileMapTexture>(texture).generateIndexData();
+        const glm::ivec2 textureSize = (mode == TextureMode::Indirect)
+            ? std::get<IndirectTexture>(texture).size()
+            : std::get<TileMapTexture>(texture).tileSize();
+        const GLsizei layerCount = (mode == TextureMode::Indirect)
+            ? static_cast<GLsizei>(std::get<IndirectTexture>(texture).layers())
+            : static_cast<GLsizei>(std::max<std::size_t>(std::get<TileMapTexture>(texture).tileCount(), 1));
 
         // R8UI rows are 1 byte per pixel — the default GL_UNPACK_ALIGNMENT of 4 would
         // add padding after each row unless the width is a multiple of 4.  Set alignment
@@ -346,6 +361,11 @@ void OpenGLBackend::linkIndirectTextures(DTexture /*indexTexture*/, DTexture /*p
     // No-op for OpenGL — texture binding is handled per-draw in drawSprite().
 }
 
+void OpenGLBackend::linkTileMapTextures(DTexture /*atlasTexture*/, DTexture /*mapTexture*/, DTexture /*paletteTexture*/)
+{
+    // No-op for OpenGL — texture binding is handled per-draw in drawSprite().
+}
+
 DTexture OpenGLBackend::uploadTileMapTexture(std::span<const std::uint8_t> mapData, glm::ivec2 mapSize)
 {
     GLuint gpuTexture;
@@ -375,11 +395,6 @@ DTexture OpenGLBackend::uploadTileMapTexture(std::span<const std::uint8_t> mapDa
 void OpenGLBackend::freeTileMapTexture(DTexture mapTexture)
 {
     freeTexture(mapTexture);
-}
-
-void OpenGLBackend::linkTileMapTextures(DTexture /*atlasTexture*/, DTexture /*mapTexture*/)
-{
-    // No-op for OpenGL — texture binding is handled per-draw in drawSprite().
 }
 
 DMesh OpenGLBackend::uploadMesh(const Mesh& mesh)
@@ -514,7 +529,7 @@ void OpenGLBackend::drawSprite(DMesh mesh, DTexture texture, const SpriteDrawPar
             mActiveShaderProgram = mTilemapShaderProgram;
         }
 
-        // Bind atlas (RGBA 2D array) to unit 0.
+        // Bind atlas (R8UI 2D array of palette indices) to unit 0.
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D_ARRAY, glTexture);
 
@@ -523,6 +538,12 @@ void OpenGLBackend::drawSprite(DMesh mesh, DTexture texture, const SpriteDrawPar
         debugCheck(mapIt != mTextures.end(), "drawSprite: map texture not found");
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, mapIt->second.texture);
+
+        // Bind palette (RGBA 1D) to unit 2.
+        auto paletteIt = mTextures.find(params.paletteTexture.id);
+        debugCheck(paletteIt != mTextures.end(), "drawSprite: palette texture not found");
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_1D, paletteIt->second.texture);
 
         glUniform3f(mTilemapUniforms.tintColor, params.tintColor.r, params.tintColor.g, params.tintColor.b);
         glUniform1f(mTilemapUniforms.tintIntensity, params.tintIntensity);
@@ -579,6 +600,13 @@ void OpenGLBackend::drawSprite(DMesh mesh, DTexture texture, const SpriteDrawPar
     {
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_1D, 0);
+    }
+    else if (params.mode == TextureMode::TileMap)
+    {
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_1D, 0);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);

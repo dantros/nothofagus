@@ -29,7 +29,7 @@ public:
     void          linkIndirectTextures(DTexture indexTexture, DTexture paletteTexture);
     DTexture      uploadTileMapTexture(std::span<const std::uint8_t> mapData, glm::ivec2 mapSize);
     void          freeTileMapTexture(DTexture mapTexture);
-    void          linkTileMapTextures(DTexture atlasTexture, DTexture mapTexture);
+    void          linkTileMapTextures(DTexture atlasTexture, DTexture mapTexture, DTexture paletteTexture);
     DMesh         uploadMesh(const Mesh& mesh);
     void          freeMesh(DMesh mesh);
     DRenderTarget createRenderTarget(glm::ivec2 size);
@@ -85,6 +85,7 @@ private:
         int opacity        = -1;
         int atlasSampler   = -1;
         int mapSampler     = -1;
+        int paletteSampler = -1;
     } mTilemapUniforms;
 
     std::unordered_map<std::size_t, OpenGLMesh>         mMeshes;

@@ -189,17 +189,18 @@ TextureData DirectTexture::generateTextureData() const
 
 // ─── TileMapTexture ────────────────────────────────────────────────────────────
 
-TileMapTexture::TileMapTexture(glm::ivec2 tileSize, glm::ivec2 mapSize)
+TileMapTexture::TileMapTexture(glm::ivec2 tileSize, glm::ivec2 mapSize, glm::vec4 defaultColor)
     : mTileSize(tileSize)
     , mMapSize(mapSize)
     , mMap(static_cast<std::size_t>(mapSize.x) * static_cast<std::size_t>(mapSize.y), 0)
+    , mPallete({ defaultColor })
 {
 }
 
-void TileMapTexture::setTilePixels(std::size_t tileIndex, std::span<const std::uint8_t> rgbaData)
+void TileMapTexture::setTilePixels(std::size_t tileIndex, std::span<const std::uint8_t> indexData)
 {
-    const std::size_t bytesPerTile = static_cast<std::size_t>(mTileSize.x) * static_cast<std::size_t>(mTileSize.y) * 4;
-    debugCheck(rgbaData.size() == bytesPerTile, "rgbaData size does not match tileSize.");
+    const std::size_t bytesPerTile = static_cast<std::size_t>(mTileSize.x) * static_cast<std::size_t>(mTileSize.y);
+    debugCheck(indexData.size() == bytesPerTile, "indexData size does not match tileSize (expected tileW * tileH bytes).");
 
     if (tileIndex >= mTileCount)
     {
@@ -208,7 +209,7 @@ void TileMapTexture::setTilePixels(std::size_t tileIndex, std::span<const std::u
     }
 
     const std::size_t offset = tileIndex * bytesPerTile;
-    std::copy(rgbaData.begin(), rgbaData.end(), mAtlas.begin() + static_cast<std::ptrdiff_t>(offset));
+    std::copy(indexData.begin(), indexData.end(), mAtlas.begin() + static_cast<std::ptrdiff_t>(offset));
     mAtlasDirty = true;
 }
 
@@ -225,22 +226,44 @@ std::uint8_t TileMapTexture::cell(int col, int row) const
     return mMap[static_cast<std::size_t>(row) * static_cast<std::size_t>(mMapSize.x) + static_cast<std::size_t>(col)];
 }
 
-TextureData TileMapTexture::generateTextureData() const
+TileMapTexture& TileMapTexture::setPallete(const ColorPallete& pallete)
 {
+    debugCheck(mPallete.size() <= pallete.size(), "");
+    mPallete = pallete;
+    mPaletteDirty = true;
+    return *this;
+}
+
+std::vector<std::uint8_t> TileMapTexture::generateIndexData() const
+{
+    const std::size_t bytesPerTile = static_cast<std::size_t>(mTileSize.x) * static_cast<std::size_t>(mTileSize.y);
     const std::size_t tileCount = (mTileCount > 0) ? mTileCount : 1;
-    TextureData out(static_cast<std::size_t>(mTileSize.x), static_cast<std::size_t>(mTileSize.y), tileCount);
-    std::span<std::uint8_t> dataSpan = out.getDataSpan();
+    std::vector<std::uint8_t> indexData(bytesPerTile * tileCount, 0);
     if (!mAtlas.empty())
     {
-        const std::size_t bytesToCopy = std::min(mAtlas.size(), dataSpan.size());
-        std::copy(mAtlas.begin(), mAtlas.begin() + static_cast<std::ptrdiff_t>(bytesToCopy), dataSpan.begin());
+        const std::size_t bytesToCopy = std::min(mAtlas.size(), indexData.size());
+        std::copy(mAtlas.begin(), mAtlas.begin() + static_cast<std::ptrdiff_t>(bytesToCopy), indexData.begin());
     }
-    return out;
+    return indexData;
 }
 
 std::vector<std::uint8_t> TileMapTexture::generateMapData() const
 {
     return mMap;
+}
+
+std::vector<glm::vec4> TileMapTexture::generatePaletteData() const
+{
+    static constexpr std::size_t paletteSize = 256;
+    std::vector<glm::vec4> paletteData(paletteSize, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
+
+    const std::size_t count = std::min(mPallete.colors.size(), paletteSize);
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        paletteData[i] = mPallete.colors[i];
+    }
+
+    return paletteData;
 }
 
 // ────────────────────────────────────────────────────────────────────────────────

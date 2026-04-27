@@ -1,13 +1,24 @@
 /// hello_tilemap2.cpp
-/// Demonstrates TileMapTexture with two handcrafted 16×16 tiles arranged in a
-/// 4×3 checkerboard grid (wider than tall):
+/// Demonstrates the palette-indexed TileMapTexture with two handcrafted tiles
+/// arranged in a 4×3 checkerboard grid (wider than tall):
 ///   Tile 0 — white circle on a black background
 ///   Tile 1 — red→yellow diagonal ordered-dithered gradient (2×2 Bayer matrix)
+/// All tiles store palette indices; the shared palette resolves the colours.
 
 #include <nothofagus.h>
 #include <cstdint>
 #include <vector>
 #include <cmath>
+
+// Palette layout (kept tiny — only 5 entries used).
+namespace Pal
+{
+    constexpr std::uint8_t Transparent = 0;
+    constexpr std::uint8_t Black       = 1; // circle background
+    constexpr std::uint8_t White       = 2; // circle foreground
+    constexpr std::uint8_t Red         = 3; // dither low
+    constexpr std::uint8_t Yellow      = 4; // dither high
+}
 
 // ---------------------------------------------------------------------------
 // Tile 0: white filled circle on black background
@@ -19,18 +30,14 @@ static std::vector<std::uint8_t> makeCircleTile(glm::ivec2 tileSize)
     const float cy = (h - 1) * 0.5f;
     const float r2 = (w * 0.5f - 0.5f) * (w * 0.5f - 0.5f);
 
-    std::vector<std::uint8_t> data(static_cast<std::size_t>(w * h * 4));
+    std::vector<std::uint8_t> data(static_cast<std::size_t>(w * h));
     for (int y = 0; y < h; ++y)
     {
         for (int x = 0; x < w; ++x)
         {
             const float dx = x - cx, dy = y - cy;
-            const std::uint8_t v = (dx * dx + dy * dy <= r2) ? 255 : 0;
-            const std::size_t i = static_cast<std::size_t>((y * w + x) * 4);
-            data[i + 0] = v;
-            data[i + 1] = v;
-            data[i + 2] = v;
-            data[i + 3] = 255;
+            const bool inside = (dx * dx + dy * dy <= r2);
+            data[static_cast<std::size_t>(y * w + x)] = inside ? Pal::White : Pal::Black;
         }
     }
     return data;
@@ -38,9 +45,7 @@ static std::vector<std::uint8_t> makeCircleTile(glm::ivec2 tileSize)
 
 // ---------------------------------------------------------------------------
 // Tile 1: red→yellow diagonal gradient dithered with a 2×2 Bayer matrix.
-//         Red    = (255,   0, 0)   top-left corner
-//         Yellow = (255, 255, 0)   bottom-right corner
-//         Only the green channel differs; the Bayer threshold decides per pixel.
+//         Per pixel the Bayer threshold picks Red (low) or Yellow (high).
 // ---------------------------------------------------------------------------
 static std::vector<std::uint8_t> makeDitherGradientTile(glm::ivec2 tileSize)
 {
@@ -50,20 +55,16 @@ static std::vector<std::uint8_t> makeDitherGradientTile(glm::ivec2 tileSize)
     // 2×2 Bayer ordered-dither thresholds
     static constexpr float kBayer[2][2] = { { 0.25f, 0.75f }, { 0.75f, 0.25f } };
 
-    std::vector<std::uint8_t> data(static_cast<std::size_t>(w * h * 4));
+    std::vector<std::uint8_t> data(static_cast<std::size_t>(w * h));
     for (int y = 0; y < h; ++y)
     {
         for (int x = 0; x < w; ++x)
         {
-            const float d          = static_cast<float>(x + y) / maxD;
-            const float threshold  = kBayer[y % 2][x % 2];
-            const bool  isYellow   = (d > threshold);
+            const float d         = static_cast<float>(x + y) / maxD;
+            const float threshold = kBayer[y % 2][x % 2];
+            const bool  isYellow  = (d > threshold);
 
-            const std::size_t i = static_cast<std::size_t>((y * w + x) * 4);
-            data[i + 0] = 255;                  // R: always 255
-            data[i + 1] = isYellow ? 255 : 0;  // G: 255 for yellow, 0 for red
-            data[i + 2] = 0;                    // B: always 0
-            data[i + 3] = 255;                  // A: opaque
+            data[static_cast<std::size_t>(y * w + x)] = isYellow ? Pal::Yellow : Pal::Red;
         }
     }
     return data;
@@ -83,8 +84,15 @@ int main()
         pixelScale
     );
 
-    // Build the tile map
-    Nothofagus::TileMapTexture tileMap(tileSize, mapSize);
+    // Build the palette-indexed tile map
+    Nothofagus::TileMapTexture tileMap(tileSize, mapSize, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
+    tileMap.setPallete(Nothofagus::ColorPallete{
+        {0.0f, 0.0f, 0.0f, 0.0f},   // 0 transparent
+        {0.0f, 0.0f, 0.0f, 1.0f},   // 1 black
+        {1.0f, 1.0f, 1.0f, 1.0f},   // 2 white
+        {1.0f, 0.0f, 0.0f, 1.0f},   // 3 red
+        {1.0f, 1.0f, 0.0f, 1.0f},   // 4 yellow
+    });
 
     auto circlePx = makeCircleTile(tileSize);
     tileMap.setTilePixels(0, std::span<const std::uint8_t>(circlePx));
