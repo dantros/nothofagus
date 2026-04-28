@@ -633,6 +633,65 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
             vkDestroyShaderModule(mDevice, indirectFragModule, nullptr);
         }
 
+        // 20. Tilemap descriptor set layout — 3 bindings: atlas (usampler2DArray, R8UI palette indices) + map (usampler2D, R8UI tile indices) + palette (sampler1D, RGBA)
+        {
+            std::array<VkDescriptorSetLayoutBinding, 3> tilemapBindings{};
+            // binding 0: tile atlas (usampler2DArray — R8UI palette indices)
+            tilemapBindings[0].binding         = 0;
+            tilemapBindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            tilemapBindings[0].descriptorCount = 1;
+            tilemapBindings[0].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+            // binding 1: tile-index map (usampler2D — R8UI)
+            tilemapBindings[1].binding         = 1;
+            tilemapBindings[1].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            tilemapBindings[1].descriptorCount = 1;
+            tilemapBindings[1].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+            // binding 2: palette (sampler1D — RGBA)
+            tilemapBindings[2].binding         = 2;
+            tilemapBindings[2].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            tilemapBindings[2].descriptorCount = 1;
+            tilemapBindings[2].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+            VkDescriptorSetLayoutCreateInfo tilemapLayoutInfo{};
+            tilemapLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            tilemapLayoutInfo.bindingCount = static_cast<uint32_t>(tilemapBindings.size());
+            tilemapLayoutInfo.pBindings    = tilemapBindings.data();
+
+            if (vkCreateDescriptorSetLayout(mDevice, &tilemapLayoutInfo, nullptr, &mTilemapDescriptorSetLayout) != VK_SUCCESS)
+                throw std::runtime_error("Failed to create tilemap descriptor set layout");
+        }
+
+        // 21. Tilemap pipeline layout (same push constants, tilemap descriptor set layout)
+        {
+            VkPushConstantRange tilemapPushRange{};
+            tilemapPushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+            tilemapPushRange.offset     = 0;
+            tilemapPushRange.size       = sizeof(SpritePushConstants);
+
+            VkPipelineLayoutCreateInfo tilemapPipelineLayoutInfo{};
+            tilemapPipelineLayoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+            tilemapPipelineLayoutInfo.setLayoutCount         = 1;
+            tilemapPipelineLayoutInfo.pSetLayouts            = &mTilemapDescriptorSetLayout;
+            tilemapPipelineLayoutInfo.pushConstantRangeCount = 1;
+            tilemapPipelineLayoutInfo.pPushConstantRanges    = &tilemapPushRange;
+            if (vkCreatePipelineLayout(mDevice, &tilemapPipelineLayoutInfo, nullptr, &mTilemapPipelineLayout) != VK_SUCCESS)
+                throw std::runtime_error("Failed to create tilemap pipeline layout");
+        }
+
+        // 22. Tilemap graphics pipeline (same vertex shader, tilemap fragment shader)
+        {
+            VkShaderModule tilemapFragModule = createShaderModule(NOTHOFAGUS_SPRITE_TILEMAP_FRAG_SPV);
+
+            stages[1].module = tilemapFragModule;
+
+            pipelineInfo.layout = mTilemapPipelineLayout;
+
+            if (vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &mTilemapSpritePipeline) != VK_SUCCESS)
+                throw std::runtime_error("Failed to create tilemap graphics pipeline");
+
+            vkDestroyShaderModule(mDevice, tilemapFragModule, nullptr);
+        }
+
         vkDestroyShaderModule(mDevice, vertModule, nullptr);
     }
 
@@ -737,11 +796,11 @@ void VulkanBackend::shutdown()
         vkDestroyImageView(mDevice, tex.imageView, nullptr);
         if (!tex.isProxy)
             vmaDestroyImage(mAllocator, tex.image, tex.allocation);
-        if (tex.isIndirect)
+        if (tex.mode == TextureMode::Indirect || tex.mode == TextureMode::TileMap)
         {
-            vkDestroySampler(mDevice, tex.paletteSampler, nullptr);
-            vkDestroyImageView(mDevice, tex.paletteImageView, nullptr);
-            vmaDestroyImage(mAllocator, tex.paletteImage, tex.paletteAllocation);
+            if (tex.paletteSampler   != VK_NULL_HANDLE) vkDestroySampler  (mDevice, tex.paletteSampler,   nullptr);
+            if (tex.paletteImageView != VK_NULL_HANDLE) vkDestroyImageView(mDevice, tex.paletteImageView, nullptr);
+            if (tex.paletteImage     != VK_NULL_HANDLE) vmaDestroyImage   (mAllocator, tex.paletteImage, tex.paletteAllocation);
         }
     }
     mTextures.clear();
@@ -756,6 +815,9 @@ void VulkanBackend::shutdown()
     }
     mRenderTargets.clear();
 
+    vkDestroyPipeline(mDevice, mTilemapSpritePipeline, nullptr);
+    vkDestroyPipelineLayout(mDevice, mTilemapPipelineLayout, nullptr);
+    vkDestroyDescriptorSetLayout(mDevice, mTilemapDescriptorSetLayout, nullptr);
     vkDestroyPipeline(mDevice, mIndirectSpritePipeline, nullptr);
     vkDestroyPipelineLayout(mDevice, mIndirectPipelineLayout, nullptr);
     vkDestroyDescriptorSetLayout(mDevice, mIndirectDescriptorSetLayout, nullptr);
@@ -796,7 +858,7 @@ void VulkanBackend::shutdown()
 DTexture VulkanBackend::uploadTexture(
     const Texture& texture, TextureSampleMode minFilter, TextureSampleMode magFilter)
 {
-    const bool isIndirect = std::holds_alternative<IndirectTexture>(texture);
+    const TextureMode mode = textureModeOf(texture);
 
     // Determine upload data and format based on texture type.
     VkFormat imageFormat;
@@ -806,8 +868,9 @@ DTexture VulkanBackend::uploadTexture(
     std::vector<std::uint8_t> indexData;  // kept alive until after staging copy
     TextureData directTextureData(1, 1);  // kept alive until after staging copy
 
-    if (isIndirect)
+    if (mode == TextureMode::Indirect || mode == TextureMode::TileMap)
     {
+        // Indirect: layers are animation frames. TileMap: layers are unique tile graphics.
         const auto& indirectTexture = std::get<IndirectTexture>(texture);
         indexData  = indirectTexture.generateIndexData();
         width      = static_cast<uint32_t>(indirectTexture.size().x);
@@ -907,9 +970,10 @@ DTexture VulkanBackend::uploadTexture(
     if (vkCreateImageView(mDevice, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
         throw std::runtime_error("Failed to create texture image view");
 
-    // For indirect textures, force NEAREST filter (integer textures require it).
-    const TextureSampleMode effectiveMinFilter = isIndirect ? TextureSampleMode::Nearest : minFilter;
-    const TextureSampleMode effectiveMagFilter = isIndirect ? TextureSampleMode::Nearest : magFilter;
+    // For indirect / tilemap atlases, force NEAREST filter (integer textures require it).
+    const bool indexedAtlas = (mode == TextureMode::Indirect) || (mode == TextureMode::TileMap);
+    const TextureSampleMode effectiveMinFilter = indexedAtlas ? TextureSampleMode::Nearest : minFilter;
+    const TextureSampleMode effectiveMagFilter = indexedAtlas ? TextureSampleMode::Nearest : magFilter;
     VkSampler sampler = createSampler(effectiveMinFilter, effectiveMagFilter);
 
     VulkanTexture vulkanTexture{};
@@ -918,20 +982,12 @@ DTexture VulkanBackend::uploadTexture(
     vulkanTexture.imageView   = imageView;
     vulkanTexture.sampler     = sampler;
     vulkanTexture.isProxy     = false;
-    vulkanTexture.isIndirect  = isIndirect;
+    vulkanTexture.mode        = mode;
 
-    if (isIndirect)
-    {
-        // For indirect textures, the descriptor set uses the indirect layout
-        // and will be created when uploadPaletteTexture provides the palette image.
-        // For now, create a placeholder single-binding descriptor set so drawSprite
-        // doesn't crash if called before the palette is uploaded.
-        vulkanTexture.descriptorSet = allocateAndUpdateDescriptorSet(imageView, sampler);
-    }
-    else
-    {
-        vulkanTexture.descriptorSet = allocateAndUpdateDescriptorSet(imageView, sampler);
-    }
+    // Indirect and tilemap atlases get a placeholder single-binding descriptor set;
+    // it is replaced by the indirect/tilemap descriptor set when linkIndirectTextures /
+    // linkTileMapTextures runs after palette + map uploads.
+    vulkanTexture.descriptorSet = allocateAndUpdateDescriptorSet(imageView, sampler);
 
     const std::size_t newId = mNextId++;
     mTextures[newId] = vulkanTexture;
@@ -955,7 +1011,7 @@ void VulkanBackend::freeTexture(DTexture dtexture)
     pending.imageView     = tex.imageView;
     pending.image         = tex.isProxy ? VK_NULL_HANDLE : tex.image;
     pending.allocation    = tex.isProxy ? nullptr         : tex.allocation;
-    if (tex.isIndirect)
+    if (tex.mode == TextureMode::Indirect || tex.mode == TextureMode::TileMap)
     {
         pending.paletteSampler    = tex.paletteSampler;
         pending.paletteImageView  = tex.paletteImageView;
@@ -1179,6 +1235,187 @@ VkDescriptorSet VulkanBackend::allocateAndUpdateIndirectDescriptorSet(
     writes[1].descriptorCount = 1;
     writes[1].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[1].pImageInfo      = &paletteImageInfo;
+
+    vkUpdateDescriptorSets(mDevice, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    return descriptorSet;
+}
+
+// ---------------------------------------------------------------------------
+// Tile-map texture upload / link / free
+// ---------------------------------------------------------------------------
+
+DTexture VulkanBackend::uploadTileMapTexture(std::span<const std::uint8_t> mapData, glm::ivec2 mapSize)
+{
+    const uint32_t width    = static_cast<uint32_t>(mapSize.x);
+    const uint32_t height   = static_cast<uint32_t>(mapSize.y);
+    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(mapData.size());
+
+    // Staging buffer
+    VkBufferCreateInfo stagingBufferInfo{};
+    stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    stagingBufferInfo.size  = imageSize;
+    stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+    VmaAllocationCreateInfo stagingAllocInfo{};
+    stagingAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                             VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VkBuffer      stagingBuffer;
+    VmaAllocation stagingAlloc;
+    VmaAllocationInfo stagingInfo;
+    vmaCreateBuffer(mAllocator, &stagingBufferInfo, &stagingAllocInfo,
+                    &stagingBuffer, &stagingAlloc, &stagingInfo);
+    std::memcpy(stagingInfo.pMappedData, mapData.data(), imageSize);
+
+    // Device-local R8_UINT 2D image (single layer — not an array)
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType     = VK_IMAGE_TYPE_2D;
+    imageInfo.format        = VK_FORMAT_R8_UINT;
+    imageInfo.extent        = {width, height, 1};
+    imageInfo.mipLevels     = 1;
+    imageInfo.arrayLayers   = 1;
+    imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage         = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VmaAllocationCreateInfo imageAllocInfo{};
+    imageAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    VkImage       mapImage;
+    VmaAllocation mapAlloc;
+    vmaCreateImage(mAllocator, &imageInfo, &imageAllocInfo, &mapImage, &mapAlloc, nullptr);
+
+    VkCommandBuffer commandBuffer = beginOneTimeCommandBuffer();
+
+    transitionImageLayout(commandBuffer, mapImage,
+        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, VK_ACCESS_TRANSFER_WRITE_BIT);
+
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent      = {width, height, 1};
+    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, mapImage,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    transitionImageLayout(commandBuffer, mapImage,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+
+    endOneTimeCommandBuffer(commandBuffer);
+    vmaDestroyBuffer(mAllocator, stagingBuffer, stagingAlloc);
+
+    // 2D image view (single layer, not array)
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image                           = mapImage;
+    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format                          = VK_FORMAT_R8_UINT;
+    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.levelCount     = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount     = 1;
+
+    VkImageView mapImageView;
+    if (vkCreateImageView(mDevice, &viewInfo, nullptr, &mapImageView) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create tile map image view");
+
+    // Nearest-only sampler — R8UI integer textures require NEAREST
+    VkSampler mapSampler = createSampler(TextureSampleMode::Nearest, TextureSampleMode::Nearest);
+
+    // Store as a regular texture entry
+    std::size_t newId = mNextId++;
+    VulkanTexture mapTex{};
+    mapTex.image        = mapImage;
+    mapTex.allocation   = mapAlloc;
+    mapTex.imageView    = mapImageView;
+    mapTex.sampler      = mapSampler;
+    mapTex.descriptorSet = allocateAndUpdateDescriptorSet(mapImageView, mapSampler);
+    mTextures[newId] = mapTex;
+    return DTexture{newId};
+}
+
+void VulkanBackend::freeTileMapTexture(DTexture mapTexture)
+{
+    freeTexture(mapTexture);
+}
+
+void VulkanBackend::linkTileMapTextures(DTexture atlasTexture, DTexture mapTexture, DTexture paletteTexture)
+{
+    auto atlasIt   = mTextures.find(atlasTexture.id);
+    auto mapIt     = mTextures.find(mapTexture.id);
+    auto paletteIt = mTextures.find(paletteTexture.id);
+    if (atlasIt == mTextures.end() || mapIt == mTextures.end() || paletteIt == mTextures.end()) return;
+
+    VulkanTexture& atlasTex   = atlasIt->second;
+    VulkanTexture& mapTex     = mapIt->second;
+    VulkanTexture& paletteTex = paletteIt->second;
+
+    // Replace the atlas entry's descriptor set with a 3-binding tilemap descriptor set.
+    if (atlasTex.descriptorSet != VK_NULL_HANDLE)
+        vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &atlasTex.descriptorSet);
+
+    atlasTex.descriptorSet = allocateAndUpdateTilemapDescriptorSet(
+        atlasTex.imageView,   atlasTex.sampler,
+        mapTex.imageView,     mapTex.sampler,
+        paletteTex.imageView, paletteTex.sampler);
+}
+
+VkDescriptorSet VulkanBackend::allocateAndUpdateTilemapDescriptorSet(
+    VkImageView atlasView,   VkSampler atlasSampler,
+    VkImageView mapView,     VkSampler mapSampler,
+    VkImageView paletteView, VkSampler paletteSampler) const
+{
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool     = mDescriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts        = &mTilemapDescriptorSetLayout;
+
+    VkDescriptorSet descriptorSet;
+    if (vkAllocateDescriptorSets(mDevice, &allocInfo, &descriptorSet) != VK_SUCCESS)
+        throw std::runtime_error("Failed to allocate tilemap descriptor set");
+
+    VkDescriptorImageInfo atlasImageInfo{};
+    atlasImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    atlasImageInfo.imageView   = atlasView;
+    atlasImageInfo.sampler     = atlasSampler;
+
+    VkDescriptorImageInfo mapImageInfo{};
+    mapImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    mapImageInfo.imageView   = mapView;
+    mapImageInfo.sampler     = mapSampler;
+
+    VkDescriptorImageInfo paletteImageInfo{};
+    paletteImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    paletteImageInfo.imageView   = paletteView;
+    paletteImageInfo.sampler     = paletteSampler;
+
+    std::array<VkWriteDescriptorSet, 3> writes{};
+    writes[0].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet          = descriptorSet;
+    writes[0].dstBinding      = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].pImageInfo      = &atlasImageInfo;
+
+    writes[1].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet          = descriptorSet;
+    writes[1].dstBinding      = 1;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].pImageInfo      = &mapImageInfo;
+
+    writes[2].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[2].dstSet          = descriptorSet;
+    writes[2].dstBinding      = 2;
+    writes[2].descriptorCount = 1;
+    writes[2].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[2].pImageInfo      = &paletteImageInfo;
 
     vkUpdateDescriptorSets(mDevice, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     return descriptorSet;
@@ -1628,7 +1865,18 @@ void VulkanBackend::drawSprite(DMesh dmesh, DTexture dtexture, const SpriteDrawP
     vkCmdBindVertexBuffers(mActiveCommandBuffer, 0, 1, &mesh.vertexBuffer, &offset);
     vkCmdBindIndexBuffer(mActiveCommandBuffer, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-    if (params.isIndirect)
+    if (params.mode == TextureMode::TileMap)
+    {
+        vkCmdBindPipeline(mActiveCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mTilemapSpritePipeline);
+        vkCmdBindDescriptorSets(mActiveCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                mTilemapPipelineLayout, 0, 1, &tex.descriptorSet, 0, nullptr);
+
+        const SpritePushConstants pushConstants = packPushConstants(params);
+        vkCmdPushConstants(mActiveCommandBuffer, mTilemapPipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(SpritePushConstants), &pushConstants);
+    }
+    else if (params.mode == TextureMode::Indirect)
     {
         vkCmdBindPipeline(mActiveCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mIndirectSpritePipeline);
         vkCmdBindDescriptorSets(mActiveCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,

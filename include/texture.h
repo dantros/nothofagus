@@ -410,22 +410,57 @@ public:
      */
     std::vector<glm::vec4> generatePaletteData() const;
 
-    /**
-     * @brief Returns whether the palette has been modified since the last clearPaletteDirty().
-     */
-    bool isPaletteDirty() const { return mPaletteDirty; }
+    /// Set palette indices for one layer from a contiguous byte range.
+    /// `pixelColors.size()` must equal `size.x * size.y`.
+    IndirectTexture& setPixels(std::span<const Pixel::ColorId> pixelColors, std::size_t layer = 0);
 
-    /**
-     * @brief Clears the palette dirty flag.
-     */
+    /// Switch this texture into tile-map mode by allocating a `mapSize.x * mapSize.y`
+    /// cell grid; each cell is a uint8_t selecting a layer (a unique tile graphic).
+    /// All cells start at 0. World dimensions become `mapSize * size()`; the GPU samples
+    /// the cell grid first (sprite_tilemap shader path).
+    /// Pass `{0, 0}` to clear the map (revert to plain indirect/animation mode).
+    /// Layers are unchanged — they store the unique tile graphics, not per-cell pixels.
+    IndirectTexture& setMap(glm::ivec2 mapSize);
+
+    /// Set the layer index for a specific cell. Bounds-checked.
+    void setCell(int col, int row, std::uint8_t layerIndex);
+
+    /// Read the layer index for a specific cell. Bounds-checked.
+    std::uint8_t cell(int col, int row) const;
+
+    /// Cell-grid dimensions. `{0, 0}` when not a tile-map.
+    glm::ivec2 mapSize() const { return mMapSize; }
+
+    /// True iff `setMap` was called with a non-zero size.
+    bool hasMap() const { return mMapSize.x > 0 && mMapSize.y > 0; }
+
+    /// Map data for GPU upload (R8UI 2D source). Empty when `!hasMap()`.
+    std::vector<std::uint8_t> generateMapData() const;
+
+    /// Atlas dirty flag — set by any pixel mutator, cleared after GPU upload.
+    bool isAtlasDirty() const { return mAtlasDirty; }
+    void clearAtlasDirty() { mAtlasDirty = false; }
+
+    /// Map dirty flag — set by `setMap` / `setCell`, cleared after GPU upload.
+    bool isMapDirty() const { return mMapDirty; }
+    void clearMapDirty() { mMapDirty = false; }
+
+    /// Palette dirty flag — set by `setPallete`, cleared after GPU upload.
+    bool isPaletteDirty() const { return mPaletteDirty; }
     void clearPaletteDirty() { mPaletteDirty = false; }
 
 private:
-    std::size_t mLayers; /**< The number of layers in the texture. */
-    glm::ivec2 mSize; /**< The size of the texture (width and height). */
-    std::vector<Pixel> mPixels; /**< The pixel data of the texture. */
-    ColorPallete mPallete; /**< The color palette used by the texture. */
-    bool mPaletteDirty = false; /**< Set by setPallete(), cleared after GPU upload. */
+    std::size_t mLayers;
+    glm::ivec2 mSize;
+    std::vector<Pixel> mPixels;
+    ColorPallete mPallete;
+
+    glm::ivec2 mMapSize{0, 0};      ///< `{0, 0}` when not a tile-map.
+    std::vector<std::uint8_t> mMap; ///< Cell grid (`mapSize.x * mapSize.y` bytes); empty when not a tile-map.
+
+    bool mAtlasDirty = false;
+    bool mMapDirty = false;
+    bool mPaletteDirty = false;
 };
 
 std::ostream& operator<<(std::ostream& os, const IndirectTexture& texture);
@@ -506,7 +541,10 @@ enum class TextureSampleMode : std::uint8_t
 
 struct GetTextureSizeVisitor
 {
-    glm::ivec2 operator()(const IndirectTexture& texture) const { return texture.size(); };
+    glm::ivec2 operator()(const IndirectTexture& texture) const
+    {
+        return texture.hasMap() ? texture.size() * texture.mapSize() : texture.size();
+    };
     glm::ivec2 operator()(const DirectTexture& texture) const { return texture.size(); };
 };
 

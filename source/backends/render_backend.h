@@ -4,6 +4,7 @@
 #include "dtexture.h"
 #include "drender_target.h"
 #include "texture.h"       // Texture (CPU-side), TextureSampleMode
+#include "../texture_mode.h" // TextureMode
 #include "mesh.h"          // Mesh (CPU-side)
 #include "screen_size.h"   // ScreenSize, ViewportRect
 #include <glm/glm.hpp>
@@ -18,13 +19,14 @@ namespace Nothofagus
 
 struct SpriteDrawParams
 {
-    glm::mat3 transform;        ///< worldTransform * bellota.transform().toMat3()
-    int       layerIndex;
-    glm::vec3 tintColor;
-    float     tintIntensity;
-    float     opacity;
-    bool      isIndirect = false;   ///< True when the sprite uses an indirect (palette-based) texture.
-    DTexture  paletteTexture{};     ///< GPU palette texture handle (only valid when isIndirect).
+    glm::mat3   transform;        ///< worldTransform * bellota.transform().toMat3()
+    int         layerIndex;
+    glm::vec3   tintColor;
+    float       tintIntensity;
+    float       opacity;
+    TextureMode mode = TextureMode::Direct; ///< Sprite texture kind — selects shader pipeline and which auxiliary handle is used.
+    DTexture    paletteTexture{};   ///< GPU palette texture handle (valid when mode is Indirect or TileMap).
+    DTexture    mapTexture{};       ///< GPU map texture handle (only valid when mode == TextureMode::TileMap).
 };
 
 /// Pixel buffer returned by takeScreenshot(). RGBA, top-to-bottom row order.
@@ -53,7 +55,8 @@ concept RenderBackend = requires(
     int framebufferHeight,
     const SpriteDrawParams& params,
     ImDrawData* imguiData,
-    const std::vector<glm::vec4>& paletteColors)
+    const std::vector<glm::vec4>& paletteColors,
+    std::span<const std::uint8_t> mapData)
 {
     // Lifecycle
     { backend.initialize(nativeWindowHandle, canvasSize) } -> std::same_as<void>;
@@ -67,6 +70,9 @@ concept RenderBackend = requires(
     { backend.updatePaletteTexture(dtexture, paletteColors)    } -> std::same_as<void>;
     { backend.freePaletteTexture(dtexture)                     } -> std::same_as<void>;
     { backend.linkIndirectTextures(dtexture, dtexture)         } -> std::same_as<void>;
+    { backend.uploadTileMapTexture(mapData, canvasSize)        } -> std::same_as<DTexture>;
+    { backend.freeTileMapTexture(dtexture)                     } -> std::same_as<void>;
+    { backend.linkTileMapTextures(dtexture, dtexture, dtexture)} -> std::same_as<void>;
     { backend.uploadMesh(mesh)                                 } -> std::same_as<DMesh>;
     { backend.freeMesh(dmesh)                                  } -> std::same_as<void>;
     { backend.createRenderTarget(targetSize)                   } -> std::same_as<DRenderTarget>;

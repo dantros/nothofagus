@@ -18,6 +18,7 @@ using TracyVkCtx = void*;
 #include <unordered_map>
 #include <array>
 #include <vector>
+#include <span>
 #include <cstdint>
 
 // Forward-declare VmaAllocator to avoid including vk_mem_alloc.h in every TU.
@@ -48,7 +49,12 @@ struct PendingTextureDeletion
     VkImageView     paletteImageView  = VK_NULL_HANDLE;
     VkImage         paletteImage      = VK_NULL_HANDLE;
     VmaAllocation   paletteAllocation = VK_NULL_HANDLE;
+
+    // Map resources (only populated for tile-map textures — separate map DTexture entry).
+    // These are unused in the atlas entry's deletion record; the map entry uses the
+    // standard fields (image / allocation / imageView / sampler) for its own GPU resources.
 };
+
 
 struct PendingRenderTargetDeletion
 {
@@ -107,6 +113,9 @@ public:
     void          updatePaletteTexture(DTexture paletteTexture, const std::vector<glm::vec4>& paletteColors);
     void          freePaletteTexture(DTexture paletteTexture);
     void          linkIndirectTextures(DTexture indexTexture, DTexture paletteTexture);
+    DTexture      uploadTileMapTexture(std::span<const std::uint8_t> mapData, glm::ivec2 mapSize);
+    void          freeTileMapTexture(DTexture mapTexture);
+    void          linkTileMapTextures(DTexture atlasTexture, DTexture mapTexture, DTexture paletteTexture);
     DMesh         uploadMesh(const Mesh& mesh);
     void          freeMesh(DMesh dmesh);
     DRenderTarget createRenderTarget(glm::ivec2 size);
@@ -158,6 +167,11 @@ private:
     VkPipelineLayout      mIndirectPipelineLayout      = VK_NULL_HANDLE;
     VkPipeline            mIndirectSpritePipeline      = VK_NULL_HANDLE;
 
+    // --- Pipeline (tile-map textures) ---
+    VkDescriptorSetLayout mTilemapDescriptorSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout      mTilemapPipelineLayout      = VK_NULL_HANDLE;
+    VkPipeline            mTilemapSpritePipeline      = VK_NULL_HANDLE;
+
     // --- Descriptor pools ---
     VkDescriptorPool mDescriptorPool      = VK_NULL_HANDLE;  // per-texture combined image sampler
     VkDescriptorPool mImguiDescriptorPool = VK_NULL_HANDLE;
@@ -203,6 +217,10 @@ private:
     VkDescriptorSet allocateAndUpdateDescriptorSet(VkImageView imageView, VkSampler sampler) const;
     VkDescriptorSet allocateAndUpdateIndirectDescriptorSet(
         VkImageView indexView, VkSampler indexSampler,
+        VkImageView paletteView, VkSampler paletteSampler) const;
+    VkDescriptorSet allocateAndUpdateTilemapDescriptorSet(
+        VkImageView atlasView,   VkSampler atlasSampler,
+        VkImageView mapView,     VkSampler mapSampler,
         VkImageView paletteView, VkSampler paletteSampler) const;
     VkFormat        findDepthFormat() const;
 

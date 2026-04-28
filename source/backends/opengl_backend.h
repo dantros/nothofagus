@@ -5,6 +5,7 @@
 #include "opengl_texture.h"
 #include "opengl_render_target.h"
 #include <unordered_map>
+#include <span>
 #include <string>
 
 namespace Nothofagus
@@ -26,6 +27,9 @@ public:
                                        const std::vector<glm::vec4>& paletteColors);
     void          freePaletteTexture(DTexture paletteTexture);
     void          linkIndirectTextures(DTexture indexTexture, DTexture paletteTexture);
+    DTexture      uploadTileMapTexture(std::span<const std::uint8_t> mapData, glm::ivec2 mapSize);
+    void          freeTileMapTexture(DTexture mapTexture);
+    void          linkTileMapTextures(DTexture atlasTexture, DTexture mapTexture, DTexture paletteTexture);
     DMesh         uploadMesh(const Mesh& mesh);
     void          freeMesh(DMesh mesh);
     DRenderTarget createRenderTarget(glm::ivec2 size);
@@ -50,6 +54,7 @@ public:
 private:
     unsigned int mShaderProgram = 0;
     unsigned int mIndirectShaderProgram = 0;
+    unsigned int mTilemapShaderProgram  = 0;
     unsigned int mActiveShaderProgram = 0;
 
     struct BellotaShaderUniforms
@@ -71,6 +76,17 @@ private:
         int indexSampler   = -1;
         int paletteSampler = -1;
     } mIndirectUniforms;
+
+    struct TilemapShaderUniforms
+    {
+        int transform      = -1;
+        int tintColor      = -1;
+        int tintIntensity  = -1;
+        int opacity        = -1;
+        int atlasSampler   = -1;
+        int mapSampler     = -1;
+        int paletteSampler = -1;
+    } mTilemapUniforms;
 
     std::unordered_map<std::size_t, OpenGLMesh>         mMeshes;
     std::unordered_map<std::size_t, OpenGLTexture>      mTextures;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../texture_mode.h"
 #include <vulkan/vulkan.h>
 
 // Forward-declare VMA handle to avoid including vk_mem_alloc.h in every TU.
@@ -17,9 +18,9 @@ struct VulkanTexture
     VkSampler       sampler       = VK_NULL_HANDLE;
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     bool            isProxy       = false;  // owned by VulkanRenderTarget — skip vmaDestroyImage on free
-    bool            isIndirect    = false;  // true for palette-based textures
+    TextureMode     mode          = TextureMode::Direct;
 
-    // Palette texture resources (only populated when isIndirect == true).
+    // Palette texture resources (only populated when mode == TextureMode::Indirect).
     VkImage         paletteImage      = VK_NULL_HANDLE;
     VmaAllocation   paletteAllocation = VK_NULL_HANDLE;
     VkImageView     paletteImageView  = VK_NULL_HANDLE;
