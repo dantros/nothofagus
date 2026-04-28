@@ -57,10 +57,10 @@ int main()
         });
 
         // Main-canvas ImGui — proves the main context is unaffected.
-        ImGui::SetNextWindowPos(ImVec2(4.0f, 4.0f), ImGuiCond_Always);
-        ImGui::Begin("main", nullptr,
-            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize);
+        // Drag this window around to confirm that input still reaches the main
+        // context while the RTT secondary context is active.
+        ImGui::SetNextWindowPos(ImVec2(4.0f, 4.0f), ImGuiCond_Once);
+        ImGui::Begin("main", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::Text("slider=%.2f  count=%d", sliderValue, clickCount);
         ImGui::End();
     });
