@@ -868,24 +868,14 @@ DTexture VulkanBackend::uploadTexture(
     std::vector<std::uint8_t> indexData;  // kept alive until after staging copy
     TextureData directTextureData(1, 1);  // kept alive until after staging copy
 
-    if (mode == TextureMode::Indirect)
+    if (mode == TextureMode::Indirect || mode == TextureMode::TileMap)
     {
+        // Indirect: layers are animation frames. TileMap: layers are unique tile graphics.
         const auto& indirectTexture = std::get<IndirectTexture>(texture);
         indexData  = indirectTexture.generateIndexData();
         width      = static_cast<uint32_t>(indirectTexture.size().x);
         height     = static_cast<uint32_t>(indirectTexture.size().y);
         layers     = static_cast<uint32_t>(indirectTexture.layers());
-        imageSize  = indexData.size();
-        uploadData = indexData.data();
-        imageFormat = VK_FORMAT_R8_UINT;
-    }
-    else if (mode == TextureMode::TileMap)
-    {
-        const auto& tileMapTexture = std::get<TileMapTexture>(texture);
-        indexData  = tileMapTexture.generateIndexData();
-        width      = static_cast<uint32_t>(tileMapTexture.tileSize().x);
-        height     = static_cast<uint32_t>(tileMapTexture.tileSize().y);
-        layers     = static_cast<uint32_t>(tileMapTexture.tileCount() > 0 ? tileMapTexture.tileCount() : 1);
         imageSize  = indexData.size();
         uploadData = indexData.data();
         imageFormat = VK_FORMAT_R8_UINT;

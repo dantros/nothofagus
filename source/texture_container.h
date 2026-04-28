@@ -13,7 +13,7 @@ namespace Nothofagus
 struct TexturePack
 {
     // nullopt for GPU-proxy entries (render target color attachments).
-    // CPU-owned textures (IndirectTexture / DirectTexture / TileMapTexture) always have a value.
+    // CPU-owned textures (IndirectTexture / DirectTexture) always have a value.
     std::optional<Texture> texture;
     std::optional<DTexture> dtextureOpt;
     std::optional<DTexture> dpaletteTextureOpt; ///< GPU palette texture (only for indirect textures).

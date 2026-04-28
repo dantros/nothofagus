@@ -28,20 +28,30 @@ IndirectTexture& IndirectTexture::setPixels(std::initializer_list<Pixel::ColorId
         }
     ), "At least one of the pixels does not fit within the color pallete.");
 
-    //mPixels.assign(pixelColors.begin(), pixelColors.end());
+    const std::size_t startIdx = layer * mPixels.size() / mLayers;
+    const std::size_t endIdx   = (layer + 1) * mPixels.size() / mLayers;
 
-    // Calcular el inicio y fin de los píxeles para este layer
-    std::size_t startIdx = layer * mPixels.size() / mLayers;
-    std::size_t endIdx = (layer + 1) * mPixels.size() / mLayers;
-
-    // Actualizar solo los píxeles correspondientes al layer indicado
     auto pixelIt = pixelColors.begin();
     for (std::size_t idx = startIdx; idx < endIdx; ++idx, ++pixelIt)
     {
-        const Pixel::ColorId& colorId = *pixelIt;
-        mPixels[idx].colorId = colorId;  // Asignar el colorId desde el inicializador
+        mPixels[idx].colorId = *pixelIt;
     }
+    mAtlasDirty = true;
+    return *this;
+}
 
+IndirectTexture& IndirectTexture::setPixels(std::span<const Pixel::ColorId> pixelColors, std::size_t layer)
+{
+    const std::size_t pixelsPerLayer = mPixels.size() / mLayers;
+    debugCheck(pixelColors.size() == pixelsPerLayer, "Invalid number of pixels for this texture.");
+    debugCheck(mLayers > layer, "Invalid layer.");
+
+    const std::size_t startIdx = layer * pixelsPerLayer;
+    for (std::size_t i = 0; i < pixelsPerLayer; ++i)
+    {
+        mPixels[startIdx + i].colorId = pixelColors[i];
+    }
+    mAtlasDirty = true;
     return *this;
 }
 
@@ -60,8 +70,36 @@ IndirectTexture& IndirectTexture::setPixel(const std::size_t i, const std::size_
     std::size_t layerIndexStart = layer * mPixels.size() / mLayers;
     const std::size_t index = indexOf(mSize, i, j);
     mPixels.at(layerIndexStart + index) = pixel;
+    mAtlasDirty = true;
     return *this;
+}
 
+IndirectTexture& IndirectTexture::setMap(glm::ivec2 mapSize)
+{
+    debugCheck(mapSize.x >= 0 && mapSize.y >= 0, "mapSize must be non-negative.");
+    mMapSize = mapSize;
+    mMap.assign(static_cast<std::size_t>(mapSize.x) * static_cast<std::size_t>(mapSize.y), 0);
+    mMapDirty = true;
+    return *this;
+}
+
+void IndirectTexture::setCell(int col, int row, std::uint8_t layerIndex)
+{
+    debugCheck(col >= 0 && col < mMapSize.x && row >= 0 && row < mMapSize.y, "Cell out of bounds.");
+    debugCheck(static_cast<std::size_t>(layerIndex) < mLayers, "Cell layerIndex out of range of layer count.");
+    mMap[static_cast<std::size_t>(row) * static_cast<std::size_t>(mMapSize.x) + static_cast<std::size_t>(col)] = layerIndex;
+    mMapDirty = true;
+}
+
+std::uint8_t IndirectTexture::cell(int col, int row) const
+{
+    debugCheck(col >= 0 && col < mMapSize.x && row >= 0 && row < mMapSize.y, "Cell out of bounds.");
+    return mMap[static_cast<std::size_t>(row) * static_cast<std::size_t>(mMapSize.x) + static_cast<std::size_t>(col)];
+}
+
+std::vector<std::uint8_t> IndirectTexture::generateMapData() const
+{
+    return mMap;
 }
 
 const glm::vec4& IndirectTexture::color(const std::size_t i, const std::size_t j, std::size_t layer) const
@@ -186,87 +224,6 @@ TextureData DirectTexture::generateTextureData() const
 {
     return mTextureData;
 }
-
-// ─── TileMapTexture ────────────────────────────────────────────────────────────
-
-TileMapTexture::TileMapTexture(glm::ivec2 tileSize, glm::ivec2 mapSize, glm::vec4 defaultColor)
-    : mTileSize(tileSize)
-    , mMapSize(mapSize)
-    , mMap(static_cast<std::size_t>(mapSize.x) * static_cast<std::size_t>(mapSize.y), 0)
-    , mPallete({ defaultColor })
-{
-}
-
-void TileMapTexture::setTilePixels(std::size_t tileIndex, std::span<const std::uint8_t> indexData)
-{
-    const std::size_t bytesPerTile = static_cast<std::size_t>(mTileSize.x) * static_cast<std::size_t>(mTileSize.y);
-    debugCheck(indexData.size() == bytesPerTile, "indexData size does not match tileSize (expected tileW * tileH bytes).");
-
-    if (tileIndex >= mTileCount)
-    {
-        mTileCount = tileIndex + 1;
-        mAtlas.resize(mTileCount * bytesPerTile, 0);
-    }
-
-    const std::size_t offset = tileIndex * bytesPerTile;
-    std::copy(indexData.begin(), indexData.end(), mAtlas.begin() + static_cast<std::ptrdiff_t>(offset));
-    mAtlasDirty = true;
-}
-
-void TileMapTexture::setCell(int col, int row, std::uint8_t tileIndex)
-{
-    debugCheck(col >= 0 && col < mMapSize.x && row >= 0 && row < mMapSize.y, "Cell out of bounds.");
-    mMap[static_cast<std::size_t>(row) * static_cast<std::size_t>(mMapSize.x) + static_cast<std::size_t>(col)] = tileIndex;
-    mMapDirty = true;
-}
-
-std::uint8_t TileMapTexture::cell(int col, int row) const
-{
-    debugCheck(col >= 0 && col < mMapSize.x && row >= 0 && row < mMapSize.y, "Cell out of bounds.");
-    return mMap[static_cast<std::size_t>(row) * static_cast<std::size_t>(mMapSize.x) + static_cast<std::size_t>(col)];
-}
-
-TileMapTexture& TileMapTexture::setPallete(const ColorPallete& pallete)
-{
-    debugCheck(mPallete.size() <= pallete.size(), "");
-    mPallete = pallete;
-    mPaletteDirty = true;
-    return *this;
-}
-
-std::vector<std::uint8_t> TileMapTexture::generateIndexData() const
-{
-    const std::size_t bytesPerTile = static_cast<std::size_t>(mTileSize.x) * static_cast<std::size_t>(mTileSize.y);
-    const std::size_t tileCount = (mTileCount > 0) ? mTileCount : 1;
-    std::vector<std::uint8_t> indexData(bytesPerTile * tileCount, 0);
-    if (!mAtlas.empty())
-    {
-        const std::size_t bytesToCopy = std::min(mAtlas.size(), indexData.size());
-        std::copy(mAtlas.begin(), mAtlas.begin() + static_cast<std::ptrdiff_t>(bytesToCopy), indexData.begin());
-    }
-    return indexData;
-}
-
-std::vector<std::uint8_t> TileMapTexture::generateMapData() const
-{
-    return mMap;
-}
-
-std::vector<glm::vec4> TileMapTexture::generatePaletteData() const
-{
-    static constexpr std::size_t paletteSize = 256;
-    std::vector<glm::vec4> paletteData(paletteSize, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
-
-    const std::size_t count = std::min(mPallete.colors.size(), paletteSize);
-    for (std::size_t i = 0; i < count; ++i)
-    {
-        paletteData[i] = mPallete.colors[i];
-    }
-
-    return paletteData;
-}
-
-// ────────────────────────────────────────────────────────────────────────────────
 
 TextureData::TextureData(std::span<std::uint8_t> dataSpan, std::size_t width, std::size_t height, std::size_t layers):
         mDataOpt(std::nullopt),

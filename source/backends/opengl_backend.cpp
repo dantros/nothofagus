@@ -255,17 +255,12 @@ DTexture OpenGLBackend::uploadTexture(const Texture& texture,
     const TextureMode mode = textureModeOf(texture);
     if (mode == TextureMode::Indirect || mode == TextureMode::TileMap)
     {
-        // Upload raw color indices as an R8UI integer texture.
-        // For Indirect: source is the index pixels; for TileMap: source is the tile atlas as palette indices.
-        const std::vector<std::uint8_t> indexData = (mode == TextureMode::Indirect)
-            ? std::get<IndirectTexture>(texture).generateIndexData()
-            : std::get<TileMapTexture>(texture).generateIndexData();
-        const glm::ivec2 textureSize = (mode == TextureMode::Indirect)
-            ? std::get<IndirectTexture>(texture).size()
-            : std::get<TileMapTexture>(texture).tileSize();
-        const GLsizei layerCount = (mode == TextureMode::Indirect)
-            ? static_cast<GLsizei>(std::get<IndirectTexture>(texture).layers())
-            : static_cast<GLsizei>(std::max<std::size_t>(std::get<TileMapTexture>(texture).tileCount(), 1));
+        // Upload palette indices as an R8UI 2D-array texture.
+        // Indirect: layers are animation frames. TileMap: layers are unique tile graphics.
+        const auto& indirectTexture = std::get<IndirectTexture>(texture);
+        const std::vector<std::uint8_t> indexData = indirectTexture.generateIndexData();
+        const glm::ivec2 textureSize = indirectTexture.size();
+        const GLsizei layerCount = static_cast<GLsizei>(indirectTexture.layers());
 
         // R8UI rows are 1 byte per pixel — the default GL_UNPACK_ALIGNMENT of 4 would
         // add padding after each row unless the width is a multiple of 4.  Set alignment

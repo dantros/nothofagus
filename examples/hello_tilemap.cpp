@@ -1,8 +1,8 @@
 /// hello_tilemap.cpp
-/// Demonstrates the palette-indexed TileMapTexture with two handcrafted tiles
-/// arranged in a 4×3 checkerboard grid (wider than tall):
-///   Tile 0 — white circle on a black background
-///   Tile 1 — red→yellow diagonal ordered-dithered gradient (2×2 Bayer matrix)
+/// Demonstrates the palette-indexed tile-map mode of IndirectTexture: two handcrafted
+/// tiles (layers) arranged in a 4×3 checkerboard via setMap + setCell.
+///   Layer 0 — white circle on a black background
+///   Layer 1 — red→yellow diagonal ordered-dithered gradient (2×2 Bayer matrix)
 /// All tiles store palette indices; the shared palette resolves the colors.
 
 #include <nothofagus.h>
@@ -84,8 +84,12 @@ int main()
         pixelScale
     );
 
-    // Build the palette-indexed tile map
-    Nothofagus::TileMapTexture tileMap(tileSize, mapSize, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
+    // Build the palette-indexed tile map.
+    // Two unique tiles are stored as two layers of an IndirectTexture; setMap opts
+    // the texture into tile-map rendering with a 4×3 cell grid that picks per-cell
+    // which layer to draw.
+    constexpr std::size_t tileCount = 2;
+    Nothofagus::IndirectTexture tileMap(tileSize, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f), tileCount);
     tileMap.setPallete(Nothofagus::ColorPallete{
         {0.0f, 0.0f, 0.0f, 0.0f},   // 0 transparent
         {0.0f, 0.0f, 0.0f, 1.0f},   // 1 black
@@ -95,12 +99,14 @@ int main()
     });
 
     auto circlePx = makeCircleTile(tileSize);
-    tileMap.setTilePixels(0, std::span<const std::uint8_t>(circlePx));
+    tileMap.setPixels(std::span<const std::uint8_t>(circlePx), 0);
 
     auto ditherPx = makeDitherGradientTile(tileSize);
-    tileMap.setTilePixels(1, std::span<const std::uint8_t>(ditherPx));
+    tileMap.setPixels(std::span<const std::uint8_t>(ditherPx), 1);
 
-    // Checkerboard: (col + row) % 2 selects tile 0 or 1
+    tileMap.setMap(mapSize);
+
+    // Checkerboard: (col + row) % 2 selects layer 0 or 1
     for (int row = 0; row < mapSize.y; ++row)
         for (int col = 0; col < mapSize.x; ++col)
             tileMap.setCell(col, row, static_cast<std::uint8_t>((col + row) % 2));

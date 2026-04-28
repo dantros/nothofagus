@@ -532,82 +532,79 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
         ZoneScopedN("TextureUpload");
         for (auto& [textureIndex, texturePack] : mTextures)
         {
+            const bool isIndirectOrTileMap =
+                texturePack.mode == TextureMode::Indirect ||
+                texturePack.mode == TextureMode::TileMap;
+
             if (texturePack.isDirty() && !texturePack.isProxy())
             {
                 texturePack.dtextureOpt = mBackend.uploadTexture(
                     texturePack.texture.value(), texturePack.minFilter, texturePack.magFilter);
 
-                if (texturePack.mode == TextureMode::Indirect)
+                if (isIndirectOrTileMap)
                 {
                     auto& indirectTexture = std::get<IndirectTexture>(texturePack.texture.value());
                     texturePack.dpaletteTextureOpt = mBackend.uploadPaletteTexture(
                         indirectTexture.generatePaletteData());
-                    mBackend.linkIndirectTextures(
-                        texturePack.dtextureOpt.value(), texturePack.dpaletteTextureOpt.value());
+
+                    if (texturePack.mode == TextureMode::TileMap)
+                    {
+                        const auto mapData = indirectTexture.generateMapData();
+                        texturePack.dmapTextureOpt = mBackend.uploadTileMapTexture(
+                            std::span<const std::uint8_t>(mapData), indirectTexture.mapSize());
+                        mBackend.linkTileMapTextures(
+                            texturePack.dtextureOpt.value(),
+                            texturePack.dmapTextureOpt.value(),
+                            texturePack.dpaletteTextureOpt.value());
+                    }
+                    else
+                    {
+                        mBackend.linkIndirectTextures(
+                            texturePack.dtextureOpt.value(), texturePack.dpaletteTextureOpt.value());
+                    }
+                    indirectTexture.clearAtlasDirty();
+                    indirectTexture.clearMapDirty();
                     indirectTexture.clearPaletteDirty();
                 }
-                else if (texturePack.mode == TextureMode::TileMap)
+            }
+            else if (isIndirectOrTileMap && !texturePack.isProxy() && texturePack.dtextureOpt.has_value())
+            {
+                auto& indirectTexture = std::get<IndirectTexture>(texturePack.texture.value());
+
+                if (indirectTexture.isAtlasDirty() && texturePack.dpaletteTextureOpt.has_value())
                 {
-                    auto& tileMapTexture = std::get<TileMapTexture>(texturePack.texture.value());
-                    const auto mapData = tileMapTexture.generateMapData();
+                    mBackend.freeTexture(texturePack.dtextureOpt.value());
+                    texturePack.dtextureOpt = mBackend.uploadTexture(
+                        texturePack.texture.value(), texturePack.minFilter, texturePack.magFilter);
+                    if (texturePack.mode == TextureMode::TileMap && texturePack.dmapTextureOpt.has_value())
+                        mBackend.linkTileMapTextures(
+                            texturePack.dtextureOpt.value(),
+                            texturePack.dmapTextureOpt.value(),
+                            texturePack.dpaletteTextureOpt.value());
+                    else
+                        mBackend.linkIndirectTextures(
+                            texturePack.dtextureOpt.value(), texturePack.dpaletteTextureOpt.value());
+                    indirectTexture.clearAtlasDirty();
+                }
+                if (texturePack.mode == TextureMode::TileMap && indirectTexture.isMapDirty()
+                    && texturePack.dmapTextureOpt.has_value() && texturePack.dpaletteTextureOpt.has_value())
+                {
+                    mBackend.freeTileMapTexture(texturePack.dmapTextureOpt.value());
+                    const auto mapData = indirectTexture.generateMapData();
                     texturePack.dmapTextureOpt = mBackend.uploadTileMapTexture(
-                        std::span<const std::uint8_t>(mapData), tileMapTexture.mapSize());
-                    texturePack.dpaletteTextureOpt = mBackend.uploadPaletteTexture(
-                        tileMapTexture.generatePaletteData());
+                        std::span<const std::uint8_t>(mapData), indirectTexture.mapSize());
                     mBackend.linkTileMapTextures(
                         texturePack.dtextureOpt.value(),
                         texturePack.dmapTextureOpt.value(),
                         texturePack.dpaletteTextureOpt.value());
-                    tileMapTexture.clearAtlasDirty();
-                    tileMapTexture.clearMapDirty();
-                    tileMapTexture.clearPaletteDirty();
+                    indirectTexture.clearMapDirty();
                 }
-            }
-            else if (texturePack.mode == TextureMode::Indirect && !texturePack.isProxy() && texturePack.dpaletteTextureOpt.has_value())
-            {
-                auto& indirectTexture = std::get<IndirectTexture>(texturePack.texture.value());
-                if (indirectTexture.isPaletteDirty())
+                if (indirectTexture.isPaletteDirty() && texturePack.dpaletteTextureOpt.has_value())
                 {
                     mBackend.updatePaletteTexture(
                         texturePack.dpaletteTextureOpt.value(),
                         indirectTexture.generatePaletteData());
                     indirectTexture.clearPaletteDirty();
-                }
-            }
-            else if (texturePack.mode == TextureMode::TileMap && !texturePack.isProxy() && texturePack.dtextureOpt.has_value())
-            {
-                auto& tileMapTexture = std::get<TileMapTexture>(texturePack.texture.value());
-                if (tileMapTexture.isAtlasDirty())
-                {
-                    // Re-upload atlas and re-link with map + palette
-                    mBackend.freeTexture(texturePack.dtextureOpt.value());
-                    texturePack.dtextureOpt = mBackend.uploadTexture(
-                        texturePack.texture.value(), texturePack.minFilter, texturePack.magFilter);
-                    if (texturePack.dmapTextureOpt.has_value() && texturePack.dpaletteTextureOpt.has_value())
-                        mBackend.linkTileMapTextures(
-                            texturePack.dtextureOpt.value(),
-                            texturePack.dmapTextureOpt.value(),
-                            texturePack.dpaletteTextureOpt.value());
-                    tileMapTexture.clearAtlasDirty();
-                }
-                if (tileMapTexture.isMapDirty() && texturePack.dmapTextureOpt.has_value() && texturePack.dpaletteTextureOpt.has_value())
-                {
-                    mBackend.freeTileMapTexture(texturePack.dmapTextureOpt.value());
-                    const auto mapData = tileMapTexture.generateMapData();
-                    texturePack.dmapTextureOpt = mBackend.uploadTileMapTexture(
-                        std::span<const std::uint8_t>(mapData), tileMapTexture.mapSize());
-                    mBackend.linkTileMapTextures(
-                        texturePack.dtextureOpt.value(),
-                        texturePack.dmapTextureOpt.value(),
-                        texturePack.dpaletteTextureOpt.value());
-                    tileMapTexture.clearMapDirty();
-                }
-                if (tileMapTexture.isPaletteDirty() && texturePack.dpaletteTextureOpt.has_value())
-                {
-                    mBackend.updatePaletteTexture(
-                        texturePack.dpaletteTextureOpt.value(),
-                        tileMapTexture.generatePaletteData());
-                    tileMapTexture.clearPaletteDirty();
                 }
             }
         }

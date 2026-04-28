@@ -410,22 +410,57 @@ public:
      */
     std::vector<glm::vec4> generatePaletteData() const;
 
-    /**
-     * @brief Returns whether the palette has been modified since the last clearPaletteDirty().
-     */
-    bool isPaletteDirty() const { return mPaletteDirty; }
+    /// Set palette indices for one layer from a contiguous byte range.
+    /// `pixelColors.size()` must equal `size.x * size.y`.
+    IndirectTexture& setPixels(std::span<const Pixel::ColorId> pixelColors, std::size_t layer = 0);
 
-    /**
-     * @brief Clears the palette dirty flag.
-     */
+    /// Switch this texture into tile-map mode by allocating a `mapSize.x * mapSize.y`
+    /// cell grid; each cell is a uint8_t selecting a layer (a unique tile graphic).
+    /// All cells start at 0. World dimensions become `mapSize * size()`; the GPU samples
+    /// the cell grid first (sprite_tilemap shader path).
+    /// Pass `{0, 0}` to clear the map (revert to plain indirect/animation mode).
+    /// Layers are unchanged — they store the unique tile graphics, not per-cell pixels.
+    IndirectTexture& setMap(glm::ivec2 mapSize);
+
+    /// Set the layer index for a specific cell. Bounds-checked.
+    void setCell(int col, int row, std::uint8_t layerIndex);
+
+    /// Read the layer index for a specific cell. Bounds-checked.
+    std::uint8_t cell(int col, int row) const;
+
+    /// Cell-grid dimensions. `{0, 0}` when not a tile-map.
+    glm::ivec2 mapSize() const { return mMapSize; }
+
+    /// True iff `setMap` was called with a non-zero size.
+    bool hasMap() const { return mMapSize.x > 0 && mMapSize.y > 0; }
+
+    /// Map data for GPU upload (R8UI 2D source). Empty when `!hasMap()`.
+    std::vector<std::uint8_t> generateMapData() const;
+
+    /// Atlas dirty flag — set by any pixel mutator, cleared after GPU upload.
+    bool isAtlasDirty() const { return mAtlasDirty; }
+    void clearAtlasDirty() { mAtlasDirty = false; }
+
+    /// Map dirty flag — set by `setMap` / `setCell`, cleared after GPU upload.
+    bool isMapDirty() const { return mMapDirty; }
+    void clearMapDirty() { mMapDirty = false; }
+
+    /// Palette dirty flag — set by `setPallete`, cleared after GPU upload.
+    bool isPaletteDirty() const { return mPaletteDirty; }
     void clearPaletteDirty() { mPaletteDirty = false; }
 
 private:
-    std::size_t mLayers; /**< The number of layers in the texture. */
-    glm::ivec2 mSize; /**< The size of the texture (width and height). */
-    std::vector<Pixel> mPixels; /**< The pixel data of the texture. */
-    ColorPallete mPallete; /**< The color palette used by the texture. */
-    bool mPaletteDirty = false; /**< Set by setPallete(), cleared after GPU upload. */
+    std::size_t mLayers;
+    glm::ivec2 mSize;
+    std::vector<Pixel> mPixels;
+    ColorPallete mPallete;
+
+    glm::ivec2 mMapSize{0, 0};      ///< `{0, 0}` when not a tile-map.
+    std::vector<std::uint8_t> mMap; ///< Cell grid (`mapSize.x * mapSize.y` bytes); empty when not a tile-map.
+
+    bool mAtlasDirty = false;
+    bool mMapDirty = false;
+    bool mPaletteDirty = false;
 };
 
 std::ostream& operator<<(std::ostream& os, const IndirectTexture& texture);
@@ -496,78 +531,7 @@ private:
 
 std::ostream& operator<<(std::ostream& os, const DirectTexture& texture);
 
-/// A palette-indexed tile-map texture.
-/// The atlas stores up to 256 distinct tiles as layers of an R8UI 2D array texture; each
-/// pixel is one byte indexing into the shared ColorPallete.
-/// The map stores one uint8_t per cell (column-major: col fast, row slow) that indexes
-/// into the atlas. The GPU resolves the cell tile, then the per-pixel palette colour
-/// via the sprite_tilemap shader (three samplers: map → atlas → palette).
-class TileMapTexture
-{
-public:
-    /// Construct a tile-map with a given tile size and grid dimensions.
-    /// The palette starts with one entry (defaultColor); all atlas indices and map cells
-    /// start at 0 (so the unpopulated map renders as defaultColor).
-    /// @param tileSize     Width × height of each individual tile in pixels.
-    /// @param mapSize      Width (columns) × height (rows) of the cell grid.
-    /// @param defaultColor Seed colour for palette index 0.
-    TileMapTexture(glm::ivec2 tileSize, glm::ivec2 mapSize, glm::vec4 defaultColor);
-
-    /// Replace the palette indices for one tile slot.
-    /// @param tileIndex  Index of the tile to update (must be < 256).
-    /// @param indexData  tileSize.x * tileSize.y bytes; each byte is a palette index.
-    void setTilePixels(std::size_t tileIndex, std::span<const std::uint8_t> indexData);
-
-    /// Number of tile slots that have been populated via setTilePixels().
-    std::size_t tileCount() const { return mTileCount; }
-
-    /// Set the tile index at a specific cell.
-    void setCell(int col, int row, std::uint8_t tileIndex);
-
-    /// Get the tile index at a specific cell.
-    std::uint8_t cell(int col, int row) const;
-
-    glm::ivec2 tileSize() const { return mTileSize; }
-    glm::ivec2 mapSize()  const { return mMapSize; }
-
-    /// World pixel dimensions of the full tile map (mapSize * tileSize).
-    glm::ivec2 size() const { return mMapSize * mTileSize; }
-
-    /// Shared colour palette (mirrors IndirectTexture).
-    const ColorPallete& pallete() const { return mPallete; }
-    TileMapTexture& setPallete(const ColorPallete& pallete);
-
-    bool isAtlasDirty()   const { return mAtlasDirty; }
-    bool isMapDirty()     const { return mMapDirty; }
-    bool isPaletteDirty() const { return mPaletteDirty; }
-    void clearAtlasDirty()   { mAtlasDirty   = false; }
-    void clearMapDirty()     { mMapDirty     = false; }
-    void clearPaletteDirty() { mPaletteDirty = false; }
-
-    /// Generate the atlas as flat palette indices for GPU upload.
-    /// Layout matches IndirectTexture::generateIndexData(): tileW * tileH bytes per layer,
-    /// one layer per tile slot. Source for an R8UI 2D-array texture.
-    std::vector<std::uint8_t> generateIndexData() const;
-
-    /// Generate flat map data for GPU upload (mapW * mapH bytes, R8UI).
-    std::vector<std::uint8_t> generateMapData() const;
-
-    /// Palette padded to 256 entries (mirrors IndirectTexture::generatePaletteData()).
-    std::vector<glm::vec4> generatePaletteData() const;
-
-private:
-    glm::ivec2                mTileSize;
-    glm::ivec2                mMapSize;
-    std::size_t               mTileCount = 0;
-    std::vector<std::uint8_t> mAtlas;     ///< R8 palette indices: tileW * tileH * mTileCount
-    std::vector<std::uint8_t> mMap;       ///< uint8_t: mapW * mapH
-    ColorPallete              mPallete;
-    bool mAtlasDirty   = true;
-    bool mMapDirty     = true;
-    bool mPaletteDirty = true;
-};
-
-using Texture = std::variant<IndirectTexture, DirectTexture, TileMapTexture>;
+using Texture = std::variant<IndirectTexture, DirectTexture>;
 
 enum class TextureSampleMode : std::uint8_t
 {
@@ -577,18 +541,17 @@ enum class TextureSampleMode : std::uint8_t
 
 struct GetTextureSizeVisitor
 {
-    glm::ivec2 operator()(const IndirectTexture& texture) const { return texture.size(); };
+    glm::ivec2 operator()(const IndirectTexture& texture) const
+    {
+        return texture.hasMap() ? texture.size() * texture.mapSize() : texture.size();
+    };
     glm::ivec2 operator()(const DirectTexture& texture) const { return texture.size(); };
-    glm::ivec2 operator()(const TileMapTexture& texture) const { return texture.size(); };
 };
 
 struct GenerateTextureDataVisitor
 {
     TextureData operator()(const IndirectTexture& texture) const { return texture.generateTextureData(); };
     TextureData operator()(const DirectTexture& texture) const { return texture.generateTextureData(); };
-    /// TileMap textures upload through the R8UI index path (see TileMapTexture::generateIndexData);
-    /// this overload exists only so std::visit remains exhaustive and must not be reached at runtime.
-    TextureData operator()(const TileMapTexture&) const { return TextureData(1, 1, 1); };
 };
 
 }
