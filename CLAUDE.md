@@ -7,7 +7,7 @@ Pixel art real-time renderer with OpenGL 3.3 and Vulkan backends, written in C++
 ## Key Terminology
 
 - **Bellota** ("acorn") — a drawable sprite/element on screen
-- **IndirectTexture** — paletted texture: pixels hold color indices into a `ColorPallete`
+- **IndirectTexture** — paletted texture: pixels hold color indices into a `ColorPallete`. Optional multi-layer atlas for sprite animation; optional cell grid (`setMap`) opts the texture into tile-map rendering, where each cell selects a layer to draw.
 - **DirectTexture** — raw RGBA texture
 - **Transform** — position (`mLocation`), scale (`mScale`), rotation (`mAngle` in degrees)
 - **Controller** — keyboard, mouse, and gamepad input handler; maps `KeyboardTrigger`/`MouseButtonTrigger`/`GamepadButtonTrigger` → `Action` callbacks and tracks mouse position as `glm::vec2`
@@ -268,6 +268,38 @@ std::vector<int> ids = controller.getConnectedGamepadIds();   // sorted
 
 Gamepad button events are dispatched in `processInputs()` (same frame-deferred pattern as keyboard/mouse). Axis callbacks fire immediately when polled (same pattern as scroll).
 
+### Tile maps
+
+`IndirectTexture` doubles as a tile-map source: store the unique tile graphics as layers, then call `setMap(mapSize)` to allocate a `mapSize.x * mapSize.y` cell grid where each cell holds a `uint8_t` layer index. The bellota's mesh expands to `mapSize * size()` (per-tile pixel size × grid). Rendering goes through a separate 3-binding GPU pipeline (`atlas` + `map` + `palette`) so a tilemap with N unique tiles uses an N-layer atlas regardless of cell count — tile graphics are reused across cells.
+
+```cpp
+constexpr glm::ivec2 tileSize{8, 8};
+constexpr glm::ivec2 mapSize {4, 3};
+constexpr std::size_t tileCount = 2;          // unique tile graphics
+
+Nothofagus::IndirectTexture tileMap(tileSize, glm::vec4(0.0f), tileCount);
+tileMap.setPallete(Nothofagus::ColorPallete{ /* ... */ });
+
+// Populate each tile slot from a contiguous span of palette indices
+auto circlePx = makeCircleTile(tileSize);    // std::vector<std::uint8_t>, tileSize.x * tileSize.y bytes
+tileMap.setPixels(std::span<const std::uint8_t>(circlePx), 0);
+auto ditherPx = makeDitherGradientTile(tileSize);
+tileMap.setPixels(std::span<const std::uint8_t>(ditherPx), 1);
+
+tileMap.setMap(mapSize);                      // opt into tile-map mode
+for (int row = 0; row < mapSize.y; ++row)
+    for (int col = 0; col < mapSize.x; ++col)
+        tileMap.setCell(col, row, static_cast<std::uint8_t>((col + row) % 2));
+
+Nothofagus::TextureId tileMapTexId = canvas.addTexture(tileMap);
+```
+
+**Constraints / behavior:**
+- Pass `mapSize == {0, 0}` to `setMap` to revert back to plain indirect/animation mode.
+- `bellota.currentLayer()` is unused for tilemap textures — per-cell layer choice is driven by the cell grid, not by a global layer index. Animation state machines should target non-tilemap `IndirectTexture` instances.
+- `setCell` triggers `mMapDirty` and is hot-uploadable per-frame; per-pixel `setPixels` triggers `mAtlasDirty` for tile-graphic mutations.
+- The palette is shared between the tile-map and indirect rendering paths — `setPallete` works the same way.
+
 ### Animations
 
 Multi-layer `IndirectTexture` stores frames as layers. `AnimationStateMachine` drives `bellota.currentLayer()` automatically each frame.
@@ -341,6 +373,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 - Variables and functions: **camelCase**
 - Member variables: **mCamelCase** prefix
 - No abbreviated names — use full descriptive names (e.g. `framebufferWidth` not `fbW`, `viewportX` not `vpX`, `canvasAspectRatio` not `aspect`, `renderTargetPack` not `rtPack`, `renderTargetId` not `rtId`)
+- Comments and identifiers use **American English** spelling (`color` not `colour`, `center` not `centre`, `initialize` not `initialise`, `behavior` not `behaviour`)
 
 ## Important Details
 
@@ -370,6 +403,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `test_create_destroy.cpp` | Object lifecycle |
 | `hello_screenshot.cpp` | `takeScreenshot()` — capture frame as DirectTexture, display thumbnail |
 | `hello_headless.cpp` | Headless mode + `tick()` — no window, manual frame stepping, screenshot to terminal |
+| `hello_tilemap.cpp` | Tile-map mode of `IndirectTexture` — `setMap` + `setCell` over a layered atlas |
 
 ## Dependencies (third_party/ submodules)
 
