@@ -3,7 +3,7 @@
 /// arranged in a 4×3 checkerboard grid (wider than tall):
 ///   Tile 0 — white circle on a black background
 ///   Tile 1 — red→yellow diagonal ordered-dithered gradient (2×2 Bayer matrix)
-/// All tiles store palette indices; the shared palette resolves the colours.
+/// All tiles store palette indices; the shared palette resolves the colors.
 
 #include <nothofagus.h>
 #include <cstdint>
@@ -107,15 +107,15 @@ int main()
 
     Nothofagus::TextureId tileMapTexId = canvas.addTexture(tileMap);
 
-    // One bellota centred on the canvas at scale 1:1.
+    // One bellota centered on the canvas at scale 1:1.
     // The mesh is already sized to the texture dimensions (mapSize * tileSize),
     // so scale = 1 fills the canvas exactly.
-    const glm::vec2 centre{
+    const glm::vec2 center{
         static_cast<float>(mapSize.x * tileSize.x) * 0.5f,
         static_cast<float>(mapSize.y * tileSize.y) * 0.5f
     };
     canvas.addBellota({
-        Nothofagus::Transform(centre),
+        Nothofagus::Transform(center),
         tileMapTexId
     });
 
