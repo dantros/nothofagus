@@ -304,7 +304,7 @@ if (${NOTHOFAGUS_INSTALL})
             hello_nested_render_targets
             hello_screenshot
             hello_headless
-            hello_tilemap2
+            hello_tilemap
             test_gamepad
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT NothofagusExamples_Runtime

@@ -1,4 +1,4 @@
-/// hello_tilemap2.cpp
+/// hello_tilemap.cpp
 /// Demonstrates the palette-indexed TileMapTexture with two handcrafted tiles
 /// arranged in a 4×3 checkerboard grid (wider than tall):
 ///   Tile 0 — white circle on a black background
@@ -79,7 +79,7 @@ int main()
 
     Nothofagus::Canvas canvas(
         { mapSize.x * tileSize.x, mapSize.y * tileSize.y },
-        "Hello TileMap 2",
+        "Hello TileMap",
         { 0.0f, 0.0f, 0.0f },
         pixelScale
     );

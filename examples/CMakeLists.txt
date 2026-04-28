@@ -82,8 +82,8 @@ add_executable(test_gamepad
 set_property(TARGET test_gamepad PROPERTY CXX_STANDARD 20)
 target_link_libraries(test_gamepad PRIVATE nothofagus)
 
-add_executable(hello_tilemap2
-    "hello_tilemap2.cpp"
+add_executable(hello_tilemap
+    "hello_tilemap.cpp"
 )
-set_property(TARGET hello_tilemap2 PROPERTY CXX_STANDARD 20)
-target_link_libraries(hello_tilemap2 PRIVATE nothofagus)
+set_property(TARGET hello_tilemap PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_tilemap PRIVATE nothofagus)
