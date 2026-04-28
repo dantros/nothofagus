@@ -5,13 +5,11 @@
 #include "bellota_container.h"
 #include "render_target_container.h"
 #include "texture_usage_monitor.h"
+#include "imgui_rtt_manager.h"
 #include "aa_box.h"
 #include "backends/render_backend_select.h"
 #include <vector>
 #include <utility>
-#include <unordered_map>
-
-struct ImGuiContext;
 
 namespace Nothofagus
 {
@@ -216,16 +214,11 @@ private:
     /// RTT passes queued by renderTo() during the update callback, executed before the main render.
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
 
-    /// ImGui RTT passes queued by renderImguiTo() during the update callback.
-    /// Each entry is rendered after the sprite RTT loop and before the main pass.
-    std::vector<std::pair<RenderTargetId, Canvas::ImguiDrawCallback>> mPendingImguiRttPasses;
-
-    /// Lazily-created secondary ImGuiContexts, one per render target that hosts ImGui.
-    /// Created on first renderImguiTo() for that RTT, destroyed in removeRenderTarget()
-    /// and in the destructor. Font atlas is shared with the main context.
-    std::unordered_map<std::size_t /*RenderTargetId*/, ImGuiContext*> mRenderTargetImguiContexts;
-
     ActiveBackend mBackend; ///< GPU rendering backend (compile-time selected).
+
+    /// Owns the queue of pending ImGui-RTT passes plus per-RTT secondary ImGuiContexts.
+    /// Declared after mBackend / mRenderTargets so initialization order is well-defined.
+    ImguiRttManager mImguiRtt;
 
     bool mStats; ///< Flag to indicate whether stats should be displayed.
     bool mHeadless{false}; ///< When true, the window is hidden (no visible UI).

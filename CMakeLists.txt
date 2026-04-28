@@ -81,6 +81,7 @@ file(GLOB_RECURSE NOTHOFAGUS_PUBLIC_HEADERS "include/*.h")
 add_library(nothofagus
     "source/canvas.cpp"
     "source/canvas_impl.cpp"
+    "source/imgui_rtt_manager.cpp"
     ${NOTHOFAGUS_BACKEND_SRC}
     "source/bellota_to_mesh.cpp"
     "source/mesh.cpp"

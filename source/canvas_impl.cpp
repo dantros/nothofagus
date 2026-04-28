@@ -68,6 +68,7 @@ Canvas::CanvasImpl::CanvasImpl(
     mTitle(title),
     mClearColor(clearColor),
     mPixelSize(pixelSize),
+    mImguiRtt(mBackend, mRenderTargets),
     mStats(false),
     mHeadless(headless),
     mGameViewport{0, 0, 0, 0}
@@ -115,21 +116,8 @@ Canvas::CanvasImpl::~CanvasImpl()
     // Tear down secondary ImGui contexts for any render target that hosted one.
     // Must happen before mBackend.shutdown() — the per-context backend owns GPU
     // resources (Vulkan pipeline + descriptor pool, GL shader program) that need
-    // a live device/context. Contexts are only created after their RTT was
-    // initialized, so dRenderTargetOpt must still have a value here.
-    ImGuiContext* mainCtx = ImGui::GetCurrentContext();
-    for (auto& [renderTargetIndex, rttCtx] : mRenderTargetImguiContexts)
-    {
-        if (rttCtx == nullptr) continue;
-        if (!mRenderTargets.contains(renderTargetIndex)) continue;
-        auto& pack = mRenderTargets.at(renderTargetIndex);
-        if (!pack.dRenderTargetOpt.has_value()) continue;
-        ImGui::SetCurrentContext(rttCtx);
-        mBackend.shutdownImguiForRenderTarget(pack.dRenderTargetOpt.value());
-        ImGui::DestroyContext(rttCtx);
-    }
-    mRenderTargetImguiContexts.clear();
-    ImGui::SetCurrentContext(mainCtx);
+    // a live device/context.
+    mImguiRtt.releaseAll();
 
     // Free meshes
     for (auto& [bellotaIndex, bellotaPack] : mBellotas)
@@ -367,19 +355,9 @@ void Canvas::CanvasImpl::removeRenderTarget(RenderTargetId renderTargetId)
     const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
 
     // Tear down the secondary ImGui context for this RTT, if one was created.
-    // Contexts are only created after the RTT's dRenderTarget was initialized,
-    // so the opt must have a value if a context exists.
-    auto imguiCtxIt = mRenderTargetImguiContexts.find(renderTargetId.id);
-    if (imguiCtxIt != mRenderTargetImguiContexts.end() && imguiCtxIt->second != nullptr
-        && renderTargetPack.dRenderTargetOpt.has_value())
-    {
-        ImGuiContext* mainCtx = ImGui::GetCurrentContext();
-        ImGui::SetCurrentContext(imguiCtxIt->second);
-        mBackend.shutdownImguiForRenderTarget(renderTargetPack.dRenderTargetOpt.value());
-        ImGui::DestroyContext(imguiCtxIt->second);
-        ImGui::SetCurrentContext(mainCtx);
-    }
-    mRenderTargetImguiContexts.erase(renderTargetId.id);
+    // Must happen before mBackend.freeRenderTarget — the per-context backend
+    // owns GPU resources tied to the RTT's render pass / FBO.
+    mImguiRtt.releaseContext(renderTargetId);
 
     if (renderTargetPack.dRenderTargetOpt.has_value())
     {
@@ -412,7 +390,7 @@ void Canvas::CanvasImpl::renderTo(RenderTargetId renderTargetId, std::vector<Bel
 
 void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, Canvas::ImguiDrawCallback imguiDrawCallback)
 {
-    mPendingImguiRttPasses.emplace_back(renderTargetId, std::move(imguiDrawCallback));
+    mImguiRtt.enqueue(renderTargetId, std::move(imguiDrawCallback));
 }
 
 void Canvas::CanvasImpl::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
@@ -739,60 +717,7 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
         // render target, rendered with a pipeline compiled against the RTT render
         // pass (Vulkan) or into the RTT FBO (OpenGL). Lazy context creation on
         // first use; destroyed in removeRenderTarget() and the destructor.
-        if (!mPendingImguiRttPasses.empty())
-        {
-            ZoneScopedN("ImGuiRttPasses");
-            ImGuiContext* mainCtx   = ImGui::GetCurrentContext();
-            ImFontAtlas*  sharedFonts = ImGui::GetIO().Fonts; // main context is current here
-
-            for (auto& [renderTargetId, imguiDrawCallback] : mPendingImguiRttPasses)
-            {
-                if (!mRenderTargets.contains(renderTargetId.id)) continue;
-                RenderTargetPack& renderTargetPack = mRenderTargets.at(renderTargetId.id);
-                if (!renderTargetPack.dRenderTargetOpt.has_value()) continue;
-                if (!imguiDrawCallback) continue;
-
-                const DRenderTarget& dRenderTarget = renderTargetPack.dRenderTargetOpt.value();
-                const glm::vec4& clearColor        = renderTargetPack.renderTarget.mClearColor;
-
-                // Lazy-create the secondary context for this RTT.
-                ImGuiContext*& rttCtx = mRenderTargetImguiContexts[renderTargetId.id];
-                if (rttCtx == nullptr)
-                {
-                    rttCtx = ImGui::CreateContext(sharedFonts); // shared atlas
-                    ImGui::SetCurrentContext(rttCtx);
-                    ImGuiIO& rttIo = ImGui::GetIO();
-                    rttIo.IniFilename             = nullptr;
-                    rttIo.BackendPlatformName     = "nothofagus_rtt_headless";
-                    rttIo.BackendPlatformUserData = nullptr;
-                    rttIo.DisplaySize = ImVec2(
-                        static_cast<float>(dRenderTarget.size.x),
-                        static_cast<float>(dRenderTarget.size.y));
-                    mBackend.initImguiForRenderTarget(dRenderTarget);
-                }
-
-                ImGui::SetCurrentContext(rttCtx);
-                ImGuiIO& io = ImGui::GetIO();
-                io.DisplaySize = ImVec2(
-                    static_cast<float>(dRenderTarget.size.x),
-                    static_cast<float>(dRenderTarget.size.y));
-                io.DeltaTime = std::max(deltaTimeMS * 0.001f, 1e-6f);
-
-                mBackend.imguiNewFrameForRenderTarget(dRenderTarget);
-                ImGui::NewFrame();
-
-                imguiDrawCallback();
-
-                ImGui::Render();
-
-                mBackend.beginRttPass(dRenderTarget, clearColor);
-                mBackend.renderImguiDrawDataToRenderTarget(ImGui::GetDrawData(), dRenderTarget);
-                mBackend.endRttPass();
-
-                ImGui::SetCurrentContext(mainCtx);
-            }
-            mPendingImguiRttPasses.clear();
-        }
+        mImguiRtt.flushPending(deltaTimeMS, ImGui::GetIO().Fonts);
     }
 
     mBackend.beginMainPass(mGameViewport);
