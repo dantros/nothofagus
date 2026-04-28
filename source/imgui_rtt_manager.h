@@ -1,6 +1,7 @@
 #pragma once
 
-#include "canvas.h"
+#include "imgui_draw_callback.h"
+#include "render_target.h"
 #include "render_target_container.h"
 #include "backends/render_backend_select.h"
 #include <vector>
@@ -23,7 +24,7 @@ public:
     ImguiRttManager(ActiveBackend& backend, RenderTargetContainer& renderTargets);
 
     /// Queue an ImGui draw callback to run against renderTargetId this frame.
-    void enqueue(RenderTargetId renderTargetId, Canvas::ImguiDrawCallback imguiDrawCallback);
+    void enqueue(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);
 
     /// Drain the queue: lazy-create the secondary context per RTT, run the
     /// callback, submit through the backend's RTT pass methods.
@@ -42,7 +43,7 @@ public:
 private:
     ActiveBackend&         mBackend;
     RenderTargetContainer& mRenderTargets;
-    std::vector<std::pair<RenderTargetId, Canvas::ImguiDrawCallback>> mPendingPasses;
+    std::vector<std::pair<RenderTargetId, ImguiDrawCallback>> mPendingPasses;
     std::unordered_map<std::size_t /*RenderTargetId*/, ImGuiContext*> mContexts;
 };
 

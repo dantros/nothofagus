@@ -104,7 +104,7 @@ public:
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 
-    void renderImguiTo(RenderTargetId renderTargetId, Canvas::ImguiDrawCallback imguiDrawCallback);
+    void renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 

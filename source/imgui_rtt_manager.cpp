@@ -10,7 +10,7 @@ ImguiRttManager::ImguiRttManager(ActiveBackend& backend, RenderTargetContainer& 
     : mBackend(backend), mRenderTargets(renderTargets)
 {}
 
-void ImguiRttManager::enqueue(RenderTargetId renderTargetId, Canvas::ImguiDrawCallback imguiDrawCallback)
+void ImguiRttManager::enqueue(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback)
 {
     mPendingPasses.emplace_back(renderTargetId, std::move(imguiDrawCallback));
 }

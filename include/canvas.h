@@ -7,6 +7,7 @@
 #include "controller.h"
 #include "tint.h"
 #include "screen_size.h"
+#include "imgui_draw_callback.h"
 #include <memory>
 #include <functional>
 #include <string>
@@ -128,8 +129,6 @@ public:
     TextureId renderTargetTexture(RenderTargetId renderTargetId) const;
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
-
-    using ImguiDrawCallback = std::function<void()>;
 
     /**
      * @brief Queue an ImGui draw callback to be rendered into the given render target.

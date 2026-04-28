@@ -388,7 +388,7 @@ void Canvas::CanvasImpl::renderTo(RenderTargetId renderTargetId, std::vector<Bel
     mPendingRttPasses.emplace_back(renderTargetId, std::move(bellotaIds));
 }
 
-void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, Canvas::ImguiDrawCallback imguiDrawCallback)
+void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback)
 {
     mImguiRtt.enqueue(renderTargetId, std::move(imguiDrawCallback));
 }
