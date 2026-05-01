@@ -9,10 +9,13 @@
 #include "screen_size.h"
 #include "imgui_draw_callback.h"
 #include "imgui_font_id.h"
+#include "imgui_font_source_id.h"
 #include <memory>
 #include <functional>
 #include <string>
 #include <vector>
+#include <span>
+#include <cstddef>
 
 struct ImFont;
 
@@ -161,22 +164,65 @@ public:
     void renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback);
 
     /**
-     * @brief Bake an ImGui font at the requested pixel size and return a
-     *        stable handle to it.
+     * @brief Register a TTF buffer as a new font source.
      *
-     * Bakes a font in **logical pixels** (no OS-DPI scaling) and stores it
-     * in an IndexedContainer keyed by an `ImguiFontId`, or returns the
-     * existing id if a font has already been baked at this size. Intended
+     * Bytes are copied internally; the caller's span only needs to live
+     * until this call returns. Safe to call before run() OR from inside an
+     * update / renderImguiTo callback. Result is immediately usable as the
+     * source argument to `bakeImguiFont(source, sizePx)`; the resulting
+     * ImguiFontId becomes resolvable on the NEXT frame if the bake call
+     * lands while ImGui has the atlas locked (same deferred-bake semantics
+     * as `bakeImguiFont`).
+     *
+     * @param ttfBytes    Raw TTF file bytes. Copied internally.
+     * @param glyphRange  Glyph-range preset for this source (default = Latin).
+     * @return Stable handle valid until `removeImguiFontSource(thisId)`.
+     */
+    ImguiFontSourceId addImguiFontSource(std::span<const std::byte> ttfBytes,
+                                         GlyphRange glyphRange = GlyphRange::Default);
+
+    /**
+     * @brief Drop a previously registered font source.
+     *
+     * Schedules a deferred atlas rebuild; every `ImguiFontId` baked from
+     * this source is also invalidated (cascade-removed). Safe inside a
+     * frame callback. Asserts (during the drain) that the id is registered.
+     * Removing the canvas's built-in default source is forbidden and will
+     * fire a `debugCheck`.
+     */
+    void removeImguiFontSource(ImguiFontSourceId sourceId);
+
+    /**
+     * @brief Id of the canvas's built-in default font source (the embedded
+     *        Roboto blob registered at construction).
+     *
+     * Stable for the canvas lifetime. Pass this to `bakeImguiFont(...)` when
+     * no custom TTF is required. Sibling accessor to `defaultImguiFontId()`,
+     * which returns the secondary-context default *font* (a baked size from
+     * this source).
+     */
+    ImguiFontSourceId defaultImguiFontSourceId() const;
+
+    /**
+     * @brief Bake an ImGui font from a previously-added source at the
+     *        requested pixel size and return a stable handle to it.
+     *
+     * Repeat calls with the same `(sourceId, sizePx)` return the same id
+     * (dedup). Bakes in **logical pixels** (no OS-DPI scaling) — intended
      * for diegetic UI inside RTTs where one RTT pixel maps to one
-     * game-canvas pixel. Resolve the id to an `ImFont*` via `getImguiFontPtr(id)`
-     * and pass that to `ImGui::PushFont(...)` / `ImGui::PopFont()` inside
-     * a `renderImguiTo()` callback.
+     * game-canvas pixel. Resolve the id to an `ImFont*` via
+     * `getImguiFontPtr(id)` and pass that to `ImGui::PushFont(...)` /
+     * `ImGui::PopFont()`, or use the higher-level `pushImguiFont(id)` /
+     * `popImguiFont()` so user code never has to mention `ImFont`.
+     *
+     * To bake from the embedded default font, pass
+     * `defaultImguiFontSourceId()` as `sourceId`.
      *
      * The returned `ImguiFontId` is **stable across atlas rebuilds**: when
-     * `removeImguiFont` triggers a Clear+re-bake of the atlas, the cache
-     * walks every surviving entry and patches its underlying `ImFont*` in
-     * place — the id stays valid; only the resolved pointer changes.
-     * Repeat calls with the same `sizePx` return the same id (dedup).
+     * any rebuild (e.g. from a deferred bake or `removeImguiFontSource`)
+     * fires, the cache walks every surviving entry and patches its
+     * underlying `ImFont*` in place — the id stays valid; only the
+     * resolved pointer changes.
      *
      * Call-site behaviour:
      *   - **Outside an ImGui frame** (before first run()/tick()): the bake
@@ -184,17 +230,15 @@ public:
      *     immediately.
      *   - **Inside an ImGui frame** (run/tick update or renderImguiTo
      *     callback): the entry is created with a null pointer; a rebuild
-     *     fires at the start of the next frame. `getImguiFontPtr(id)` returns
-     *     nullptr until the rebuild completes (one frame later).
+     *     fires at the start of the next frame. `getImguiFontPtr(id)`
+     *     returns nullptr until the rebuild completes (one frame later).
      *
-     * The id is only invalidated by `removeImguiFont(thisId)`. Callers
-     * wanting to mutate per-font state like `ImFont::Scale` should be aware
-     * they are sharing it with every other caller of the same size.
-     *
-     * @return Stable handle. Use `getImguiFontPtr(id)` to resolve to the current
-     *         `ImFont*`; pass that pointer to ImGui directly.
+     * The id is invalidated by `removeImguiFont(thisId)` or by
+     * `removeImguiFontSource(sourceId)` (cascade). Callers wanting to mutate
+     * per-font state like `ImFont::Scale` should be aware they are sharing
+     * it with every other caller of the same `(sourceId, sizePx)` pair.
      */
-    ImguiFontId bakeImguiFont(float sizePx);
+    ImguiFontId bakeImguiFont(ImguiFontSourceId sourceId, float sizePx);
 
     /**
      * @brief Remove a previously baked ImGui font, freeing its atlas glyphs.

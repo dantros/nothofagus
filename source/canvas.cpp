@@ -141,9 +141,24 @@ void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, Im
     mCanvasImpl->renderImguiTo(renderTargetId, fontId, std::move(imguiDrawCallback));
 }
 
-ImguiFontId Canvas::bakeImguiFont(float sizePx)
+ImguiFontSourceId Canvas::addImguiFontSource(std::span<const std::byte> ttfBytes, GlyphRange glyphRange)
 {
-    return mCanvasImpl->bakeImguiFont(sizePx);
+    return mCanvasImpl->addImguiFontSource(ttfBytes, glyphRange);
+}
+
+void Canvas::removeImguiFontSource(ImguiFontSourceId sourceId)
+{
+    mCanvasImpl->removeImguiFontSource(sourceId);
+}
+
+ImguiFontSourceId Canvas::defaultImguiFontSourceId() const
+{
+    return mCanvasImpl->defaultImguiFontSourceId();
+}
+
+ImguiFontId Canvas::bakeImguiFont(ImguiFontSourceId sourceId, float sizePx)
+{
+    return mCanvasImpl->bakeImguiFont(sourceId, sizePx);
 }
 
 void Canvas::removeImguiFont(ImguiFontId id)
