@@ -4,7 +4,7 @@
 
 int main()
 {
-    Nothofagus::Canvas canvas({192, 160}, "Hello ImGui RTT", {0.10f, 0.10f, 0.14f}, 5);
+    Nothofagus::Canvas canvas({256, 224}, "Hello ImGui RTT", {0.10f, 0.10f, 0.14f}, 5);
 
     // Render target large enough to host a small ImGui panel.
     constexpr Nothofagus::ScreenSize renderTargetSize{160, 120};
@@ -32,6 +32,9 @@ int main()
         // Queue the ImGui content to be rendered into the RTT this frame.
         canvas.renderImguiTo(renderTargetId, [&]
         {
+            // Scale the default font down so glyphs render at ~8 px in the RTT.
+            ImGui::GetIO().FontGlobalScale = 12.0f / Nothofagus::DEFAULT_IMGUI_FONT_SIZE;
+
             ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
             ImGui::SetNextWindowSize(ImVec2(
                 static_cast<float>(renderTargetSize.width),

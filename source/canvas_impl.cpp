@@ -105,6 +105,20 @@ Canvas::CanvasImpl::CanvasImpl(
         imguiFontSize * contentScale
     );
     io.FontGlobalScale = 1.0f / contentScale;
+
+    // Second font baked at the unscaled imguiFontSize for ImGui-into-RTT contexts.
+    // RTT pixels are game-canvas pixels — OS DPI is irrelevant there, so we want
+    // glyphs rasterized at their logical size, not the framebuffer size.
+    // FontDataOwnedByAtlas = false because the same TTF buffer is already owned
+    // by the first AddFont call; without this we'd double-free on atlas destruction.
+    ImFontConfig rttFontConfig;
+    rttFontConfig.FontDataOwnedByAtlas = false;
+    mRttFont = io.Fonts->AddFontFromMemoryTTF(
+        assets_Roboto_VariableFont_wdth_wght_ttf,
+        assets_Roboto_VariableFont_wdth_wght_ttf_len,
+        imguiFontSize,
+        &rttFontConfig
+    );
 }
 
 Canvas::CanvasImpl::~CanvasImpl()
@@ -717,7 +731,7 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
         // render target, rendered with a pipeline compiled against the RTT render
         // pass (Vulkan) or into the RTT FBO (OpenGL). Lazy context creation on
         // first use; destroyed in removeRenderTarget() and the destructor.
-        mImguiRtt.flushPending(deltaTimeMS, ImGui::GetIO().Fonts);
+        mImguiRtt.flushPending(deltaTimeMS, ImGui::GetIO().Fonts, mRttFont);
     }
 
     mBackend.beginMainPass(mGameViewport);

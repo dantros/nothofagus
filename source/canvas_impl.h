@@ -11,6 +11,8 @@
 #include <vector>
 #include <utility>
 
+struct ImFont;
+
 namespace Nothofagus
 {
 
@@ -219,6 +221,11 @@ private:
     /// Owns the queue of pending ImGui-RTT passes plus per-RTT secondary ImGuiContexts.
     /// Declared after mBackend / mRenderTargets so initialization order is well-defined.
     ImguiRttManager mImguiRtt;
+
+    /// Font rasterized at the unscaled imguiFontSize, used as the default in
+    /// secondary ImGui contexts attached to RTTs. RTT pixels are game-canvas
+    /// pixels, so OS DPI scaling does not apply.
+    ImFont* mRttFont{nullptr};
 
     bool mStats; ///< Flag to indicate whether stats should be displayed.
     bool mHeadless{false}; ///< When true, the window is hidden (no visible UI).

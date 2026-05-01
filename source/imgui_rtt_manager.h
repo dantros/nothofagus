@@ -12,6 +12,7 @@
 
 struct ImGuiContext;
 struct ImFontAtlas;
+struct ImFont;
 
 namespace Nothofagus
 {
@@ -42,7 +43,11 @@ public:
     /// callback, submit through the backend's RTT pass methods.
     /// Caller must have the main ImGuiContext current on entry; this method
     /// restores it before returning.
-    void flushPending(float deltaTimeMS, ImFontAtlas* sharedFonts);
+    /// `rttFont` (optional) is set as `io.FontDefault` on each secondary
+    /// context — pass a font baked at the unscaled `imguiFontSize` so glyphs
+    /// render crisp at their logical pixel height in RTT pixels (RTT pixels
+    /// are game-canvas pixels — OS DPI scaling has no meaning there).
+    void flushPending(float deltaTimeMS, ImFontAtlas* sharedFonts, ImFont* rttFont);
 
     /// Tear down the secondary context for one render target (no-op if absent).
     /// Safe to call even if the RTT's dRenderTargetOpt is empty.

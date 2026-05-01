@@ -44,7 +44,7 @@ bool shutdownContextBackendIfAlive(
 
 }
 
-void ImguiRttManager::flushPending(float deltaTimeMS, ImFontAtlas* sharedFonts)
+void ImguiRttManager::flushPending(float deltaTimeMS, ImFontAtlas* sharedFonts, ImFont* rttFont)
 {
     if (mPendingPasses.empty()) return;
 
@@ -74,6 +74,9 @@ void ImguiRttManager::flushPending(float deltaTimeMS, ImFontAtlas* sharedFonts)
             rttIo.DisplaySize = ImVec2(
                 static_cast<float>(dRenderTarget.size.x),
                 static_cast<float>(dRenderTarget.size.y));
+            // Default to the unscaled-size RTT font so glyphs are crisp at
+            // their logical pixel height regardless of OS DPI.
+            if (rttFont != nullptr) rttIo.FontDefault = rttFont;
             mBackend.initImguiForRenderTarget(dRenderTarget);
         }
 
