@@ -8,12 +8,24 @@
 #include <utility>
 #include <unordered_map>
 #include <cstddef>
+#include <memory>
 
 struct ImGuiContext;
 struct ImFontAtlas;
 
 namespace Nothofagus
 {
+
+/// Custom deleter that destroys an ImGuiContext via ImGui::DestroyContext.
+/// Allows std::unique_ptr<ImGuiContext, ...> to manage lifetime correctly
+/// (DestroyContext is the only valid way to dispose of an ImGuiContext;
+/// `delete` would be undefined behaviour).
+struct ImGuiContextDeleter
+{
+    void operator()(ImGuiContext* ctx) const noexcept;
+};
+
+using ImGuiContextPtr = std::unique_ptr<ImGuiContext, ImGuiContextDeleter>;
 
 /// Owns the queue of pending ImGui-RTT passes plus the per-RTT secondary
 /// ImGuiContext cache. Encapsulates the lazy-create-on-first-use pattern and
@@ -44,7 +56,7 @@ private:
     ActiveBackend&         mBackend;
     RenderTargetContainer& mRenderTargets;
     std::vector<std::pair<RenderTargetId, ImguiDrawCallback>> mPendingPasses;
-    std::unordered_map<std::size_t /*RenderTargetId*/, ImGuiContext*> mContexts;
+    std::unordered_map<std::size_t /*RenderTargetId*/, ImGuiContextPtr> mContexts;
 };
 
 }

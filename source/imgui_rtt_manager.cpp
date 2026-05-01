@@ -6,6 +6,11 @@
 namespace Nothofagus
 {
 
+void ImGuiContextDeleter::operator()(ImGuiContext* ctx) const noexcept
+{
+    if (ctx) ImGui::DestroyContext(ctx);
+}
+
 ImguiRttManager::ImguiRttManager(ActiveBackend& backend, RenderTargetContainer& renderTargets)
     : mBackend(backend), mRenderTargets(renderTargets)
 {}
@@ -18,10 +23,11 @@ void ImguiRttManager::enqueue(RenderTargetId renderTargetId, ImguiDrawCallback i
 namespace
 {
 
-// Tear down the per-RTT ImGui state on the backend, then destroy the context.
-// Caller is responsible for save/restore of the main context and for erasing
-// the map entry. Returns true if any work happened.
-bool destroyContextIfAlive(
+// Tear down the per-RTT ImGui state on the backend. The owning unique_ptr is
+// responsible for destroying the ImGuiContext itself afterwards (on erase/clear).
+// Caller is responsible for save/restore of the main context.
+// Returns true if any backend shutdown work happened.
+bool shutdownContextBackendIfAlive(
     std::size_t renderTargetIndex,
     ImGuiContext* rttCtx,
     ActiveBackend& backend,
@@ -33,7 +39,6 @@ bool destroyContextIfAlive(
     if (!pack.dRenderTargetOpt.has_value()) return false;
     ImGui::SetCurrentContext(rttCtx);
     backend.shutdownImguiForRenderTarget(pack.dRenderTargetOpt.value());
-    ImGui::DestroyContext(rttCtx);
     return true;
 }
 
@@ -57,11 +62,11 @@ void ImguiRttManager::flushPending(float deltaTimeMS, ImFontAtlas* sharedFonts)
         const glm::vec4& clearColor        = renderTargetPack.renderTarget.mClearColor;
 
         // Lazy-create the secondary context for this RTT.
-        ImGuiContext*& rttCtx = mContexts[renderTargetId.id];
-        if (rttCtx == nullptr)
+        ImGuiContextPtr& rttCtx = mContexts[renderTargetId.id];
+        if (!rttCtx)
         {
-            rttCtx = ImGui::CreateContext(sharedFonts); // shared atlas
-            ImGui::SetCurrentContext(rttCtx);
+            rttCtx.reset(ImGui::CreateContext(sharedFonts)); // shared atlas
+            ImGui::SetCurrentContext(rttCtx.get());
             ImGuiIO& rttIo = ImGui::GetIO();
             rttIo.IniFilename             = nullptr;
             rttIo.BackendPlatformName     = "nothofagus_rtt_headless";
@@ -72,7 +77,7 @@ void ImguiRttManager::flushPending(float deltaTimeMS, ImFontAtlas* sharedFonts)
             mBackend.initImguiForRenderTarget(dRenderTarget);
         }
 
-        ImGui::SetCurrentContext(rttCtx);
+        ImGui::SetCurrentContext(rttCtx.get());
         ImGuiIO& io = ImGui::GetIO();
         io.DisplaySize = ImVec2(
             static_cast<float>(dRenderTarget.size.x),
@@ -102,10 +107,10 @@ void ImguiRttManager::releaseContext(RenderTargetId renderTargetId)
         return;
 
     ImGuiContext* mainCtx = ImGui::GetCurrentContext();
-    destroyContextIfAlive(renderTargetId.id, it->second, mBackend, mRenderTargets);
+    shutdownContextBackendIfAlive(renderTargetId.id, it->second.get(), mBackend, mRenderTargets);
     ImGui::SetCurrentContext(mainCtx);
 
-    mContexts.erase(it);
+    mContexts.erase(it); // unique_ptr deleter calls ImGui::DestroyContext.
 }
 
 void ImguiRttManager::releaseAll()
@@ -114,8 +119,8 @@ void ImguiRttManager::releaseAll()
 
     ImGuiContext* mainCtx = ImGui::GetCurrentContext();
     for (auto& [renderTargetIndex, rttCtx] : mContexts)
-        destroyContextIfAlive(renderTargetIndex, rttCtx, mBackend, mRenderTargets);
-    mContexts.clear();
+        shutdownContextBackendIfAlive(renderTargetIndex, rttCtx.get(), mBackend, mRenderTargets);
+    mContexts.clear(); // unique_ptr deleters call ImGui::DestroyContext for each.
     ImGui::SetCurrentContext(mainCtx);
 }
 
