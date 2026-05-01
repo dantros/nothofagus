@@ -383,6 +383,11 @@ auto renderTargetId = canvas.addRenderTarget({160, 120});
 canvas.setRenderTargetClearColor(renderTargetId, {0.02f, 0.04f, 0.12f, 1.0f});
 auto displayId = canvas.addBellota({{{96.0f, 80.0f}}, canvas.renderTargetTexture(renderTargetId)});
 
+// Optional: bake an extra font at a specific *logical* (game-canvas) pixel
+// size for crisp glyphs inside the RTT. Dedups by size — repeat calls with
+// the same sizePx return the same ImFont&. Must happen before run()/tick().
+ImFont& diegeticFont = canvas.bakeImguiFont(12.0f);
+
 float sliderValue = 0.42f;
 int   clickCount  = 0;
 
@@ -390,12 +395,16 @@ canvas.run([&](float dt) {
     // Queue ImGui draws for the RTT. The callback runs on a secondary ImGuiContext
     // owned by this render target — state is isolated from the main UI.
     canvas.renderImguiTo(renderTargetId, [&] {
+        ImGui::PushFont(&diegeticFont);  // crisp 12 px glyphs in RTT pixel space
+
         ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(160, 120), ImGuiCond_Always);
         ImGui::Begin("In-World Panel", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
         ImGui::SliderFloat("value", &sliderValue, 0.0f, 1.0f);
         if (ImGui::Button("click")) clickCount++;
         ImGui::End();
+
+        ImGui::PopFont();
     });
 
     // Main-canvas ImGui draws normally on the main context.
@@ -404,14 +413,24 @@ canvas.run([&](float dt) {
 ```
 
 **How it works (multi-context design):**
-- Each RTT that calls `renderImguiTo` owns its own secondary `ImGuiContext`, lazily created on first use and torn down in `removeRenderTarget()` / the `Canvas` destructor. The font atlas is shared with the main context.
+- The ImGui-RTT flow is encapsulated in `ImguiRttManager` ([source/imgui_rtt_manager.h](source/imgui_rtt_manager.h)). It owns the per-frame queue of pending RTT passes and the per-RTT secondary `ImGuiContext` cache (`std::unordered_map<RenderTargetId, std::unique_ptr<ImGuiContext, ImGuiContextDeleter>>`). Lazy-create on first use; tear-down on `removeRenderTarget()` and in the `Canvas` destructor (before `mBackend.shutdown()`).
 - The callback runs during the pre-main RTT pass phase on the secondary context — `ImGui::Begin/End/Text/...` calls inside it target that context's draw list only.
 - The OpenGL ImGui backend is FBO-agnostic; the Vulkan backend's per-context pipeline is built against `mRttRenderPass`, so it is render-pass-compatible with `beginRttPass`. **No changes to `imgui_impl_opengl3.*` / `imgui_impl_vulkan.*` are required.**
 - The platform backend (GLFW/SDL3) is skipped for secondary contexts — they run headless-style with `IO.DisplaySize` / `IO.DeltaTime` set manually. This means the feature works identically across GLFW+OpenGL, GLFW+Vulkan, SDL3+OpenGL, SDL3+Vulkan, and headless Vulkan.
 
+**Font handling — `ImguiRttFontCache`:**
+
+`ImguiRttFontCache` ([source/imgui_rtt_font_cache.h](source/imgui_rtt_font_cache.h), held by `ImguiRttManager`) owns ImFont* handles for fonts the RTT flow uses. The atlas itself is shared with the main context — the cache stores non-owning observers.
+
+- At canvas construction, the cache is bound to the embedded Roboto TTF buffer (RAII via `ImguiRttManager` ctor — no separate `setFontData` step). It bakes one font at the unscaled `imguiFontSize` and registers it as `io.FontDefault` for every secondary RTT context. Result: ImGui text inside an RTT renders at its logical pixel height *in RTT pixels* — OS DPI scaling has no meaning in the game-canvas pixel grid, and the secondary-context default deliberately ignores it.
+- `Canvas::bakeImguiFont(float sizePx) -> ImFont&` ([include/canvas.h](include/canvas.h)) bakes additional sizes on demand via the cache. Repeat calls with the same `sizePx` return the same `ImFont&` — ImGui itself does not dedupe `AddFontFromMemoryTTF` calls by size, so the cache prevents bloating the atlas with duplicate glyph rasterizations. Must be called before the first `run()`/`tick()` (atlas is uploaded to the GPU on the first frame).
+- Use the returned reference with `ImGui::PushFont(&font) / PopFont()` inside a `renderImguiTo` callback for crisp glyphs at exactly that pixel size.
+- Lookup-only access: `cache.find(sizePx) -> ImFont*` (nullptr on miss) and `cache.at(sizePx) -> ImFont&` (asserts on miss) — mirrors `std::map::find` / `std::map::at` for callers that want to branch on cache state without baking.
+
 **Limitations (v1):**
 - **Input is not forwarded** to the secondary context — widgets render correctly but mouse/keyboard events only reach the main context. Forwarding canvas-space mouse coords into the RTT's `IO.MousePos` is a natural follow-up.
 - Each secondary context has its own ID stack, window state, and widget values — widgets with the same name in different RTTs do not collide, and neither inherits state from the main UI.
+- **Font removal is not yet implemented.** The atlas is append-only at runtime: `bakeImguiFont` after the first frame has no effect, and there is no API to free a baked font. ImGui has no `RemoveFont` API; supporting removal requires a deferred full-atlas-rebuild + GPU font texture re-upload, which is planned but not shipped.
 
 ### Screenshot
 
