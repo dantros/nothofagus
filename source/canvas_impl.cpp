@@ -93,18 +93,22 @@ Canvas::CanvasImpl::CanvasImpl(
     mBackend.initImGuiRenderer();
 
     // Font loading — must happen after ImGui platform and renderer are initialized.
-    // ImGui's DisplayFramebufferScale already maps display coordinates to framebuffer
-    // pixels, so do NOT call style.ScaleAllSizes(contentScale) — that would double-scale
-    // padding/borders on HiDPI displays. Rasterize the font at framebuffer resolution for
-    // crisp glyphs, then compensate with FontGlobalScale so layout proportions stay correct.
+    // We want main-context UI to scale with the OS DPI factor (i.e. 14 px font
+    // at 100% becomes 21 px at 150%) and stay crisp. ImGui draws text quads in
+    // logical (DisplaySize) coords, so a font with FontSize=N renders at
+    // N*contentScale framebuffer pixels. To keep glyphs sharp, bake the atlas
+    // at that final framebuffer size — that's why size_pixels is multiplied
+    // by contentScale twice: once to get the logical size we want for layout,
+    // once to convert that to framebuffer pixels for the atlas raster.
+    // (Do NOT call style.ScaleAllSizes(contentScale) — DisplayFramebufferScale
+    // already handles padding/borders; that would double-scale them.)
     ImGuiIO& io = ImGui::GetIO();
     const float contentScale = mWindow->contentScale();
     io.Fonts->AddFontFromMemoryTTF(
         assets_Roboto_VariableFont_wdth_wght_ttf,
         assets_Roboto_VariableFont_wdth_wght_ttf_len,
-        imguiFontSize * contentScale
+        imguiFontSize * contentScale * contentScale
     );
-    io.FontGlobalScale = 1.0f / contentScale;
 
     // Hand the embedded TTF buffer to the RTT font cache (only this TU
     // includes roboto_font.h, so the data lives here). Then bake the unscaled
