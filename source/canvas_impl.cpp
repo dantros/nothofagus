@@ -405,7 +405,7 @@ void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawC
     mImguiRtt.enqueue(renderTargetId, std::move(imguiDrawCallback));
 }
 
-ImFont& Canvas::CanvasImpl::addImguiFont(float sizePx)
+ImFont& Canvas::CanvasImpl::bakeImguiFont(float sizePx)
 {
     return mImguiRtt.fonts().bake(sizePx);
 }

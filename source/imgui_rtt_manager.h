@@ -30,7 +30,7 @@ using ImGuiContextPtr = std::unique_ptr<ImGuiContext, ImGuiContextDeleter>;
 
 /// Owns ImFont* handles for fonts the RTT flow uses: the default font baked
 /// into newly-created secondary contexts, plus a size→ImFont cache that
-/// dedupes Canvas::addImguiFont() calls. ImFonts are owned by the shared
+/// dedupes Canvas::bakeImguiFont() calls. ImFonts are owned by the shared
 /// ImFontAtlas; this class only stores non-owning observers.
 class ImguiRttFontCache
 {

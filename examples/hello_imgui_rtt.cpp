@@ -19,7 +19,7 @@ int main()
 
     // Bake a 12 px font into the shared atlas. Used inside the RTT callback via
     // PushFont/PopFont so glyphs are crisp at the RTT's native resolution.
-    ImFont& diegeticFont = canvas.addImguiFont(12.0f);
+    ImFont& diegeticFont = canvas.bakeImguiFont(12.0f);
 
     float sliderValue = 0.42f;
     bool  checkOn     = true;
