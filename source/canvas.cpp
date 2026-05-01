@@ -141,6 +141,26 @@ void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imgu
     mCanvasImpl->renderImguiTo(renderTargetId, std::move(imguiDrawCallback));
 }
 
+void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback)
+{
+    mCanvasImpl->renderImguiTo(renderTargetId,
+        [this, fontId, cb = std::move(imguiDrawCallback)] {
+            // Graceful fallback: if the bake is still pending or the id was
+            // removed, run the callback without pushing a font (the secondary
+            // context's io.FontDefault stays in effect).
+            if (isImguiFontReady(fontId))
+            {
+                pushImguiFont(fontId);
+                cb();
+                popImguiFont();
+            }
+            else
+            {
+                cb();
+            }
+        });
+}
+
 ImguiFontId Canvas::bakeImguiFont(float sizePx)
 {
     return mCanvasImpl->bakeImguiFont(sizePx);
@@ -151,9 +171,24 @@ void Canvas::removeImguiFont(ImguiFontId id)
     mCanvasImpl->removeImguiFont(id);
 }
 
-ImFont* Canvas::imguiFont(ImguiFontId id) const
+bool Canvas::isImguiFontReady(ImguiFontId id) const
 {
-    return mCanvasImpl->imguiFont(id);
+    return mCanvasImpl->isImguiFontReady(id);
+}
+
+ImFont* Canvas::getImguiFontPtr(ImguiFontId id) const
+{
+    return mCanvasImpl->getImguiFontPtr(id);
+}
+
+void Canvas::pushImguiFont(ImguiFontId id)
+{
+    mCanvasImpl->pushImguiFont(id);
+}
+
+void Canvas::popImguiFont()
+{
+    mCanvasImpl->popImguiFont();
 }
 
 void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)

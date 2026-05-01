@@ -112,7 +112,13 @@ public:
 
     void removeImguiFont(ImguiFontId id);
 
-    ImFont* imguiFont(ImguiFontId id) const;
+    bool isImguiFontReady(ImguiFontId id) const;
+
+    ImFont* getImguiFontPtr(ImguiFontId id) const;
+
+    void pushImguiFont(ImguiFontId id);
+
+    void popImguiFont();
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 

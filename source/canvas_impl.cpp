@@ -424,9 +424,27 @@ void Canvas::CanvasImpl::removeImguiFont(ImguiFontId id)
     mPendingFontOps.push_back({PendingFontOp::Kind::Remove, id});
 }
 
-ImFont* Canvas::CanvasImpl::imguiFont(ImguiFontId id) const
+bool Canvas::CanvasImpl::isImguiFontReady(ImguiFontId id) const
 {
-    return mImguiRtt.fonts().get(id);
+    return mImguiRtt.fonts().get(id) != nullptr;
+}
+
+ImFont* Canvas::CanvasImpl::getImguiFontPtr(ImguiFontId id) const
+{
+    return mImguiRtt.fonts().get(id);   // null when unknown or bake still pending
+}
+
+void Canvas::CanvasImpl::pushImguiFont(ImguiFontId id)
+{
+    ImFont* font = getImguiFontPtr(id);
+    debugCheck(font != nullptr,
+        "Canvas::pushImguiFont: id is not registered or its bake is still pending — guard with isImguiFontReady()");
+    ImGui::PushFont(font);
+}
+
+void Canvas::CanvasImpl::popImguiFont()
+{
+    ImGui::PopFont();
 }
 
 void Canvas::CanvasImpl::drainPendingFontOps()

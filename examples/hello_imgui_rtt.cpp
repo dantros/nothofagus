@@ -40,14 +40,11 @@ int main()
         canvas.bellota(displayBellotaId).transform().angle() = 0.0005f * time;
 
         // Queue the ImGui content to be rendered into the RTT this frame.
-        canvas.renderImguiTo(renderTargetId, [&]
+        // The id-bearing renderImguiTo overload auto-pushes diegeticId for
+        // the duration of the callback (no ImFont* in user code, falls back
+        // to the secondary-context default if the bake is still pending).
+        canvas.renderImguiTo(renderTargetId, diegeticId, [&]
         {
-            // Resolve diegeticId to its current pointer. The id was captured
-            // once at startup and stays stable across rebuilds; only the
-            // resolved pointer changes when removeImguiFont(other id) fires.
-            ImFont* diegeticFont = canvas.imguiFont(diegeticId);
-            if (diegeticFont) ImGui::PushFont(diegeticFont);
-
             ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
             ImGui::SetNextWindowSize(ImVec2(
                 static_cast<float>(renderTargetSize.width),
@@ -67,16 +64,16 @@ int main()
             ImGui::Text("= %d", clickCount);
             ImGui::ProgressBar(0.5f + 0.5f * std::sin(0.003f * time));
 
-            // Conditional 16 px section — id resolves to nullptr while a
-            // deferred bake is pending (one frame after the Bake button).
+            // Mid-callback font override via the id-based push/pop helpers.
+            // isImguiFontReady is false during the one-frame deferred-bake
+            // window after the Bake button click.
             if (wantSmall16)
             {
-                ImFont* small16 = canvas.imguiFont(small16Id);
-                if (small16)
+                if (canvas.isImguiFontReady(small16Id))
                 {
-                    ImGui::PushFont(small16);
+                    canvas.pushImguiFont(small16Id);
                     ImGui::Text("Extra 16 px");
-                    ImGui::PopFont();
+                    canvas.popImguiFont();
                 }
                 else
                 {
@@ -84,8 +81,6 @@ int main()
                 }
             }
             ImGui::End();
-
-            if (diegeticFont) ImGui::PopFont();
         });
 
         // Main-canvas ImGui — proves the main context is unaffected.
