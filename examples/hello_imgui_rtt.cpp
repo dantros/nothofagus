@@ -7,11 +7,8 @@ int main()
     Nothofagus::Canvas canvas({192, 160}, "Hello ImGui RTT", {0.10f, 0.10f, 0.14f}, 5);
 
     // Render target large enough to host a small ImGui panel.
-    const int renderTargetWidth  = 160;
-    const int renderTargetHeight = 120;
-    Nothofagus::RenderTargetId renderTargetId =
-        canvas.addRenderTarget({static_cast<unsigned int>(renderTargetWidth),
-                                static_cast<unsigned int>(renderTargetHeight)});
+    constexpr Nothofagus::ScreenSize renderTargetSize{160, 120};
+    Nothofagus::RenderTargetId renderTargetId = canvas.addRenderTarget(renderTargetSize);
     canvas.setRenderTargetClearColor(renderTargetId, {0.02f, 0.04f, 0.12f, 1.0f});
     Nothofagus::TextureId renderTargetTextureId = canvas.renderTargetTexture(renderTargetId);
 
@@ -37,8 +34,8 @@ int main()
         {
             ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
             ImGui::SetNextWindowSize(ImVec2(
-                static_cast<float>(renderTargetWidth),
-                static_cast<float>(renderTargetHeight)), ImGuiCond_Always);
+                static_cast<float>(renderTargetSize.width),
+                static_cast<float>(renderTargetSize.height)), ImGuiCond_Always);
 
             const ImGuiWindowFlags flags =
                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
