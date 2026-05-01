@@ -71,6 +71,7 @@ Canvas::CanvasImpl::CanvasImpl(
     mImguiRtt(mBackend, mRenderTargets,
               assets_Roboto_VariableFont_wdth_wght_ttf,
               assets_Roboto_VariableFont_wdth_wght_ttf_len),
+    mImguiFontSize(imguiFontSize),
     mStats(false),
     mHeadless(headless),
     mGameViewport{0, 0, 0, 0}
@@ -405,9 +406,80 @@ void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawC
     mImguiRtt.enqueue(renderTargetId, std::move(imguiDrawCallback));
 }
 
-ImFont& Canvas::CanvasImpl::bakeImguiFont(float sizePx)
+ImFont* Canvas::CanvasImpl::bakeImguiFont(float sizePx)
 {
-    return mImguiRtt.fonts().bake(sizePx);
+    // Cache hit — atlas already has this size, return immediately.
+    if (ImFont* cached = mImguiRtt.fonts().find(sizePx))
+        return cached;
+
+    // Cache miss + atlas unlocked (we're between Render and the next NewFrame,
+    // typically pre-first-run or post-tick) — bake synchronously.
+    if (!ImGui::GetIO().Fonts->Locked)
+        return &mImguiRtt.fonts().bake(sizePx);
+
+    // Cache miss + atlas locked (we're inside an ImGui frame — between NewFrame
+    // and Render). Defer the bake to the next frame's drain. Caller must
+    // re-poll bakeImguiFont(sameSize) on a later frame to retrieve the pointer.
+    mPendingFontOps.push_back({PendingFontOp::Kind::Bake, sizePx});
+    return nullptr;
+}
+
+void Canvas::CanvasImpl::removeImguiFont(float sizePx)
+{
+    // Always deferred — schedules a full atlas rebuild at the start of the
+    // next frame. Asserting "size was baked" happens during the drain when
+    // the cache's remove() runs.
+    mPendingFontOps.push_back({PendingFontOp::Kind::Remove, sizePx});
+}
+
+void Canvas::CanvasImpl::drainPendingFontOps()
+{
+    if (mPendingFontOps.empty()) return;
+
+    // 1. Apply Remove ops to the cache map (no atlas touch yet). Collect any
+    //    pending Bake sizes for re-bake after Clear.
+    std::vector<float> pendingBakes;
+    for (const auto& op : mPendingFontOps)
+    {
+        if (op.kind == PendingFontOp::Kind::Remove)
+            mImguiRtt.fonts().remove(op.sizePx);
+        else
+            pendingBakes.push_back(op.sizePx);
+    }
+    mPendingFontOps.clear();
+
+    // 2. Snapshot remaining baked sizes from the cache (after removes).
+    std::vector<float> survivors = mImguiRtt.fonts().bakedSizes();
+
+    // 3. Wipe the atlas — every existing ImFont* is now dangling.
+    ImGui::GetIO().Fonts->Clear();
+
+    // 4. Re-add the main HiDPI font using the same recipe as the constructor.
+    const float contentScale = mWindow->contentScale();
+    ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
+        assets_Roboto_VariableFont_wdth_wght_ttf,
+        assets_Roboto_VariableFont_wdth_wght_ttf_len,
+        mImguiFontSize * contentScale * contentScale
+    );
+
+    // 5. Drop dangling pointers from the cache, then re-bake survivors and
+    //    any pending bakes. Each bake produces a fresh ImFont*.
+    mImguiRtt.fonts().invalidate();
+    for (float sz : survivors)
+        mImguiRtt.fonts().bake(sz);
+    for (float sz : pendingBakes)
+        mImguiRtt.fonts().bake(sz);
+
+    // 6. Restore the secondary-context default to a freshly-baked font.
+    mImguiRtt.fonts().setDefaultSize(mImguiFontSize);
+
+    // 7. Refresh io.FontDefault on every alive secondary ImGuiContext —
+    //    their previous pointer was invalidated by the Clear.
+    mImguiRtt.refreshSecondaryContextDefaultFont();
+
+    // 8. Drop the GPU font texture; ImGui's _NewFrame() lazily re-uploads it
+    //    from the rebuilt atlas on its very next call.
+    mBackend.rebuildImguiFontTexture();
 }
 
 void Canvas::CanvasImpl::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
@@ -540,6 +612,13 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
         ZoneScopedN("Input");
         controller.processInputs();
     }
+
+    // Drain any deferred ImGui font ops (bake-on-miss / remove) accumulated
+    // since the previous frame. Atlas is guaranteed unlocked here — between
+    // the previous frame's ImGui::Render() and this frame's ImGui::NewFrame().
+    // Must run BEFORE mBackend.imguiNewFrame() so ImGui_Impl*_NewFrame()'s
+    // lazy font-texture re-upload picks up the rebuilt atlas.
+    drainPendingFontOps();
 
     // Get current framebuffer size and compute letterboxed viewport
     auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();

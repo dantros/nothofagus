@@ -17,14 +17,15 @@ int main()
     Nothofagus::BellotaId displayBellotaId =
         canvas.addBellota({{{96.0f, 80.0f}}, renderTargetTextureId});
 
-    // Bake a 12 px font into the shared atlas. Used inside the RTT callback via
-    // PushFont/PopFont so glyphs are crisp at the RTT's native resolution.
-    ImFont& diegeticFont = canvas.bakeImguiFont(12.0f);
-
     float sliderValue = 0.42f;
     bool  checkOn     = true;
     int   clickCount  = 0;
     float time        = 0.0f;
+
+    // When true, the diegetic panel includes an extra "Extra 16 px" line.
+    // Toggled by Bake/Remove buttons in the main UI panel; exercises the
+    // deferred-bake + atlas-rebuild path on every press.
+    bool wantSmall16  = false;
 
     canvas.run([&](float deltaTimeMS)
     {
@@ -36,9 +37,11 @@ int main()
         // Queue the ImGui content to be rendered into the RTT this frame.
         canvas.renderImguiTo(renderTargetId, [&]
         {
-            // Switch to the 12 px font baked at startup — crisp at the RTT's
-            // native pixel grid (no bilinear stretching of the default 14 px atlas).
-            ImGui::PushFont(&diegeticFont);
+            // Look up the 12 px diegetic font fresh each frame — atlas
+            // rebuilds (triggered by removeImguiFont below) invalidate any
+            // previously held ImFont*. Cache hit is O(1).
+            ImFont* diegeticFont = canvas.bakeImguiFont(12.0f);
+            if (diegeticFont) ImGui::PushFont(diegeticFont);
 
             ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
             ImGui::SetNextWindowSize(ImVec2(
@@ -58,9 +61,27 @@ int main()
             ImGui::SameLine();
             ImGui::Text("= %d", clickCount);
             ImGui::ProgressBar(0.5f + 0.5f * std::sin(0.003f * time));
+
+            // Conditional 16 px section — bake-on-demand. First frame after
+            // the user clicks "Bake 16 px" returns nullptr (deferred); the
+            // frame after, the cache hit returns the new pointer.
+            if (wantSmall16)
+            {
+                ImFont* small16 = canvas.bakeImguiFont(16.0f);
+                if (small16)
+                {
+                    ImGui::PushFont(small16);
+                    ImGui::Text("Extra 16 px");
+                    ImGui::PopFont();
+                }
+                else
+                {
+                    ImGui::Text("(16 px baking...)");
+                }
+            }
             ImGui::End();
 
-            ImGui::PopFont();
+            if (diegeticFont) ImGui::PopFont();
         });
 
         // Main-canvas ImGui — proves the main context is unaffected.
@@ -69,6 +90,18 @@ int main()
         ImGui::SetNextWindowPos(ImVec2(4.0f, 4.0f), ImGuiCond_Once);
         ImGui::Begin("main", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::Text("slider=%.2f  count=%d", sliderValue, clickCount);
+
+        // Stress the atlas remove + rebuild path. Bake schedules a deferred
+        // bake; Remove schedules a deferred Clear+rebuild that invalidates
+        // every prior ImFont* (the diegetic 12 px font is re-fetched per
+        // frame inside the RTT callback to survive this).
+        if (ImGui::Button("Bake 16 px font")) wantSmall16 = true;
+        ImGui::SameLine();
+        if (ImGui::Button("Remove 16 px font"))
+        {
+            wantSmall16 = false;
+            canvas.removeImguiFont(16.0f);
+        }
         ImGui::End();
     });
 

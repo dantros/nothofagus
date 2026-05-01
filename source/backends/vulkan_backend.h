@@ -105,6 +105,7 @@ public:
 
     void initialize(void* nativeWindowHandle, glm::ivec2 canvasSize);
     void initImGuiRenderer();
+    void rebuildImguiFontTexture();
     void shutdown();
 
     DTexture      uploadTexture(const Texture& texture, TextureSampleMode minFilter, TextureSampleMode magFilter);

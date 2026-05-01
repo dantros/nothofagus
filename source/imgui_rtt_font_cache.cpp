@@ -53,4 +53,27 @@ ImFont& ImguiRttFontCache::setDefaultSize(float sizePx)
     return font;
 }
 
+void ImguiRttFontCache::remove(float sizePx)
+{
+    auto it = mCache.find(sizePx);
+    debugCheck(it != mCache.end(), "ImguiRttFontCache::remove: no font baked at this size");
+    if (mDefaultFont == it->second) mDefaultFont = nullptr;
+    mCache.erase(it);
+}
+
+void ImguiRttFontCache::invalidate() noexcept
+{
+    mCache.clear();
+    mDefaultFont = nullptr;
+}
+
+std::vector<float> ImguiRttFontCache::bakedSizes() const
+{
+    std::vector<float> sizes;
+    sizes.reserve(mCache.size());
+    for (const auto& [sizePx, _] : mCache)
+        sizes.push_back(sizePx);
+    return sizes;
+}
+
 }

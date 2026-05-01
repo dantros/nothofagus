@@ -134,4 +134,19 @@ void ImguiRttManager::releaseAll()
     ImGui::SetCurrentContext(mainCtx);
 }
 
+void ImguiRttManager::refreshSecondaryContextDefaultFont()
+{
+    if (mContexts.empty()) return;
+
+    ImFont* newDefault = mFonts.defaultFont();
+    ImGuiContext* mainCtx = ImGui::GetCurrentContext();
+    for (auto& [renderTargetIndex, rttCtx] : mContexts)
+    {
+        if (!rttCtx) continue;
+        ImGui::SetCurrentContext(rttCtx.get());
+        ImGui::GetIO().FontDefault = newDefault;
+    }
+    ImGui::SetCurrentContext(mainCtx);
+}
+
 }

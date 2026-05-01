@@ -155,23 +155,52 @@ public:
      * Bakes a font in **logical pixels** (no OS-DPI scaling) and caches it,
      * or returns the cached ImFont if one was already baked at this size.
      * Intended for diegetic UI inside RTTs where one RTT pixel maps to one
-     * game-canvas pixel. Pass `&` of the returned reference to
-     * ImGui::PushFont(...) / ImGui::PopFont() inside a renderImguiTo()
-     * callback to render crisp glyphs at exactly that size.
+     * game-canvas pixel. Pass the returned pointer to ImGui::PushFont(...)
+     * / ImGui::PopFont() inside a renderImguiTo() callback to render crisp
+     * glyphs at exactly that size.
      *
-     * Must be called between Canvas construction and the first run() / tick()
-     * call (the atlas is uploaded to the GPU on the first frame; baking a
-     * new font afterwards has no effect until a manual rebuild).
+     * Behaviour by call-site state:
+     *   - **Cache hit**: returns the cached ImFont* (always non-null). O(1).
+     *   - **Cache miss outside an ImGui frame** (e.g. before the first
+     *     run()/tick()): bakes synchronously, returns the new pointer.
+     *   - **Cache miss inside an ImGui frame** (called from a run() / tick()
+     *     update callback or a renderImguiTo() callback — the atlas is
+     *     locked there): enqueues a deferred bake and returns nullptr.
+     *     The bake completes at the start of the next frame; caller must
+     *     re-poll bakeImguiFont(sameSize) on a later frame to retrieve the
+     *     pointer.
      *
-     * Repeat calls with the same `sizePx` return a reference to the same
+     * Repeat calls with the same `sizePx` return a pointer to the same
      * cached ImFont — the atlas is only baked once per size. Callers wanting
      * to mutate per-font state like `ImFont::Scale` should be aware they are
      * sharing it with every other caller of the same size.
      *
-     * @return Reference to the cached or newly baked font. Lifetime owned
-     *         by the shared ImGui atlas; do not delete or take ownership.
+     * Reference invalidation: any ImFont* returned by this function is
+     * invalidated by a subsequent removeImguiFont() (the next-frame atlas
+     * rebuild gives every surviving size a fresh pointer). Callers that
+     * hold pointers across frames should refresh them via a fresh
+     * bakeImguiFont() before each use.
+     *
+     * @return Pointer to the cached or newly baked font on a synchronous
+     *         path; nullptr on a deferred-bake path. Lifetime owned by the
+     *         shared ImGui atlas; do not delete or take ownership.
      */
-    ImFont& bakeImguiFont(float sizePx);
+    ImFont* bakeImguiFont(float sizePx);
+
+    /**
+     * @brief Remove a previously baked ImGui font, freeing its atlas glyphs.
+     *
+     * Schedules a full atlas rebuild at the start of the next frame:
+     * ImFontAtlas::Clear() + re-add the main HiDPI font + re-bake every
+     * surviving size + GPU font texture re-upload. Always deferred — safe
+     * to call from inside a run() / renderImguiTo() callback.
+     *
+     * Asserts (during the drain) that sizePx was previously baked. Invalidates
+     * every ImFont* previously returned by bakeImguiFont() — callers must
+     * re-fetch fresh pointers via bakeImguiFont(sameSize) for any size they
+     * still need.
+     */
+    void removeImguiFont(float sizePx);
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 

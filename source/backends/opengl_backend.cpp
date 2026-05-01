@@ -232,6 +232,13 @@ void OpenGLBackend::initImGuiRenderer()
     ImGui_ImplOpenGL3_Init("#version 330");
 }
 
+void OpenGLBackend::rebuildImguiFontTexture()
+{
+    // Drop the GPU font texture; ImGui_ImplOpenGL3_NewFrame() lazily re-creates
+    // it from the rebuilt atlas on the very next call.
+    ImGui_ImplOpenGL3_DestroyFontsTexture();
+}
+
 void OpenGLBackend::shutdown()
 {
     ImGui_ImplOpenGL3_Shutdown();

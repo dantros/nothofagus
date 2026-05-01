@@ -60,6 +60,12 @@ public:
     /// alive — i.e. before mBackend.shutdown() in the destructor.
     void releaseAll();
 
+    /// Walk every alive secondary ImGuiContext and reset its io.FontDefault
+    /// to fonts().defaultFont(). Saves/restores the main ImGuiContext.
+    /// Called by Canvas::CanvasImpl during atlas rebuild — the previous
+    /// FontDefault pointers became stale when the atlas was Cleared.
+    void refreshSecondaryContextDefaultFont();
+
     /// Access to the RTT-flow font cache (default font + size→ImFont dedup).
     ImguiRttFontCache&       fonts()       noexcept { return mFonts; }
     const ImguiRttFontCache& fonts() const noexcept { return mFonts; }
