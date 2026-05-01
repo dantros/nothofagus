@@ -407,6 +407,21 @@ void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawC
     mImguiRtt.enqueue(renderTargetId, std::move(imguiDrawCallback));
 }
 
+ImFont* Canvas::CanvasImpl::addImguiFont(float sizePx)
+{
+    // FontDataOwnedByAtlas = false because the embedded TTF buffer is already
+    // referenced by the existing main + RTT-default font configs; without this
+    // ImGui would IM_FREE the same static pointer multiple times on shutdown.
+    ImFontConfig fontConfig;
+    fontConfig.FontDataOwnedByAtlas = false;
+    return ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
+        assets_Roboto_VariableFont_wdth_wght_ttf,
+        assets_Roboto_VariableFont_wdth_wght_ttf_len,
+        sizePx,
+        &fontConfig
+    );
+}
+
 void Canvas::CanvasImpl::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
 {
     mRenderTargets.at(renderTargetId.id).renderTarget.mClearColor = clearColor;

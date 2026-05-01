@@ -17,6 +17,10 @@ int main()
     Nothofagus::BellotaId displayBellotaId =
         canvas.addBellota({{{96.0f, 80.0f}}, renderTargetTextureId});
 
+    // Bake a 12 px font into the shared atlas. Used inside the RTT callback via
+    // PushFont/PopFont so glyphs are crisp at the RTT's native resolution.
+    ImFont* diegeticFont = canvas.addImguiFont(12.0f);
+
     float sliderValue = 0.42f;
     bool  checkOn     = true;
     int   clickCount  = 0;
@@ -32,8 +36,9 @@ int main()
         // Queue the ImGui content to be rendered into the RTT this frame.
         canvas.renderImguiTo(renderTargetId, [&]
         {
-            // Scale the default font down so glyphs render at ~8 px in the RTT.
-            ImGui::GetIO().FontGlobalScale = 12.0f / Nothofagus::DEFAULT_IMGUI_FONT_SIZE;
+            // Switch to the 12 px font baked at startup — crisp at the RTT's
+            // native pixel grid (no bilinear stretching of the default 14 px atlas).
+            ImGui::PushFont(diegeticFont);
 
             ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
             ImGui::SetNextWindowSize(ImVec2(
@@ -54,6 +59,8 @@ int main()
             ImGui::Text("= %d", clickCount);
             ImGui::ProgressBar(0.5f + 0.5f * std::sin(0.003f * time));
             ImGui::End();
+
+            ImGui::PopFont();
         });
 
         // Main-canvas ImGui — proves the main context is unaffected.

@@ -13,6 +13,8 @@
 #include <string>
 #include <vector>
 
+struct ImFont;
+
 namespace Nothofagus
 {
 
@@ -145,6 +147,21 @@ public:
      * context. Widgets inside the RTT are displayed but not interactive.
      */
     void renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);
+
+    /**
+     * @brief Bake an additional ImGui font at the requested pixel size.
+     *
+     * Adds a font sized in **logical pixels** (no OS-DPI scaling) to the
+     * shared ImGui atlas, intended for diegetic UI inside RTTs where one
+     * RTT pixel maps to one game-canvas pixel. Use the returned ImFont*
+     * with ImGui::PushFont(...) / ImGui::PopFont() inside a renderImguiTo()
+     * callback to render crisp glyphs at exactly that size.
+     *
+     * Must be called between Canvas construction and the first run() / tick()
+     * call (the atlas is uploaded to the GPU on the first frame; adding a
+     * font afterwards has no effect until a manual rebuild).
+     */
+    ImFont* addImguiFont(float sizePx);
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 

@@ -141,6 +141,11 @@ void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imgu
     mCanvasImpl->renderImguiTo(renderTargetId, std::move(imguiDrawCallback));
 }
 
+ImFont* Canvas::addImguiFont(float sizePx)
+{
+    return mCanvasImpl->addImguiFont(sizePx);
+}
+
 void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
 {
     mCanvasImpl->setRenderTargetClearColor(renderTargetId, clearColor);
