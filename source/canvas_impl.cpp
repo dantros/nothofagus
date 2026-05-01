@@ -68,7 +68,9 @@ Canvas::CanvasImpl::CanvasImpl(
     mTitle(title),
     mClearColor(clearColor),
     mPixelSize(pixelSize),
-    mImguiRtt(mBackend, mRenderTargets),
+    mImguiRtt(mBackend, mRenderTargets,
+              assets_Roboto_VariableFont_wdth_wght_ttf,
+              assets_Roboto_VariableFont_wdth_wght_ttf_len),
     mStats(false),
     mHeadless(headless),
     mGameViewport{0, 0, 0, 0}
@@ -110,15 +112,10 @@ Canvas::CanvasImpl::CanvasImpl(
         imguiFontSize * contentScale * contentScale
     );
 
-    // Hand the embedded TTF buffer to the RTT font cache (only this TU
-    // includes roboto_font.h, so the data lives here). Then bake the unscaled
-    // imguiFontSize as the default for ImGui-into-RTT contexts — RTT pixels
-    // are game-canvas pixels, OS DPI is irrelevant there, so we want glyphs
-    // rasterized at their logical size, not the framebuffer size.
-    mImguiRtt.fonts().setFontData(
-        assets_Roboto_VariableFont_wdth_wght_ttf,
-        assets_Roboto_VariableFont_wdth_wght_ttf_len
-    );
+    // Bake the unscaled imguiFontSize as the default for ImGui-into-RTT contexts —
+    // RTT pixels are game-canvas pixels, OS DPI is irrelevant there, so we want
+    // glyphs rasterized at their logical size, not the framebuffer size. The TTF
+    // buffer is bound to the cache via the manager constructor (RAII).
     mImguiRtt.fonts().setDefaultSize(imguiFontSize);
 }
 

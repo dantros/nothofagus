@@ -35,10 +35,11 @@ using ImGuiContextPtr = std::unique_ptr<ImGuiContext, ImGuiContextDeleter>;
 class ImguiRttFontCache
 {
 public:
-    /// Register the TTF buffer used by all subsequent bake() calls. Must be
-    /// called before bake() / setDefaultSize(). The buffer must outlive the
-    /// cache — typically a static byte array embedded in the binary.
-    void setFontData(const void* data, std::size_t length) noexcept;
+    /// Bind the TTF buffer at construction. The buffer must outlive the cache —
+    /// typically a static byte array embedded in the binary. There is no
+    /// rebinding API: the buffer is a class invariant, so bake()/at()/find()
+    /// are always callable after construction.
+    ImguiRttFontCache(const void* fontData, std::size_t fontDataLen) noexcept;
 
     /// Look up a previously baked font without ever adding a new one.
     /// Returns nullptr if no font has been baked at this size yet.
@@ -67,8 +68,8 @@ public:
     ImFont* defaultFont() const noexcept { return mDefaultFont; }
 
 private:
-    const void* mFontData{nullptr};
-    std::size_t mFontDataLen{0};
+    const void* const mFontData;
+    const std::size_t mFontDataLen;
     std::unordered_map<float, ImFont*> mCache;
     ImFont* mDefaultFont{nullptr};
 };
@@ -79,7 +80,10 @@ private:
 class ImguiRttManager
 {
 public:
-    ImguiRttManager(ActiveBackend& backend, RenderTargetContainer& renderTargets);
+    ImguiRttManager(ActiveBackend& backend,
+                    RenderTargetContainer& renderTargets,
+                    const void* fontData,
+                    std::size_t fontDataLen);
 
     /// Queue an ImGui draw callback to run against renderTargetId this frame.
     void enqueue(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);

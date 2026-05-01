@@ -12,11 +12,9 @@ void ImGuiContextDeleter::operator()(ImGuiContext* ctx) const noexcept
     if (ctx) ImGui::DestroyContext(ctx);
 }
 
-void ImguiRttFontCache::setFontData(const void* data, std::size_t length) noexcept
-{
-    mFontData    = data;
-    mFontDataLen = length;
-}
+ImguiRttFontCache::ImguiRttFontCache(const void* fontData, std::size_t fontDataLen) noexcept
+    : mFontData(fontData), mFontDataLen(fontDataLen)
+{}
 
 ImFont* ImguiRttFontCache::find(float sizePx) const noexcept
 {
@@ -38,11 +36,8 @@ ImFont& ImguiRttFontCache::bake(float sizePx)
     // bloating the atlas texture on repeat calls.
     if (ImFont* cached = find(sizePx)) return *cached;
 
-    debugCheck(mFontData != nullptr && mFontDataLen > 0,
-        "ImguiRttFontCache: setFontData() must be called before bake() on a cache miss");
-
-    // FontDataOwnedByAtlas = false because the registered TTF buffer is owned
-    // by the caller (typically static binary data) and is shared across all
+    // FontDataOwnedByAtlas = false because the bound TTF buffer is owned by
+    // the caller (typically static binary data) and is shared across all
     // font configs created via this cache. Without this ImGui would IM_FREE
     // the same pointer multiple times on shutdown.
     ImFontConfig fontConfig;
@@ -53,7 +48,7 @@ ImFont& ImguiRttFontCache::bake(float sizePx)
         sizePx,
         &fontConfig
     );
-    debugCheck(font != nullptr, "AddFontFromMemoryTTF returned null — registered TTF buffer is invalid");
+    debugCheck(font != nullptr, "AddFontFromMemoryTTF returned null — bound TTF buffer is invalid");
     mCache.emplace(sizePx, font);
     return *font;
 }
@@ -65,8 +60,13 @@ ImFont& ImguiRttFontCache::setDefaultSize(float sizePx)
     return font;
 }
 
-ImguiRttManager::ImguiRttManager(ActiveBackend& backend, RenderTargetContainer& renderTargets)
-    : mBackend(backend), mRenderTargets(renderTargets)
+ImguiRttManager::ImguiRttManager(ActiveBackend& backend,
+                                  RenderTargetContainer& renderTargets,
+                                  const void* fontData,
+                                  std::size_t fontDataLen)
+    : mBackend(backend),
+      mRenderTargets(renderTargets),
+      mFonts(fontData, fontDataLen)
 {}
 
 void ImguiRttManager::enqueue(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback)
