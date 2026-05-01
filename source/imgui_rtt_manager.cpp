@@ -14,10 +14,11 @@ void ImGuiContextDeleter::operator()(ImGuiContext* ctx) const noexcept
 ImguiRttManager::ImguiRttManager(ActiveBackend& backend,
                                   RenderTargetContainer& renderTargets,
                                   const void* fontData,
-                                  std::size_t fontDataLen)
+                                  std::size_t fontDataLen,
+                                  float imguiFontSize)
     : mBackend(backend),
       mRenderTargets(renderTargets),
-      mFonts(fontData, fontDataLen)
+      mFonts(fontData, fontDataLen, imguiFontSize)
 {}
 
 void ImguiRttManager::enqueue(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback)
@@ -132,6 +133,29 @@ void ImguiRttManager::releaseAll()
         shutdownContextBackendIfAlive(renderTargetIndex, rttCtx.get(), mBackend, mRenderTargets);
     mContexts.clear(); // unique_ptr deleters call ImGui::DestroyContext for each.
     ImGui::SetCurrentContext(mainCtx);
+}
+
+void ImguiRttManager::refreshSecondaryContextDefaultFont()
+{
+    if (mContexts.empty()) return;
+
+    ImFont* newDefault = mFonts.defaultFont();
+    ImGuiContext* mainCtx = ImGui::GetCurrentContext();
+    for (auto& [renderTargetIndex, rttCtx] : mContexts)
+    {
+        if (!rttCtx) continue;
+        ImGui::SetCurrentContext(rttCtx.get());
+        ImGui::GetIO().FontDefault = newDefault;
+    }
+    ImGui::SetCurrentContext(mainCtx);
+}
+
+void ImguiRttManager::drainPendingFontOps(float contentScale)
+{
+    if (!mFonts.hasPendingOps()) return;
+    mFonts.drainPendingOpsAndRebuildAtlas(contentScale);
+    refreshSecondaryContextDefaultFont();
+    mBackend.rebuildImguiFontTexture();
 }
 
 }

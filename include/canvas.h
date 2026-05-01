@@ -8,6 +8,7 @@
 #include "tint.h"
 #include "screen_size.h"
 #include "imgui_draw_callback.h"
+#include "imgui_font_id.h"
 #include <memory>
 #include <functional>
 #include <string>
@@ -133,7 +134,8 @@ public:
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 
     /**
-     * @brief Queue an ImGui draw callback to be rendered into the given render target.
+     * @brief Queue an ImGui draw callback to be rendered into the given render target,
+     *        with an auto push/pop of `fontId` wrapping the callback body.
      *
      * The callback runs on a secondary ImGuiContext owned by this render target —
      * window positions, widget values and open/closed state are isolated from the main
@@ -143,35 +145,137 @@ public:
      * The callback itself is invoked later (during the pre-main RTT pass phase) on the
      * secondary context — do NOT call ImGui functions on the main context from inside it.
      *
+     * `fontId` is auto-pushed via `pushImguiFont` before the callback runs and popped
+     * after it returns, so the body never has to touch `ImFont`. Mid-callback font
+     * overrides are still allowed via `canvas.pushImguiFont(otherId)` (paired with
+     * `popImguiFont()`). Pass `defaultImguiFontId()` to render with the canvas's
+     * default secondary-context font.
+     *
+     * Graceful fallback: if `fontId`'s bake is still pending or its entry has been
+     * removed, the callback runs without an explicit push (text falls back to the
+     * secondary-context default font set at canvas construction).
+     *
      * Limitation (v1): input events (mouse, keyboard) are not forwarded to the secondary
      * context. Widgets inside the RTT are displayed but not interactive.
      */
-    void renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);
+    void renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback);
 
     /**
-     * @brief Bake an ImGui font at the requested pixel size (or return the
-     *        cached one if already baked).
+     * @brief Bake an ImGui font at the requested pixel size and return a
+     *        stable handle to it.
      *
-     * Bakes a font in **logical pixels** (no OS-DPI scaling) and caches it,
-     * or returns the cached ImFont if one was already baked at this size.
-     * Intended for diegetic UI inside RTTs where one RTT pixel maps to one
-     * game-canvas pixel. Pass `&` of the returned reference to
-     * ImGui::PushFont(...) / ImGui::PopFont() inside a renderImguiTo()
-     * callback to render crisp glyphs at exactly that size.
+     * Bakes a font in **logical pixels** (no OS-DPI scaling) and stores it
+     * in an IndexedContainer keyed by an `ImguiFontId`, or returns the
+     * existing id if a font has already been baked at this size. Intended
+     * for diegetic UI inside RTTs where one RTT pixel maps to one
+     * game-canvas pixel. Resolve the id to an `ImFont*` via `getImguiFontPtr(id)`
+     * and pass that to `ImGui::PushFont(...)` / `ImGui::PopFont()` inside
+     * a `renderImguiTo()` callback.
      *
-     * Must be called between Canvas construction and the first run() / tick()
-     * call (the atlas is uploaded to the GPU on the first frame; baking a
-     * new font afterwards has no effect until a manual rebuild).
+     * The returned `ImguiFontId` is **stable across atlas rebuilds**: when
+     * `removeImguiFont` triggers a Clear+re-bake of the atlas, the cache
+     * walks every surviving entry and patches its underlying `ImFont*` in
+     * place — the id stays valid; only the resolved pointer changes.
+     * Repeat calls with the same `sizePx` return the same id (dedup).
      *
-     * Repeat calls with the same `sizePx` return a reference to the same
-     * cached ImFont — the atlas is only baked once per size. Callers wanting
-     * to mutate per-font state like `ImFont::Scale` should be aware they are
-     * sharing it with every other caller of the same size.
+     * Call-site behaviour:
+     *   - **Outside an ImGui frame** (before first run()/tick()): the bake
+     *     happens synchronously. `getImguiFontPtr(id)` returns the pointer
+     *     immediately.
+     *   - **Inside an ImGui frame** (run/tick update or renderImguiTo
+     *     callback): the entry is created with a null pointer; a rebuild
+     *     fires at the start of the next frame. `getImguiFontPtr(id)` returns
+     *     nullptr until the rebuild completes (one frame later).
      *
-     * @return Reference to the cached or newly baked font. Lifetime owned
-     *         by the shared ImGui atlas; do not delete or take ownership.
+     * The id is only invalidated by `removeImguiFont(thisId)`. Callers
+     * wanting to mutate per-font state like `ImFont::Scale` should be aware
+     * they are sharing it with every other caller of the same size.
+     *
+     * @return Stable handle. Use `getImguiFontPtr(id)` to resolve to the current
+     *         `ImFont*`; pass that pointer to ImGui directly.
      */
-    ImFont& bakeImguiFont(float sizePx);
+    ImguiFontId bakeImguiFont(float sizePx);
+
+    /**
+     * @brief Remove a previously baked ImGui font, freeing its atlas glyphs.
+     *
+     * Schedules a full atlas rebuild at the start of the next frame:
+     * `ImFontAtlas::Clear()` + re-add the main HiDPI font + re-bake every
+     * surviving entry + GPU font texture re-upload. Always deferred — safe
+     * to call from inside a `run()` / `renderImguiTo()` callback.
+     *
+     * Asserts (during the drain) that `id` is currently registered.
+     * Invalidates only `id` itself — every other `ImguiFontId` survives the
+     * rebuild with its underlying `ImFont*` patched in place, so other
+     * callers' handles keep working without intervention.
+     */
+    void removeImguiFont(ImguiFontId id);
+
+    /**
+     * @brief True if `id` is currently registered and its bake has completed.
+     *
+     * Use this to guard `getImguiFontPtr(id)` during the deferred-bake window
+     * (one frame between `bakeImguiFont(...)` returning and the next-frame
+     * drain finishing the bake). Returns false when:
+     *   - `id` is not (or no longer) registered (e.g., after
+     *     `removeImguiFont(id)`).
+     *   - `id` is registered but a deferred bake is still pending.
+     */
+    bool isImguiFontReady(ImguiFontId id) const;
+
+    /**
+     * @brief Resolve an `ImguiFontId` to its current `ImFont*`.
+     *
+     * The pointer is meant for handoff to ImGui APIs that take `ImFont*`
+     * directly (e.g. `ImGui::PushFont`, `ImGui::CalcTextSizeA`). For the
+     * common push-then-pop case, prefer the higher-level
+     * `pushImguiFont(id)` / `popImguiFont()` so user code never has to
+     * mention `ImFont` at all.
+     *
+     * Returns nullptr when:
+     *   - `id` is not (or no longer) registered (e.g. after `removeImguiFont`).
+     *   - `id` is registered but a deferred bake is still pending; the
+     *     pointer becomes valid one frame after the `bakeImguiFont` call
+     *     that introduced it.
+     *
+     * Callers can hold the resolved pointer only within one frame —
+     * an atlas rebuild between frames may patch the underlying `ImFont*`
+     * in place (the `id` is stable; the pointer it resolves to is not).
+     */
+    ImFont* getImguiFontPtr(ImguiFontId id) const;
+
+    /**
+     * @brief Push a previously baked font onto ImGui's font stack.
+     *
+     * Equivalent to `ImGui::PushFont(&getImguiFontPtr(id))`, with the same
+     * preconditions: asserts `id` is registered AND its bake has completed.
+     * Guard with `isImguiFontReady(id)` during the deferred-bake window.
+     *
+     * Pair with `popImguiFont()`. Safe to nest with itself or with raw
+     * `ImGui::PushFont(...)` — both forms target ImGui's single global
+     * font stack on the current context.
+     */
+    void pushImguiFont(ImguiFontId id);
+
+    /**
+     * @brief Pop the most-recently-pushed font from ImGui's font stack.
+     *
+     * Forwards to `ImGui::PopFont()`. Use as the partner to
+     * `pushImguiFont(...)` (or to a raw `ImGui::PushFont(...)` — both pop
+     * through the same stack).
+     */
+    void popImguiFont();
+
+    /**
+     * @brief Id of the secondary-context default font, baked at canvas
+     *        construction at the unscaled `imguiFontSize`.
+     *
+     * Pass this to `renderImguiTo(rtId, id, cb)` when the panel doesn't
+     * have a specific font of its own and should just use the same default
+     * the manager already sets as `io.FontDefault` on every secondary RTT
+     * context. The id is stable for the canvas lifetime.
+     */
+    ImguiFontId defaultImguiFontId() const;
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 

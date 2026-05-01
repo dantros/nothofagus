@@ -383,33 +383,37 @@ auto renderTargetId = canvas.addRenderTarget({160, 120});
 canvas.setRenderTargetClearColor(renderTargetId, {0.02f, 0.04f, 0.12f, 1.0f});
 auto displayId = canvas.addBellota({{{96.0f, 80.0f}}, canvas.renderTargetTexture(renderTargetId)});
 
-// Optional: bake an extra font at a specific *logical* (game-canvas) pixel
-// size for crisp glyphs inside the RTT. Dedups by size — repeat calls with
-// the same sizePx return the same ImFont&. Must happen before run()/tick().
-ImFont& diegeticFont = canvas.bakeImguiFont(12.0f);
+// Bake a font at a specific *logical* (game-canvas) pixel size for crisp
+// glyphs inside the RTT. Returns a stable ImguiFontId; dedups by size —
+// repeat calls with the same sizePx return the same id.
+Nothofagus::ImguiFontId diegeticId = canvas.bakeImguiFont(12.0f);
 
 float sliderValue = 0.42f;
 int   clickCount  = 0;
 
 canvas.run([&](float dt) {
-    // Queue ImGui draws for the RTT. The callback runs on a secondary ImGuiContext
-    // owned by this render target — state is isolated from the main UI.
-    canvas.renderImguiTo(renderTargetId, [&] {
-        ImGui::PushFont(&diegeticFont);  // crisp 12 px glyphs in RTT pixel space
-
+    // Queue ImGui draws for the RTT. The callback runs on a secondary
+    // ImGuiContext owned by this render target — state is isolated from
+    // the main UI. The diegeticId is auto-pushed before the callback and
+    // popped after, so the body never has to mention ImFont.
+    canvas.renderImguiTo(renderTargetId, diegeticId, [&] {
         ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(160, 120), ImGuiCond_Always);
         ImGui::Begin("In-World Panel", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
         ImGui::SliderFloat("value", &sliderValue, 0.0f, 1.0f);
         if (ImGui::Button("click")) clickCount++;
         ImGui::End();
-
-        ImGui::PopFont();
     });
 
     // Main-canvas ImGui draws normally on the main context.
     ImGui::Begin("stats"); ImGui::Text("clicks=%d", clickCount); ImGui::End();
 });
+```
+
+If the panel doesn't have a specific font of its own, pass `canvas.defaultImguiFontId()` to render with the secondary-context default that the manager already sets up at construction:
+
+```cpp
+canvas.renderImguiTo(renderTargetId, canvas.defaultImguiFontId(), [&] { ... });
 ```
 
 **How it works (multi-context design):**
@@ -418,19 +422,20 @@ canvas.run([&](float dt) {
 - The OpenGL ImGui backend is FBO-agnostic; the Vulkan backend's per-context pipeline is built against `mRttRenderPass`, so it is render-pass-compatible with `beginRttPass`. **No changes to `imgui_impl_opengl3.*` / `imgui_impl_vulkan.*` are required.**
 - The platform backend (GLFW/SDL3) is skipped for secondary contexts — they run headless-style with `IO.DisplaySize` / `IO.DeltaTime` set manually. This means the feature works identically across GLFW+OpenGL, GLFW+Vulkan, SDL3+OpenGL, SDL3+Vulkan, and headless Vulkan.
 
-**Font handling — `ImguiRttFontCache`:**
+**Font handling — `ImguiFontManager` and `ImguiFontId`:**
 
-`ImguiRttFontCache` ([source/imgui_rtt_font_cache.h](source/imgui_rtt_font_cache.h), held by `ImguiRttManager`) owns ImFont* handles for fonts the RTT flow uses. The atlas itself is shared with the main context — the cache stores non-owning observers.
+`ImguiFontManager` ([source/imgui_font_manager.h](source/imgui_font_manager.h), held by `ImguiRttManager`) owns the entire ImGui-font lifecycle for a Canvas: the main HiDPI font (used by main-canvas UI), the secondary-context default font, every user-baked size, and the deferred bake/remove queue + atlas-rebuild flow. Each user-baked font is an entry in an `IndexedContainer<FontEntry>`, keyed by the public `ImguiFontId` ([include/imgui_font_id.h](include/imgui_font_id.h)). Atlas glyphs are owned by the shared `ImFontAtlas`; the manager stores non-owning observer pointers and `rebakeAll()` patches them in place across rebuilds.
 
-- At canvas construction, the cache is bound to the embedded Roboto TTF buffer (RAII via `ImguiRttManager` ctor — no separate `setFontData` step). It bakes one font at the unscaled `imguiFontSize` and registers it as `io.FontDefault` for every secondary RTT context. Result: ImGui text inside an RTT renders at its logical pixel height *in RTT pixels* — OS DPI scaling has no meaning in the game-canvas pixel grid, and the secondary-context default deliberately ignores it.
-- `Canvas::bakeImguiFont(float sizePx) -> ImFont&` ([include/canvas.h](include/canvas.h)) bakes additional sizes on demand via the cache. Repeat calls with the same `sizePx` return the same `ImFont&` — ImGui itself does not dedupe `AddFontFromMemoryTTF` calls by size, so the cache prevents bloating the atlas with duplicate glyph rasterizations. Must be called before the first `run()`/`tick()` (atlas is uploaded to the GPU on the first frame).
-- Use the returned reference with `ImGui::PushFont(&font) / PopFont()` inside a `renderImguiTo` callback for crisp glyphs at exactly that pixel size.
-- Lookup-only access: `cache.find(sizePx) -> ImFont*` (nullptr on miss) and `cache.at(sizePx) -> ImFont&` (asserts on miss) — mirrors `std::map::find` / `std::map::at` for callers that want to branch on cache state without baking.
+- At canvas construction, `ImguiFontManager::initialize(contentScale)` adds the main HiDPI font at `imguiFontSize * contentScale * contentScale` for crisp DPI-aware glyphs on the main UI, then bakes the unscaled `imguiFontSize` and registers it as `io.FontDefault` for every secondary RTT context. The default-font's id is exposed via `Canvas::defaultImguiFontId()`. Result: ImGui text inside an RTT renders at its logical pixel height *in RTT pixels* — OS DPI scaling has no meaning in the game-canvas pixel grid, and the secondary-context default deliberately ignores it.
+- `Canvas::bakeImguiFont(float sizePx) -> ImguiFontId` ([include/canvas.h](include/canvas.h)) bakes additional sizes on demand. Repeat calls with the same `sizePx` return the same id (the manager dedups by size — ImGui itself does not dedupe `AddFontFromMemoryTTF` calls).
+- `Canvas::removeImguiFont(ImguiFontId)` schedules a full atlas rebuild at the start of the next frame: `ImFontAtlas::Clear()` + re-add main HiDPI font + `rebakeAll()` for surviving entries + secondary-context `io.FontDefault` refresh + GPU font texture re-upload via `ActiveBackend::rebuildImguiFontTexture()`. Orchestration lives on `ImguiRttManager::drainPendingFontOps(contentScale)` (called once per frame from `runOneFrame`); the cache-side parts (Clear + re-add + rebake) live on `ImguiFontManager::drainPendingOpsAndRebuildAtlas(contentScale)`. The id passed to remove is invalidated; every other id survives the rebuild because each entry's `ImFont*` is patched in place — `Canvas::renderImguiTo(rtId, otherId, cb)` keeps working without intervention.
+- `Canvas::pushImguiFont(ImguiFontId) / popImguiFont()` mid-callback override the panel's font without touching `ImFont`. `Canvas::isImguiFontReady(id)` guards against the one-frame deferred-bake window after `bakeImguiFont` returns; `Canvas::getImguiFontPtr(id) -> ImFont*` is the escape hatch for ImGui APIs that take an `ImFont*` directly (`ImGui::CalcTextSizeA` etc.).
+- The ID-stable design: only `removeImguiFont(id)` invalidates `id`. Atlas rebuilds (triggered by any other id's removal) leave every other id valid — the underlying pointer changes but `Canvas::renderImguiTo`, `pushImguiFont`, etc. resolve through the id automatically. See [imgui_font_removal_analysis.md](imgui_font_removal_analysis.md) for the rationale behind eager full rebuild vs alternatives.
 
 **Limitations (v1):**
 - **Input is not forwarded** to the secondary context — widgets render correctly but mouse/keyboard events only reach the main context. Forwarding canvas-space mouse coords into the RTT's `IO.MousePos` is a natural follow-up.
 - Each secondary context has its own ID stack, window state, and widget values — widgets with the same name in different RTTs do not collide, and neither inherits state from the main UI.
-- **Font removal is not yet implemented.** The atlas is append-only at runtime: `bakeImguiFont` after the first frame has no effect, and there is no API to free a baked font. ImGui has no `RemoveFont` API; supporting removal requires a deferred full-atlas-rebuild + GPU font texture re-upload, which is planned but not shipped.
+- **Atlas rebuild on remove rasterises every surviving glyph again.** `removeImguiFont` is meant to be a user-driven, infrequent op; cycling it once per frame would be wasteful (ImGui has no incremental remove and no way to retain glyph data across `Clear()`). For long-running apps that don't actually need to free atlas memory, leaving baked fonts alive is the cheaper path.
 
 ### Screenshot
 

@@ -726,6 +726,19 @@ void VulkanBackend::initImGuiRenderer()
 }
 
 // ---------------------------------------------------------------------------
+// rebuildImguiFontTexture()
+// ---------------------------------------------------------------------------
+
+void VulkanBackend::rebuildImguiFontTexture()
+{
+    // Drop the GPU font texture so ImGui_ImplVulkan_NewFrame() lazily re-uploads
+    // it from the rebuilt atlas. vkDeviceWaitIdle ensures no in-flight command
+    // buffer holds the old font descriptor before we destroy it.
+    vkDeviceWaitIdle(mDevice);
+    ImGui_ImplVulkan_DestroyFontsTexture();
+}
+
+// ---------------------------------------------------------------------------
 // flushPendingDeletions()
 // ---------------------------------------------------------------------------
 

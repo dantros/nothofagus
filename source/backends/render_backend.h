@@ -62,6 +62,7 @@ concept RenderBackend = requires(
     { backend.initialize(nativeWindowHandle, canvasSize) } -> std::same_as<void>;
     { backend.shutdown()                                  } -> std::same_as<void>;
     { backend.initImGuiRenderer()                         } -> std::same_as<void>;
+    { backend.rebuildImguiFontTexture()                   } -> std::same_as<void>;
 
     // GPU resource management
     { backend.uploadTexture(texture, samplerMode, samplerMode) } -> std::same_as<DTexture>;

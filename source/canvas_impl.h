@@ -106,9 +106,21 @@ public:
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 
-    void renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);
+    void renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback);
 
-    ImFont& bakeImguiFont(float sizePx);
+    ImguiFontId bakeImguiFont(float sizePx);
+
+    void removeImguiFont(ImguiFontId id);
+
+    bool isImguiFontReady(ImguiFontId id) const;
+
+    ImFont* getImguiFontPtr(ImguiFontId id) const;
+
+    void pushImguiFont(ImguiFontId id);
+
+    void popImguiFont();
+
+    ImguiFontId defaultImguiFontId() const;
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 
@@ -220,10 +232,11 @@ private:
 
     ActiveBackend mBackend; ///< GPU rendering backend (compile-time selected).
 
-    /// Owns the queue of pending ImGui-RTT passes, per-RTT secondary
-    /// ImGuiContexts, and the RTT-flow font cache (default font + size→ImFont
-    /// dedup). Declared after mBackend / mRenderTargets so initialization
-    /// order is well-defined.
+    /// Owns per-RTT secondary ImGuiContexts + the per-frame RTT pass queue,
+    /// AND the canvas-wide ImGui font manager (main HiDPI font + RTT default
+    /// + user-baked sizes; deferred bake/remove queue + atlas rebuild).
+    /// Declared after mBackend / mRenderTargets so initialization order is
+    /// well-defined.
     ImguiRttManager mImguiRtt;
 
     bool mStats; ///< Flag to indicate whether stats should be displayed.

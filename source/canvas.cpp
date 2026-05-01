@@ -136,14 +136,44 @@ void Canvas::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bell
     mCanvasImpl->renderTo(renderTargetId, std::move(bellotaIds));
 }
 
-void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback)
+void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback)
 {
-    mCanvasImpl->renderImguiTo(renderTargetId, std::move(imguiDrawCallback));
+    mCanvasImpl->renderImguiTo(renderTargetId, fontId, std::move(imguiDrawCallback));
 }
 
-ImFont& Canvas::bakeImguiFont(float sizePx)
+ImguiFontId Canvas::bakeImguiFont(float sizePx)
 {
     return mCanvasImpl->bakeImguiFont(sizePx);
+}
+
+void Canvas::removeImguiFont(ImguiFontId id)
+{
+    mCanvasImpl->removeImguiFont(id);
+}
+
+bool Canvas::isImguiFontReady(ImguiFontId id) const
+{
+    return mCanvasImpl->isImguiFontReady(id);
+}
+
+ImFont* Canvas::getImguiFontPtr(ImguiFontId id) const
+{
+    return mCanvasImpl->getImguiFontPtr(id);
+}
+
+void Canvas::pushImguiFont(ImguiFontId id)
+{
+    mCanvasImpl->pushImguiFont(id);
+}
+
+void Canvas::popImguiFont()
+{
+    mCanvasImpl->popImguiFont();
+}
+
+ImguiFontId Canvas::defaultImguiFontId() const
+{
+    return mCanvasImpl->defaultImguiFontId();
 }
 
 void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
