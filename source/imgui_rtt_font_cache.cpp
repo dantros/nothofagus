@@ -9,30 +9,12 @@ ImguiRttFontCache::ImguiRttFontCache(const void* fontData, std::size_t fontDataL
     : mFontData(fontData), mFontDataLen(fontDataLen)
 {}
 
-ImFont* ImguiRttFontCache::find(float sizePx) const noexcept
+ImFont* ImguiRttFontCache::bakeOne(float sizePx) const
 {
-    auto it = mCache.find(sizePx);
-    return it != mCache.end() ? it->second : nullptr;
-}
-
-ImFont& ImguiRttFontCache::at(float sizePx) const
-{
-    ImFont* font = find(sizePx);
-    debugCheck(font != nullptr, "ImguiRttFontCache::at: no font baked at this size — call bake() first or use find()");
-    return *font;
-}
-
-ImFont& ImguiRttFontCache::bake(float sizePx)
-{
-    // Dedup: ImGui's AddFontFromMemoryTTF appends a new ImFontConfig and
-    // re-rasterises the same glyphs every time, so caching by size avoids
-    // bloating the atlas texture on repeat calls.
-    if (ImFont* cached = find(sizePx)) return *cached;
-
     // FontDataOwnedByAtlas = false because the bound TTF buffer is owned by
-    // the caller (typically static binary data) and is shared across all
-    // font configs created via this cache. Without this ImGui would IM_FREE
-    // the same pointer multiple times on shutdown.
+    // the caller (typically static binary data) and is shared across every
+    // entry in this cache. Without this ImGui would IM_FREE the same pointer
+    // multiple times on shutdown.
     ImFontConfig fontConfig;
     fontConfig.FontDataOwnedByAtlas = false;
     ImFont* font = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
@@ -42,38 +24,62 @@ ImFont& ImguiRttFontCache::bake(float sizePx)
         &fontConfig
     );
     debugCheck(font != nullptr, "AddFontFromMemoryTTF returned null — bound TTF buffer is invalid");
-    mCache.emplace(sizePx, font);
-    return *font;
-}
-
-ImFont& ImguiRttFontCache::setDefaultSize(float sizePx)
-{
-    ImFont& font = bake(sizePx);
-    mDefaultFont = &font;
     return font;
 }
 
-void ImguiRttFontCache::remove(float sizePx)
+ImguiFontId ImguiRttFontCache::getOrCreate(float sizePx)
 {
-    auto it = mCache.find(sizePx);
-    debugCheck(it != mCache.end(), "ImguiRttFontCache::remove: no font baked at this size");
-    if (mDefaultFont == it->second) mDefaultFont = nullptr;
-    mCache.erase(it);
+    if (auto it = mSizeToId.find(sizePx); it != mSizeToId.end())
+        return it->second;
+
+    // Sync bake when the atlas is unlocked; defer otherwise (entry sits with
+    // currentImFont = nullptr until rebakeAll() runs).
+    ImFont* font = ImGui::GetIO().Fonts->Locked ? nullptr : bakeOne(sizePx);
+
+    const std::size_t rawId = mFonts.add({sizePx, font});
+    const ImguiFontId id{rawId};
+    mSizeToId.emplace(sizePx, id);
+    return id;
 }
 
-void ImguiRttFontCache::invalidate() noexcept
+ImFont* ImguiRttFontCache::get(ImguiFontId id) const noexcept
 {
-    mCache.clear();
-    mDefaultFont = nullptr;
+    if (!mFonts.contains(id.id)) return nullptr;
+    return mFonts.at(id.id).currentImFont;
 }
 
-std::vector<float> ImguiRttFontCache::bakedSizes() const
+bool ImguiRttFontCache::contains(ImguiFontId id) const noexcept
 {
-    std::vector<float> sizes;
-    sizes.reserve(mCache.size());
-    for (const auto& [sizePx, _] : mCache)
-        sizes.push_back(sizePx);
-    return sizes;
+    return mFonts.contains(id.id);
+}
+
+void ImguiRttFontCache::remove(ImguiFontId id)
+{
+    debugCheck(mFonts.contains(id.id), "ImguiRttFontCache::remove: unknown id");
+    const float sizePx = mFonts.at(id.id).sizePx;
+    if (mDefaultFontId.has_value() && *mDefaultFontId == id)
+        mDefaultFontId.reset();
+    mSizeToId.erase(sizePx);
+    mFonts.remove(id.id);
+}
+
+void ImguiRttFontCache::rebakeAll()
+{
+    for (auto& [rawId, entry] : mFonts)
+        entry.currentImFont = bakeOne(entry.sizePx);
+}
+
+ImguiFontId ImguiRttFontCache::setDefaultSize(float sizePx)
+{
+    const ImguiFontId id = getOrCreate(sizePx);
+    mDefaultFontId = id;
+    return id;
+}
+
+ImFont* ImguiRttFontCache::defaultFont() const noexcept
+{
+    if (!mDefaultFontId.has_value()) return nullptr;
+    return get(*mDefaultFontId);
 }
 
 }

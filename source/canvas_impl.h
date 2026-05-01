@@ -108,9 +108,11 @@ public:
 
     void renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);
 
-    ImFont* bakeImguiFont(float sizePx);
+    ImguiFontId bakeImguiFont(float sizePx);
 
-    void removeImguiFont(float sizePx);
+    void removeImguiFont(ImguiFontId id);
+
+    ImFont* imguiFont(ImguiFontId id) const;
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 
@@ -242,8 +244,8 @@ private:
     struct PendingFontOp
     {
         enum class Kind { Bake, Remove };
-        Kind  kind;
-        float sizePx;
+        Kind        kind;
+        ImguiFontId id;
     };
     std::vector<PendingFontOp> mPendingFontOps;
 

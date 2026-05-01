@@ -406,55 +406,46 @@ void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawC
     mImguiRtt.enqueue(renderTargetId, std::move(imguiDrawCallback));
 }
 
-ImFont* Canvas::CanvasImpl::bakeImguiFont(float sizePx)
+ImguiFontId Canvas::CanvasImpl::bakeImguiFont(float sizePx)
 {
-    // Cache hit — atlas already has this size, return immediately.
-    if (ImFont* cached = mImguiRtt.fonts().find(sizePx))
-        return cached;
-
-    // Cache miss + atlas unlocked (we're between Render and the next NewFrame,
-    // typically pre-first-run or post-tick) — bake synchronously.
-    if (!ImGui::GetIO().Fonts->Locked)
-        return &mImguiRtt.fonts().bake(sizePx);
-
-    // Cache miss + atlas locked (we're inside an ImGui frame — between NewFrame
-    // and Render). Defer the bake to the next frame's drain. Caller must
-    // re-poll bakeImguiFont(sameSize) on a later frame to retrieve the pointer.
-    mPendingFontOps.push_back({PendingFontOp::Kind::Bake, sizePx});
-    return nullptr;
+    const ImguiFontId id = mImguiRtt.fonts().getOrCreate(sizePx);
+    // If the atlas was locked when getOrCreate ran, the entry's currentImFont
+    // is null — schedule a rebuild so it gets baked at the next frame's drain.
+    if (mImguiRtt.fonts().get(id) == nullptr)
+        mPendingFontOps.push_back({PendingFontOp::Kind::Bake, id});
+    return id;
 }
 
-void Canvas::CanvasImpl::removeImguiFont(float sizePx)
+void Canvas::CanvasImpl::removeImguiFont(ImguiFontId id)
 {
     // Always deferred — schedules a full atlas rebuild at the start of the
-    // next frame. Asserting "size was baked" happens during the drain when
+    // next frame. Asserting "id was registered" happens during the drain when
     // the cache's remove() runs.
-    mPendingFontOps.push_back({PendingFontOp::Kind::Remove, sizePx});
+    mPendingFontOps.push_back({PendingFontOp::Kind::Remove, id});
+}
+
+ImFont* Canvas::CanvasImpl::imguiFont(ImguiFontId id) const
+{
+    return mImguiRtt.fonts().get(id);
 }
 
 void Canvas::CanvasImpl::drainPendingFontOps()
 {
     if (mPendingFontOps.empty()) return;
 
-    // 1. Apply Remove ops to the cache map (no atlas touch yet). Collect any
-    //    pending Bake sizes for re-bake after Clear.
-    std::vector<float> pendingBakes;
+    // 1. Apply Remove ops to the cache (no atlas touch yet). Bake ops are
+    //    informational — the entries already exist in the cache (created
+    //    eagerly by getOrCreate) with currentImFont = nullptr; rebakeAll
+    //    will fill them in below.
     for (const auto& op : mPendingFontOps)
-    {
         if (op.kind == PendingFontOp::Kind::Remove)
-            mImguiRtt.fonts().remove(op.sizePx);
-        else
-            pendingBakes.push_back(op.sizePx);
-    }
+            mImguiRtt.fonts().remove(op.id);
     mPendingFontOps.clear();
 
-    // 2. Snapshot remaining baked sizes from the cache (after removes).
-    std::vector<float> survivors = mImguiRtt.fonts().bakedSizes();
-
-    // 3. Wipe the atlas — every existing ImFont* is now dangling.
+    // 2. Wipe the atlas — every existing ImFont* is now dangling.
     ImGui::GetIO().Fonts->Clear();
 
-    // 4. Re-add the main HiDPI font using the same recipe as the constructor.
+    // 3. Re-add the main HiDPI font using the same recipe as the constructor.
     const float contentScale = mWindow->contentScale();
     ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
         assets_Roboto_VariableFont_wdth_wght_ttf,
@@ -462,22 +453,15 @@ void Canvas::CanvasImpl::drainPendingFontOps()
         mImguiFontSize * contentScale * contentScale
     );
 
-    // 5. Drop dangling pointers from the cache, then re-bake survivors and
-    //    any pending bakes. Each bake produces a fresh ImFont*.
-    mImguiRtt.fonts().invalidate();
-    for (float sz : survivors)
-        mImguiRtt.fonts().bake(sz);
-    for (float sz : pendingBakes)
-        mImguiRtt.fonts().bake(sz);
+    // 4. Re-bake every surviving entry; ids and entry slots stay put, only
+    //    each entry's currentImFont is patched to the freshly-rasterised pointer.
+    mImguiRtt.fonts().rebakeAll();
 
-    // 6. Restore the secondary-context default to a freshly-baked font.
-    mImguiRtt.fonts().setDefaultSize(mImguiFontSize);
-
-    // 7. Refresh io.FontDefault on every alive secondary ImGuiContext —
+    // 5. Refresh io.FontDefault on every alive secondary ImGuiContext —
     //    their previous pointer was invalidated by the Clear.
     mImguiRtt.refreshSecondaryContextDefaultFont();
 
-    // 8. Drop the GPU font texture; ImGui's _NewFrame() lazily re-uploads it
+    // 6. Drop the GPU font texture; ImGui's _NewFrame() lazily re-uploads it
     //    from the rebuilt atlas on its very next call.
     mBackend.rebuildImguiFontTexture();
 }

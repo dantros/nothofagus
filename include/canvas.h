@@ -8,6 +8,7 @@
 #include "tint.h"
 #include "screen_size.h"
 #include "imgui_draw_callback.h"
+#include "imgui_font_id.h"
 #include <memory>
 #include <functional>
 #include <string>
@@ -149,58 +150,72 @@ public:
     void renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);
 
     /**
-     * @brief Bake an ImGui font at the requested pixel size (or return the
-     *        cached one if already baked).
+     * @brief Bake an ImGui font at the requested pixel size and return a
+     *        stable handle to it.
      *
-     * Bakes a font in **logical pixels** (no OS-DPI scaling) and caches it,
-     * or returns the cached ImFont if one was already baked at this size.
-     * Intended for diegetic UI inside RTTs where one RTT pixel maps to one
-     * game-canvas pixel. Pass the returned pointer to ImGui::PushFont(...)
-     * / ImGui::PopFont() inside a renderImguiTo() callback to render crisp
-     * glyphs at exactly that size.
+     * Bakes a font in **logical pixels** (no OS-DPI scaling) and stores it
+     * in an IndexedContainer keyed by an `ImguiFontId`, or returns the
+     * existing id if a font has already been baked at this size. Intended
+     * for diegetic UI inside RTTs where one RTT pixel maps to one
+     * game-canvas pixel. Resolve the id to an `ImFont*` via `imguiFont(id)`
+     * and pass that to `ImGui::PushFont(...)` / `ImGui::PopFont()` inside
+     * a `renderImguiTo()` callback.
      *
-     * Behaviour by call-site state:
-     *   - **Cache hit**: returns the cached ImFont* (always non-null). O(1).
-     *   - **Cache miss outside an ImGui frame** (e.g. before the first
-     *     run()/tick()): bakes synchronously, returns the new pointer.
-     *   - **Cache miss inside an ImGui frame** (called from a run() / tick()
-     *     update callback or a renderImguiTo() callback — the atlas is
-     *     locked there): enqueues a deferred bake and returns nullptr.
-     *     The bake completes at the start of the next frame; caller must
-     *     re-poll bakeImguiFont(sameSize) on a later frame to retrieve the
-     *     pointer.
+     * The returned `ImguiFontId` is **stable across atlas rebuilds**: when
+     * `removeImguiFont` triggers a Clear+re-bake of the atlas, the cache
+     * walks every surviving entry and patches its underlying `ImFont*` in
+     * place — the id stays valid; only the resolved pointer changes.
+     * Repeat calls with the same `sizePx` return the same id (dedup).
      *
-     * Repeat calls with the same `sizePx` return a pointer to the same
-     * cached ImFont — the atlas is only baked once per size. Callers wanting
-     * to mutate per-font state like `ImFont::Scale` should be aware they are
-     * sharing it with every other caller of the same size.
+     * Call-site behaviour:
+     *   - **Outside an ImGui frame** (before first run()/tick()): the bake
+     *     happens synchronously. `imguiFont(id)` returns the pointer
+     *     immediately.
+     *   - **Inside an ImGui frame** (run/tick update or renderImguiTo
+     *     callback): the entry is created with a null pointer; a rebuild
+     *     fires at the start of the next frame. `imguiFont(id)` returns
+     *     nullptr until the rebuild completes (one frame later).
      *
-     * Reference invalidation: any ImFont* returned by this function is
-     * invalidated by a subsequent removeImguiFont() (the next-frame atlas
-     * rebuild gives every surviving size a fresh pointer). Callers that
-     * hold pointers across frames should refresh them via a fresh
-     * bakeImguiFont() before each use.
+     * The id is only invalidated by `removeImguiFont(thisId)`. Callers
+     * wanting to mutate per-font state like `ImFont::Scale` should be aware
+     * they are sharing it with every other caller of the same size.
      *
-     * @return Pointer to the cached or newly baked font on a synchronous
-     *         path; nullptr on a deferred-bake path. Lifetime owned by the
-     *         shared ImGui atlas; do not delete or take ownership.
+     * @return Stable handle. Use `imguiFont(id)` to resolve to the current
+     *         `ImFont*`; pass that pointer to ImGui directly.
      */
-    ImFont* bakeImguiFont(float sizePx);
+    ImguiFontId bakeImguiFont(float sizePx);
 
     /**
      * @brief Remove a previously baked ImGui font, freeing its atlas glyphs.
      *
      * Schedules a full atlas rebuild at the start of the next frame:
-     * ImFontAtlas::Clear() + re-add the main HiDPI font + re-bake every
-     * surviving size + GPU font texture re-upload. Always deferred — safe
-     * to call from inside a run() / renderImguiTo() callback.
+     * `ImFontAtlas::Clear()` + re-add the main HiDPI font + re-bake every
+     * surviving entry + GPU font texture re-upload. Always deferred — safe
+     * to call from inside a `run()` / `renderImguiTo()` callback.
      *
-     * Asserts (during the drain) that sizePx was previously baked. Invalidates
-     * every ImFont* previously returned by bakeImguiFont() — callers must
-     * re-fetch fresh pointers via bakeImguiFont(sameSize) for any size they
-     * still need.
+     * Asserts (during the drain) that `id` is currently registered.
+     * Invalidates only `id` itself — every other `ImguiFontId` survives the
+     * rebuild with its underlying `ImFont*` patched in place, so other
+     * callers' handles keep working without intervention.
      */
-    void removeImguiFont(float sizePx);
+    void removeImguiFont(ImguiFontId id);
+
+    /**
+     * @brief Resolve an `ImguiFontId` to its current `ImFont*`.
+     *
+     * Returns nullptr when:
+     *   - `id` is not (or no longer) registered (e.g., after
+     *     `removeImguiFont(id)`).
+     *   - `id` is registered but a deferred bake is still pending; the
+     *     pointer becomes valid one frame after the `bakeImguiFont` call
+     *     that introduced it.
+     *
+     * Callers can hold the resolved `ImFont*` only within one frame — pass
+     * it directly to `ImGui::PushFont` / `PopFont` and re-resolve via
+     * `imguiFont(id)` next frame, since an atlas rebuild between frames
+     * may patch the pointer.
+     */
+    ImFont* imguiFont(ImguiFontId id) const;
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 
