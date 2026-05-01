@@ -10,7 +10,6 @@
 #include "backends/render_backend_select.h"
 #include <vector>
 #include <utility>
-#include <unordered_map>
 
 struct ImFont;
 
@@ -221,21 +220,11 @@ private:
 
     ActiveBackend mBackend; ///< GPU rendering backend (compile-time selected).
 
-    /// Owns the queue of pending ImGui-RTT passes plus per-RTT secondary ImGuiContexts.
-    /// Declared after mBackend / mRenderTargets so initialization order is well-defined.
+    /// Owns the queue of pending ImGui-RTT passes, per-RTT secondary
+    /// ImGuiContexts, and the RTT-flow font cache (default font + size→ImFont
+    /// dedup). Declared after mBackend / mRenderTargets so initialization
+    /// order is well-defined.
     ImguiRttManager mImguiRtt;
-
-    /// Font rasterized at the unscaled imguiFontSize, used as the default in
-    /// secondary ImGui contexts attached to RTTs. RTT pixels are game-canvas
-    /// pixels, so OS DPI scaling does not apply.
-    ImFont* mRttFont{nullptr};
-
-    /// Cache of fonts baked via addImguiFont(), keyed by pixel size.
-    /// Repeat calls with the same size return the cached entry instead of
-    /// adding a duplicate ImFontConfig to the atlas (ImGui itself does not
-    /// dedupe by size — every AddFontFromMemoryTTF call rasterises the
-    /// glyphs again into the atlas texture).
-    std::unordered_map<float, ImFont*> mImguiFontCache;
 
     bool mStats; ///< Flag to indicate whether stats should be displayed.
     bool mHeadless{false}; ///< When true, the window is hidden (no visible UI).

@@ -1,4 +1,5 @@
 #include "imgui_rtt_manager.h"
+#include "check.h"
 #include "profiling.h"
 #include <imgui.h>
 #include <algorithm>
@@ -9,6 +10,47 @@ namespace Nothofagus
 void ImGuiContextDeleter::operator()(ImGuiContext* ctx) const noexcept
 {
     if (ctx) ImGui::DestroyContext(ctx);
+}
+
+void ImguiRttFontCache::setFontData(const void* data, std::size_t length) noexcept
+{
+    mFontData    = data;
+    mFontDataLen = length;
+}
+
+ImFont& ImguiRttFontCache::bake(float sizePx)
+{
+    debugCheck(mFontData != nullptr && mFontDataLen > 0,
+        "ImguiRttFontCache: setFontData() must be called before bake()");
+
+    // Dedup: ImGui's AddFontFromMemoryTTF appends a new ImFontConfig and
+    // re-rasterises the same glyphs every time, so caching by size avoids
+    // bloating the atlas texture on repeat calls.
+    if (auto it = mCache.find(sizePx); it != mCache.end())
+        return *it->second;
+
+    // FontDataOwnedByAtlas = false because the registered TTF buffer is owned
+    // by the caller (typically static binary data) and is shared across all
+    // font configs created via this cache. Without this ImGui would IM_FREE
+    // the same pointer multiple times on shutdown.
+    ImFontConfig fontConfig;
+    fontConfig.FontDataOwnedByAtlas = false;
+    ImFont* font = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
+        const_cast<void*>(mFontData),
+        static_cast<int>(mFontDataLen),
+        sizePx,
+        &fontConfig
+    );
+    debugCheck(font != nullptr, "AddFontFromMemoryTTF returned null — registered TTF buffer is invalid");
+    mCache.emplace(sizePx, font);
+    return *font;
+}
+
+ImFont& ImguiRttFontCache::setDefaultSize(float sizePx)
+{
+    ImFont& font = bake(sizePx);
+    mDefaultFont = &font;
+    return font;
 }
 
 ImguiRttManager::ImguiRttManager(ActiveBackend& backend, RenderTargetContainer& renderTargets)
@@ -44,9 +86,11 @@ bool shutdownContextBackendIfAlive(
 
 }
 
-void ImguiRttManager::flushPending(float deltaTimeMS, ImFontAtlas* sharedFonts, ImFont* rttFont)
+void ImguiRttManager::flushPending(float deltaTimeMS, ImFontAtlas* sharedFonts)
 {
     if (mPendingPasses.empty()) return;
+
+    ImFont* rttFont = mFonts.defaultFont();
 
     ZoneScopedN("ImGuiRttPasses");
     ImGuiContext* mainCtx = ImGui::GetCurrentContext();

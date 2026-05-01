@@ -106,19 +106,16 @@ Canvas::CanvasImpl::CanvasImpl(
     );
     io.FontGlobalScale = 1.0f / contentScale;
 
-    // Second font baked at the unscaled imguiFontSize for ImGui-into-RTT contexts.
-    // RTT pixels are game-canvas pixels — OS DPI is irrelevant there, so we want
-    // glyphs rasterized at their logical size, not the framebuffer size.
-    // FontDataOwnedByAtlas = false because the same TTF buffer is already owned
-    // by the first AddFont call; without this we'd double-free on atlas destruction.
-    ImFontConfig rttFontConfig;
-    rttFontConfig.FontDataOwnedByAtlas = false;
-    mRttFont = io.Fonts->AddFontFromMemoryTTF(
+    // Hand the embedded TTF buffer to the RTT font cache (only this TU
+    // includes roboto_font.h, so the data lives here). Then bake the unscaled
+    // imguiFontSize as the default for ImGui-into-RTT contexts — RTT pixels
+    // are game-canvas pixels, OS DPI is irrelevant there, so we want glyphs
+    // rasterized at their logical size, not the framebuffer size.
+    mImguiRtt.fonts().setFontData(
         assets_Roboto_VariableFont_wdth_wght_ttf,
-        assets_Roboto_VariableFont_wdth_wght_ttf_len,
-        imguiFontSize,
-        &rttFontConfig
+        assets_Roboto_VariableFont_wdth_wght_ttf_len
     );
+    mImguiRtt.fonts().setDefaultSize(imguiFontSize);
 }
 
 Canvas::CanvasImpl::~CanvasImpl()
@@ -409,26 +406,7 @@ void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawC
 
 ImFont& Canvas::CanvasImpl::addImguiFont(float sizePx)
 {
-    // Dedup: ImGui's AddFontFromMemoryTTF appends a new ImFontConfig and
-    // re-rasterises the same glyphs every time, so caching by size avoids
-    // bloating the atlas texture on repeat calls.
-    if (auto it = mImguiFontCache.find(sizePx); it != mImguiFontCache.end())
-        return *it->second;
-
-    // FontDataOwnedByAtlas = false because the embedded TTF buffer is already
-    // referenced by the existing main + RTT-default font configs; without this
-    // ImGui would IM_FREE the same static pointer multiple times on shutdown.
-    ImFontConfig fontConfig;
-    fontConfig.FontDataOwnedByAtlas = false;
-    ImFont* font = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
-        assets_Roboto_VariableFont_wdth_wght_ttf,
-        assets_Roboto_VariableFont_wdth_wght_ttf_len,
-        sizePx,
-        &fontConfig
-    );
-    debugCheck(font != nullptr, "AddFontFromMemoryTTF returned null — embedded Roboto TTF buffer is invalid");
-    mImguiFontCache.emplace(sizePx, font);
-    return *font;
+    return mImguiRtt.fonts().bake(sizePx);
 }
 
 void Canvas::CanvasImpl::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
@@ -755,7 +733,7 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
         // render target, rendered with a pipeline compiled against the RTT render
         // pass (Vulkan) or into the RTT FBO (OpenGL). Lazy context creation on
         // first use; destroyed in removeRenderTarget() and the destructor.
-        mImguiRtt.flushPending(deltaTimeMS, ImGui::GetIO().Fonts, mRttFont);
+        mImguiRtt.flushPending(deltaTimeMS, ImGui::GetIO().Fonts);
     }
 
     mBackend.beginMainPass(mGameViewport);
