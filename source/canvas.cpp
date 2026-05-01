@@ -136,6 +136,16 @@ void Canvas::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bell
     mCanvasImpl->renderTo(renderTargetId, std::move(bellotaIds));
 }
 
+void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback)
+{
+    mCanvasImpl->renderImguiTo(renderTargetId, std::move(imguiDrawCallback));
+}
+
+ImFont& Canvas::bakeImguiFont(float sizePx)
+{
+    return mCanvasImpl->bakeImguiFont(sizePx);
+}
+
 void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
 {
     mCanvasImpl->setRenderTargetClearColor(renderTargetId, clearColor);

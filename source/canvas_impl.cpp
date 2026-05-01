@@ -68,6 +68,9 @@ Canvas::CanvasImpl::CanvasImpl(
     mTitle(title),
     mClearColor(clearColor),
     mPixelSize(pixelSize),
+    mImguiRtt(mBackend, mRenderTargets,
+              assets_Roboto_VariableFont_wdth_wght_ttf,
+              assets_Roboto_VariableFont_wdth_wght_ttf_len),
     mStats(false),
     mHeadless(headless),
     mGameViewport{0, 0, 0, 0}
@@ -92,18 +95,28 @@ Canvas::CanvasImpl::CanvasImpl(
     mBackend.initImGuiRenderer();
 
     // Font loading — must happen after ImGui platform and renderer are initialized.
-    // ImGui's DisplayFramebufferScale already maps display coordinates to framebuffer
-    // pixels, so do NOT call style.ScaleAllSizes(contentScale) — that would double-scale
-    // padding/borders on HiDPI displays. Rasterize the font at framebuffer resolution for
-    // crisp glyphs, then compensate with FontGlobalScale so layout proportions stay correct.
+    // We want main-context UI to scale with the OS DPI factor (i.e. 14 px font
+    // at 100% becomes 21 px at 150%) and stay crisp. ImGui draws text quads in
+    // logical (DisplaySize) coords, so a font with FontSize=N renders at
+    // N*contentScale framebuffer pixels. To keep glyphs sharp, bake the atlas
+    // at that final framebuffer size — that's why size_pixels is multiplied
+    // by contentScale twice: once to get the logical size we want for layout,
+    // once to convert that to framebuffer pixels for the atlas raster.
+    // (Do NOT call style.ScaleAllSizes(contentScale) — DisplayFramebufferScale
+    // already handles padding/borders; that would double-scale them.)
     ImGuiIO& io = ImGui::GetIO();
     const float contentScale = mWindow->contentScale();
     io.Fonts->AddFontFromMemoryTTF(
         assets_Roboto_VariableFont_wdth_wght_ttf,
         assets_Roboto_VariableFont_wdth_wght_ttf_len,
-        imguiFontSize * contentScale
+        imguiFontSize * contentScale * contentScale
     );
-    io.FontGlobalScale = 1.0f / contentScale;
+
+    // Bake the unscaled imguiFontSize as the default for ImGui-into-RTT contexts —
+    // RTT pixels are game-canvas pixels, OS DPI is irrelevant there, so we want
+    // glyphs rasterized at their logical size, not the framebuffer size. The TTF
+    // buffer is bound to the cache via the manager constructor (RAII).
+    mImguiRtt.fonts().setDefaultSize(imguiFontSize);
 }
 
 Canvas::CanvasImpl::~CanvasImpl()
@@ -111,6 +124,12 @@ Canvas::CanvasImpl::~CanvasImpl()
     // Needs to be defined in the cpp file to avoid incomplete type errors due to the pimpl idiom for struct Window.
     // GPU resources must be freed while the GL/Vulkan context (owned by mWindow) is still alive.
     // Member destructors run after this body, so mWindow is valid here.
+
+    // Tear down secondary ImGui contexts for any render target that hosted one.
+    // Must happen before mBackend.shutdown() — the per-context backend owns GPU
+    // resources (Vulkan pipeline + descriptor pool, GL shader program) that need
+    // a live device/context.
+    mImguiRtt.releaseAll();
 
     // Free meshes
     for (auto& [bellotaIndex, bellotaPack] : mBellotas)
@@ -347,6 +366,11 @@ void Canvas::CanvasImpl::removeRenderTarget(RenderTargetId renderTargetId)
     RenderTargetPack& renderTargetPack = mRenderTargets.at(renderTargetId.id);
     const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
 
+    // Tear down the secondary ImGui context for this RTT, if one was created.
+    // Must happen before mBackend.freeRenderTarget — the per-context backend
+    // owns GPU resources tied to the RTT's render pass / FBO.
+    mImguiRtt.releaseContext(renderTargetId);
+
     if (renderTargetPack.dRenderTargetOpt.has_value())
     {
         const TexturePack& proxyPack = mTextures.at(proxyTexId.id);
@@ -374,6 +398,16 @@ TextureId Canvas::CanvasImpl::renderTargetTexture(RenderTargetId renderTargetId)
 void Canvas::CanvasImpl::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)
 {
     mPendingRttPasses.emplace_back(renderTargetId, std::move(bellotaIds));
+}
+
+void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback)
+{
+    mImguiRtt.enqueue(renderTargetId, std::move(imguiDrawCallback));
+}
+
+ImFont& Canvas::CanvasImpl::bakeImguiFont(float sizePx)
+{
+    return mImguiRtt.fonts().bake(sizePx);
 }
 
 void Canvas::CanvasImpl::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
@@ -695,6 +729,12 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
             mBackend.endRttPass();
         }
         mPendingRttPasses.clear();
+
+        // ImGui-to-RTT passes — each uses a secondary ImGuiContext owned by the
+        // render target, rendered with a pipeline compiled against the RTT render
+        // pass (Vulkan) or into the RTT FBO (OpenGL). Lazy context creation on
+        // first use; destroyed in removeRenderTarget() and the destructor.
+        mImguiRtt.flushPending(deltaTimeMS, ImGui::GetIO().Fonts);
     }
 
     mBackend.beginMainPass(mGameViewport);

@@ -7,10 +7,13 @@
 #include "controller.h"
 #include "tint.h"
 #include "screen_size.h"
+#include "imgui_draw_callback.h"
 #include <memory>
 #include <functional>
 #include <string>
 #include <vector>
+
+struct ImFont;
 
 namespace Nothofagus
 {
@@ -128,6 +131,47 @@ public:
     TextureId renderTargetTexture(RenderTargetId renderTargetId) const;
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
+
+    /**
+     * @brief Queue an ImGui draw callback to be rendered into the given render target.
+     *
+     * The callback runs on a secondary ImGuiContext owned by this render target —
+     * window positions, widget values and open/closed state are isolated from the main
+     * UI and from other RTTs. Coordinate space matches the render target size in pixels.
+     *
+     * Call from inside the update() callback, same phase as renderTo() for sprites.
+     * The callback itself is invoked later (during the pre-main RTT pass phase) on the
+     * secondary context — do NOT call ImGui functions on the main context from inside it.
+     *
+     * Limitation (v1): input events (mouse, keyboard) are not forwarded to the secondary
+     * context. Widgets inside the RTT are displayed but not interactive.
+     */
+    void renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);
+
+    /**
+     * @brief Bake an ImGui font at the requested pixel size (or return the
+     *        cached one if already baked).
+     *
+     * Bakes a font in **logical pixels** (no OS-DPI scaling) and caches it,
+     * or returns the cached ImFont if one was already baked at this size.
+     * Intended for diegetic UI inside RTTs where one RTT pixel maps to one
+     * game-canvas pixel. Pass `&` of the returned reference to
+     * ImGui::PushFont(...) / ImGui::PopFont() inside a renderImguiTo()
+     * callback to render crisp glyphs at exactly that size.
+     *
+     * Must be called between Canvas construction and the first run() / tick()
+     * call (the atlas is uploaded to the GPU on the first frame; baking a
+     * new font afterwards has no effect until a manual rebuild).
+     *
+     * Repeat calls with the same `sizePx` return a reference to the same
+     * cached ImFont — the atlas is only baked once per size. Callers wanting
+     * to mutate per-font state like `ImFont::Scale` should be aware they are
+     * sharing it with every other caller of the same size.
+     *
+     * @return Reference to the cached or newly baked font. Lifetime owned
+     *         by the shared ImGui atlas; do not delete or take ownership.
+     */
+    ImFont& bakeImguiFont(float sizePx);
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 

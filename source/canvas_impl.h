@@ -5,10 +5,13 @@
 #include "bellota_container.h"
 #include "render_target_container.h"
 #include "texture_usage_monitor.h"
+#include "imgui_rtt_manager.h"
 #include "aa_box.h"
 #include "backends/render_backend_select.h"
 #include <vector>
 #include <utility>
+
+struct ImFont;
 
 namespace Nothofagus
 {
@@ -102,6 +105,10 @@ public:
     TextureId renderTargetTexture(RenderTargetId renderTargetId) const;
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
+
+    void renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);
+
+    ImFont& bakeImguiFont(float sizePx);
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 
@@ -212,6 +219,12 @@ private:
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
 
     ActiveBackend mBackend; ///< GPU rendering backend (compile-time selected).
+
+    /// Owns the queue of pending ImGui-RTT passes, per-RTT secondary
+    /// ImGuiContexts, and the RTT-flow font cache (default font + size→ImFont
+    /// dedup). Declared after mBackend / mRenderTargets so initialization
+    /// order is well-defined.
+    ImguiRttManager mImguiRtt;
 
     bool mStats; ///< Flag to indicate whether stats should be displayed.
     bool mHeadless{false}; ///< When true, the window is hidden (no visible UI).
