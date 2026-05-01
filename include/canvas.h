@@ -161,8 +161,13 @@ public:
      * call (the atlas is uploaded to the GPU on the first frame; adding a
      * font afterwards has no effect until a manual rebuild).
      *
-     * @return Reference to the newly baked font. Lifetime owned by the
-     *         shared ImGui atlas; do not delete or take ownership of it.
+     * Repeat calls with the same `sizePx` return a reference to the same
+     * cached ImFont — the atlas is only baked once per size. Callers wanting
+     * to mutate per-font state like `ImFont::Scale` should be aware they are
+     * sharing it with every other caller of the same size.
+     *
+     * @return Reference to the baked font. Lifetime owned by the shared
+     *         ImGui atlas; do not delete or take ownership of it.
      */
     ImFont& addImguiFont(float sizePx);
 

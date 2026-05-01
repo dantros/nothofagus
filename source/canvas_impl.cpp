@@ -409,6 +409,12 @@ void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawC
 
 ImFont& Canvas::CanvasImpl::addImguiFont(float sizePx)
 {
+    // Dedup: ImGui's AddFontFromMemoryTTF appends a new ImFontConfig and
+    // re-rasterises the same glyphs every time, so caching by size avoids
+    // bloating the atlas texture on repeat calls.
+    if (auto it = mImguiFontCache.find(sizePx); it != mImguiFontCache.end())
+        return *it->second;
+
     // FontDataOwnedByAtlas = false because the embedded TTF buffer is already
     // referenced by the existing main + RTT-default font configs; without this
     // ImGui would IM_FREE the same static pointer multiple times on shutdown.
@@ -421,6 +427,7 @@ ImFont& Canvas::CanvasImpl::addImguiFont(float sizePx)
         &fontConfig
     );
     debugCheck(font != nullptr, "AddFontFromMemoryTTF returned null — embedded Roboto TTF buffer is invalid");
+    mImguiFontCache.emplace(sizePx, font);
     return *font;
 }
 
