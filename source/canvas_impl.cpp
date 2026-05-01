@@ -401,9 +401,24 @@ void Canvas::CanvasImpl::renderTo(RenderTargetId renderTargetId, std::vector<Bel
     mPendingRttPasses.emplace_back(renderTargetId, std::move(bellotaIds));
 }
 
-void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback)
+void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback)
 {
-    mImguiRtt.enqueue(renderTargetId, std::move(imguiDrawCallback));
+    // Wrap the user's callback with auto-push/pop of fontId. Graceful fallback:
+    // if the bake is still pending or the id was removed, the callback runs
+    // without an explicit push (the secondary-context default stays in effect).
+    mImguiRtt.enqueue(renderTargetId,
+        [this, fontId, cb = std::move(imguiDrawCallback)] {
+            if (isImguiFontReady(fontId))
+            {
+                pushImguiFont(fontId);
+                cb();
+                popImguiFont();
+            }
+            else
+            {
+                cb();
+            }
+        });
 }
 
 ImguiFontId Canvas::CanvasImpl::bakeImguiFont(float sizePx)
@@ -445,6 +460,14 @@ void Canvas::CanvasImpl::pushImguiFont(ImguiFontId id)
 void Canvas::CanvasImpl::popImguiFont()
 {
     ImGui::PopFont();
+}
+
+ImguiFontId Canvas::CanvasImpl::defaultImguiFontId() const
+{
+    auto idOpt = mImguiRtt.fonts().defaultFontId();
+    debugCheck(idOpt.has_value(),
+        "Canvas::defaultImguiFontId: no default font registered (CanvasImpl ctor seeds this — should never fire)");
+    return *idOpt;
 }
 
 void Canvas::CanvasImpl::drainPendingFontOps()

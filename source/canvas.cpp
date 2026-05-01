@@ -136,29 +136,9 @@ void Canvas::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bell
     mCanvasImpl->renderTo(renderTargetId, std::move(bellotaIds));
 }
 
-void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback)
-{
-    mCanvasImpl->renderImguiTo(renderTargetId, std::move(imguiDrawCallback));
-}
-
 void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback)
 {
-    mCanvasImpl->renderImguiTo(renderTargetId,
-        [this, fontId, cb = std::move(imguiDrawCallback)] {
-            // Graceful fallback: if the bake is still pending or the id was
-            // removed, run the callback without pushing a font (the secondary
-            // context's io.FontDefault stays in effect).
-            if (isImguiFontReady(fontId))
-            {
-                pushImguiFont(fontId);
-                cb();
-                popImguiFont();
-            }
-            else
-            {
-                cb();
-            }
-        });
+    mCanvasImpl->renderImguiTo(renderTargetId, fontId, std::move(imguiDrawCallback));
 }
 
 ImguiFontId Canvas::bakeImguiFont(float sizePx)
@@ -189,6 +169,11 @@ void Canvas::pushImguiFont(ImguiFontId id)
 void Canvas::popImguiFont()
 {
     mCanvasImpl->popImguiFont();
+}
+
+ImguiFontId Canvas::defaultImguiFontId() const
+{
+    return mCanvasImpl->defaultImguiFontId();
 }
 
 void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)

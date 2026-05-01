@@ -134,7 +134,8 @@ public:
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 
     /**
-     * @brief Queue an ImGui draw callback to be rendered into the given render target.
+     * @brief Queue an ImGui draw callback to be rendered into the given render target,
+     *        with an auto push/pop of `fontId` wrapping the callback body.
      *
      * The callback runs on a secondary ImGuiContext owned by this render target —
      * window positions, widget values and open/closed state are isolated from the main
@@ -144,23 +145,18 @@ public:
      * The callback itself is invoked later (during the pre-main RTT pass phase) on the
      * secondary context — do NOT call ImGui functions on the main context from inside it.
      *
-     * Limitation (v1): input events (mouse, keyboard) are not forwarded to the secondary
-     * context. Widgets inside the RTT are displayed but not interactive.
-     */
-    void renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);
-
-    /**
-     * @brief Queue an ImGui draw callback inside an auto push/pop of `fontId`.
-     *
-     * Convenience overload that wraps `imguiDrawCallback` with `pushImguiFont(fontId)`
-     * / `popImguiFont()` so the callback body never has to touch `ImFont`. Mid-callback
-     * font changes are still allowed via raw `ImGui::PushFont(&canvas.getImguiFontPtr(other))`
-     * or `canvas.pushImguiFont(other)` — the auto push/pop only sets the default for
-     * the duration of the callback.
+     * `fontId` is auto-pushed via `pushImguiFont` before the callback runs and popped
+     * after it returns, so the body never has to touch `ImFont`. Mid-callback font
+     * overrides are still allowed via `canvas.pushImguiFont(otherId)` (paired with
+     * `popImguiFont()`). Pass `defaultImguiFontId()` to render with the canvas's
+     * default secondary-context font.
      *
      * Graceful fallback: if `fontId`'s bake is still pending or its entry has been
      * removed, the callback runs without an explicit push (text falls back to the
      * secondary-context default font set at canvas construction).
+     *
+     * Limitation (v1): input events (mouse, keyboard) are not forwarded to the secondary
+     * context. Widgets inside the RTT are displayed but not interactive.
      */
     void renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback);
 
@@ -269,6 +265,17 @@ public:
      * through the same stack).
      */
     void popImguiFont();
+
+    /**
+     * @brief Id of the secondary-context default font, baked at canvas
+     *        construction at the unscaled `imguiFontSize`.
+     *
+     * Pass this to `renderImguiTo(rtId, id, cb)` when the panel doesn't
+     * have a specific font of its own and should just use the same default
+     * the manager already sets as `io.FontDefault` on every secondary RTT
+     * context. The id is stable for the canvas lifetime.
+     */
+    ImguiFontId defaultImguiFontId() const;
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 

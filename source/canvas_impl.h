@@ -106,7 +106,7 @@ public:
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 
-    void renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);
+    void renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback);
 
     ImguiFontId bakeImguiFont(float sizePx);
 
@@ -119,6 +119,8 @@ public:
     void pushImguiFont(ImguiFontId id);
 
     void popImguiFont();
+
+    ImguiFontId defaultImguiFontId() const;
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 

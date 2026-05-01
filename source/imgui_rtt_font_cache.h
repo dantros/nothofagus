@@ -60,6 +60,10 @@ public:
     /// id was removed, or the default's bake is still pending.
     ImFont* defaultFont() const noexcept;
 
+    /// The id registered via setDefaultSize, or std::nullopt if no default
+    /// has been set or the default's entry has since been removed.
+    std::optional<ImguiFontId> defaultFontId() const noexcept { return mDefaultFontId; }
+
 private:
     struct FontEntry
     {
