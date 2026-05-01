@@ -217,11 +217,6 @@ private:
     void ensureSessionStarted(Controller& controller);
     void runOneFrame(float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
-    /// Drain the deferred ImGui font op queue and rebuild the atlas. Runs at
-    /// the very start of runOneFrame, before mWindow->newImGuiFrame(), so the
-    /// atlas is guaranteed unlocked. No-op when mPendingFontOps is empty.
-    void drainPendingFontOps();
-
     ScreenSize mScreenSize; ///< The screen size of the canvas.
     std::string mTitle; ///< The title of the canvas window.
     glm::vec3 mClearColor; ///< The background color of the canvas.
@@ -237,25 +232,12 @@ private:
 
     ActiveBackend mBackend; ///< GPU rendering backend (compile-time selected).
 
-    /// Owns the queue of pending ImGui-RTT passes, per-RTT secondary
-    /// ImGuiContexts, and the RTT-flow font cache (default font + size→ImFont
-    /// dedup). Declared after mBackend / mRenderTargets so initialization
-    /// order is well-defined.
+    /// Owns per-RTT secondary ImGuiContexts + the per-frame RTT pass queue,
+    /// AND the canvas-wide ImGui font manager (main HiDPI font + RTT default
+    /// + user-baked sizes; deferred bake/remove queue + atlas rebuild).
+    /// Declared after mBackend / mRenderTargets so initialization order is
+    /// well-defined.
     ImguiRttManager mImguiRtt;
-
-    /// Logical ImGui font size (the constructor parameter), retained so that
-    /// drainPendingFontOps can re-add the main HiDPI font after an atlas Clear.
-    float mImguiFontSize;
-
-    /// Deferred queue for atlas mutations (bake on cache miss, remove). Drained
-    /// at the start of runOneFrame, where the atlas is guaranteed unlocked.
-    struct PendingFontOp
-    {
-        enum class Kind { Bake, Remove };
-        Kind        kind;
-        ImguiFontId id;
-    };
-    std::vector<PendingFontOp> mPendingFontOps;
 
     bool mStats; ///< Flag to indicate whether stats should be displayed.
     bool mHeadless{false}; ///< When true, the window is hidden (no visible UI).

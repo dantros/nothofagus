@@ -70,8 +70,8 @@ Canvas::CanvasImpl::CanvasImpl(
     mPixelSize(pixelSize),
     mImguiRtt(mBackend, mRenderTargets,
               assets_Roboto_VariableFont_wdth_wght_ttf,
-              assets_Roboto_VariableFont_wdth_wght_ttf_len),
-    mImguiFontSize(imguiFontSize),
+              assets_Roboto_VariableFont_wdth_wght_ttf_len,
+              imguiFontSize),
     mStats(false),
     mHeadless(headless),
     mGameViewport{0, 0, 0, 0}
@@ -95,29 +95,10 @@ Canvas::CanvasImpl::CanvasImpl(
     mBackend.initialize(mWindow->nativeHandle(), {static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)});
     mBackend.initImGuiRenderer();
 
-    // Font loading — must happen after ImGui platform and renderer are initialized.
-    // We want main-context UI to scale with the OS DPI factor (i.e. 14 px font
-    // at 100% becomes 21 px at 150%) and stay crisp. ImGui draws text quads in
-    // logical (DisplaySize) coords, so a font with FontSize=N renders at
-    // N*contentScale framebuffer pixels. To keep glyphs sharp, bake the atlas
-    // at that final framebuffer size — that's why size_pixels is multiplied
-    // by contentScale twice: once to get the logical size we want for layout,
-    // once to convert that to framebuffer pixels for the atlas raster.
-    // (Do NOT call style.ScaleAllSizes(contentScale) — DisplayFramebufferScale
-    // already handles padding/borders; that would double-scale them.)
-    ImGuiIO& io = ImGui::GetIO();
-    const float contentScale = mWindow->contentScale();
-    io.Fonts->AddFontFromMemoryTTF(
-        assets_Roboto_VariableFont_wdth_wght_ttf,
-        assets_Roboto_VariableFont_wdth_wght_ttf_len,
-        imguiFontSize * contentScale * contentScale
-    );
-
-    // Bake the unscaled imguiFontSize as the default for ImGui-into-RTT contexts —
-    // RTT pixels are game-canvas pixels, OS DPI is irrelevant there, so we want
-    // glyphs rasterized at their logical size, not the framebuffer size. The TTF
-    // buffer is bound to the cache via the manager constructor (RAII).
-    mImguiRtt.fonts().setDefaultSize(imguiFontSize);
+    // Font setup — bake the main HiDPI font (imguiFontSize * contentScale²
+    // for crisp DPI-aware glyphs on the main UI) and seed the secondary-context
+    // default at the unscaled imguiFontSize for diegetic RTT panels.
+    mImguiRtt.fonts().initialize(mWindow->contentScale());
 }
 
 Canvas::CanvasImpl::~CanvasImpl()
@@ -423,20 +404,12 @@ void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiFontI
 
 ImguiFontId Canvas::CanvasImpl::bakeImguiFont(float sizePx)
 {
-    const ImguiFontId id = mImguiRtt.fonts().getOrCreate(sizePx);
-    // If the atlas was locked when getOrCreate ran, the entry's currentImFont
-    // is null — schedule a rebuild so it gets baked at the next frame's drain.
-    if (mImguiRtt.fonts().get(id) == nullptr)
-        mPendingFontOps.push_back({PendingFontOp::Kind::Bake, id});
-    return id;
+    return mImguiRtt.fonts().bake(sizePx);
 }
 
 void Canvas::CanvasImpl::removeImguiFont(ImguiFontId id)
 {
-    // Always deferred — schedules a full atlas rebuild at the start of the
-    // next frame. Asserting "id was registered" happens during the drain when
-    // the cache's remove() runs.
-    mPendingFontOps.push_back({PendingFontOp::Kind::Remove, id});
+    mImguiRtt.fonts().remove(id);
 }
 
 bool Canvas::CanvasImpl::isImguiFontReady(ImguiFontId id) const
@@ -468,43 +441,6 @@ ImguiFontId Canvas::CanvasImpl::defaultImguiFontId() const
     debugCheck(idOpt.has_value(),
         "Canvas::defaultImguiFontId: no default font registered (CanvasImpl ctor seeds this — should never fire)");
     return *idOpt;
-}
-
-void Canvas::CanvasImpl::drainPendingFontOps()
-{
-    if (mPendingFontOps.empty()) return;
-
-    // 1. Apply Remove ops to the cache (no atlas touch yet). Bake ops are
-    //    informational — the entries already exist in the cache (created
-    //    eagerly by getOrCreate) with currentImFont = nullptr; rebakeAll
-    //    will fill them in below.
-    for (const auto& op : mPendingFontOps)
-        if (op.kind == PendingFontOp::Kind::Remove)
-            mImguiRtt.fonts().remove(op.id);
-    mPendingFontOps.clear();
-
-    // 2. Wipe the atlas — every existing ImFont* is now dangling.
-    ImGui::GetIO().Fonts->Clear();
-
-    // 3. Re-add the main HiDPI font using the same recipe as the constructor.
-    const float contentScale = mWindow->contentScale();
-    ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
-        assets_Roboto_VariableFont_wdth_wght_ttf,
-        assets_Roboto_VariableFont_wdth_wght_ttf_len,
-        mImguiFontSize * contentScale * contentScale
-    );
-
-    // 4. Re-bake every surviving entry; ids and entry slots stay put, only
-    //    each entry's currentImFont is patched to the freshly-rasterised pointer.
-    mImguiRtt.fonts().rebakeAll();
-
-    // 5. Refresh io.FontDefault on every alive secondary ImGuiContext —
-    //    their previous pointer was invalidated by the Clear.
-    mImguiRtt.refreshSecondaryContextDefaultFont();
-
-    // 6. Drop the GPU font texture; ImGui's _NewFrame() lazily re-uploads it
-    //    from the rebuilt atlas on its very next call.
-    mBackend.rebuildImguiFontTexture();
 }
 
 void Canvas::CanvasImpl::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
@@ -643,7 +579,7 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
     // the previous frame's ImGui::Render() and this frame's ImGui::NewFrame().
     // Must run BEFORE mBackend.imguiNewFrame() so ImGui_Impl*_NewFrame()'s
     // lazy font-texture re-upload picks up the rebuilt atlas.
-    drainPendingFontOps();
+    mImguiRtt.drainPendingFontOps(mWindow->contentScale());
 
     // Get current framebuffer size and compute letterboxed viewport
     auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "imgui_draw_callback.h"
-#include "imgui_rtt_font_cache.h"
+#include "imgui_font_manager.h"
 #include "render_target.h"
 #include "render_target_container.h"
 #include "backends/render_backend_select.h"
@@ -37,7 +37,8 @@ public:
     ImguiRttManager(ActiveBackend& backend,
                     RenderTargetContainer& renderTargets,
                     const void* fontData,
-                    std::size_t fontDataLen);
+                    std::size_t fontDataLen,
+                    float imguiFontSize);
 
     /// Queue an ImGui draw callback to run against renderTargetId this frame.
     void enqueue(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);
@@ -62,20 +63,27 @@ public:
 
     /// Walk every alive secondary ImGuiContext and reset its io.FontDefault
     /// to fonts().defaultFont(). Saves/restores the main ImGuiContext.
-    /// Called by Canvas::CanvasImpl during atlas rebuild — the previous
-    /// FontDefault pointers became stale when the atlas was Cleared.
+    /// Called during atlas rebuild — the previous FontDefault pointers
+    /// became stale when the atlas was Cleared.
     void refreshSecondaryContextDefaultFont();
 
-    /// Access to the RTT-flow font cache (default font + size→ImFont dedup).
-    ImguiRttFontCache&       fonts()       noexcept { return mFonts; }
-    const ImguiRttFontCache& fonts() const noexcept { return mFonts; }
+    /// Drain the font manager's queued ops + rebuild the atlas + refresh
+    /// secondary contexts + drop the GPU font texture so the next NewFrame
+    /// re-uploads it. No-op when the font manager has no pending ops.
+    /// Called by Canvas::CanvasImpl::runOneFrame at the top of each frame.
+    void drainPendingFontOps(float contentScale);
+
+    /// Access to the canvas-wide ImGui font manager (main HiDPI font + RTT
+    /// default + user-baked sizes; deferred bake/remove queue + atlas rebuild).
+    ImguiFontManager&       fonts()       noexcept { return mFonts; }
+    const ImguiFontManager& fonts() const noexcept { return mFonts; }
 
 private:
     ActiveBackend&         mBackend;
     RenderTargetContainer& mRenderTargets;
     std::vector<std::pair<RenderTargetId, ImguiDrawCallback>> mPendingPasses;
     std::unordered_map<std::size_t /*RenderTargetId*/, ImGuiContextPtr> mContexts;
-    ImguiRttFontCache mFonts;
+    ImguiFontManager mFonts;
 };
 
 }
