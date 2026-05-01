@@ -108,7 +108,7 @@ public:
 
     void renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback);
 
-    ImFont* addImguiFont(float sizePx);
+    ImFont& addImguiFont(float sizePx);
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 

@@ -141,7 +141,7 @@ void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiDrawCallback imgu
     mCanvasImpl->renderImguiTo(renderTargetId, std::move(imguiDrawCallback));
 }
 
-ImFont* Canvas::addImguiFont(float sizePx)
+ImFont& Canvas::addImguiFont(float sizePx)
 {
     return mCanvasImpl->addImguiFont(sizePx);
 }

@@ -153,15 +153,18 @@ public:
      *
      * Adds a font sized in **logical pixels** (no OS-DPI scaling) to the
      * shared ImGui atlas, intended for diegetic UI inside RTTs where one
-     * RTT pixel maps to one game-canvas pixel. Use the returned ImFont*
-     * with ImGui::PushFont(...) / ImGui::PopFont() inside a renderImguiTo()
-     * callback to render crisp glyphs at exactly that size.
+     * RTT pixel maps to one game-canvas pixel. Pass `&` of the returned
+     * reference to ImGui::PushFont(...) / ImGui::PopFont() inside a
+     * renderImguiTo() callback to render crisp glyphs at exactly that size.
      *
      * Must be called between Canvas construction and the first run() / tick()
      * call (the atlas is uploaded to the GPU on the first frame; adding a
      * font afterwards has no effect until a manual rebuild).
+     *
+     * @return Reference to the newly baked font. Lifetime owned by the
+     *         shared ImGui atlas; do not delete or take ownership of it.
      */
-    ImFont* addImguiFont(float sizePx);
+    ImFont& addImguiFont(float sizePx);
 
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 
