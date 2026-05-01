@@ -18,16 +18,28 @@ void ImguiRttFontCache::setFontData(const void* data, std::size_t length) noexce
     mFontDataLen = length;
 }
 
+ImFont* ImguiRttFontCache::find(float sizePx) const noexcept
+{
+    auto it = mCache.find(sizePx);
+    return it != mCache.end() ? it->second : nullptr;
+}
+
+ImFont& ImguiRttFontCache::at(float sizePx) const
+{
+    ImFont* font = find(sizePx);
+    debugCheck(font != nullptr, "ImguiRttFontCache::at: no font baked at this size — call bake() first or use find()");
+    return *font;
+}
+
 ImFont& ImguiRttFontCache::bake(float sizePx)
 {
-    debugCheck(mFontData != nullptr && mFontDataLen > 0,
-        "ImguiRttFontCache: setFontData() must be called before bake()");
-
     // Dedup: ImGui's AddFontFromMemoryTTF appends a new ImFontConfig and
     // re-rasterises the same glyphs every time, so caching by size avoids
     // bloating the atlas texture on repeat calls.
-    if (auto it = mCache.find(sizePx); it != mCache.end())
-        return *it->second;
+    if (ImFont* cached = find(sizePx)) return *cached;
+
+    debugCheck(mFontData != nullptr && mFontDataLen > 0,
+        "ImguiRttFontCache: setFontData() must be called before bake() on a cache miss");
 
     // FontDataOwnedByAtlas = false because the registered TTF buffer is owned
     // by the caller (typically static binary data) and is shared across all

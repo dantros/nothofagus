@@ -40,6 +40,17 @@ public:
     /// cache — typically a static byte array embedded in the binary.
     void setFontData(const void* data, std::size_t length) noexcept;
 
+    /// Look up a previously baked font without ever adding a new one.
+    /// Returns nullptr if no font has been baked at this size yet.
+    /// Useful when the caller wants to branch on cache miss instead of
+    /// paying for a bake.
+    ImFont* find(float sizePx) const noexcept;
+
+    /// Look up a previously baked font, asserting it exists. Use when the
+    /// caller knows the font has been baked and wants reference semantics
+    /// (mirrors std::map::at vs std::map::find).
+    ImFont& at(float sizePx) const;
+
     /// Bake (or return cached) a font at the given pixel size. Repeat calls
     /// with the same sizePx return the same ImFont. FontDataOwnedByAtlas is
     /// always false because the registered TTF buffer is shared across all
