@@ -223,6 +223,7 @@ target_include_directories(nothofagus
         "include"
         "third_party/glm"
         "third_party/imgui"
+        "third_party/imgui-filebrowser"
         "third_party/spdlog/include"
     PRIVATE
         "source"
