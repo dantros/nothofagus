@@ -75,6 +75,8 @@ add_executable(hello_custom_font
 )
 set_property(TARGET hello_custom_font PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_custom_font PRIVATE nothofagus)
+target_include_directories(hello_custom_font PRIVATE
+    "${CMAKE_SOURCE_DIR}/third_party/imgui-filebrowser")
 
 add_executable(hello_screenshot
     "hello_screenshot.cpp"
