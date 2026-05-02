@@ -11,6 +11,7 @@ Dependencies are vendored via `git subtree`. Use the commands below to update a 
 | `font8x8`    | https://github.com/dantros/font8x8.git        |
 | `vk-bootstrap` | https://github.com/charles-lunarg/vk-bootstrap |
 | `VulkanMemoryAllocator` | https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator |
+| `imgui-filebrowser` | https://github.com/AirGuanZ/imgui-filebrowser.git |
 
 `glad` and `imgui_cmake` are custom local code — not managed by subtree.
 

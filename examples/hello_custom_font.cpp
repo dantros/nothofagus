@@ -1,7 +1,9 @@
 #include <nothofagus.h>
 #include <imgui.h>
+#include <imfilebrowser.h>
 #include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -37,38 +39,31 @@ int main()
     bool                          fontLoaded = false;
     std::string                   lastError;
 
+    ImGui::FileBrowser fontDialog;
+    fontDialog.SetTitle("Choose a font file");
+    fontDialog.SetTypeFilters({ ".ttf", ".otf" });
+
     canvas.run([&](float)
     {
+        bool commitPath = false;
+
         ImGui::SetNextWindowSize(ImVec2(420.f, 360.f), ImGuiCond_FirstUseEver);
         ImGui::Begin("custom font demo");
 
         // Commit the path on Enter inside the field OR by clicking Load (so
-        // paste-then-click works). On commit: cascade-remove the old source
-        // (if any), register the new bytes as a source, bake at the current
-        // size. Atlas is locked here, so the bake is deferred — the next
-        // frame's drain runs RemoveSource + atlas Clear + rebake.
-        bool commitPath = ImGui::InputTextWithHint("font path", "path/to/font.ttf",
-                                                    pathBuf, sizeof(pathBuf),
-                                                    ImGuiInputTextFlags_EnterReturnsTrue);
+        // paste-then-click works) OR by picking a file in the Browse dialog.
+        // On commit: cascade-remove the old source (if any), register the new
+        // bytes as a source, bake at the current size. Atlas is locked here,
+        // so the bake is deferred — the next frame's drain runs RemoveSource
+        // + atlas Clear + rebake.
+        if (ImGui::InputTextWithHint("font path", "path/to/font.ttf",
+                                     pathBuf, sizeof(pathBuf),
+                                     ImGuiInputTextFlags_EnterReturnsTrue))
+            commitPath = true;
         ImGui::SameLine();
         if (ImGui::Button("Load")) commitPath = true;
-
-        if (commitPath)
-        {
-            auto bytes = readFileBytes(pathBuf);
-            if (bytes.empty())
-            {
-                lastError = std::string("could not read: ") + pathBuf;
-            }
-            else
-            {
-                if (fontLoaded) canvas.removeImguiFontSource(userSrc);
-                userSrc    = canvas.addImguiFontSource(bytes, Nothofagus::GlyphRange::Default);
-                user       = canvas.bakeImguiFont(userSrc, float(fontSize));
-                fontLoaded = true;
-                lastError.clear();
-            }
-        }
+        ImGui::SameLine();
+        if (ImGui::Button("Browse...")) fontDialog.Open();
 
         ImGui::InputText("text", textBuf, sizeof(textBuf));
 
@@ -129,6 +124,34 @@ int main()
         }
 
         ImGui::End();
+
+        fontDialog.Display();
+        if (fontDialog.HasSelected())
+        {
+            const std::string picked = fontDialog.GetSelected().string();
+            const std::size_t n = std::min(picked.size(), sizeof(pathBuf) - 1);
+            std::memcpy(pathBuf, picked.data(), n);
+            pathBuf[n] = '\0';
+            fontDialog.ClearSelected();
+            commitPath = true;
+        }
+
+        if (commitPath)
+        {
+            auto bytes = readFileBytes(pathBuf);
+            if (bytes.empty())
+            {
+                lastError = std::string("could not read: ") + pathBuf;
+            }
+            else
+            {
+                if (fontLoaded) canvas.removeImguiFontSource(userSrc);
+                userSrc    = canvas.addImguiFontSource(bytes, Nothofagus::GlyphRange::Default);
+                user       = canvas.bakeImguiFont(userSrc, float(fontSize));
+                fontLoaded = true;
+                lastError.clear();
+            }
+        }
     });
 
     return 0;
