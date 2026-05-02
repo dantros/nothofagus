@@ -17,9 +17,11 @@ int main()
     Nothofagus::BellotaId displayBellotaId =
         canvas.addBellota({{{96.0f, 80.0f}}, renderTargetTextureId});
 
-    // Bake the 12 px diegetic font once at startup. The returned id is stable
-    // across atlas rebuilds — only removeImguiFont(diegeticId) invalidates it.
-    Nothofagus::ImguiFontId diegeticId = canvas.bakeImguiFont(12.0f);
+    // Bake the 12 px diegetic font once at startup, from the canvas's built-in
+    // default source (embedded Roboto). The returned id is stable across atlas
+    // rebuilds — only removeImguiFont(diegeticId) invalidates it.
+    Nothofagus::ImguiFontId diegeticId =
+        canvas.bakeImguiFont(canvas.defaultImguiFontSourceId(), 12.0f);
 
     float sliderValue = 0.42f;
     bool  checkOn     = true;
@@ -96,7 +98,7 @@ int main()
         // place during rebakeAll().
         if (ImGui::Button("Bake 16 px font"))
         {
-            small16Id   = canvas.bakeImguiFont(16.0f);
+            small16Id   = canvas.bakeImguiFont(canvas.defaultImguiFontSourceId(), 16.0f);
             wantSmall16 = true;
         }
         ImGui::SameLine();

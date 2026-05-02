@@ -6,10 +6,13 @@
 #include "render_target_container.h"
 #include "texture_usage_monitor.h"
 #include "imgui_rtt_manager.h"
+#include "imgui_font_source_id.h"
 #include "aa_box.h"
 #include "backends/render_backend_select.h"
 #include <vector>
 #include <utility>
+#include <span>
+#include <cstddef>
 
 struct ImFont;
 
@@ -108,7 +111,13 @@ public:
 
     void renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback);
 
-    ImguiFontId bakeImguiFont(float sizePx);
+    ImguiFontSourceId addImguiFontSource(std::span<const std::byte> ttfBytes, GlyphRange glyphRange);
+
+    void removeImguiFontSource(ImguiFontSourceId sourceId);
+
+    ImguiFontSourceId defaultImguiFontSourceId() const;
+
+    ImguiFontId bakeImguiFont(ImguiFontSourceId sourceId, float sizePx);
 
     void removeImguiFont(ImguiFontId id);
 
