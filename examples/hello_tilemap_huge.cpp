@@ -115,9 +115,13 @@ int main()
     int        newRows = mapSize.y;
 
     // Fills a tilemap with a banded pattern that cycles through layers 1..4,
-    // plus a single white tile at (0, 0) so the user can find world origin.
+    // then overlays a white cell at each chunk's lower-left corner so chunk
+    // boundaries are visually obvious. With chunkSize {16, 16} and 8x8 colour
+    // bands, each chunk spans 2x2 mega-blocks — the white-dot grid spacing
+    // equals two mega-blocks. World origin (0, 0) is naturally one of the dots.
     auto populateWorld = [&](Nothofagus::Tilemap& world, glm::ivec2 size)
     {
+        // Base band pattern (the four bordered colours).
         for (int row = 0; row < size.y; ++row)
         {
             for (int col = 0; col < size.x; ++col)
@@ -127,7 +131,18 @@ int main()
                 world.setCell({col, row}, layerIdx);
             }
         }
-        world.setCell({0, 0}, 0);
+        // Chunk corner markers — white (layer 0) at each chunk's lower-left cell.
+        const glm::ivec2 chunkGrid{
+            (size.x + chunkSize.x - 1) / chunkSize.x,
+            (size.y + chunkSize.y - 1) / chunkSize.y
+        };
+        for (int chunkRow = 0; chunkRow < chunkGrid.y; ++chunkRow)
+        {
+            for (int chunkCol = 0; chunkCol < chunkGrid.x; ++chunkCol)
+            {
+                world.setCell({chunkCol * chunkSize.x, chunkRow * chunkSize.y}, 0);
+            }
+        }
     };
 
     // Build the initial Tilemap (world data) + TilemapView (pooled renderer).
