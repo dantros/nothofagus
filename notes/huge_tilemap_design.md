@@ -166,3 +166,35 @@ World-cell editing goes through `canvas.tilemap(handles.tilemapId).setCell(...)`
 - **RTT-targeted tilemap rendering**.
 - **Shader-scrolled single-draw fast path**.
 - **Pool shrink on viewport reduction**.
+
+Original plan's out of scope
+
+- Streaming beyond the pool: when the user's Tilemap would be huge enough that even the world cell grid (1 byte per world cell) is too big, page parts of it to  - disk. Pool eviction naturally extends to disk eviction. v1 keeps the full cell grid in RAM.
+- Multiple views per Tilemap: the design supports it (generation counters per chunk), but v1 ships with one-view-per-tilemap exercised. The second view's pool is independent; both stay in sync via generation polling.
+- RTT-targeted tilemap rendering: v1 renders to the main pass. renderTo(rtId, ...) integration with TilemapView (so a mini-map RTT can host its own view of the  - same Tilemap) is a follow-up.
+- Shader-scrolled single-draw fast path: still available later as an opt-in for finite worlds that fit in VRAM with one draw.
+- Per-chunk visual effects (tint a single chunk, depth-layer a chunk): the pool slots' bellotas rotate through world chunks, so per-chunk persistent effects don't map cleanly. Out of scope; the goal is efficient tilemap rendering, not per-chunk styling.
+- Pool shrink on viewport reduction: v1 grows the pool but never shrinks. Reclaim later if it matters.
+- Per-cell partial GPU upload inside a chunk's map texture: each chunk is small (~1 KB at 32×32), so a full chunk re-upload on world mutation is acceptable.
+
+# Verification
+Build all backend combinations (no regressions in the unmodified paths):
+
+```
+cmake --preset linux-debug-glfw-opengl-examples     && cmake --build  build/linux-debug-glfw-opengl-examples
+cmake --preset linux-debug-glfw-vulkan-examples     && cmake --build  build/linux-debug-glfw-vulkan-examples
+cmake --preset linux-debug-sdl3-opengl-examples     && cmake --build  build/linux-debug-sdl3-opengl-examples
+cmake --preset linux-debug-sdl3-vulkan-examples     && cmake --build  build/linux-debug-sdl3-vulkan-examples
+cmake --preset linux-debug-headless-vulkan-examples && cmake --build  build/linux-debug-headless-vulkan-examples
+```
+
+- Regression check — hello_tilemap renders identically before/after; IndirectTexture's only API addition (setMapBulk) doesn't affect existing usage.
+- New example — hello_tilemap_huge (~256×256 world cells, ~64 world chunks at 32×32, pool ~9–16 slots):
+- WASD scrolls smoothly within chunks (zero slot reassignment) — visible via debug counter.
+- Crossing a chunk boundary reassigns exactly one row or column of slots — visible via debug counter.
+- Teleport (instant camera jump >1 pool away) reassigns the whole pool once — one-frame hitch acceptable.
+- World-cell edits via tilemap.setCell appear in the rendered slot next frame (the affected chunk's generation bumps; the slot displaying it re-syncs).
+- Memory check — hello_tilemap_huge confirms pool IndirectTexture count and bellota count stay constant regardless of mapSize. Compare resident memory at 64×64 vs 1024×1024 world cells — should differ only by the cell grid size, not by pool size.
+- Camera-teleport stress — repeatedly jump the camera by large random offsets; confirm no crashes, no slot leaks, no visual artifacts after the one-frame hitch.
+- Headless mode — run hello_tilemap_huge with headless=true (or under NOTHOFAGUS_HEADLESS_VULKAN), drive via tick() + takeScreenshot() at several camera offsets, confirm screenshots show the expected windowed views.
+- Existing examples — hello_imgui_rtt, hello_render_to_texture, hello_animation_state_machine, etc. still work (no engine changes that touch their paths).
