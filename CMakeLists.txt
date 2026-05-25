@@ -99,6 +99,7 @@ add_library(nothofagus
     "source/animation_state.cpp"
     "source/tilemap.cpp"
     "source/tilemap_builder.cpp"
+    "source/tilemap_manager.cpp"
 
     # This is only required to show header files in the Visual Studio IDE solution browser
     ${NOTHOFAGUS_SOURCE_HEADERS}

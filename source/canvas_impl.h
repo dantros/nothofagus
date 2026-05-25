@@ -3,21 +3,19 @@
 #include "canvas.h"
 #include "tilemap.h"
 #include "tilemap_view.h"
-#include "tilemap_view_pack.h"
+#include "tilemap_manager.h"
 #include "texture_container.h"
 #include "bellota_container.h"
 #include "render_target_container.h"
 #include "texture_usage_monitor.h"
 #include "imgui_rtt_manager.h"
 #include "imgui_font_source_id.h"
-#include "indexed_container.h"
 #include "aa_box.h"
 #include "backends/render_backend_select.h"
 #include <vector>
 #include <utility>
 #include <span>
 #include <cstddef>
-#include <unordered_set>
 
 struct ImFont;
 
@@ -240,7 +238,6 @@ private:
     void clearUnusedTextures();
     void ensureSessionStarted(Controller& controller);
     void runOneFrame(float deltaTimeMS, std::function<void(float)> update, Controller& controller);
-    void updateTilemapViews();
 
     ScreenSize mScreenSize; ///< The screen size of the canvas.
     std::string mTitle; ///< The title of the canvas window.
@@ -250,10 +247,7 @@ private:
     TextureContainer mTextures; ///< Container for Texture objects.
     BellotaContainer mBellotas; ///< Container for Bellota objects.
     RenderTargetContainer mRenderTargets; ///< Container for RenderTarget objects.
-    IndexedContainer<Tilemap> mTilemaps;     ///< World data for huge tilemaps; rendered via TilemapViews.
-    TilemapViewContainer mTilemapViews;       ///< Pooled chunk renderers; own internal bellotas + textures.
-    std::unordered_set<std::size_t> mViewManagedBellotaIds; ///< Bellotas owned by a TilemapView; user-side remove is rejected.
-    std::unordered_set<std::size_t> mViewManagedTextureIds; ///< Textures owned by a TilemapView; user-side remove is rejected.
+    TilemapManager mTilemapManager; ///< Huge-tilemap storage + per-frame view pool logic.
     TextureUsageMonitor mTextureUsageMonitor;
 
     /// RTT passes queued by renderTo() during the update callback, executed before the main render.

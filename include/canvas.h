@@ -434,8 +434,12 @@ public:
     /// Must be called from within the update() callback.
     DirectTexture takeScreenshot() const;
 
-private:
+    /// Internal pimpl type; full definition lives in source/canvas_impl.h.
+    /// The forward declaration is public so internal-only types (e.g. TilemapManager)
+    /// can name it; the definition is unreachable to library users.
     class CanvasImpl;
+
+private:
     std::unique_ptr<CanvasImpl> mCanvasImpl;
 };
 
