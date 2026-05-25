@@ -97,6 +97,15 @@ std::uint8_t IndirectTexture::cell(int col, int row) const
     return mMap[static_cast<std::size_t>(row) * static_cast<std::size_t>(mMapSize.x) + static_cast<std::size_t>(col)];
 }
 
+IndirectTexture& IndirectTexture::setMapBulk(std::span<const std::uint8_t> cells)
+{
+    debugCheck(hasMap(), "setMapBulk requires setMap to have been called first.");
+    debugCheck(cells.size() == mMap.size(), "setMapBulk size does not match mapSize.x * mapSize.y.");
+    std::copy(cells.begin(), cells.end(), mMap.begin());
+    mMapDirty = true;
+    return *this;
+}
+
 std::vector<std::uint8_t> IndirectTexture::generateMapData() const
 {
     return mMap;

@@ -428,6 +428,12 @@ public:
     /// Read the layer index for a specific cell. Bounds-checked.
     std::uint8_t cell(int col, int row) const;
 
+    /// Overwrite the entire cell grid in one shot. Requires `setMap` to have been
+    /// called previously; `cells.size()` must equal `mapSize.x * mapSize.y`.
+    /// Used by `TilemapView` pool slots to swap in a new chunk's worth of cells
+    /// without going through `setCell` cell_count² times.
+    IndirectTexture& setMapBulk(std::span<const std::uint8_t> cells);
+
     /// Cell-grid dimensions. `{0, 0}` when not a tile-map.
     glm::ivec2 mapSize() const { return mMapSize; }
 

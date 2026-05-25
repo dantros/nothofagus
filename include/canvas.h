@@ -4,6 +4,8 @@
 #include "bellota.h"
 #include "texture.h"
 #include "render_target.h"
+#include "tilemap.h"
+#include "tilemap_view.h"
 #include "controller.h"
 #include "tint.h"
 #include "screen_size.h"
@@ -133,6 +135,28 @@ public:
     void removeRenderTarget(RenderTargetId renderTargetId);
 
     TextureId renderTargetTexture(RenderTargetId renderTargetId) const;
+
+    /// Register a Tilemap (world data) with the canvas. Returns a stable id.
+    /// No GPU resources are allocated until a TilemapView is registered against this Tilemap.
+    TilemapId addTilemap(Tilemap tilemap);
+
+    /// Remove a Tilemap. debugChecks that no TilemapView still references it.
+    void removeTilemap(TilemapId tilemapId);
+
+    /// Access a registered Tilemap (mutable; use `setCell` to edit world data).
+    Tilemap& tilemap(TilemapId tilemapId);
+    const Tilemap& tilemap(TilemapId tilemapId) const;
+
+    /// Register a TilemapView (renderer) against a previously-added Tilemap.
+    /// Allocates the chunk pool (small IndirectTexture + Bellota slots tagged view-managed).
+    TilemapViewId addTilemapView(TilemapView view);
+
+    /// Remove a TilemapView and tear down its pool slots.
+    void removeTilemapView(TilemapViewId viewId);
+
+    /// Access a registered TilemapView (mutable; use `setCamera` to scroll).
+    TilemapView& tilemapView(TilemapViewId viewId);
+    const TilemapView& tilemapView(TilemapViewId viewId) const;
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 

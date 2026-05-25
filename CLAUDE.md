@@ -299,6 +299,55 @@ Nothofagus::TextureId tileMapTexId = canvas.addTexture(tileMap);
 - `bellota.currentLayer()` is unused for tilemap textures — per-cell layer choice is driven by the cell grid, not by a global layer index. Animation state machines should target non-tilemap `IndirectTexture` instances.
 - `setCell` triggers `mMapDirty` and is hot-uploadable per-frame; per-pixel `setPixels` triggers `mAtlasDirty` for tile-graphic mutations.
 - The palette is shared between the tile-map and indirect rendering paths — `setPallete` works the same way.
+- `setMapBulk(span)` overwrites the entire cell grid in one shot (used internally by `TilemapView` to swap chunks; useful directly when bulk-replacing a tilemap's cells).
+
+### Huge tilemaps via `Tilemap` + `TilemapView`
+
+Single-`IndirectTexture` tilemaps scale poorly: any `setCell` re-uploads the entire world's map texture, and the bellota's mesh covers the whole world even when only a small window is visible. For huge maps (open worlds, side-scrolling levels), use the **`Tilemap` + `TilemapView` pair** instead. The world data lives once in a `Tilemap`; a `TilemapView` owns a small pool of `IndirectTexture` + `Bellota` slots sized to the canvas viewport + a 1-chunk margin. Slots are anchored to pool indices; world chunks rotate through them as the camera scrolls. Only border slots crossing into/out of view get their cell data rewritten — smooth scrolling within a chunk is a zero-rebind frame.
+
+```cpp
+// Build the tile graphics (palette indices, one std::vector per atlas layer).
+std::vector<std::vector<std::uint8_t>> tileGraphics{ /* layer 0, layer 1, ... */ };
+
+// createTilemap registers both the Tilemap (world data) and the TilemapView
+// (pooled renderer) in one shot and returns handles for both.
+Nothofagus::TilemapHandles handles = Nothofagus::createTilemap(
+    canvas,
+    /*mapSize  */ glm::ivec2{256, 256},   // world cells
+    /*chunkSize*/ glm::ivec2{32, 32},     // cells per pool slot
+    /*tileSize */ glm::ivec2{16, 16},     // pixels per cell
+    palette,
+    std::span<const std::vector<std::uint8_t>>(tileGraphics));
+
+// Edit the world at world-cell coordinates — the owning chunk's generation
+// bumps, the pool slot displaying it (if any) re-syncs next frame.
+canvas.tilemap(handles.tilemapId).setCell({worldCol, worldRow}, layerIndex);
+
+// Pan the view via the camera (world pixels; (0,0) = world origin centered).
+canvas.tilemapView(handles.viewId).setCamera({scrollX, scrollY});
+```
+
+**How it works:**
+- `Tilemap` holds the atlas (one copy), the palette, and the full world cell grid (`mapSize.x * mapSize.y` bytes). No GPU resources are allocated for it.
+- `TilemapView` is registered against a `TilemapId`; on registration the canvas allocates a `ceil(screenSize / chunkPixelSize) + 2` grid of pool slots. Each slot is an `IndirectTexture` (with its own copy of the atlas + palette, chunk-sized map storage) plus a `Bellota`. Both are **view-managed**: calling `canvas.removeBellota`/`canvas.removeTexture` on those ids fires a `debugCheck`. Use `canvas.removeTilemapView(viewId)` to tear the pool down.
+- Per-frame pre-pass (runs between the user update callback and the texture-upload pass): for each view, compute which world chunk each slot should display based on the camera; for any slot whose desired chunk changed (or whose chunk's generation advanced), memcpy the chunk's cells into the slot's IndirectTexture via `setMapBulk` and reposition the slot's bellota. The existing dirty-upload path then re-uploads only those small chunk map textures.
+- Renderer learns nothing new — pool slots flow through the existing 3-binding tilemap path. No shader, backend, or render-loop changes.
+
+**Memory cost:**
+- Atlas: 1 copy in `Tilemap` + 1 copy per pool slot (~50 copies for typical viewports).
+- Palette: same — 1 + ~pool.
+- World cell grid: 1 byte per world cell, held once in `Tilemap`.
+- Independent of world size beyond the cell grid itself: a 1000×1000-cell world (~1 MB cell grid) uses ~50 IndirectTextures and ~50 bellotas, regardless of how big the world is.
+
+**Lifecycle rules:**
+- `addTilemap` / `addTilemapView` register the data and the renderer; `createTilemap` is a convenience that calls both.
+- `removeTilemap(tilemapId)` fails if any `TilemapView` still references it.
+- `removeTilemapView(viewId)` removes all pool bellotas and textures it owns.
+- Multiple `TilemapView` instances may reference the same `Tilemap` (e.g., main view + mini-map view); each polls per-chunk generation counters independently.
+
+**Camera convention (v1):** `setCamera(offset)` sets the world-pixel coordinate that appears at the canvas center. `(0, 0)` = world origin centered. The `Tilemap`'s coordinate space is bottom-left = `(0, 0)` cell, top-right = `(mapSize.x - 1, mapSize.y - 1)`.
+
+**Deferred:** streaming (world cell grid eviction to disk); RTT-targeted tilemap rendering; pool shrink on viewport reduction; shader-scrolled single-draw fast path; per-cell partial GPU upload inside a chunk's map texture.
 
 ### Animations
 

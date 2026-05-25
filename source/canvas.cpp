@@ -131,6 +131,46 @@ TextureId Canvas::renderTargetTexture(RenderTargetId renderTargetId) const
     return mCanvasImpl->renderTargetTexture(renderTargetId);
 }
 
+TilemapId Canvas::addTilemap(Tilemap tilemap)
+{
+    return mCanvasImpl->addTilemap(std::move(tilemap));
+}
+
+void Canvas::removeTilemap(TilemapId tilemapId)
+{
+    mCanvasImpl->removeTilemap(tilemapId);
+}
+
+Tilemap& Canvas::tilemap(TilemapId tilemapId)
+{
+    return mCanvasImpl->tilemap(tilemapId);
+}
+
+const Tilemap& Canvas::tilemap(TilemapId tilemapId) const
+{
+    return mCanvasImpl->tilemap(tilemapId);
+}
+
+TilemapViewId Canvas::addTilemapView(TilemapView view)
+{
+    return mCanvasImpl->addTilemapView(view);
+}
+
+void Canvas::removeTilemapView(TilemapViewId viewId)
+{
+    mCanvasImpl->removeTilemapView(viewId);
+}
+
+TilemapView& Canvas::tilemapView(TilemapViewId viewId)
+{
+    return mCanvasImpl->tilemapView(viewId);
+}
+
+const TilemapView& Canvas::tilemapView(TilemapViewId viewId) const
+{
+    return mCanvasImpl->tilemapView(viewId);
+}
+
 void Canvas::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)
 {
     mCanvasImpl->renderTo(renderTargetId, std::move(bellotaIds));
