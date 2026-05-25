@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace Pal
@@ -57,6 +58,37 @@ static std::vector<std::uint8_t> makeBorderedTile(glm::ivec2 tileSize, std::uint
         data[static_cast<std::size_t>(y * w + (w - 1))]              = Pal::Black;
     }
     return data;
+}
+
+// White-on-black tile with a single 8x8 ASCII glyph centered in the cell.
+// Uses Nothofagus::writeChar to rasterise the glyph (font8x8 basic), then
+// remaps writeChar's colorIds (0 = bg, 1 = fg) to palette indices
+// (Pal::Black, Pal::White) so the digit is white-on-black in the final atlas.
+static std::vector<std::uint8_t> makeDigitTile(glm::ivec2 tileSize,
+                                                char asciiDigit,
+                                                const Nothofagus::ColorPallete& palette)
+{
+    Nothofagus::IndirectTexture scratch(tileSize, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f), 1);
+    scratch.setPallete(palette); // shared palette so colorIds 0 and 1 validate
+    Nothofagus::writeChar(scratch, static_cast<std::uint8_t>(asciiDigit), 4, 4);
+
+    std::vector<std::uint8_t> data(static_cast<std::size_t>(tileSize.x * tileSize.y), Pal::Black);
+    for (int j = 0; j < tileSize.y; ++j)
+    {
+        for (int i = 0; i < tileSize.x; ++i)
+        {
+            if (scratch.pixel(static_cast<std::size_t>(i), static_cast<std::size_t>(j)).colorId == 1)
+                data[static_cast<std::size_t>(j * tileSize.x + i)] = Pal::White;
+        }
+    }
+    return data;
+}
+
+// Layer index for digit N (0..9) in the tileGraphics atlas built below.
+// Layer layout: 0 = white solid, 1..4 = bordered colours, 5..14 = digits 0..9.
+constexpr std::uint8_t digitLayer(int digit)
+{
+    return static_cast<std::uint8_t>(5 + digit);
 }
 
 // Pretty-print a byte count into a small buffer.
@@ -96,15 +128,19 @@ int main()
         {0.20f, 0.75f, 0.35f, 1.0f},// 6 green
     };
 
-    // Five tile graphics. Layer 0 (white) is reserved for the world-origin marker;
-    // the populate loop only uses layers 1..4 (the four bordered colors).
+    // Tile atlas layout:
+    //   0       white solid (legacy; no longer used by the populate loop)
+    //   1..4    bordered colours used by the band pattern
+    //   5..14   digits 0..9 (used by the chunk-label overlay)
     std::vector<std::vector<std::uint8_t>> tileGraphics{
-        makeSolidTile   (tileSize, Pal::White),   // layer 0 — world-origin marker
+        makeSolidTile   (tileSize, Pal::White),   // layer 0
         makeBorderedTile(tileSize, Pal::Red),     // layer 1
         makeBorderedTile(tileSize, Pal::Yellow),  // layer 2
         makeBorderedTile(tileSize, Pal::Blue),    // layer 3
         makeBorderedTile(tileSize, Pal::Green),   // layer 4
     };
+    for (char d = '0'; d <= '9'; ++d)
+        tileGraphics.push_back(makeDigitTile(tileSize, d, palette));
 
     // ── State that survives a recreate ─────────────────────────────────────
     glm::ivec2 mapSize = initialMapSize;
@@ -115,10 +151,11 @@ int main()
     int        newRows = mapSize.y;
 
     // Fills a tilemap with a banded pattern that cycles through layers 1..4,
-    // then overlays a white cell at each chunk's lower-left corner so chunk
-    // boundaries are visually obvious. With chunkSize {16, 16} and 8x8 colour
-    // bands, each chunk spans 2x2 mega-blocks — the white-dot grid spacing
-    // equals two mega-blocks. World origin (0, 0) is naturally one of the dots.
+    // then overlays chunk row/col index labels at each chunk's top-left:
+    //   line 1 (top row of chunk): chunk row index digits
+    //   line 2 (one cell below):   chunk col index digits
+    // Labels are white-on-black, one digit per cell, left-aligned. With
+    // chunkSize {16, 16} and 8x8 colour bands, each chunk spans 2x2 mega-blocks.
     auto populateWorld = [&](Nothofagus::Tilemap& world, glm::ivec2 size)
     {
         // Base band pattern (the four bordered colours).
@@ -131,7 +168,7 @@ int main()
                 world.setCell({col, row}, layerIdx);
             }
         }
-        // Chunk corner markers — white (layer 0) at each chunk's lower-left cell.
+        // Chunk row/col label overlay (replaces the cells under the labels).
         const glm::ivec2 chunkGrid{
             (size.x + chunkSize.x - 1) / chunkSize.x,
             (size.y + chunkSize.y - 1) / chunkSize.y
@@ -140,7 +177,29 @@ int main()
         {
             for (int chunkCol = 0; chunkCol < chunkGrid.x; ++chunkCol)
             {
-                world.setCell({chunkCol * chunkSize.x, chunkRow * chunkSize.y}, 0);
+                const int worldColOrigin = chunkCol * chunkSize.x;
+                const int worldRowOrigin = chunkRow * chunkSize.y;
+
+                const std::string rowLabel = std::to_string(chunkRow);
+                const std::string colLabel = std::to_string(chunkCol);
+
+                // Line 1 (top row of chunk): row index digits.
+                for (std::size_t i = 0; i < rowLabel.size(); ++i)
+                {
+                    const int worldCol = worldColOrigin + static_cast<int>(i);
+                    if (worldCol < size.x && worldRowOrigin < size.y)
+                        world.setCell({worldCol, worldRowOrigin},
+                                      digitLayer(rowLabel[i] - '0'));
+                }
+                // Line 2 (one cell below): col index digits.
+                for (std::size_t i = 0; i < colLabel.size(); ++i)
+                {
+                    const int worldCol = worldColOrigin + static_cast<int>(i);
+                    const int worldRow = worldRowOrigin + 1;
+                    if (worldCol < size.x && worldRow < size.y)
+                        world.setCell({worldCol, worldRow},
+                                      digitLayer(colLabel[i] - '0'));
+                }
             }
         }
     };
