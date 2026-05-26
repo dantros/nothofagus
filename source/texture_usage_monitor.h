@@ -2,31 +2,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
-//#include <utility>
 #include "bellota.h"
-
-namespace std
-{
-
-template<>
-struct hash<Nothofagus::TextureId>
-{
-    std::size_t operator()(const Nothofagus::TextureId& textureId) const
-    {
-        return std::hash<std::size_t>{}(textureId.id);
-    }
-};
-
-template<>
-struct hash<Nothofagus::BellotaId>
-{
-    std::size_t operator()(const Nothofagus::BellotaId& bellotaId) const
-    {
-        return std::hash<std::size_t>{}(bellotaId.id);
-    }
-};
-
-}
 
 namespace Nothofagus
 {

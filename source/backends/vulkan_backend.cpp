@@ -494,15 +494,15 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
         stages[1].module = fragModule;
         stages[1].pName  = "main";
 
-        // Vertex layout: binding 0, stride 16 bytes — vec2 position (offset 0), vec2 uv (offset 8)
+        // Vertex layout: binding 0, sizeof(Vertex) bytes — vec2 position, vec2 uv
         VkVertexInputBindingDescription bindingDesc{};
         bindingDesc.binding   = 0;
-        bindingDesc.stride    = sizeof(float) * 4;
+        bindingDesc.stride    = sizeof(Vertex);
         bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
         std::array<VkVertexInputAttributeDescription, 2> attrDescs{};
-        attrDescs[0] = {0, 0, VK_FORMAT_R32G32_SFLOAT, 0};
-        attrDescs[1] = {1, 0, VK_FORMAT_R32G32_SFLOAT, sizeof(float) * 2};
+        attrDescs[0] = {0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, x)};
+        attrDescs[1] = {1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, u)};
 
         VkPipelineVertexInputStateCreateInfo vertexInput{};
         vertexInput.sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -1446,8 +1446,8 @@ VkDescriptorSet VulkanBackend::allocateAndUpdateTilemapDescriptorSet(
 
 DMesh VulkanBackend::uploadMesh(const Mesh& mesh)
 {
-    const VkDeviceSize vertexSize = mesh.vertices.size() * sizeof(float);
-    const VkDeviceSize indexSize  = mesh.indices.size()  * sizeof(unsigned int);
+    const VkDeviceSize vertexSize = mesh.vertices.size() * sizeof(Vertex);
+    const VkDeviceSize indexSize  = mesh.indices.size()  * sizeof(Index);
 
     auto uploadBuffer = [&](const void* data, VkDeviceSize size, VkBufferUsageFlags usage,
                              VkBuffer& outBuffer, VmaAllocation& outAlloc)

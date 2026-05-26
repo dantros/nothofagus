@@ -6,8 +6,6 @@
 namespace Nothofagus
 {
 
-constexpr unsigned int SIZE_IN_BYTES = 4;
-
 struct OpenGLMesh
 {
     unsigned int vao, vbo, ebo;

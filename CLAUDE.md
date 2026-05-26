@@ -300,6 +300,43 @@ Nothofagus::TextureId tileMapTexId = canvas.addTexture(tileMap);
 - `setCell` triggers `mMapDirty` and is hot-uploadable per-frame; per-pixel `setPixels` triggers `mAtlasDirty` for tile-graphic mutations.
 - The palette is shared between the tile-map and indirect rendering paths — `setPallete` works the same way.
 
+### Custom meshes
+
+Bellotas draw the implicit centered quad sized to their texture by default. Pass a `MeshId` as the third constructor argument to draw arbitrary triangle geometry instead. The texture is still required — it supplies the pixels the existing shader samples.
+
+```cpp
+// Build a triangle mesh in (x, y) pixels with UVs in [0, 1].
+Nothofagus::Mesh mesh;
+mesh.vertices = {
+    { -10.0f, -10.0f, 0.0f, 1.0f },
+    {  10.0f, -10.0f, 1.0f, 1.0f },
+    {   0.0f,  14.0f, 0.5f, 0.0f },
+};
+mesh.indices  = { 0, 1, 2 };
+
+Nothofagus::MeshId meshId = canvas.addMesh(mesh);
+
+// Attach the custom mesh; the texture supplies pixels via the same shader.
+Nothofagus::BellotaId id = canvas.addBellota({{{x, y}}, texId, meshId});
+
+// Swap geometry mid-frame; the previous mesh becomes eligible for GC.
+canvas.setMesh(id, otherMeshId);
+
+// Read-only mesh access (auto-quad or user mesh, transparent).
+const Nothofagus::Mesh& current = canvas.getMesh(id);
+
+// Explicit removal of a user mesh — must be unreferenced (debugCheck enforces this).
+canvas.removeMesh(meshId);
+```
+
+**Storage model:**
+- `Vertex { float x, y, u, v; }` ([include/mesh.h](include/mesh.h)) is the fixed vertex layout — matches the shader binding for both OpenGL and Vulkan backends. No custom attributes.
+- Every bellota carries a `MeshId`. If the user does not supply one (`Bellota(Transform, TextureId)`), the canvas materialises an **auto-quad** sized to the texture at `addBellota` time and stamps the id onto the stored bellota. There is no second mesh storage path — both flow through `MeshContainer` / `MeshPack`.
+- All bellotas referencing the same `MeshId` share **one GPU upload**. Lazy upload happens once on the next frame; subsequent registrations are zero-cost.
+- `MeshUsageMonitor` tracks references analogously to `TextureUsageMonitor`. When the last bellota referencing a `MeshId` goes away, the mesh is freed by `clearUnusedMeshes()` on the following frame (auto-GC is on by default and applies uniformly to auto-quads and user meshes).
+- `setTexture(bellotaId, newTexId)` regenerates the auto-quad sized to the new texture **only when the bellota uses an engine-allocated auto-quad**. User-supplied meshes are left untouched on texture change — that's the user's choice.
+- `removeMesh(meshId)` is for user-registered meshes only. Removing an auto-quad fires `debugCheck`; auto-quads are managed exclusively by the canvas.
+
 ### Animations
 
 Multi-layer `IndirectTexture` stores frames as layers. `AnimationStateMachine` drives `bellota.currentLayer()` automatically each frame.
@@ -498,6 +535,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_screenshot.cpp` | `takeScreenshot()` — capture frame as DirectTexture, display thumbnail |
 | `hello_headless.cpp` | Headless mode + `tick()` — no window, manual frame stepping, screenshot to terminal |
 | `hello_tilemap.cpp` | Tile-map mode of `IndirectTexture` — `setMap` + `setCell` over a layered atlas |
+| `hello_mesh.cpp` | Custom triangle meshes via `addMesh` + `Bellota(Transform, TextureId, MeshId)` — register geometry once, attach to bellotas, swap with `setMesh` |
 | `hello_render_to_texture.cpp` | `addRenderTarget` / `renderTo` — sprites drawn into an off-screen texture sampled by another bellota |
 | `hello_nested_render_targets.cpp` | Nested RTTs — one render target's output feeds another |
 | `hello_imgui_rtt.cpp` | `renderImguiTo` — diegetic ImGui panel drawn into an RTT, sampled by a rotating bellota |

@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 #include "bellota.h"
+#include "mesh.h"
 #include "texture.h"
 #include "render_target.h"
 #include "controller.h"
@@ -127,6 +128,44 @@ public:
     void markTextureAsDirty(const TextureId textureId);
     void setTextureMinFilter(const TextureId textureId, TextureSampleMode mode);
     void setTextureMagFilter(const TextureId textureId, TextureSampleMode mode);
+
+    /**
+     * @brief Register a triangle mesh asset and return a stable handle.
+     *
+     * The mesh is copied internally and uploaded to the GPU on the next frame.
+     * Attach to one or more Bellotas via the `Bellota(Transform, TextureId, MeshId)`
+     * constructor — bellotas sharing a `MeshId` share the same GPU buffers.
+     */
+    MeshId addMesh(const Mesh& mesh);
+
+    /**
+     * @brief Remove a previously registered user mesh.
+     *
+     * The mesh must not be referenced by any Bellota (asserts via `debugCheck`).
+     * Engine-allocated auto-quads cannot be removed through this entry point —
+     * they are managed exclusively by the canvas and freed automatically when
+     * their last referencing bellota goes away.
+     */
+    void removeMesh(MeshId meshId);
+
+    /**
+     * @brief Swap the mesh referenced by a Bellota. The new mesh must be a
+     * previously registered `MeshId`. The previous mesh is left in place if
+     * other bellotas still reference it; otherwise it becomes eligible for GC
+     * on the next frame.
+     */
+    void setMesh(const BellotaId bellotaId, const MeshId meshId);
+
+    /**
+     * @brief Read-only access to a registered mesh (user or auto-quad).
+     */
+    const Mesh& mesh(MeshId meshId) const;
+
+    /**
+     * @brief Returns the mesh a Bellota currently draws (auto-quad for textured
+     * bellotas with no explicit mesh, or the registered user mesh otherwise).
+     */
+    const Mesh& getMesh(BellotaId bellotaId) const;
 
     RenderTargetId addRenderTarget(ScreenSize size);
 

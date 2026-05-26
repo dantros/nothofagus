@@ -4,6 +4,7 @@
 #include <spdlog/spdlog.h>
 #include "texture.h"
 #include "transform.h"
+#include "mesh.h"
 #include "bellota.h"
 #include "canvas.h"
 #include "render_target.h"

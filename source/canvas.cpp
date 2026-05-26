@@ -116,6 +116,31 @@ void Canvas::setTextureMagFilter(const TextureId textureId, TextureSampleMode mo
     mCanvasImpl->setTextureMagFilter(textureId, mode);
 }
 
+MeshId Canvas::addMesh(const Mesh& mesh)
+{
+    return mCanvasImpl->addMesh(mesh);
+}
+
+void Canvas::removeMesh(MeshId meshId)
+{
+    mCanvasImpl->removeMesh(meshId);
+}
+
+void Canvas::setMesh(const BellotaId bellotaId, const MeshId meshId)
+{
+    mCanvasImpl->setMesh(bellotaId, meshId);
+}
+
+const Mesh& Canvas::mesh(MeshId meshId) const
+{
+    return mCanvasImpl->mesh(meshId);
+}
+
+const Mesh& Canvas::getMesh(BellotaId bellotaId) const
+{
+    return mCanvasImpl->getMesh(bellotaId);
+}
+
 RenderTargetId Canvas::addRenderTarget(ScreenSize size)
 {
     return mCanvasImpl->addRenderTarget(size);
