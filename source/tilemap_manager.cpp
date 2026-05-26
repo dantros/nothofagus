@@ -70,7 +70,7 @@ TilemapViewId TilemapManager::addTilemapView(TilemapView view, Canvas::CanvasImp
     for (std::size_t slotIdx = 0; slotIdx < slotCount; ++slotIdx)
     {
         // Build the slot's IndirectTexture: own copy of atlas + palette,
-        // chunk-sized map storage initialised to all-zero.
+        // chunk-sized map storage initialized to all-zero.
         IndirectTexture slotTexture(tileSize, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f), layerCount);
         slotTexture.setPallete(sourceTilemap.palette());
         for (std::size_t layerIdx = 0; layerIdx < layerCount; ++layerIdx)

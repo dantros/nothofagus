@@ -85,7 +85,7 @@ static std::vector<std::uint8_t> makeDigitTile(glm::ivec2 tileSize,
 }
 
 // Layer index for digit N (0..9) in the tileGraphics atlas built below.
-// Layer layout: 0 = white solid, 1..4 = bordered colours, 5..14 = digits 0..9.
+// Layer layout: 0 = white solid, 1..4 = bordered colors, 5..14 = digits 0..9.
 constexpr std::uint8_t digitLayer(int digit)
 {
     return static_cast<std::uint8_t>(5 + digit);
@@ -130,7 +130,7 @@ int main()
 
     // Tile atlas layout:
     //   0       white solid (legacy; no longer used by the populate loop)
-    //   1..4    bordered colours used by the band pattern
+    //   1..4    bordered colors used by the band pattern
     //   5..14   digits 0..9 (used by the chunk-label overlay)
     std::vector<std::vector<std::uint8_t>> tileGraphics{
         makeSolidTile   (tileSize, Pal::White),   // layer 0
@@ -155,10 +155,10 @@ int main()
     //   line 1 (top row of chunk): chunk row index digits
     //   line 2 (one cell below):   chunk col index digits
     // Labels are white-on-black, one digit per cell, left-aligned. With
-    // chunkSize {16, 16} and 8x8 colour bands, each chunk spans 2x2 mega-blocks.
+    // chunkSize {16, 16} and 8x8 color bands, each chunk spans 2x2 mega-blocks.
     auto populateWorld = [&](Nothofagus::Tilemap& world, glm::ivec2 size)
     {
-        // Base band pattern (the four bordered colours).
+        // Base band pattern (the four bordered colors).
         for (int row = 0; row < size.y; ++row)
         {
             for (int col = 0; col < size.x; ++col)

@@ -547,6 +547,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_screenshot.cpp` | `takeScreenshot()` — capture frame as DirectTexture, display thumbnail |
 | `hello_headless.cpp` | Headless mode + `tick()` — no window, manual frame stepping, screenshot to terminal |
 | `hello_tilemap.cpp` | Tile-map mode of `IndirectTexture` — `setMap` + `setCell` over a layered atlas |
+| `hello_tilemap_huge.cpp` | Huge tilemaps via `Tilemap` + `TilemapView` pool — WASD camera, teleport, recreate, live memory breakdown |
 | `hello_render_to_texture.cpp` | `addRenderTarget` / `renderTo` — sprites drawn into an off-screen texture sampled by another bellota |
 | `hello_nested_render_targets.cpp` | Nested RTTs — one render target's output feeds another |
 | `hello_imgui_rtt.cpp` | `renderImguiTo` — diegetic ImGui panel drawn into an RTT, sampled by a rotating bellota |
