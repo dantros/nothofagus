@@ -45,17 +45,18 @@ static std::vector<std::uint8_t> makeSolidTile(glm::ivec2 tileSize, std::uint8_t
 // Tile with a black 1-pixel border around a solid color.
 static std::vector<std::uint8_t> makeBorderedTile(glm::ivec2 tileSize, std::uint8_t fillIndex)
 {
-    const int w = tileSize.x, h = tileSize.y;
-    std::vector<std::uint8_t> data(static_cast<std::size_t>(w * h), fillIndex);
-    for (int x = 0; x < w; ++x)
+    const int tileWidth  = tileSize.x;
+    const int tileHeight = tileSize.y;
+    std::vector<std::uint8_t> data(static_cast<std::size_t>(tileWidth * tileHeight), fillIndex);
+    for (int x = 0; x < tileWidth; ++x)
     {
-        data[static_cast<std::size_t>(x)]                            = Pal::Black;
-        data[static_cast<std::size_t>((h - 1) * w + x)]              = Pal::Black;
+        data[static_cast<std::size_t>(x)]                                          = Pal::Black;
+        data[static_cast<std::size_t>((tileHeight - 1) * tileWidth + x)]           = Pal::Black;
     }
-    for (int y = 0; y < h; ++y)
+    for (int y = 0; y < tileHeight; ++y)
     {
-        data[static_cast<std::size_t>(y * w)]                        = Pal::Black;
-        data[static_cast<std::size_t>(y * w + (w - 1))]              = Pal::Black;
+        data[static_cast<std::size_t>(y * tileWidth)]                              = Pal::Black;
+        data[static_cast<std::size_t>(y * tileWidth + (tileWidth - 1))]            = Pal::Black;
     }
     return data;
 }
@@ -173,35 +174,26 @@ int main()
             (size.x + chunkSize.x - 1) / chunkSize.x,
             (size.y + chunkSize.y - 1) / chunkSize.y
         };
-        for (int chunkRow = 0; chunkRow < chunkGrid.y; ++chunkRow)
+        auto writeChunkLabel = [&](int chunkRow, int chunkCol)
         {
-            for (int chunkCol = 0; chunkCol < chunkGrid.x; ++chunkCol)
+            const int worldColOrigin = chunkCol * chunkSize.x;
+            const int worldRowOrigin = chunkRow * chunkSize.y;
+
+            auto stamp = [&](const std::string& digits, int worldRow)
             {
-                const int worldColOrigin = chunkCol * chunkSize.x;
-                const int worldRowOrigin = chunkRow * chunkSize.y;
-
-                const std::string rowLabel = std::to_string(chunkRow);
-                const std::string colLabel = std::to_string(chunkCol);
-
-                // Line 1 (top row of chunk): row index digits.
-                for (std::size_t i = 0; i < rowLabel.size(); ++i)
+                for (std::size_t i = 0; i < digits.size(); ++i)
                 {
                     const int worldCol = worldColOrigin + static_cast<int>(i);
-                    if (worldCol < size.x && worldRowOrigin < size.y)
-                        world.setCell({worldCol, worldRowOrigin},
-                                      digitLayer(rowLabel[i] - '0'));
-                }
-                // Line 2 (one cell below): col index digits.
-                for (std::size_t i = 0; i < colLabel.size(); ++i)
-                {
-                    const int worldCol = worldColOrigin + static_cast<int>(i);
-                    const int worldRow = worldRowOrigin + 1;
                     if (worldCol < size.x && worldRow < size.y)
-                        world.setCell({worldCol, worldRow},
-                                      digitLayer(colLabel[i] - '0'));
+                        world.setCell({worldCol, worldRow}, digitLayer(digits[i] - '0'));
                 }
-            }
-        }
+            };
+            stamp(std::to_string(chunkRow), worldRowOrigin);     // top row of chunk
+            stamp(std::to_string(chunkCol), worldRowOrigin + 1); // one cell below
+        };
+        for (int chunkRow = 0; chunkRow < chunkGrid.y; ++chunkRow)
+            for (int chunkCol = 0; chunkCol < chunkGrid.x; ++chunkCol)
+                writeChunkLabel(chunkRow, chunkCol);
     };
 
     // Build the initial Tilemap (world data) + TilemapView (pooled renderer).
@@ -333,6 +325,7 @@ int main()
         {
             teleportCellX = std::clamp(teleportCellX, 0, mapSize.x - 1);
             teleportCellY = std::clamp(teleportCellY, 0, mapSize.y - 1);
+            // Camera takes a world-pixel coordinate; +0.5 centers the cell in view.
             camera = glm::vec2{
                 (static_cast<float>(teleportCellX) + 0.5f) * static_cast<float>(tileSize.x),
                 (static_cast<float>(teleportCellY) + 0.5f) * static_cast<float>(tileSize.y)
