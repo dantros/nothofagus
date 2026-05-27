@@ -401,14 +401,14 @@ const Tilemap& Canvas::CanvasImpl::tilemap(TilemapId tilemapId) const
     return mTilemapManager.tilemap(tilemapId);
 }
 
-TilemapViewId Canvas::CanvasImpl::addTilemapView(TilemapView view)
+TilemapViewId Canvas::CanvasImpl::addTilemapView(TilemapView view, Canvas& canvas)
 {
-    return mTilemapManager.addTilemapView(view, *this);
+    return mTilemapManager.addTilemapView(view, canvas);
 }
 
-void Canvas::CanvasImpl::removeTilemapView(TilemapViewId viewId)
+void Canvas::CanvasImpl::removeTilemapView(TilemapViewId viewId, Canvas& canvas)
 {
-    mTilemapManager.removeTilemapView(viewId, *this);
+    mTilemapManager.removeTilemapView(viewId, canvas);
 }
 
 TilemapView& Canvas::CanvasImpl::tilemapView(TilemapViewId viewId)
@@ -624,7 +624,7 @@ static void sortByDepthOffset(const BellotaContainer& bellotas, std::vector<cons
     );
 }
 
-void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ZoneScopedN("runOneFrame");
 
@@ -658,7 +658,7 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
 
     {
         ZoneScopedN("TilemapViews");
-        mTilemapManager.updateViews(*this);
+        mTilemapManager.updateViews(canvas);
     }
 
     const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
@@ -886,7 +886,7 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
     FrameMark;
 }
 
-void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)
+void Canvas::CanvasImpl::run(Canvas& canvas, std::function<void(float deltaTime)> update, Controller& controller)
 {
     // Always call beginSession — it resets the window close flag and rebinds
     // input callbacks, which is required after a manifest switch (canvas.close()
@@ -903,25 +903,25 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     while (mWindow->isRunning())
     {
         performanceMonitor.update(mWindow->getTime());
-        runOneFrame(performanceMonitor.getMS(), update, controller);
+        runOneFrame(canvas, performanceMonitor.getMS(), update, controller);
     }
 }
 
-void Canvas::CanvasImpl::tick(float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ensureSessionStarted(controller);
-    runOneFrame(deltaTimeMS, update, controller);
+    runOneFrame(canvas, deltaTimeMS, update, controller);
 }
 
-void Canvas::CanvasImpl::tick(float deltaTimeMS, std::function<void(float)> update)
+void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update)
 {
     Controller controller;
-    tick(deltaTimeMS, update, controller);
+    tick(canvas, deltaTimeMS, update, controller);
 }
 
-void Canvas::CanvasImpl::tick(float deltaTimeMS)
+void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS)
 {
-    tick(deltaTimeMS, [](float){});
+    tick(canvas, deltaTimeMS, [](float){});
 }
 
 void Canvas::CanvasImpl::close()

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "canvas.h"
 #include "tilemap.h"
 #include "tilemap_view.h"
 #include "tilemap_view_pack.h"
@@ -11,19 +10,12 @@
 namespace Nothofagus
 {
 
-/**
- * @class TilemapManager
- * @brief Owns the data + per-frame logic for huge tilemaps: the `Tilemap`
- *        registry, the `TilemapView` pool packs, and the view-managed tag
- *        sets consulted by `Canvas::CanvasImpl` when policing user-side
- *        bellota/texture removals.
- *
- * The manager intentionally holds no reference to `Canvas::CanvasImpl`.
- * The three methods that need to touch canvas-owned bellotas/textures
- * (`addTilemapView`, `removeTilemapView`, `updateViews`) take it as an
- * explicit argument. The pure-storage methods (`addTilemap`, accessors,
- * predicates) don't.
- */
+class Canvas;
+
+/// Storage and per-frame logic for huge tilemaps: the `Tilemap` registry, the
+/// `TilemapView` pool packs, and the view-managed tag sets that police user-side
+/// bellota/texture removals. Three methods that need to touch canvas-owned
+/// bellotas/textures take a `Canvas&` and use only its public surface.
 class TilemapManager
 {
 public:
@@ -37,14 +29,13 @@ public:
 
     // ── TilemapView lifecycle (need canvas access for pool init/teardown) ─
     /// Allocates the pool: one `IndirectTexture` + one `Bellota` per slot,
-    /// registered through `canvasImpl.addTexture` / `canvasImpl.addBellota`
+    /// registered through `canvas.addTexture` / `canvas.addBellota`
     /// and tagged view-managed.
-    TilemapViewId addTilemapView(TilemapView view, Canvas::CanvasImpl& canvasImpl);
+    TilemapViewId addTilemapView(TilemapView view, Canvas& canvas);
 
     /// Untags + removes every pool slot's bellota and texture via
-    /// `canvasImpl.removeBellota` / `canvasImpl.removeTexture`, then drops
-    /// the view pack.
-    void          removeTilemapView(TilemapViewId id, Canvas::CanvasImpl& canvasImpl);
+    /// `canvas.removeBellota` / `canvas.removeTexture`, then drops the view pack.
+    void          removeTilemapView(TilemapViewId id, Canvas& canvas);
 
     TilemapView&       tilemapView(TilemapViewId id);
     const TilemapView& tilemapView(TilemapViewId id) const;
@@ -54,7 +45,7 @@ public:
     /// the texture upload pass. For each view, assigns visible world chunks
     /// to pool slots, memcpys chunk data into the slot's IndirectTexture
     /// via `setMapBulk`, and repositions/un-hides the slot bellota.
-    void updateViews(Canvas::CanvasImpl& canvasImpl);
+    void updateViews(Canvas& canvas);
 
     // ── View-managed predicates (consulted by removeBellota / removeTexture) ─
     bool isViewManagedBellota(std::size_t bellotaId) const

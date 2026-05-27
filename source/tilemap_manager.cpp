@@ -1,5 +1,5 @@
 #include "tilemap_manager.h"
-#include "canvas_impl.h"
+#include "canvas.h"
 #include "check.h"
 #include "screen_size.h"
 #include "transform.h"
@@ -38,7 +38,7 @@ const Tilemap& TilemapManager::tilemap(TilemapId tilemapId) const
     return mTilemaps.at(tilemapId.id);
 }
 
-TilemapViewId TilemapManager::addTilemapView(TilemapView view, Canvas::CanvasImpl& canvasImpl)
+TilemapViewId TilemapManager::addTilemapView(TilemapView view, Canvas& canvas)
 {
     debugCheck(mTilemaps.contains(view.tilemap().id),
         "TilemapView references a TilemapId not registered with this canvas.");
@@ -47,7 +47,7 @@ TilemapViewId TilemapManager::addTilemapView(TilemapView view, Canvas::CanvasImp
     const glm::ivec2 chunkSize = sourceTilemap.chunkSize();
     const glm::ivec2 tileSize  = sourceTilemap.tileSize();
     const glm::ivec2 chunkPixelSize{ chunkSize.x * tileSize.x, chunkSize.y * tileSize.y };
-    const ScreenSize& screen = canvasImpl.screenSize();
+    const ScreenSize& screen = canvas.screenSize();
     const glm::ivec2 screenSize{
         static_cast<int>(screen.width),
         static_cast<int>(screen.height)
@@ -81,12 +81,12 @@ TilemapViewId TilemapManager::addTilemapView(TilemapView view, Canvas::CanvasImp
         }
         slotTexture.setMap(chunkSize);
 
-        TextureId texId = canvasImpl.addTexture(slotTexture);
+        TextureId texId = canvas.addTexture(slotTexture);
         mViewManagedTextureIds.insert(texId.id);
 
         Bellota slotBellota(Transform(glm::vec2(0.0f, 0.0f)), texId, depthOffset);
         slotBellota.visible() = false; // hidden until per-frame pass assigns it
-        BellotaId bellotaId = canvasImpl.addBellota(slotBellota);
+        BellotaId bellotaId = canvas.addBellota(slotBellota);
         mViewManagedBellotaIds.insert(bellotaId.id);
 
         pack.slots.push_back(PoolSlot{ texId, bellotaId, glm::ivec2{-1, -1}, 0 });
@@ -95,7 +95,7 @@ TilemapViewId TilemapManager::addTilemapView(TilemapView view, Canvas::CanvasImp
     return TilemapViewId{ mTilemapViews.add(std::move(pack)) };
 }
 
-void TilemapManager::removeTilemapView(TilemapViewId viewId, Canvas::CanvasImpl& canvasImpl)
+void TilemapManager::removeTilemapView(TilemapViewId viewId, Canvas& canvas)
 {
     TilemapViewPack& pack = mTilemapViews.at(viewId.id);
 
@@ -105,9 +105,9 @@ void TilemapManager::removeTilemapView(TilemapViewId viewId, Canvas::CanvasImpl&
     for (const PoolSlot& slot : pack.slots)
     {
         mViewManagedBellotaIds.erase(slot.bellotaId.id);
-        canvasImpl.removeBellota(slot.bellotaId);
+        canvas.removeBellota(slot.bellotaId);
         mViewManagedTextureIds.erase(slot.textureId.id);
-        canvasImpl.removeTexture(slot.textureId);
+        canvas.removeTexture(slot.textureId);
     }
 
     mTilemapViews.remove(viewId.id);
@@ -123,11 +123,11 @@ const TilemapView& TilemapManager::tilemapView(TilemapViewId viewId) const
     return mTilemapViews.at(viewId.id).view;
 }
 
-void TilemapManager::updateViews(Canvas::CanvasImpl& canvasImpl)
+void TilemapManager::updateViews(Canvas& canvas)
 {
     if (mTilemapViews.size() == 0) return;
 
-    const ScreenSize& screen = canvasImpl.screenSize();
+    const ScreenSize& screen = canvas.screenSize();
     const glm::vec2 canvasCenter{
         static_cast<float>(screen.width)  * 0.5f,
         static_cast<float>(screen.height) * 0.5f
@@ -166,7 +166,7 @@ void TilemapManager::updateViews(Canvas::CanvasImpl& canvasImpl)
                     static_cast<std::size_t>(px);
                 PoolSlot& slot = viewPack.slots[slotIdx];
 
-                Bellota& slotBellota = canvasImpl.bellota(slot.bellotaId);
+                Bellota& slotBellota = canvas.bellota(slot.bellotaId);
                 slotBellota.depthOffset() = depthOffset;
 
                 const glm::ivec2 desired{
@@ -187,7 +187,7 @@ void TilemapManager::updateViews(Canvas::CanvasImpl& canvasImpl)
                 if (desired != slot.currentWorldChunk || currentGen != slot.syncedGeneration)
                 {
                     IndirectTexture& slotTex = std::get<IndirectTexture>(
-                        canvasImpl.texture(slot.textureId));
+                        canvas.texture(slot.textureId));
                     const auto chunkCells = sourceTilemap.chunkData(desired);
                     slotTex.setMapBulk(std::span<const std::uint8_t>(chunkCells));
                     slot.currentWorldChunk = desired;
