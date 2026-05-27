@@ -72,12 +72,6 @@ public:
     /// Destructor
     ~Canvas();
 
-    // Canvas is non-movable: the pimpl holds a back-reference to its owner,
-    // which would dangle if the Canvas were moved. Copying is already
-    // disabled by the unique_ptr member.
-    Canvas(Canvas&&) = delete;
-    Canvas& operator=(Canvas&&) = delete;
-
     // the monitor index where the top left corner of the canvas is currently located
     std::size_t getCurrentMonitor() const;
 

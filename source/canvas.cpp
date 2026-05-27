@@ -13,7 +13,7 @@ Canvas::Canvas(
     bool headless
 )
 {
-    mCanvasImpl = std::make_unique<CanvasImpl>(*this, screenSize, title, clearColor, pixelSize, imguiFontSize, headless);
+    mCanvasImpl = std::make_unique<CanvasImpl>(screenSize, title, clearColor, pixelSize, imguiFontSize, headless);
 }
 
 Canvas::~Canvas()
@@ -153,12 +153,12 @@ const Tilemap& Canvas::tilemap(TilemapId tilemapId) const
 
 TilemapViewId Canvas::addTilemapView(TilemapView view)
 {
-    return mCanvasImpl->addTilemapView(view);
+    return mCanvasImpl->addTilemapView(view, *this);
 }
 
 void Canvas::removeTilemapView(TilemapViewId viewId)
 {
-    mCanvasImpl->removeTilemapView(viewId);
+    mCanvasImpl->removeTilemapView(viewId, *this);
 }
 
 TilemapView& Canvas::tilemapView(TilemapViewId viewId)
@@ -280,33 +280,33 @@ void Canvas::run()
 {
     auto update = [](float deltaTime){};
     Controller controller;
-    mCanvasImpl->run(update, controller);
+    mCanvasImpl->run(*this, update, controller);
 }
 
 void Canvas::run(std::function<void(float deltaTime)> update)
 {
     Controller controller;
-    mCanvasImpl->run(update, controller);
+    mCanvasImpl->run(*this, update, controller);
 }
 
 void Canvas::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
-    mCanvasImpl->run(update, controller);
+    mCanvasImpl->run(*this, update, controller);
 }
 
 void Canvas::tick(float deltaTime, std::function<void(float)> update, Controller& controller)
 {
-    mCanvasImpl->tick(deltaTime, update, controller);
+    mCanvasImpl->tick(*this, deltaTime, update, controller);
 }
 
 void Canvas::tick(float deltaTime, std::function<void(float)> update)
 {
-    mCanvasImpl->tick(deltaTime, update);
+    mCanvasImpl->tick(*this, deltaTime, update);
 }
 
 void Canvas::tick(float deltaTime)
 {
-    mCanvasImpl->tick(deltaTime);
+    mCanvasImpl->tick(*this, deltaTime);
 }
 
 void Canvas::close()

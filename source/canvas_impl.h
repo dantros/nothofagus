@@ -34,7 +34,6 @@ class Canvas::CanvasImpl
 public:
 
     CanvasImpl(
-        Canvas& canvas,
         const ScreenSize& screenSize,
         const std::string& title,
         const glm::vec3 clearColor,
@@ -116,8 +115,8 @@ public:
     Tilemap& tilemap(TilemapId tilemapId);
     const Tilemap& tilemap(TilemapId tilemapId) const;
 
-    TilemapViewId addTilemapView(TilemapView view);
-    void removeTilemapView(TilemapViewId viewId);
+    TilemapViewId addTilemapView(TilemapView view, Canvas& canvas);
+    void removeTilemapView(TilemapViewId viewId, Canvas& canvas);
     TilemapView& tilemapView(TilemapViewId viewId);
     const TilemapView& tilemapView(TilemapViewId viewId) const;
 
@@ -216,15 +215,16 @@ public:
 
     /**
      * @brief Runs the main loop of the canvas with a custom update function.
+     * @param canvas Reference to the owning Canvas, threaded through to TilemapManager.
      * @param update The custom update function to be called every frame.
      * @param controller The Controller object that handles user input.
      */
-    void run(std::function<void(float deltaTime)> update, Controller& controller);
+    void run(Canvas& canvas, std::function<void(float deltaTime)> update, Controller& controller);
 
     /// Execute a single frame with a caller-supplied delta time (in milliseconds).
-    void tick(float deltaTimeMS, std::function<void(float)> update, Controller& controller);
-    void tick(float deltaTimeMS, std::function<void(float)> update);
-    void tick(float deltaTimeMS);
+    void tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller);
+    void tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update);
+    void tick(Canvas& canvas, float deltaTimeMS);
 
     void setAutoRemoveUnusedTextures(bool enabled);
 
@@ -238,9 +238,8 @@ private:
     void replaceBellota(const BellotaId bellotaId, const Bellota& bellota);
     void clearUnusedTextures();
     void ensureSessionStarted(Controller& controller);
-    void runOneFrame(float deltaTimeMS, std::function<void(float)> update, Controller& controller);
+    void runOneFrame(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
-    Canvas& mCanvas; ///< Back-reference to the owning Canvas (stable for the lifetime of this impl).
     ScreenSize mScreenSize; ///< The screen size of the canvas.
     std::string mTitle; ///< The title of the canvas window.
     glm::vec3 mClearColor; ///< The background color of the canvas.
