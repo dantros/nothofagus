@@ -8,9 +8,21 @@ target_include_directories(rendering_tests PRIVATE
 )
 target_link_libraries(rendering_tests PRIVATE nothofagus Catch2::Catch2WithMain)
 
-# Point tests at the golden directory (source tree, so updates persist).
+# Pick the golden directory matching this build's render backend, so local
+# ctest runs match the per-backend captures in tests/golden_*/. The
+# GOLDEN_DIR env var still overrides at runtime (used by CI).
+if(NOTHOFAGUS_HEADLESS_VULKAN)
+    set(_golden_subdir "golden_headless_vulkan")
+elseif(NOTHOFAGUS_BACKEND_VULKAN)
+    # Windowed Vulkan produces the same blended pixels as headless Vulkan
+    # (same blend pipeline, same swapchain format), so reuse those goldens.
+    set(_golden_subdir "golden_headless_vulkan")
+else()
+    set(_golden_subdir "golden")  # OpenGL — historical default
+endif()
+
 target_compile_definitions(rendering_tests PRIVATE
-    NOTHOFAGUS_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
+    NOTHOFAGUS_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/${_golden_subdir}"
 )
 
 include(Catch)
