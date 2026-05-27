@@ -57,6 +57,7 @@ static ViewportRect computeLetterboxViewport(int framebufferWidth, int framebuff
 }
 
 Canvas::CanvasImpl::CanvasImpl(
+    Canvas& canvas,
     const ScreenSize& screenSize,
     const std::string& title,
     const glm::vec3 clearColor,
@@ -64,6 +65,7 @@ Canvas::CanvasImpl::CanvasImpl(
     const float imguiFontSize,
     bool headless)
     :
+    mCanvas(canvas),
     mScreenSize(screenSize),
     mTitle(title),
     mClearColor(clearColor),
@@ -401,14 +403,14 @@ const Tilemap& Canvas::CanvasImpl::tilemap(TilemapId tilemapId) const
     return mTilemapManager.tilemap(tilemapId);
 }
 
-TilemapViewId Canvas::CanvasImpl::addTilemapView(TilemapView view, Canvas& canvas)
+TilemapViewId Canvas::CanvasImpl::addTilemapView(TilemapView view)
 {
-    return mTilemapManager.addTilemapView(view, canvas);
+    return mTilemapManager.addTilemapView(view, mCanvas);
 }
 
-void Canvas::CanvasImpl::removeTilemapView(TilemapViewId viewId, Canvas& canvas)
+void Canvas::CanvasImpl::removeTilemapView(TilemapViewId viewId)
 {
-    mTilemapManager.removeTilemapView(viewId, canvas);
+    mTilemapManager.removeTilemapView(viewId, mCanvas);
 }
 
 TilemapView& Canvas::CanvasImpl::tilemapView(TilemapViewId viewId)
@@ -624,7 +626,7 @@ static void sortByDepthOffset(const BellotaContainer& bellotas, std::vector<cons
     );
 }
 
-void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ZoneScopedN("runOneFrame");
 
@@ -658,7 +660,7 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
 
     {
         ZoneScopedN("TilemapViews");
-        mTilemapManager.updateViews(canvas);
+        mTilemapManager.updateViews(mCanvas);
     }
 
     const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
@@ -886,7 +888,7 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
     FrameMark;
 }
 
-void Canvas::CanvasImpl::run(Canvas& canvas, std::function<void(float deltaTime)> update, Controller& controller)
+void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
     // Always call beginSession — it resets the window close flag and rebinds
     // input callbacks, which is required after a manifest switch (canvas.close()
@@ -903,25 +905,25 @@ void Canvas::CanvasImpl::run(Canvas& canvas, std::function<void(float deltaTime)
     while (mWindow->isRunning())
     {
         performanceMonitor.update(mWindow->getTime());
-        runOneFrame(canvas, performanceMonitor.getMS(), update, controller);
+        runOneFrame(performanceMonitor.getMS(), update, controller);
     }
 }
 
-void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+void Canvas::CanvasImpl::tick(float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ensureSessionStarted(controller);
-    runOneFrame(canvas, deltaTimeMS, update, controller);
+    runOneFrame(deltaTimeMS, update, controller);
 }
 
-void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update)
+void Canvas::CanvasImpl::tick(float deltaTimeMS, std::function<void(float)> update)
 {
     Controller controller;
-    tick(canvas, deltaTimeMS, update, controller);
+    tick(deltaTimeMS, update, controller);
 }
 
-void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS)
+void Canvas::CanvasImpl::tick(float deltaTimeMS)
 {
-    tick(canvas, deltaTimeMS, [](float){});
+    tick(deltaTimeMS, [](float){});
 }
 
 void Canvas::CanvasImpl::close()
