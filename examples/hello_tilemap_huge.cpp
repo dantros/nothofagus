@@ -159,6 +159,10 @@ int main()
     int        editsPerFrame   = 0;        // random setCell calls per frame
     std::uint32_t rngState     = 0x9E3779B9u;
 
+    // ── Canvas resize controls (exercises M4 dynamic pool resize) ─────────
+    int newCanvasWidth  = canvasWidth;
+    int newCanvasHeight = canvasHeight;
+
     // Fills a tilemap with a banded pattern that cycles through layers 1..4,
     // then overlays chunk row/col index labels at each chunk's top-left:
     //   line 1 (top row of chunk): chunk row index digits
@@ -300,8 +304,10 @@ int main()
         ImGui::Begin("Tilemap");
 
         // Status
+        const Nothofagus::ScreenSize liveCanvasSize = canvas.screenSize();
         ImGui::Text("WASD to pan, ESC to quit");
         ImGui::Text("camera = (%.1f, %.1f) px", camera.x, camera.y);
+        ImGui::Text("canvas = %u x %u px",     liveCanvasSize.width, liveCanvasSize.height);
         ImGui::Text("world  = %d x %d cells",  mapSize.x, mapSize.y);
         ImGui::Text("chunk  = %d x %d cells (%d x %d px)",
                     chunkSize.x, chunkSize.y,
@@ -325,11 +331,13 @@ int main()
             const std::size_t worldPaletteBytes = paletteSize * sizeof(glm::vec4);
             const std::size_t worldTotalBytes  = cellGridBytes + chunkGensBytes + worldAtlasBytes + worldPaletteBytes;
 
-            // Pool (matches the formula in TilemapManager::addTilemapView).
+            // Pool (matches the formula in TilemapManager::buildPoolSlots).
+            // Reads canvas.screenSize() so the readout tracks runtime setScreenSize.
+            const Nothofagus::ScreenSize liveScreen = canvas.screenSize();
             const glm::ivec2 chunkPixelSize{ chunkSize.x * tileSize.x, chunkSize.y * tileSize.y };
             const glm::ivec2 poolGridSize{
-                (canvasWidth  + chunkPixelSize.x - 1) / chunkPixelSize.x + 2,
-                (canvasHeight + chunkPixelSize.y - 1) / chunkPixelSize.y + 2
+                (static_cast<int>(liveScreen.width)  + chunkPixelSize.x - 1) / chunkPixelSize.x + 2,
+                (static_cast<int>(liveScreen.height) + chunkPixelSize.y - 1) / chunkPixelSize.y + 2
             };
             const std::size_t slotCount       = static_cast<std::size_t>(poolGridSize.x) * static_cast<std::size_t>(poolGridSize.y);
             const std::size_t slotAtlasBytes  = layerCount * static_cast<std::size_t>(tileSize.x) * static_cast<std::size_t>(tileSize.y);
@@ -405,6 +413,22 @@ int main()
         }
         ImGui::SliderInt("edits/frame (gen bumps)", &editsPerFrame, 0, 5000);
         ImGui::Checkbox("show frame stats", &canvas.stats());
+
+        ImGui::Separator();
+
+        // Resize canvas — exercises M4 (TilemapView pool re-allocates against the new size).
+        ImGui::Text("Resize canvas:");
+        ImGui::InputInt("canvas w", &newCanvasWidth);
+        ImGui::InputInt("canvas h", &newCanvasHeight);
+        if (ImGui::Button("Resize"))
+        {
+            newCanvasWidth  = std::max(64, newCanvasWidth);
+            newCanvasHeight = std::max(64, newCanvasHeight);
+            canvas.setScreenSize({
+                static_cast<unsigned int>(newCanvasWidth),
+                static_cast<unsigned int>(newCanvasHeight)
+            });
+        }
 
         ImGui::End();
     }, controller);

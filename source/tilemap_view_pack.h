@@ -3,6 +3,7 @@
 #include "tilemap_view.h"
 #include "bellota.h"
 #include "indexed_container.h"
+#include "screen_size.h"
 #include <glm/glm.hpp>
 #include <cstdint>
 #include <vector>
@@ -23,8 +24,9 @@ struct TilemapViewPack
 {
     TilemapView               view;
     glm::ivec2                poolGridSize{0, 0};
+    ScreenSize                poolSizedFor{0, 0}; ///< Canvas screenSize the current pool was sized for; drives re-allocation in updateViews.
     std::vector<PoolSlot>     slots;
-    std::vector<std::uint8_t> chunkScratch; ///< Reused per re-sync; sized once at registration to `chunkSize.x * chunkSize.y`.
+    std::vector<std::uint8_t> chunkScratch; ///< Reused per re-sync; resized to `chunkSize.x * chunkSize.y` when the pool is (re)built.
 
     explicit TilemapViewPack(TilemapView v): view(v) {}
 };

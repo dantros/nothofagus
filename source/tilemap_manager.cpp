@@ -43,7 +43,22 @@ TilemapViewId TilemapManager::addTilemapView(TilemapView view, Canvas& canvas)
 {
     debugCheck(mTilemaps.contains(view.tilemap().id),
         "TilemapView references a TilemapId not registered with this canvas.");
-    const Tilemap& sourceTilemap = mTilemaps.at(view.tilemap().id);
+
+    TilemapViewPack pack(view);
+    buildPoolSlots(pack, canvas);
+    return TilemapViewId{ mTilemapViews.add(std::move(pack)) };
+}
+
+void TilemapManager::removeTilemapView(TilemapViewId viewId, Canvas& canvas)
+{
+    TilemapViewPack& pack = mTilemapViews.at(viewId.id);
+    teardownPoolSlots(pack, canvas);
+    mTilemapViews.remove(viewId.id);
+}
+
+void TilemapManager::buildPoolSlots(TilemapViewPack& pack, Canvas& canvas)
+{
+    const Tilemap& sourceTilemap = mTilemaps.at(pack.view.tilemap().id);
 
     const glm::ivec2 chunkSize = sourceTilemap.chunkSize();
     const glm::ivec2 tileSize  = sourceTilemap.tileSize();
@@ -58,8 +73,9 @@ TilemapViewId TilemapManager::addTilemapView(TilemapView view, Canvas& canvas)
         (screenSize.y + chunkPixelSize.y - 1) / chunkPixelSize.y + 2
     };
 
-    TilemapViewPack pack(view);
     pack.poolGridSize = poolGridSize;
+    pack.poolSizedFor = screen;
+    pack.slots.clear();
     const std::size_t slotCount =
         static_cast<std::size_t>(poolGridSize.x) * static_cast<std::size_t>(poolGridSize.y);
     pack.slots.reserve(slotCount);
@@ -68,7 +84,7 @@ TilemapViewId TilemapManager::addTilemapView(TilemapView view, Canvas& canvas)
 
     const auto tileGraphics = sourceTilemap.tileGraphics();
     const std::size_t layerCount = tileGraphics.size();
-    const std::int8_t depthOffset = view.depthOffset();
+    const std::int8_t depthOffset = pack.view.depthOffset();
 
     for (std::size_t slotIdx = 0; slotIdx < slotCount; ++slotIdx)
     {
@@ -94,14 +110,10 @@ TilemapViewId TilemapManager::addTilemapView(TilemapView view, Canvas& canvas)
 
         pack.slots.push_back(PoolSlot{ texId, bellotaId, glm::ivec2{-1, -1}, 0 });
     }
-
-    return TilemapViewId{ mTilemapViews.add(std::move(pack)) };
 }
 
-void TilemapManager::removeTilemapView(TilemapViewId viewId, Canvas& canvas)
+void TilemapManager::teardownPoolSlots(TilemapViewPack& pack, Canvas& canvas)
 {
-    TilemapViewPack& pack = mTilemapViews.at(viewId.id);
-
     // Untag first so the canvas's removeBellota / removeTexture debugCheck passes.
     // Tear down each slot's bellota before its texture so the usage monitor
     // moves the texture into the unused set ahead of removeTexture.
@@ -112,8 +124,7 @@ void TilemapManager::removeTilemapView(TilemapViewId viewId, Canvas& canvas)
         mViewManagedTextureIds.erase(slot.textureId.id);
         canvas.removeTexture(slot.textureId);
     }
-
-    mTilemapViews.remove(viewId.id);
+    pack.slots.clear();
 }
 
 TilemapView& TilemapManager::tilemapView(TilemapViewId viewId)
@@ -140,6 +151,17 @@ void TilemapManager::updateViews(Canvas& canvas)
     {
         const TilemapId tilemapId = viewPack.view.tilemap();
         if (!mTilemaps.contains(tilemapId.id)) continue;
+
+        // Canvas was resized since this pool was built — tear it down and
+        // rebuild against the new screenSize. Fresh slots have currentWorldChunk
+        // = {-1,-1}, so the chunk-sync pass below re-syncs every slot this frame.
+        if (screen.width  != viewPack.poolSizedFor.width ||
+            screen.height != viewPack.poolSizedFor.height)
+        {
+            teardownPoolSlots(viewPack, canvas);
+            buildPoolSlots(viewPack, canvas);
+        }
+
         const Tilemap& sourceTilemap = mTilemaps.at(tilemapId.id);
 
         const glm::ivec2 chunkSize     = sourceTilemap.chunkSize();

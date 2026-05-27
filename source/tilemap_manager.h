@@ -57,6 +57,15 @@ public:
     std::size_t viewCount() const    { return mTilemapViews.size(); }
 
 private:
+    /// Allocates / resizes one view's pool against the current `canvas.screenSize()`.
+    /// Used both at registration time and by `updateViews` when the canvas size changes.
+    void buildPoolSlots(TilemapViewPack& pack, Canvas& canvas);
+
+    /// Tears down every slot's bellota + texture (untag, then canvas remove) and
+    /// clears `pack.slots`. Used at removal time and at the head of `buildPoolSlots`'s
+    /// re-allocation path.
+    void teardownPoolSlots(TilemapViewPack& pack, Canvas& canvas);
+
     IndexedContainer<Tilemap>       mTilemaps;
     TilemapViewContainer            mTilemapViews;
     std::unordered_set<std::size_t> mViewManagedBellotaIds;

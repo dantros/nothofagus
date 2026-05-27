@@ -336,6 +336,7 @@ canvas.tilemapView(handles.viewId).setCamera({scrollX, scrollY});
 - `TilemapView` is registered against a `TilemapId`; on registration the canvas allocates a `ceil(screenSize / chunkPixelSize) + 2` grid of pool slots. Each slot is an `IndirectTexture` (with its own copy of the atlas + palette, chunk-sized map storage) plus a `Bellota`. Both are **view-managed**: calling `canvas.removeBellota`/`canvas.removeTexture` on those ids fires a `debugCheck`. Use `canvas.removeTilemapView(viewId)` to tear the pool down.
 - Per-frame pre-pass (runs between the user update callback and the texture-upload pass): for each view, compute which world chunk each slot should display based on the camera; for any slot whose desired chunk changed (or whose chunk's generation advanced), memcpy the chunk's cells into the slot's IndirectTexture via `setMapBulk` and reposition the slot's bellota. The existing dirty-upload path then re-uploads only those small chunk map textures.
 - Renderer learns nothing new — pool slots flow through the existing 3-binding tilemap path. No shader, backend, or render-loop changes.
+- **Pool resize on `setScreenSize`:** the pre-pass also compares the canvas's current `screenSize()` against the size the pool was built for. If they differ, the pool is torn down and rebuilt against the new size in one frame, then chunk-synced — `canvas.setScreenSize(...)` "just works" with active views. Window resize / fullscreen don't trigger this because the letterbox preserves the logical canvas; only explicit `setScreenSize` does.
 
 **Memory cost:**
 - Atlas: 1 copy in `Tilemap` + 1 copy per pool slot (~50 copies for typical viewports).
@@ -351,7 +352,7 @@ canvas.tilemapView(handles.viewId).setCamera({scrollX, scrollY});
 
 **Camera convention (v1):** `setCamera(offset)` sets the world-pixel coordinate that appears at the canvas center. `(0, 0)` = world origin centered. The `Tilemap`'s coordinate space is bottom-left = `(0, 0)` cell, top-right = `(mapSize.x - 1, mapSize.y - 1)`.
 
-**Deferred:** streaming (world cell grid eviction to disk); RTT-targeted tilemap rendering; pool shrink on viewport reduction; shader-scrolled single-draw fast path; per-cell partial GPU upload inside a chunk's map texture.
+**Deferred:** streaming (world cell grid eviction to disk); RTT-targeted tilemap rendering; shader-scrolled single-draw fast path; per-cell partial GPU upload inside a chunk's map texture.
 
 ### Animations
 
