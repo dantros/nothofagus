@@ -2,6 +2,7 @@
 #include <canvas.h>
 #include <texture.h>
 #include <bellota.h>
+#include <mesh.h>
 #include "golden_image.h"
 #include <string>
 #include <cstdlib>
@@ -232,4 +233,138 @@ TEST_CASE("Semi-transparent bellota blends with background", "[rendering]")
         canvas.tick(16.0f);
 
     checkAgainstGolden("opacity_blend", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// Test: custom triangle mesh renders correctly
+// ---------------------------------------------------------------------------
+TEST_CASE("Custom mesh renders correctly", "[rendering][mesh]")
+{
+    auto canvas = makeCanvas(10, 10);
+
+    Nothofagus::ColorPallete palette({
+        {0.0f, 0.0f, 0.0f, 0.0f},
+        {1.0f, 1.0f, 1.0f, 1.0f},
+    });
+    Nothofagus::IndirectTexture tex({2, 2}, {0.0f, 0.0f, 0.0f, 0.0f});
+    tex.setPallete(palette);
+    tex.setPixels({1, 1, 1, 1});
+    auto texId = canvas.addTexture(tex);
+
+    // Upward-pointing triangle, centered on origin, ~3px radius. UVs sample
+    // the (uniform) white texture so the triangle silhouette is what matters.
+    Nothofagus::Mesh triangle;
+    triangle.vertices = {
+        {{ 0.0f,  3.0f}, {0.5f, 0.0f}},
+        {{ 3.0f, -3.0f}, {1.0f, 1.0f}},
+        {{-3.0f, -3.0f}, {0.0f, 1.0f}},
+    };
+    triangle.indices = {0, 1, 2};
+
+    auto meshId = canvas.addMesh(triangle);
+    canvas.addBellota(Nothofagus::Bellota({glm::vec2(5.0f, 5.0f)}, texId, meshId));
+
+    for (int i = 0; i < 3; ++i)
+        canvas.tick(16.0f);
+
+    checkAgainstGolden("custom_mesh_triangle", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// Test: auto-quad regenerates when setTexture swaps to a differently-sized texture.
+// Renders a small bellota first, then rebinds it to a larger texture and verifies
+// the auto-quad rebuilt to match the new size.
+// ---------------------------------------------------------------------------
+TEST_CASE("Auto-quad regenerates on setTexture", "[rendering][mesh]")
+{
+    auto canvas = makeCanvas(10, 10);
+
+    Nothofagus::ColorPallete palette({
+        {0.0f, 0.0f, 0.0f, 0.0f},
+        {1.0f, 1.0f, 1.0f, 1.0f},
+    });
+
+    Nothofagus::IndirectTexture smallTex({2, 2}, {0.0f, 0.0f, 0.0f, 0.0f});
+    smallTex.setPallete(palette);
+    smallTex.setPixels({1, 1, 1, 1});
+
+    Nothofagus::IndirectTexture largeTex({6, 6}, {0.0f, 0.0f, 0.0f, 0.0f});
+    largeTex.setPallete(palette);
+    largeTex.setPixels({
+        1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1,
+    });
+
+    auto smallTexId = canvas.addTexture(smallTex);
+    auto largeTexId = canvas.addTexture(largeTex);
+
+    // Bellota starts on the 2x2 texture (auto-quad sized 2x2).
+    auto bellotaId = canvas.addBellota(Nothofagus::Bellota({glm::vec2(5.0f, 5.0f)}, smallTexId));
+
+    // Swap to the 6x6 texture — the auto-quad must regenerate to that size.
+    canvas.setTexture(bellotaId, largeTexId);
+
+    for (int i = 0; i < 3; ++i)
+        canvas.tick(16.0f);
+
+    checkAgainstGolden("auto_quad_resized_after_setTexture", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// Test: setMesh swaps the bellota's geometry mid-life. Registers two
+// distinguishable user meshes (triangle vs left-half quad) and captures the
+// post-swap frame.
+// ---------------------------------------------------------------------------
+TEST_CASE("setMesh swaps geometry mid-frame", "[rendering][mesh]")
+{
+    auto canvas = makeCanvas(10, 10);
+
+    Nothofagus::ColorPallete palette({
+        {0.0f, 0.0f, 0.0f, 0.0f},
+        {1.0f, 1.0f, 1.0f, 1.0f},
+    });
+    Nothofagus::IndirectTexture tex({2, 2}, {0.0f, 0.0f, 0.0f, 0.0f});
+    tex.setPallete(palette);
+    tex.setPixels({1, 1, 1, 1});
+    auto texId = canvas.addTexture(tex);
+
+    // Triangle pointing up.
+    Nothofagus::Mesh triangle;
+    triangle.vertices = {
+        {{ 0.0f,  3.0f}, {0.5f, 0.0f}},
+        {{ 3.0f, -3.0f}, {1.0f, 1.0f}},
+        {{-3.0f, -3.0f}, {0.0f, 1.0f}},
+    };
+    triangle.indices = {0, 1, 2};
+
+    // Solid square offset to the lower-left of the bellota origin so the
+    // post-swap render is visibly different from the triangle.
+    Nothofagus::Mesh leftHalfQuad;
+    leftHalfQuad.vertices = {
+        {{-3.0f, -3.0f}, {0.0f, 1.0f}},
+        {{ 0.0f, -3.0f}, {1.0f, 1.0f}},
+        {{ 0.0f,  0.0f}, {1.0f, 0.0f}},
+        {{-3.0f,  0.0f}, {0.0f, 0.0f}},
+    };
+    leftHalfQuad.indices = {0, 1, 2, 2, 3, 0};
+
+    auto triangleMeshId = canvas.addMesh(triangle);
+    auto squareMeshId   = canvas.addMesh(leftHalfQuad);
+
+    auto bellotaId = canvas.addBellota(
+        Nothofagus::Bellota({glm::vec2(5.0f, 5.0f)}, texId, triangleMeshId)
+    );
+
+    // Swap geometry before any frame ticks — the bellota should render as the
+    // square, not the triangle.
+    canvas.setMesh(bellotaId, squareMeshId);
+
+    for (int i = 0; i < 3; ++i)
+        canvas.tick(16.0f);
+
+    checkAgainstGolden("setMesh_swap_geometry", canvas.takeScreenshot());
 }

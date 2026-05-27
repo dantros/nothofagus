@@ -5,10 +5,10 @@ namespace Nothofagus
 
 namespace
 {
-    Vertex bottomLeft(const glm::ivec2 size)  { return { size.x / -2.0f, size.y / -2.0f, 0.0f, 1.0f }; }
-    Vertex bottomRight(const glm::ivec2 size) { return { size.x /  2.0f, size.y / -2.0f, 1.0f, 1.0f }; }
-    Vertex upperLeft(const glm::ivec2 size)   { return { size.x / -2.0f, size.y /  2.0f, 0.0f, 0.0f }; }
-    Vertex upperRight(const glm::ivec2 size)  { return { size.x /  2.0f, size.y /  2.0f, 1.0f, 0.0f }; }
+    Vertex bottomLeft(const glm::ivec2 size)  { return { {size.x / -2.0f, size.y / -2.0f}, {0.0f, 1.0f} }; }
+    Vertex bottomRight(const glm::ivec2 size) { return { {size.x /  2.0f, size.y / -2.0f}, {1.0f, 1.0f} }; }
+    Vertex upperLeft(const glm::ivec2 size)   { return { {size.x / -2.0f, size.y /  2.0f}, {0.0f, 0.0f} }; }
+    Vertex upperRight(const glm::ivec2 size)  { return { {size.x /  2.0f, size.y /  2.0f}, {1.0f, 0.0f} }; }
 }
 
 Mesh generateQuadMesh(const glm::ivec2& size)

@@ -207,6 +207,11 @@ void Canvas::CanvasImpl::setAutoRemoveUnusedTextures(bool enabled)
     mAutoTextureGC = enabled;
 }
 
+void Canvas::CanvasImpl::setAutoRemoveUnusedMeshes(bool enabled)
+{
+    mAutoMeshGC = enabled;
+}
+
 void Canvas::CanvasImpl::setWindowTitle(const std::string& title)
 {
     mTitle = title;
@@ -240,6 +245,10 @@ BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)
         // User-supplied MeshId — caller must have registered it via addMesh().
         debugCheck(mMeshes.contains(newBellota.meshId().value().id),
                    "Bellota constructed with a MeshId that is not registered in this canvas");
+        // Tile-map textures need the auto-quad's exact UV invariant (UVs in [0, 1]
+        // over the full tile-map extent). Custom meshes can't satisfy that.
+        debugCheck(mTextures.at(newTextureId.id).mode != TextureMode::TileMap,
+                   "Bellota constructed with a custom MeshId on a tile-map texture — combination is unsupported");
     }
     mMeshUsageMonitor.addEntry(newBellotaId, newBellota.meshId().value());
 
@@ -330,6 +339,18 @@ MeshId Canvas::CanvasImpl::addMesh(const Mesh& mesh)
     return newMeshId;
 }
 
+MeshId Canvas::CanvasImpl::addMesh(Mesh&& mesh)
+{
+    MeshPack pack;
+    pack.mesh = std::move(mesh);
+    pack.dmeshOpt = std::nullopt;
+    pack.isAutoQuad = false;
+    const MeshId newMeshId{mMeshes.add(std::move(pack))};
+    const bool added = mMeshUsageMonitor.addUnusedMesh(newMeshId);
+    debugCheck(added, "Mesh ID already present in usage monitor — duplicate addMesh call");
+    return newMeshId;
+}
+
 void Canvas::CanvasImpl::removeMesh(MeshId meshId)
 {
     debugCheck(mMeshes.contains(meshId.id), "removeMesh: unknown MeshId");
@@ -350,6 +371,10 @@ void Canvas::CanvasImpl::setMesh(const BellotaId bellotaId, const MeshId meshId)
 {
     debugCheck(mMeshes.contains(meshId.id), "setMesh: unknown MeshId");
     const Bellota& bellotaOriginal = bellota(bellotaId);
+    // Tile-map textures rely on the auto-quad UV invariant; custom meshes
+    // would produce nonsense cell lookups in the tile-map shader.
+    debugCheck(mTextures.at(bellotaOriginal.texture().id).mode != TextureMode::TileMap,
+               "setMesh: cannot attach a custom mesh to a bellota whose texture is in tile-map mode");
 
     Bellota bellotaWithNewMesh(
         bellotaOriginal.transform(),
@@ -369,10 +394,10 @@ const Mesh& Canvas::CanvasImpl::mesh(MeshId meshId) const
     return mMeshes.at(meshId.id).mesh;
 }
 
-const Mesh& Canvas::CanvasImpl::getMesh(BellotaId bellotaId) const
+const Mesh& Canvas::CanvasImpl::mesh(BellotaId bellotaId) const
 {
     const Bellota& target = bellota(bellotaId);
-    debugCheck(target.meshId().has_value(), "getMesh: bellota has no MeshId — invariant broken");
+    debugCheck(target.meshId().has_value(), "mesh(BellotaId): bellota has no MeshId — invariant broken");
     return mesh(target.meshId().value());
 }
 
@@ -401,6 +426,11 @@ void Canvas::CanvasImpl::setTexture(const BellotaId bellotaId, const TextureId t
     debugCheck(meshIdOpt.has_value(), "BellotaPack is missing a MeshId — invariant broken");
 
     const bool currentMeshIsAutoQuad = mMeshes.at(meshIdOpt.value().id).isAutoQuad;
+    // Switching to a tile-map texture is only valid when the bellota uses an
+    // auto-quad (which will be re-materialized below sized to the new texture).
+    // A user mesh's UVs can't satisfy the tile-map shader's cell-lookup invariant.
+    debugCheck(currentMeshIsAutoQuad or mTextures.at(textureId.id).mode != TextureMode::TileMap,
+               "setTexture: cannot switch a bellota with a custom mesh onto a tile-map texture");
 
     Bellota bellotaWithNewTexture = currentMeshIsAutoQuad
         // Auto-quad needs to be regenerated for the new texture size — drop the MeshId here;

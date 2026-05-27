@@ -104,10 +104,11 @@ public:
     void setTextureMagFilter(const TextureId textureId, TextureSampleMode mode);
 
     MeshId addMesh(const Mesh& mesh);
+    MeshId addMesh(Mesh&& mesh);
     void removeMesh(MeshId meshId);
     void setMesh(const BellotaId bellotaId, const MeshId meshId);
     const Mesh& mesh(MeshId meshId) const;
-    const Mesh& getMesh(BellotaId bellotaId) const;
+    const Mesh& mesh(BellotaId bellotaId) const;
 
     RenderTargetId addRenderTarget(ScreenSize size);
 
@@ -221,6 +222,7 @@ public:
     void tick(float deltaTimeMS);
 
     void setAutoRemoveUnusedTextures(bool enabled);
+    void setAutoRemoveUnusedMeshes(bool enabled);
 
     /// Close the canvas and release resources.
     void close();

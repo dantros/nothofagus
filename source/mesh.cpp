@@ -5,25 +5,19 @@
 namespace Nothofagus
 {
 
-Mesh& Mesh::operator<<(const Mesh& other)
-{
-    const Index offset = static_cast<Index>(vertices.size());
-
-    vertices.reserve(vertices.size() + other.vertices.size());
-    for (const auto& vertex : other.vertices)
-        vertices.push_back(vertex);
-
-    indices.reserve(indices.size() + other.indices.size());
-    for (const auto& index : other.indices)
-        indices.push_back(offset + index);
-
-    return *this;
-}
-
 Mesh join(const Mesh& rhs, const Mesh& lhs)
 {
     Mesh mesh(rhs);
-    mesh << lhs;
+    const Index offset = static_cast<Index>(mesh.vertices.size());
+
+    mesh.vertices.reserve(mesh.vertices.size() + lhs.vertices.size());
+    for (const auto& vertex : lhs.vertices)
+        mesh.vertices.push_back(vertex);
+
+    mesh.indices.reserve(mesh.indices.size() + lhs.indices.size());
+    for (const auto& index : lhs.indices)
+        mesh.indices.push_back(offset + index);
+
     return mesh;
 }
 
@@ -53,7 +47,8 @@ namespace
 
 std::ostream& operator<<(std::ostream& os, const Nothofagus::Vertex& vertex)
 {
-    return os << "(" << vertex.x << ", " << vertex.y << ", " << vertex.u << ", " << vertex.v << ")";
+    return os << "(" << vertex.position.x << ", " << vertex.position.y
+              << ", " << vertex.uv.x << ", " << vertex.uv.y << ")";
 }
 
 std::ostream& operator<<(std::ostream& os, const Nothofagus::Vertices& vertices)

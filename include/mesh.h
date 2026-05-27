@@ -1,5 +1,6 @@
 #pragma once
 
+#include <glm/glm.hpp>
 #include <cstddef>
 #include <vector>
 #include <iosfwd>
@@ -15,10 +16,8 @@ namespace Nothofagus
  */
 struct Vertex
 {
-    float x;  ///< Position x in canvas pixels (origin centered on the bellota).
-    float y;  ///< Position y in canvas pixels.
-    float u;  ///< Texture coordinate u in [0, 1].
-    float v;  ///< Texture coordinate v in [0, 1].
+    glm::vec2 position;  ///< Position in canvas pixels (origin centered on the bellota).
+    glm::vec2 uv;        ///< Texture coordinate in [0, 1].
 };
 
 /// Triangle index — vertex offsets are 32-bit unsigned integers.
@@ -40,12 +39,10 @@ struct Mesh
 {
     Vertices vertices;
     Indices  indices;
-
-    /// Appends another mesh's vertices and (re-offset) indices to this one.
-    Mesh& operator<<(const Mesh& other);
 };
 
-/// Returns a new mesh built by appending `lhs` after `rhs`.
+/// Returns a new mesh built by concatenating `rhs` and `lhs`, re-offsetting
+/// the appended indices so they point into the merged vertex array.
 Mesh join(const Mesh& rhs, const Mesh& lhs);
 
 /**

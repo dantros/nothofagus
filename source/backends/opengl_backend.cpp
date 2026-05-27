@@ -66,11 +66,11 @@ void OpenGLBackend::setupVAO(OpenGLMesh& glMesh)
     const auto textureAttribLocation  = glGetAttribLocation(mShaderProgram, "texture");
 
     glVertexAttribPointer(positionAttribLocation, 2, GL_FLOAT, GL_FALSE,
-                          sizeof(Vertex), (void*)offsetof(Vertex, x));
+                          sizeof(Vertex), (void*)offsetof(Vertex, position));
     glEnableVertexAttribArray(positionAttribLocation);
 
     glVertexAttribPointer(textureAttribLocation, 2, GL_FLOAT, GL_FALSE,
-                          sizeof(Vertex), (void*)offsetof(Vertex, u));
+                          sizeof(Vertex), (void*)offsetof(Vertex, uv));
     glEnableVertexAttribArray(textureAttribLocation);
 
     glBindVertexArray(0);

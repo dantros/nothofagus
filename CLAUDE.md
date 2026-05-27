@@ -299,6 +299,7 @@ Nothofagus::TextureId tileMapTexId = canvas.addTexture(tileMap);
 - `bellota.currentLayer()` is unused for tilemap textures — per-cell layer choice is driven by the cell grid, not by a global layer index. Animation state machines should target non-tilemap `IndirectTexture` instances.
 - `setCell` triggers `mMapDirty` and is hot-uploadable per-frame; per-pixel `setPixels` triggers `mAtlasDirty` for tile-graphic mutations.
 - The palette is shared between the tile-map and indirect rendering paths — `setPallete` works the same way.
+- **Custom meshes are forbidden on tile-map textures.** The tile-map shader treats incoming UVs as `[0, 1]` over the full tile-map extent and quantises to cell indices, so only the engine-generated auto-quad's UVs sample correctly. `addBellota`, `setMesh`, and `setTexture` enforce the restriction via `debugCheck`.
 
 ### Custom meshes
 
@@ -308,13 +309,15 @@ Bellotas draw the implicit centered quad sized to their texture by default. Pass
 // Build a triangle mesh in (x, y) pixels with UVs in [0, 1].
 Nothofagus::Mesh mesh;
 mesh.vertices = {
-    { -10.0f, -10.0f, 0.0f, 1.0f },
-    {  10.0f, -10.0f, 1.0f, 1.0f },
-    {   0.0f,  14.0f, 0.5f, 0.0f },
+    {{-10.0f, -10.0f}, {0.0f, 1.0f}},
+    {{ 10.0f, -10.0f}, {1.0f, 1.0f}},
+    {{  0.0f,  14.0f}, {0.5f, 0.0f}},
 };
-mesh.indices  = { 0, 1, 2 };
+mesh.indices = {0, 1, 2};
 
 Nothofagus::MeshId meshId = canvas.addMesh(mesh);
+// Move-overload also available for callers that can hand off ownership:
+//   auto meshId = canvas.addMesh(std::move(mesh));
 
 // Attach the custom mesh; the texture supplies pixels via the same shader.
 Nothofagus::BellotaId id = canvas.addBellota({{{x, y}}, texId, meshId});
@@ -323,19 +326,24 @@ Nothofagus::BellotaId id = canvas.addBellota({{{x, y}}, texId, meshId});
 canvas.setMesh(id, otherMeshId);
 
 // Read-only mesh access (auto-quad or user mesh, transparent).
-const Nothofagus::Mesh& current = canvas.getMesh(id);
+const Nothofagus::Mesh& currentByBellota = canvas.mesh(id);      // resolves via bellota.meshId()
+const Nothofagus::Mesh& currentByMeshId  = canvas.mesh(meshId);  // direct handle lookup
 
 // Explicit removal of a user mesh — must be unreferenced (debugCheck enforces this).
 canvas.removeMesh(meshId);
+
+// Disable per-frame auto-GC during bulk loading (re-enable when done).
+canvas.setAutoRemoveUnusedMeshes(false);
 ```
 
 **Storage model:**
-- `Vertex { float x, y, u, v; }` ([include/mesh.h](include/mesh.h)) is the fixed vertex layout — matches the shader binding for both OpenGL and Vulkan backends. No custom attributes.
+- `Vertex { glm::vec2 position; glm::vec2 uv; }` ([include/mesh.h](include/mesh.h)) is the fixed vertex layout — matches the shader binding for both OpenGL and Vulkan backends. No custom attributes.
 - Every bellota carries a `MeshId`. If the user does not supply one (`Bellota(Transform, TextureId)`), the canvas materialises an **auto-quad** sized to the texture at `addBellota` time and stamps the id onto the stored bellota. There is no second mesh storage path — both flow through `MeshContainer` / `MeshPack`.
 - All bellotas referencing the same `MeshId` share **one GPU upload**. Lazy upload happens once on the next frame; subsequent registrations are zero-cost.
-- `MeshUsageMonitor` tracks references analogously to `TextureUsageMonitor`. When the last bellota referencing a `MeshId` goes away, the mesh is freed by `clearUnusedMeshes()` on the following frame (auto-GC is on by default and applies uniformly to auto-quads and user meshes).
+- `MeshUsageMonitor` tracks references analogously to `TextureUsageMonitor`. When the last bellota referencing a `MeshId` goes away, the mesh is freed by `clearUnusedMeshes()` on the following frame (auto-GC is on by default; `setAutoRemoveUnusedMeshes(false)` pauses it for bulk loading, same pattern as `setAutoRemoveUnusedTextures`).
 - `setTexture(bellotaId, newTexId)` regenerates the auto-quad sized to the new texture **only when the bellota uses an engine-allocated auto-quad**. User-supplied meshes are left untouched on texture change — that's the user's choice.
 - `removeMesh(meshId)` is for user-registered meshes only. Removing an auto-quad fires `debugCheck`; auto-quads are managed exclusively by the canvas.
+- **Custom meshes cannot be combined with tile-map textures.** `addBellota` (with a user MeshId), `setMesh`, and `setTexture` all `debugCheck`-reject the combination because the tile-map shader requires the auto-quad's exact UV invariant. See [the tile-map constraints](#tile-maps) for details.
 
 ### Animations
 

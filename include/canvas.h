@@ -135,8 +135,17 @@ public:
      * The mesh is copied internally and uploaded to the GPU on the next frame.
      * Attach to one or more Bellotas via the `Bellota(Transform, TextureId, MeshId)`
      * constructor — bellotas sharing a `MeshId` share the same GPU buffers.
+     *
+     * Custom meshes are only valid on plain (non-tile-map) textures. The
+     * tile-map render path requires the auto-quad's exact UV invariant
+     * (UVs in `[0, 1]` over the full tile-map extent); attaching a custom
+     * mesh to a bellota whose texture is in tile-map mode is rejected via
+     * `debugCheck` in `addBellota` / `setMesh` / `setTexture`.
      */
     MeshId addMesh(const Mesh& mesh);
+
+    /// Move-overload of `addMesh` for callers that can hand off ownership of the mesh data.
+    MeshId addMesh(Mesh&& mesh);
 
     /**
      * @brief Remove a previously registered user mesh.
@@ -153,6 +162,9 @@ public:
      * previously registered `MeshId`. The previous mesh is left in place if
      * other bellotas still reference it; otherwise it becomes eligible for GC
      * on the next frame.
+     *
+     * Forbidden when the bellota's current texture is in tile-map mode —
+     * see `addMesh` for the rationale.
      */
     void setMesh(const BellotaId bellotaId, const MeshId meshId);
 
@@ -162,10 +174,11 @@ public:
     const Mesh& mesh(MeshId meshId) const;
 
     /**
-     * @brief Returns the mesh a Bellota currently draws (auto-quad for textured
-     * bellotas with no explicit mesh, or the registered user mesh otherwise).
+     * @brief Read-only access to the mesh a Bellota currently draws (auto-quad
+     * for textured bellotas with no explicit mesh, or the registered user mesh
+     * otherwise).
      */
-    const Mesh& getMesh(BellotaId bellotaId) const;
+    const Mesh& mesh(BellotaId bellotaId) const;
 
     RenderTargetId addRenderTarget(ScreenSize size);
 
@@ -441,6 +454,10 @@ public:
     /// Enable or disable automatic removal of unreferenced textures each frame.
     /// Enabled by default. Disable during bulk asset loading to prevent premature removal.
     void setAutoRemoveUnusedTextures(bool enabled);
+
+    /// Enable or disable automatic removal of unreferenced meshes each frame.
+    /// Enabled by default. Disable during bulk asset loading to prevent premature removal.
+    void setAutoRemoveUnusedMeshes(bool enabled);
 
     /// Close the canvas and clean up resources.
     void close();

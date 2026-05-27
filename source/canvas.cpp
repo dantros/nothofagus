@@ -61,6 +61,11 @@ void Canvas::setAutoRemoveUnusedTextures(bool enabled)
     mCanvasImpl->setAutoRemoveUnusedTextures(enabled);
 }
 
+void Canvas::setAutoRemoveUnusedMeshes(bool enabled)
+{
+    mCanvasImpl->setAutoRemoveUnusedMeshes(enabled);
+}
+
 void Canvas::setWindowTitle(const std::string& title)
 {
     mCanvasImpl->setWindowTitle(title);
@@ -121,6 +126,11 @@ MeshId Canvas::addMesh(const Mesh& mesh)
     return mCanvasImpl->addMesh(mesh);
 }
 
+MeshId Canvas::addMesh(Mesh&& mesh)
+{
+    return mCanvasImpl->addMesh(std::move(mesh));
+}
+
 void Canvas::removeMesh(MeshId meshId)
 {
     mCanvasImpl->removeMesh(meshId);
@@ -136,9 +146,9 @@ const Mesh& Canvas::mesh(MeshId meshId) const
     return mCanvasImpl->mesh(meshId);
 }
 
-const Mesh& Canvas::getMesh(BellotaId bellotaId) const
+const Mesh& Canvas::mesh(BellotaId bellotaId) const
 {
-    return mCanvasImpl->getMesh(bellotaId);
+    return mCanvasImpl->mesh(bellotaId);
 }
 
 RenderTargetId Canvas::addRenderTarget(ScreenSize size)

@@ -1,47 +1,51 @@
 #include <cmath>
+#include <numbers>
 #include <vector>
 #include <nothofagus.h>
 
 // Custom-mesh demo:
 //   * register a triangle and a pentagon as user meshes,
 //   * draw them with a shared paletted texture,
-//   * round-trip via getMesh(bellotaId) (read-only access to the underlying mesh),
-//   * swap geometry mid-frame with setMesh(...).
+//   * round-trip via mesh(bellotaId) (read-only access to the underlying mesh),
+//   * swap geometry mid-frame with setMesh(...),
+//   * use the 4-arg constructor to pin a foreground bellota with an explicit depth offset,
+//   * release a transient mesh explicitly via removeMesh after rebinding off it.
 
 namespace
 {
+    constexpr float kTwoPi = 2.0f * std::numbers::pi_v<float>;
+    constexpr float kHalfPi = std::numbers::pi_v<float> / 2.0f;
+
     // Equilateral triangle inscribed in a circle of `radius` pixels, centered at origin.
     Nothofagus::Mesh makeTriangle(float radius)
     {
-        const float twoPiOverThree = 2.0f * 3.14159265f / 3.0f;
         Nothofagus::Mesh mesh;
         for (int i = 0; i < 3; ++i)
         {
-            const float angle = i * twoPiOverThree + 3.14159265f / 2.0f;
+            const float angle = i * (kTwoPi / 3.0f) + kHalfPi;
             const float x = radius * std::cos(angle);
             const float y = radius * std::sin(angle);
             const float u = 0.5f + 0.5f * std::cos(angle);
             const float v = 0.5f - 0.5f * std::sin(angle);
-            mesh.vertices.push_back({x, y, u, v});
+            mesh.vertices.push_back({{x, y}, {u, v}});
         }
         mesh.indices = {0, 1, 2};
         return mesh;
     }
 
-    // Regular pentagon (triangle-fan around the center).
+    // Regular pentagon, decomposed as a triangle fan around the center vertex.
     Nothofagus::Mesh makePentagon(float radius)
     {
-        const float twoPiOverFive = 2.0f * 3.14159265f / 5.0f;
         Nothofagus::Mesh mesh;
-        mesh.vertices.push_back({0.0f, 0.0f, 0.5f, 0.5f});           // center
+        mesh.vertices.push_back({{0.0f, 0.0f}, {0.5f, 0.5f}});           // fan center
         for (int i = 0; i < 5; ++i)
         {
-            const float angle = i * twoPiOverFive + 3.14159265f / 2.0f;
+            const float angle = i * (kTwoPi / 5.0f) + kHalfPi;
             const float x = radius * std::cos(angle);
             const float y = radius * std::sin(angle);
             const float u = 0.5f + 0.5f * std::cos(angle);
             const float v = 0.5f - 0.5f * std::sin(angle);
-            mesh.vertices.push_back({x, y, u, v});
+            mesh.vertices.push_back({{x, y}, {u, v}});
         }
         for (unsigned int i = 0; i < 5; ++i)
         {
@@ -49,6 +53,22 @@ namespace
             mesh.indices.push_back(1 + i);
             mesh.indices.push_back(1 + ((i + 1) % 5));
         }
+        return mesh;
+    }
+
+    // Axis-aligned diamond (square rotated 45°) used as a transient mesh
+    // that the demo registers, swaps onto a bellota, then swaps off and
+    // removes explicitly via canvas.removeMesh.
+    Nothofagus::Mesh makeDiamond(float radius)
+    {
+        Nothofagus::Mesh mesh;
+        mesh.vertices = {
+            {{ 0.0f,  radius}, {0.5f, 0.0f}},
+            {{ radius, 0.0f }, {1.0f, 0.5f}},
+            {{ 0.0f, -radius}, {0.5f, 1.0f}},
+            {{-radius, 0.0f }, {0.0f, 0.5f}},
+        };
+        mesh.indices = {0, 1, 2, 0, 2, 3};
         return mesh;
     }
 }
@@ -81,22 +101,39 @@ int main()
            });
     const Nothofagus::TextureId textureId = canvas.addTexture(texture);
 
-    // Register two user meshes.
+    // Register two user meshes (the third — the diamond — is registered and
+    // removed later as part of the explicit-cleanup demonstration below).
     const Nothofagus::MeshId triangleMeshId = canvas.addMesh(makeTriangle(20.0f));
     const Nothofagus::MeshId pentagonMeshId = canvas.addMesh(makePentagon(20.0f));
 
     // One bellota for each custom mesh, plus a textured bellota to confirm the
-    // auto-quad path keeps working unchanged.
+    // auto-quad path keeps working unchanged. The triangle uses the 4-arg
+    // Bellota(Transform, TextureId, MeshId, depthOffset) constructor with a
+    // positive depth offset so it always sorts above the pentagon when their
+    // bounding circles overlap.
+    constexpr std::int8_t triangleDepthOffset = 1;
     const Nothofagus::BellotaId triangleId =
-        canvas.addBellota({{{60.0f,  75.0f}}, textureId, triangleMeshId});
+        canvas.addBellota({{{60.0f,  75.0f}}, textureId, triangleMeshId, triangleDepthOffset});
     const Nothofagus::BellotaId pentagonId =
         canvas.addBellota({{{140.0f, 75.0f}}, textureId, pentagonMeshId});
     const Nothofagus::BellotaId quadId =
         canvas.addBellota({{{100.0f, 25.0f}}, textureId});
 
-    // getMesh round-trip — confirms the auto-quad and user meshes are both queryable.
-    spdlog::info("triangle mesh vertex count = {}", canvas.getMesh(triangleId).vertices.size());
-    spdlog::info("auto-quad mesh vertex count = {}",  canvas.getMesh(quadId).vertices.size());
+    // mesh(bellotaId) round-trip — confirms the auto-quad and user meshes are both queryable.
+    spdlog::info("triangle mesh vertex count = {}", canvas.mesh(triangleId).vertices.size());
+    spdlog::info("auto-quad mesh vertex count = {}",  canvas.mesh(quadId).vertices.size());
+
+    // Explicit-cleanup demonstration: register a transient diamond mesh,
+    // briefly bind the pentagon bellota to it, swap back to the original
+    // pentagon, and explicitly call removeMesh on the diamond. Without the
+    // explicit removeMesh the diamond would still get GC'd automatically
+    // on the next frame — this just shows the synchronous user-driven path.
+    {
+        const Nothofagus::MeshId diamondMeshId = canvas.addMesh(makeDiamond(20.0f));
+        canvas.setMesh(pentagonId, diamondMeshId);   // pentagon bellota now draws as a diamond
+        canvas.setMesh(pentagonId, pentagonMeshId);  // …then back to the pentagon
+        canvas.removeMesh(diamondMeshId);            // safe now: nothing references it
+    }
 
     float time = 0.0f;
     bool swap = false;
