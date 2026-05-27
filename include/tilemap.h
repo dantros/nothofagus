@@ -32,6 +32,13 @@ public:
     /// Read the tile layer at a world-cell coordinate.
     std::uint8_t cell(glm::ivec2 worldCell) const;
 
+    /// True iff `worldCell` lies inside `[0, mapSize.x) × [0, mapSize.y)`.
+    bool inBounds(glm::ivec2 worldCell) const
+    {
+        return worldCell.x >= 0 && worldCell.x < mMapSize.x
+            && worldCell.y >= 0 && worldCell.y < mMapSize.y;
+    }
+
     glm::ivec2 mapSize()       const { return mMapSize; }
     glm::ivec2 chunkSize()     const { return mChunkSize; }
     glm::ivec2 tileSize()      const { return mTileSize; }
@@ -49,6 +56,11 @@ public:
     /// Edge chunks (when mapSize is not divisible by chunkSize) zero-fill the out-of-world cells.
     /// Used by `TilemapView` slots when scrolling brings a chunk into view.
     std::vector<std::uint8_t> chunkData(glm::ivec2 chunkPos) const;
+
+    /// Same as `chunkData`, but writes into a caller-provided buffer — no allocation.
+    /// `out.size()` must equal `chunkSize.x * chunkSize.y`. Used on the per-frame
+    /// re-sync hot path by `TilemapView`.
+    void chunkDataInto(glm::ivec2 chunkPos, std::span<std::uint8_t> out) const;
 
     /// Generation counter for one chunk — bumps on any `setCell` inside that chunk.
     /// `TilemapView` slots compare against their `syncedGeneration` to detect world edits.

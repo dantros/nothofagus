@@ -62,6 +62,8 @@ TilemapViewId TilemapManager::addTilemapView(TilemapView view, Canvas& canvas)
     const std::size_t slotCount =
         static_cast<std::size_t>(poolGridSize.x) * static_cast<std::size_t>(poolGridSize.y);
     pack.slots.reserve(slotCount);
+    pack.chunkScratch.resize(
+        static_cast<std::size_t>(chunkSize.x) * static_cast<std::size_t>(chunkSize.y));
 
     const auto tileGraphics = sourceTilemap.tileGraphics();
     const std::size_t layerCount = tileGraphics.size();
@@ -188,8 +190,8 @@ void TilemapManager::updateViews(Canvas& canvas)
                 {
                     IndirectTexture& slotTex = std::get<IndirectTexture>(
                         canvas.texture(slot.textureId));
-                    const auto chunkCells = sourceTilemap.chunkData(desired);
-                    slotTex.setMapBulk(std::span<const std::uint8_t>(chunkCells));
+                    sourceTilemap.chunkDataInto(desired, std::span<std::uint8_t>(viewPack.chunkScratch));
+                    slotTex.setMapBulk(std::span<const std::uint8_t>(viewPack.chunkScratch));
                     slot.currentWorldChunk = desired;
                     slot.syncedGeneration  = currentGen;
                 }

@@ -21,9 +21,10 @@ struct PoolSlot
 
 struct TilemapViewPack
 {
-    TilemapView           view;
-    glm::ivec2            poolGridSize{0, 0};
-    std::vector<PoolSlot> slots;
+    TilemapView               view;
+    glm::ivec2                poolGridSize{0, 0};
+    std::vector<PoolSlot>     slots;
+    std::vector<std::uint8_t> chunkScratch; ///< Reused per re-sync; sized once at registration to `chunkSize.x * chunkSize.y`.
 
     explicit TilemapViewPack(TilemapView v): view(v) {}
 };

@@ -151,6 +151,14 @@ int main()
     int        newCols = mapSize.x;
     int        newRows = mapSize.y;
 
+    // ── Stress controls (exercise the chunk re-sync hot path) ─────────────
+    bool       autoPan     = false;
+    float      autoPanRadiusPx = 1000.0f;  // circular pan radius around world center
+    float      autoPanRateHz   = 0.25f;    // revolutions per second
+    float      autoPanPhase    = 0.0f;
+    int        editsPerFrame   = 0;        // random setCell calls per frame
+    std::uint32_t rngState     = 0x9E3779B9u;
+
     // Fills a tilemap with a banded pattern that cycles through layers 1..4,
     // then overlays chunk row/col index labels at each chunk's top-left:
     //   line 1 (top row of chunk): chunk row index digits
@@ -183,9 +191,9 @@ int main()
             {
                 for (std::size_t i = 0; i < digits.size(); ++i)
                 {
-                    const int worldCol = worldColOrigin + static_cast<int>(i);
-                    if (worldCol < size.x && worldRow < size.y)
-                        world.setCell({worldCol, worldRow}, digitLayer(digits[i] - '0'));
+                    const glm::ivec2 cellCoord{worldColOrigin + static_cast<int>(i), worldRow};
+                    if (world.inBounds(cellCoord))
+                        world.setCell(cellCoord, digitLayer(digits[i] - '0'));
                 }
             };
             stamp(std::to_string(chunkRow), worldRowOrigin);     // top row of chunk
@@ -240,17 +248,53 @@ int main()
     {
         // ── Camera pan ──────────────────────────────────────────────────
         const float dt = deltaTimeMS / 1000.0f;
-        glm::vec2 dir{0.0f, 0.0f};
-        if (wDown) dir.y += 1.0f;
-        if (sDown) dir.y -= 1.0f;
-        if (aDown) dir.x -= 1.0f;
-        if (dDown) dir.x += 1.0f;
-        if (dir.x != 0.0f || dir.y != 0.0f)
+        if (autoPan)
         {
-            const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
-            camera += (dir / len) * (panSpeed * dt);
+            // Circular sweep around the world center — forces a steady stream
+            // of border-slot chunk swaps every frame (exercises chunkDataInto).
+            autoPanPhase += dt * autoPanRateHz * 2.0f * 3.14159265f;
+            const glm::vec2 worldCenterPx{
+                0.5f * static_cast<float>(mapSize.x * tileSize.x),
+                0.5f * static_cast<float>(mapSize.y * tileSize.y)
+            };
+            camera = worldCenterPx + glm::vec2{
+                autoPanRadiusPx * std::cos(autoPanPhase),
+                autoPanRadiusPx * std::sin(autoPanPhase)
+            };
+        }
+        else
+        {
+            glm::vec2 dir{0.0f, 0.0f};
+            if (wDown) dir.y += 1.0f;
+            if (sDown) dir.y -= 1.0f;
+            if (aDown) dir.x -= 1.0f;
+            if (dDown) dir.x += 1.0f;
+            if (dir.x != 0.0f || dir.y != 0.0f)
+            {
+                const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+                camera += (dir / len) * (panSpeed * dt);
+            }
         }
         canvas.tilemapView(handles.viewId).setCamera(camera);
+
+        // ── Edit storm ─────────────────────────────────────────────────
+        // Randomly setCell across the world — each edit bumps its chunk's
+        // generation counter, forcing chunkDataInto on the next updateViews
+        // pass for whichever slot is painting that chunk.
+        if (editsPerFrame > 0)
+        {
+            Nothofagus::Tilemap& world = canvas.tilemap(handles.tilemapId);
+            auto next = [&] { rngState = rngState * 1664525u + 1013904223u; return rngState; };
+            for (int i = 0; i < editsPerFrame; ++i)
+            {
+                const glm::ivec2 cellCoord{
+                    static_cast<int>(next() % static_cast<std::uint32_t>(mapSize.x)),
+                    static_cast<int>(next() % static_cast<std::uint32_t>(mapSize.y))
+                };
+                if (world.inBounds(cellCoord))
+                    world.setCell(cellCoord, static_cast<std::uint8_t>(1 + (next() % 4)));
+            }
+        }
 
         // ── ImGui control panel ─────────────────────────────────────────
         ImGui::Begin("Tilemap");
@@ -346,6 +390,21 @@ int main()
             teleportCellX = std::min(teleportCellX, mapSize.x - 1);
             teleportCellY = std::min(teleportCellY, mapSize.y - 1);
         }
+
+        ImGui::Separator();
+
+        // Stress mode — hammers the chunk re-sync hot path (m1: chunkDataInto)
+        // and exercises inBounds (m3). Toggle the stats overlay (canvas.stats())
+        // to read frame time while these are on.
+        ImGui::Text("Stress (perf):");
+        ImGui::Checkbox("auto-pan (continuous chunk swaps)", &autoPan);
+        if (autoPan)
+        {
+            ImGui::SliderFloat("radius (px)", &autoPanRadiusPx, 0.0f, 4000.0f);
+            ImGui::SliderFloat("rate (Hz)",   &autoPanRateHz,   0.0f, 4.0f);
+        }
+        ImGui::SliderInt("edits/frame (gen bumps)", &editsPerFrame, 0, 5000);
+        ImGui::Checkbox("show frame stats", &canvas.stats());
 
         ImGui::End();
     }, controller);

@@ -69,15 +69,17 @@ std::uint8_t Tilemap::cell(glm::ivec2 worldCell) const
     return mCellGrid[cellIdx];
 }
 
-std::vector<std::uint8_t> Tilemap::chunkData(glm::ivec2 chunkPos) const
+void Tilemap::chunkDataInto(glm::ivec2 chunkPos, std::span<std::uint8_t> out) const
 {
     debugCheck(chunkPos.x >= 0 && chunkPos.x < mChunkGridSize.x
             && chunkPos.y >= 0 && chunkPos.y < mChunkGridSize.y,
-               "Tilemap::chunkData chunk coordinate out of grid bounds.");
-
+               "Tilemap::chunkDataInto chunk coordinate out of grid bounds.");
     const std::size_t cellsPerChunk =
         static_cast<std::size_t>(mChunkSize.x) * static_cast<std::size_t>(mChunkSize.y);
-    std::vector<std::uint8_t> out(cellsPerChunk, 0);
+    debugCheck(out.size() == cellsPerChunk,
+               "Tilemap::chunkDataInto output span size must equal chunkSize.x * chunkSize.y.");
+
+    std::fill(out.begin(), out.end(), static_cast<std::uint8_t>(0));
 
     const int worldColStart = chunkPos.x * mChunkSize.x;
     const int worldRowStart = chunkPos.y * mChunkSize.y;
@@ -98,7 +100,14 @@ std::vector<std::uint8_t> Tilemap::chunkData(glm::ivec2 chunkPos) const
                 mCellGrid[worldRowOffset + static_cast<std::size_t>(worldCol)];
         }
     }
+}
 
+std::vector<std::uint8_t> Tilemap::chunkData(glm::ivec2 chunkPos) const
+{
+    const std::size_t cellsPerChunk =
+        static_cast<std::size_t>(mChunkSize.x) * static_cast<std::size_t>(mChunkSize.y);
+    std::vector<std::uint8_t> out(cellsPerChunk);
+    chunkDataInto(chunkPos, std::span<std::uint8_t>(out));
     return out;
 }
 

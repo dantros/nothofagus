@@ -323,6 +323,10 @@ Nothofagus::TilemapHandles handles = Nothofagus::createTilemap(
 // bumps, the pool slot displaying it (if any) re-syncs next frame.
 canvas.tilemap(handles.tilemapId).setCell({worldCol, worldRow}, layerIndex);
 
+// Guard arbitrary coordinates against the world extent before editing.
+if (canvas.tilemap(handles.tilemapId).inBounds({worldCol, worldRow}))
+    canvas.tilemap(handles.tilemapId).setCell({worldCol, worldRow}, layerIndex);
+
 // Pan the view via the camera (world pixels; (0,0) = world origin centered).
 canvas.tilemapView(handles.viewId).setCamera({scrollX, scrollY});
 ```
