@@ -10,17 +10,13 @@
 namespace Nothofagus
 {
 
-/// One slot in a TilemapView's chunk pool. The (textureId, bellotaId)
-/// pair is allocated once at pool init and reused for the slot's lifetime;
-/// `currentWorldChunk` records which world chunk the slot is currently
-/// painting and `syncedGeneration` tracks the Tilemap chunk generation
-/// last written into the slot's IndirectTexture.
+/// One slot in a TilemapView's chunk pool — IDs are stable for the slot's lifetime.
 struct PoolSlot
 {
     TextureId     textureId;
     BellotaId     bellotaId;
-    glm::ivec2    currentWorldChunk{-1, -1}; ///< {-1,-1} = unassigned
-    std::uint64_t syncedGeneration{0};
+    glm::ivec2    currentWorldChunk{-1, -1}; ///< World chunk currently painted; {-1,-1} = unassigned.
+    std::uint64_t syncedGeneration{0};       ///< Tilemap chunk generation last written into this slot.
 };
 
 struct TilemapViewPack

@@ -10,22 +10,8 @@
 namespace Nothofagus
 {
 
-/**
- * @class Tilemap
- * @brief Persistent world data for huge tilemaps. Holds the full world cell
- *        grid, the shared tile atlas, and the palette — but does not render.
- *
- * `Tilemap` is the data half of the huge-tilemap split. A `TilemapView`
- * materializes a small pool of `IndirectTexture` + `Bellota` slots that
- * render only the chunks currently visible, pulling their cell data from
- * the `Tilemap`'s world cell grid on demand.
- *
- * Atlas + palette live here exactly once. The cell grid is laid out
- * row-major across the entire world (`mapSize.x * mapSize.y` bytes).
- *
- * Per-chunk generation counters bump on every `setCell`; a `TilemapView`
- * polls them to know when to re-sync the affected slot from `chunkData`.
- */
+/// World data for huge tilemaps: cell grid, shared tile atlas, palette. Does not render —
+/// pair with a `TilemapView` for that. See CLAUDE.md "Huge tilemaps" section for the full design.
 class Tilemap
 {
 public:

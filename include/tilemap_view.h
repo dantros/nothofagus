@@ -8,23 +8,10 @@
 namespace Nothofagus
 {
 
-/**
- * @class TilemapView
- * @brief Renders a windowed view of a `Tilemap` via a small pool of
- *        `IndirectTexture` + `Bellota` slots managed internally by the canvas.
- *
- * Pool size is determined at registration based on the canvas's screen size +
- * a one-chunk margin on each side. Slots are anchored to their pool indices;
- * as the camera scrolls, world chunks rotate through the slots — only the
- * border slots crossing into/out of view need their cell data rewritten.
- *
- * Bellotas inside the pool are tagged view-managed: user-side
- * `canvas.removeBellota`/`canvas.removeTexture` calls on those ids will
- * `debugCheck`-fail. Use `canvas.removeTilemapView(id)` to tear the pool down.
- *
- * Camera convention (v1): `camera()` is the world-pixel coordinate that
- * appears at the canvas center. `(0,0)` = world origin centered on screen.
- */
+/// Windowed renderer for a `Tilemap`: a canvas-owned chunk pool draws the visible region,
+/// scrolling via `setCamera`. Camera = world-pixel coordinate shown at the canvas center;
+/// `(0,0)` centers the world origin. See CLAUDE.md "Huge tilemaps" for pool semantics and
+/// view-managed lifecycle rules.
 class TilemapView
 {
 public:
