@@ -1,6 +1,7 @@
 #include "tilemap_manager.h"
 #include "canvas.h"
 #include "check.h"
+#include "profiling.h"
 #include "screen_size.h"
 #include "transform.h"
 #include "texture.h"
@@ -188,6 +189,7 @@ void TilemapManager::updateViews(Canvas& canvas)
                 const std::uint64_t currentGen = sourceTilemap.chunkGeneration(desired);
                 if (desired != slot.currentWorldChunk || currentGen != slot.syncedGeneration)
                 {
+                    ZoneScopedN("TilemapChunkSync");
                     IndirectTexture& slotTex = std::get<IndirectTexture>(
                         canvas.texture(slot.textureId));
                     sourceTilemap.chunkDataInto(desired, std::span<std::uint8_t>(viewPack.chunkScratch));
