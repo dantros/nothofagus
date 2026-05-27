@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 
-project(nothofagus_project CXX)
+project(nothofagus_project CXX C)
 
 # ─────────────────────────────────────────────
 # Graphics backend selection
@@ -97,6 +97,7 @@ add_library(nothofagus
     "source/text.cpp"
     "source/animation_state_machine.cpp"
     "source/animation_state.cpp"
+    "source/markdown_renderer.cpp"
 
     # This is only required to show header files in the Visual Studio IDE solution browser
     ${NOTHOFAGUS_SOURCE_HEADERS}
@@ -230,6 +231,8 @@ target_include_directories(nothofagus
         "third_party/glad/include"
         ${NOTHOFAGUS_WIN_INCS}
         "third_party/font8x8"
+        "third_party/imgui_md"
+        "third_party/md4c/src"
 )
 target_link_libraries(nothofagus PRIVATE glad ${NOTHOFAGUS_WIN_LINK} imgui)
 # spdlog uses fmt to format string, this library requires /utf-8 when using MSVC
