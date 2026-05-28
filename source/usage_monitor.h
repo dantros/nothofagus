@@ -113,7 +113,4 @@ private:
     std::unordered_set<ResourceId> mUnusedResources;
 };
 
-using TextureUsageMonitor = UsageMonitor<TextureId>;
-using MeshUsageMonitor    = UsageMonitor<MeshId>;
-
 }

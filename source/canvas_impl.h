@@ -20,6 +20,9 @@ struct ImFont;
 namespace Nothofagus
 {
 
+using TextureUsageMonitor = UsageMonitor<TextureId>;
+using MeshUsageMonitor    = UsageMonitor<MeshId>;
+
 /**
  * @class Canvas::CanvasImpl
  * @brief Implementation of the Canvas class, responsible for managing the actual window, textures, Bellotas, and rendering.
