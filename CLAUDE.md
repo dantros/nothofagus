@@ -299,7 +299,7 @@ Nothofagus::TextureId tileMapTexId = canvas.addTexture(tileMap);
 - `bellota.currentLayer()` is unused for tilemap textures — per-cell layer choice is driven by the cell grid, not by a global layer index. Animation state machines should target non-tilemap `IndirectTexture` instances.
 - `setCell` triggers `mMapDirty` and is hot-uploadable per-frame; per-pixel `setPixels` triggers `mAtlasDirty` for tile-graphic mutations.
 - The palette is shared between the tile-map and indirect rendering paths — `setPallete` works the same way.
-- `setMapBulk(span)` overwrites the entire cell grid in one shot (used internally by `TilemapExplorer` to swap chunks; useful directly when bulk-replacing a tilemap's cells).
+- `setMapBulk(span)` overwrites the entire cell grid in one shot from a row-major byte buffer of `mapSize.x * mapSize.y` layer indices. Faster than per-cell `setCell` when replacing a large region — one memcpy + one dirty-flag set, no per-cell bookkeeping.
 
 ### Huge tilemaps via `Tilemap` + `TilemapExplorer`
 
