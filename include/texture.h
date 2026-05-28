@@ -298,6 +298,10 @@ public:
         //debugCheck(layers > 0);
     }
 
+    /// Clone `source`'s atlas + palette + layers but allocate a fresh `mMap` of the
+    /// supplied size (or none, when `{0, 0}` is passed).
+    IndirectTexture(const IndirectTexture& source, glm::ivec2 overrideMapSize);
+
     /**
      * @brief Returns the number of layers in the texture.
      * 
@@ -442,6 +446,12 @@ public:
 
     /// Map data for GPU upload (R8UI 2D source). Empty when `!hasMap()`.
     std::vector<std::uint8_t> generateMapData() const;
+
+    /// Non-copying view onto the cell-grid storage. Empty span when `!hasMap()`.
+    std::span<const std::uint8_t> mapData() const
+    {
+        return std::span<const std::uint8_t>(mMap);
+    }
 
     /// Atlas dirty flag — set by any pixel mutator, cleared after GPU upload.
     bool isAtlasDirty() const { return mAtlasDirty; }

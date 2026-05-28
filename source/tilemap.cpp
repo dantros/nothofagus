@@ -1,5 +1,6 @@
 #include "tilemap.h"
 #include "check.h"
+#include <algorithm>
 
 namespace Nothofagus
 {
@@ -17,39 +18,40 @@ Tilemap::Tilemap(glm::ivec2 mapSize,
                  glm::ivec2 tileSize,
                  const ColorPallete& palette,
                  std::span<const std::vector<std::uint8_t>> tileGraphics):
-    mMapSize(mapSize),
+    mCache(tileSize, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f), tileGraphics.size()),
     mChunkSize(chunkSize),
-    mTileSize(tileSize),
     mChunkGridSize(computeChunkGridSize(mapSize, chunkSize)),
-    mPalette(palette),
-    mTileGraphics(tileGraphics.begin(), tileGraphics.end()),
-    mCellGrid(static_cast<std::size_t>(mapSize.x) * static_cast<std::size_t>(mapSize.y), 0),
     mChunkGenerations(static_cast<std::size_t>(mChunkGridSize.x) * static_cast<std::size_t>(mChunkGridSize.y), 0)
 {
     debugCheck(mapSize.x > 0 && mapSize.y > 0, "Tilemap mapSize must be positive.");
     debugCheck(chunkSize.x > 0 && chunkSize.y > 0, "Tilemap chunkSize must be positive.");
     debugCheck(tileSize.x > 0 && tileSize.y > 0, "Tilemap tileSize must be positive.");
-    debugCheck(!mTileGraphics.empty(), "Tilemap requires at least one tile graphic layer.");
+    debugCheck(!tileGraphics.empty(), "Tilemap requires at least one tile graphic layer.");
+
     const std::size_t pixelsPerLayer = static_cast<std::size_t>(tileSize.x) * static_cast<std::size_t>(tileSize.y);
-    for (const auto& layerPixels : mTileGraphics)
+
+    mCache.setPallete(palette);
+    for (std::size_t i = 0; i < tileGraphics.size(); ++i)
     {
-        debugCheck(layerPixels.size() == pixelsPerLayer,
+        debugCheck(tileGraphics[i].size() == pixelsPerLayer,
                    "Tilemap tile graphic layer size must equal tileSize.x * tileSize.y.");
+        mCache.setPixels(std::span<const std::uint8_t>(tileGraphics[i]), i);
     }
+    mCache.setMap(mapSize);
+
+    // The cache's dirty flags will get set by setCell/setMapBulk over the Tilemap's
+    // lifetime but never cleared — there's no GPU upload pass for the cache itself.
+    // Functionally harmless; the chunk pool textures own the GPU side.
 }
 
 void Tilemap::setCell(glm::ivec2 worldCell, std::uint8_t layerIndex)
 {
-    debugCheck(worldCell.x >= 0 && worldCell.x < mMapSize.x
-            && worldCell.y >= 0 && worldCell.y < mMapSize.y,
+    debugCheck(inBounds(worldCell),
                "Tilemap::setCell coordinate out of world bounds.");
-    debugCheck(static_cast<std::size_t>(layerIndex) < mTileGraphics.size(),
+    debugCheck(static_cast<std::size_t>(layerIndex) < mCache.layers(),
                "Tilemap::setCell layer index out of range of registered tile graphics.");
 
-    const std::size_t cellIdx =
-        static_cast<std::size_t>(worldCell.y) * static_cast<std::size_t>(mMapSize.x) +
-        static_cast<std::size_t>(worldCell.x);
-    mCellGrid[cellIdx] = layerIndex;
+    mCache.setCell(worldCell.x, worldCell.y, layerIndex);
 
     const glm::ivec2 chunkPos{worldCell.x / mChunkSize.x, worldCell.y / mChunkSize.y};
     const std::size_t chunkIdx =
@@ -60,13 +62,7 @@ void Tilemap::setCell(glm::ivec2 worldCell, std::uint8_t layerIndex)
 
 std::uint8_t Tilemap::cell(glm::ivec2 worldCell) const
 {
-    debugCheck(worldCell.x >= 0 && worldCell.x < mMapSize.x
-            && worldCell.y >= 0 && worldCell.y < mMapSize.y,
-               "Tilemap::cell coordinate out of world bounds.");
-    const std::size_t cellIdx =
-        static_cast<std::size_t>(worldCell.y) * static_cast<std::size_t>(mMapSize.x) +
-        static_cast<std::size_t>(worldCell.x);
-    return mCellGrid[cellIdx];
+    return mCache.cell(worldCell.x, worldCell.y);
 }
 
 void Tilemap::chunkDataInto(glm::ivec2 chunkPos, std::span<std::uint8_t> out) const
@@ -81,23 +77,26 @@ void Tilemap::chunkDataInto(glm::ivec2 chunkPos, std::span<std::uint8_t> out) co
 
     std::fill(out.begin(), out.end(), static_cast<std::uint8_t>(0));
 
+    const glm::ivec2 mapSize = mCache.mapSize();
+    const std::span<const std::uint8_t> cells = mCache.mapData();
+
     const int worldColStart = chunkPos.x * mChunkSize.x;
     const int worldRowStart = chunkPos.y * mChunkSize.y;
-    const int worldColEnd = std::min(worldColStart + mChunkSize.x, mMapSize.x);
-    const int worldRowEnd = std::min(worldRowStart + mChunkSize.y, mMapSize.y);
+    const int worldColEnd = std::min(worldColStart + mChunkSize.x, mapSize.x);
+    const int worldRowEnd = std::min(worldRowStart + mChunkSize.y, mapSize.y);
 
     for (int worldRow = worldRowStart; worldRow < worldRowEnd; ++worldRow)
     {
         const int localRow = worldRow - worldRowStart;
         const std::size_t worldRowOffset =
-            static_cast<std::size_t>(worldRow) * static_cast<std::size_t>(mMapSize.x);
+            static_cast<std::size_t>(worldRow) * static_cast<std::size_t>(mapSize.x);
         const std::size_t localRowOffset =
             static_cast<std::size_t>(localRow) * static_cast<std::size_t>(mChunkSize.x);
         for (int worldCol = worldColStart; worldCol < worldColEnd; ++worldCol)
         {
             const int localCol = worldCol - worldColStart;
             out[localRowOffset + static_cast<std::size_t>(localCol)] =
-                mCellGrid[worldRowOffset + static_cast<std::size_t>(worldCol)];
+                cells[worldRowOffset + static_cast<std::size_t>(worldCol)];
         }
     }
 }

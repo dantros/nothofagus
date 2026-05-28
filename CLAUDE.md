@@ -332,7 +332,7 @@ canvas.tilemapView(handles.viewId).setCamera({scrollX, scrollY});
 ```
 
 **How it works:**
-- `Tilemap` holds the atlas (one copy), the palette, and the full world cell grid (`mapSize.x * mapSize.y` bytes). No GPU resources are allocated for it.
+- `Tilemap` is internally a single `IndirectTexture` shaped to the full world (atlas + palette + `setMap(mapSize)` cell grid) plus per-chunk generation counters. The cache texture is never registered with the canvas, so no GPU resources are allocated — `IndirectTexture` is reused purely for its storage layout and tested mutation methods (`setCell` / `cell` / `setMapBulk`). Use `tilemap.cacheTexture()` to inspect or clone the underlying texture.
 - `TilemapView` is registered against a `TilemapId`; on registration the canvas allocates a `ceil(screenSize / chunkPixelSize) + 2` grid of pool slots. Each slot is an `IndirectTexture` (with its own copy of the atlas + palette, chunk-sized map storage) plus a `Bellota`. Both are **view-managed**: calling `canvas.removeBellota`/`canvas.removeTexture` on those ids fires a `debugCheck`. Use `canvas.removeTilemapView(viewId)` to tear the pool down.
 - Per-frame pre-pass (runs between the user update callback and the texture-upload pass): for each view, compute which world chunk each slot should display based on the camera; for any slot whose desired chunk changed (or whose chunk's generation advanced), memcpy the chunk's cells into the slot's IndirectTexture via `setMapBulk` and reposition the slot's bellota. The existing dirty-upload path then re-uploads only those small chunk map textures.
 - Renderer learns nothing new — pool slots flow through the existing 3-binding tilemap path. No shader, backend, or render-loop changes.
@@ -352,7 +352,7 @@ canvas.tilemapView(handles.viewId).setCamera({scrollX, scrollY});
 
 **Camera convention (v1):** `setCamera(offset)` sets the world-pixel coordinate that appears at the canvas center. `(0, 0)` = world origin centered. The `Tilemap`'s coordinate space is bottom-left = `(0, 0)` cell, top-right = `(mapSize.x - 1, mapSize.y - 1)`.
 
-**Deferred:** streaming (world cell grid eviction to disk); RTT-targeted tilemap rendering; shader-scrolled single-draw fast path; per-cell partial GPU upload inside a chunk's map texture.
+**Deferred:** streaming (world cell grid eviction to disk); RTT-targeted tilemap rendering; shader-scrolled single-draw fast path; per-cell partial GPU upload inside a chunk's map texture; direct rendering of small tilemaps via `canvas.addTexture(tilemap.cacheTexture())`.
 
 ### Animations
 

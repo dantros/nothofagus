@@ -5,6 +5,19 @@
 namespace Nothofagus
 {
 
+IndirectTexture::IndirectTexture(const IndirectTexture& source, glm::ivec2 overrideMapSize):
+    mLayers(source.mLayers),
+    mSize(source.mSize),
+    mPixels(source.mPixels),
+    mPallete(source.mPallete),
+    mMapSize(overrideMapSize),
+    mMap(static_cast<std::size_t>(overrideMapSize.x) * static_cast<std::size_t>(overrideMapSize.y), 0),
+    mAtlasDirty(true),
+    mMapDirty(true),
+    mPaletteDirty(true)
+{
+}
+
 std::size_t indexOf(const std::size_t sizeI, const std::size_t sizeJ, const std::size_t i, const std::size_t j)
 {
     debugCheck(i < sizeI and j < sizeJ, "Invalid indices for this texture.");

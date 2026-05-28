@@ -82,23 +82,13 @@ void TilemapManager::buildPoolSlots(TilemapViewPack& pack, Canvas& canvas)
     pack.chunkScratch.resize(
         static_cast<std::size_t>(chunkSize.x) * static_cast<std::size_t>(chunkSize.y));
 
-    const auto tileGraphics = sourceTilemap.tileGraphics();
-    const std::size_t layerCount = tileGraphics.size();
     const std::int8_t depthOffset = pack.view.depthOffset();
 
     for (std::size_t slotIdx = 0; slotIdx < slotCount; ++slotIdx)
     {
-        // Build the slot's IndirectTexture: own copy of atlas + palette,
-        // chunk-sized map storage initialized to all-zero.
-        IndirectTexture slotTexture(tileSize, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f), layerCount);
-        slotTexture.setPallete(sourceTilemap.palette());
-        for (std::size_t layerIdx = 0; layerIdx < layerCount; ++layerIdx)
-        {
-            slotTexture.setPixels(
-                std::span<const std::uint8_t>(tileGraphics[layerIdx]),
-                layerIdx);
-        }
-        slotTexture.setMap(chunkSize);
+        // Clone the Tilemap's cache (atlas + palette + layers) and replace its
+        // world-sized map with a chunk-sized one — slot draws are over chunkSize.
+        IndirectTexture slotTexture(sourceTilemap.cacheTexture(), chunkSize);
 
         TextureId texId = canvas.addTexture(slotTexture);
         mViewManagedTextureIds.insert(texId.id);
