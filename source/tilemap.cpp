@@ -1,6 +1,8 @@
 #include "tilemap.h"
 #include "check.h"
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 
 namespace Nothofagus
 {
@@ -27,6 +29,13 @@ Tilemap::Tilemap(glm::ivec2 mapSize,
     debugCheck(chunkSize.x > 0 && chunkSize.y > 0, "Tilemap chunkSize must be positive.");
     debugCheck(tileSize.x > 0 && tileSize.y > 0, "Tilemap tileSize must be positive.");
     debugCheck(!tileGraphics.empty(), "Tilemap requires at least one tile graphic layer.");
+
+    // One-time bound: with chunkSize * tileSize asserted to fit in int here, the
+    // per-frame chunk-pixel math in tilemap_manager.cpp can stay in plain int.
+    debugCheck(
+        static_cast<std::int64_t>(chunkSize.x) * static_cast<std::int64_t>(tileSize.x) <= std::numeric_limits<int>::max()
+     && static_cast<std::int64_t>(chunkSize.y) * static_cast<std::int64_t>(tileSize.y) <= std::numeric_limits<int>::max(),
+        "Tilemap chunkSize * tileSize exceeds int range.");
 
     const std::size_t pixelsPerLayer = static_cast<std::size_t>(tileSize.x) * static_cast<std::size_t>(tileSize.y);
 
