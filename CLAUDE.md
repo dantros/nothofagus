@@ -67,6 +67,9 @@ cmake --install build/windows-debug-glfw-opengl-examples
 - `NOTHOFAGUS_BUILD_EXAMPLES` — build demo apps (default OFF, enabled by `-examples` presets)
 - `NOTHOFAGUS_INSTALL` — install artifacts (default OFF, presets set ON)
 - `NOTHOFAGUS_BUILD_DOCS` — generate Doxygen docs (default OFF)
+- `NOTHOFAGUS_BUILD_TESTS` — master switch for the test infrastructure (default OFF). When ON, the two sub-options below become available; both still default OFF, so test targets are opt-in even with tests enabled.
+- `NOTHOFAGUS_BUILD_TESTS_VISUAL` — build the visual (golden-image) test group (default OFF). Requires a render backend; pulls in Catch2 + the golden-image helpers under `tests/visual/`.
+- `NOTHOFAGUS_BUILD_TESTS_NONVISUAL` — build the nonvisual (CPU-only data/logic) test group (default OFF). Pulls in Catch2; no render backend required.
 - `NOTHOFAGUS_WINDOW_BACKEND` — `"GLFW"` (default) or `"SDL3"`; selects the window/input backend at configure time
 - `NOTHOFAGUS_BACKEND_VULKAN` — use the Vulkan render backend instead of OpenGL (default OFF)
 - `NOTHOFAGUS_HEADLESS_VULKAN` — pure offscreen Vulkan rendering with no window or display server (default OFF; requires `NOTHOFAGUS_BACKEND_VULKAN=ON`). Replaces the window backend with `HeadlessBackend` and the Vulkan presentation policy with `HeadlessVulkanPresentation`. Intended for CI/CD rendering tests.
@@ -346,9 +349,10 @@ canvas.tilemapExplorer(handles.explorerId).setCamera({scrollX, scrollY});
 
 **Lifecycle rules:**
 - `addTilemap` / `addTilemapExplorer` register the data and the renderer; `createTilemap` is a convenience that calls both.
-- `removeTilemap(tilemapId)` fails if any `TilemapExplorer` still references it.
+- **Tear down explorers before their tilemaps.** `removeTilemap(tilemapId)` fires a `debugCheck` if any `TilemapExplorer` still references it; call `removeTilemapExplorer(explorerId)` on every owning explorer first. (See [examples/hello_tilemap_huge.cpp](examples/hello_tilemap_huge.cpp) `rebuild` lambda for the canonical pattern.)
 - `removeTilemapExplorer(explorerId)` removes all pool bellotas and textures it owns.
 - Multiple `TilemapExplorer` instances may reference the same `Tilemap` (e.g., main explorer + mini-map explorer); each polls per-chunk generation counters independently.
+- The `Tilemap` constructor `debugCheck`s that `chunkSize.x * tileSize.x` and `chunkSize.y * tileSize.y` fit in `int`. This one-time bound keeps the per-frame chunk-pixel math in `tilemap_manager.cpp` safe in plain `int` without runtime overflow guards.
 
 **Camera convention (v1):** `setCamera(offset)` sets the world-pixel coordinate that appears at the canvas center. `(0, 0)` = world origin centered. The `Tilemap`'s coordinate space is bottom-left = `(0, 0)` cell, top-right = `(mapSize.x - 1, mapSize.y - 1)`.
 
@@ -606,14 +610,14 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 
 ## Tests
 
-Enable with `-DNOTHOFAGUS_BUILD_TESTS=ON`. Two independent groups, each behind its own sub-option (both default ON when tests are enabled):
+Enable with `-DNOTHOFAGUS_BUILD_TESTS=ON`. Two independent groups, each behind its own opt-in sub-option (both default OFF — turning the master switch on does not implicitly turn either group on):
 
 | Group | Folder | Sub-option | Stack |
 |-------|--------|------------|-------|
 | Visual (pixel-level golden-image comparison) | [tests/visual/](tests/visual/) | `NOTHOFAGUS_BUILD_TESTS_VISUAL` | Catch2 + render backend + golden-image infrastructure |
 | Nonvisual (CPU-only data/logic checks) | [tests/nonvisual/](tests/nonvisual/) | `NOTHOFAGUS_BUILD_TESTS_NONVISUAL` | Catch2 only |
 
-Run via CTest from the build directory. Both groups use Catch2 (`catch_discover_tests` registers each `TEST_CASE` as a separate CTest entry); the visual group additionally requires a render backend and the golden-image helpers in [tests/visual/golden_image.h](tests/visual/golden_image.h).
+Run via CTest from the build directory. Both groups use Catch2 (`catch_discover_tests` registers each `TEST_CASE` as a separate CTest entry); Catch2 is added once at the `tests/CMakeLists.txt` orchestrator level when either sub-option is enabled. The visual group additionally requires a render backend and the golden-image helpers in [tests/visual/golden_image.h](tests/visual/golden_image.h); the nonvisual group builds without any render backend (use it from CI lanes that don't have a display server). The current nonvisual file is [tests/nonvisual/tilemap_tests.cpp](tests/nonvisual/tilemap_tests.cpp) — pure-data tests for `Tilemap`, `IndirectTexture::setMapBulk`, and the `TilemapExplorer` pool-grid-size formula (mirrored from source).
 
 ## Dependencies (third_party/ submodules)
 
