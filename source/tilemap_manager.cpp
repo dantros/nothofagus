@@ -161,6 +161,7 @@ void TilemapManager::updateExplorers(Canvas& canvas)
         // Canvas was resized since this pool was built — tear it down and
         // rebuild against the new screenSize. Fresh slots have currentWorldChunk
         // = {-1,-1}, so the chunk-sync pass below re-syncs every slot this frame.
+        // Cost: N GPU texture frees + N uploads on the same frame (N = slot count).
         if (screen.width  != explorerPack.poolSizedFor.width ||
             screen.height != explorerPack.poolSizedFor.height)
         {
