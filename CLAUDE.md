@@ -610,10 +610,10 @@ Enable with `-DNOTHOFAGUS_BUILD_TESTS=ON`. Two independent groups, each behind i
 
 | Group | Folder | Sub-option | Stack |
 |-------|--------|------------|-------|
-| Rendering (GPU + golden image) | [tests/rendering/](tests/rendering/) | `NOTHOFAGUS_BUILD_TESTS_RENDERING` | Catch2 + render backend |
-| Tilemap correctness (CPU-only) | [tests/tilemap_correctness/](tests/tilemap_correctness/) | `NOTHOFAGUS_BUILD_TESTS_CORRECTNESS` | hand-rolled, no third-party deps |
+| Visual (pixel-level golden-image comparison) | [tests/visual/](tests/visual/) | `NOTHOFAGUS_BUILD_TESTS_VISUAL` | Catch2 + render backend |
+| Nonvisual (CPU-only data/logic checks) | [tests/nonvisual/](tests/nonvisual/) | `NOTHOFAGUS_BUILD_TESTS_NONVISUAL` | hand-rolled, no third-party deps |
 
-Run via CTest from the build directory. Catch2 is only configured when the rendering group is enabled — the correctness group builds standalone.
+Run via CTest from the build directory. Catch2 is only configured when the visual group is enabled — the nonvisual group builds standalone.
 
 ## Dependencies (third_party/ submodules)
 
