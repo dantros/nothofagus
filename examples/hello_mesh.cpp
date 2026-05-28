@@ -71,6 +71,20 @@ namespace
         mesh.indices = {0, 1, 2, 0, 2, 3};
         return mesh;
     }
+
+    // Axis-aligned square of side 2 * halfSide, centered at origin.
+    Nothofagus::Mesh makeQuad(float halfSide)
+    {
+        Nothofagus::Mesh mesh;
+        mesh.vertices = {
+            {{-halfSide, -halfSide}, {0.0f, 1.0f}},
+            {{ halfSide, -halfSide}, {1.0f, 1.0f}},
+            {{ halfSide,  halfSide}, {1.0f, 0.0f}},
+            {{-halfSide,  halfSide}, {0.0f, 0.0f}},
+        };
+        mesh.indices = {0, 1, 2, 0, 2, 3};
+        return mesh;
+    }
 }
 
 int main()
@@ -101,13 +115,13 @@ int main()
            });
     const Nothofagus::TextureId textureId = canvas.addTexture(texture);
 
-    // Register two user meshes (the third — the diamond — is registered and
+    // Register three user meshes (the fourth — the diamond — is registered and
     // removed later as part of the explicit-cleanup demonstration below).
     const Nothofagus::MeshId triangleMeshId = canvas.addMesh(makeTriangle(20.0f));
     const Nothofagus::MeshId pentagonMeshId = canvas.addMesh(makePentagon(20.0f));
+    const Nothofagus::MeshId quadMeshId     = canvas.addMesh(makeQuad(18.0f));
 
-    // One bellota for each custom mesh, plus a textured bellota to confirm the
-    // auto-quad path keeps working unchanged. The triangle uses the 4-arg
+    // One bellota per custom mesh. The triangle uses the 4-arg
     // Bellota(Transform, TextureId, MeshId, depthOffset) constructor with a
     // positive depth offset so it always sorts above the pentagon when their
     // bounding circles overlap.
@@ -117,11 +131,11 @@ int main()
     const Nothofagus::BellotaId pentagonId =
         canvas.addBellota({{{140.0f, 75.0f}}, textureId, pentagonMeshId});
     const Nothofagus::BellotaId quadId =
-        canvas.addBellota({{{100.0f, 25.0f}}, textureId});
+        canvas.addBellota({{{100.0f, 25.0f}}, textureId, quadMeshId});
 
-    // mesh(bellotaId) round-trip — confirms the auto-quad and user meshes are both queryable.
+    // mesh(bellotaId) round-trip — confirms user meshes are queryable through the bellota handle.
     spdlog::info("triangle mesh vertex count = {}", canvas.mesh(triangleId).vertices.size());
-    spdlog::info("auto-quad mesh vertex count = {}",  canvas.mesh(quadId).vertices.size());
+    spdlog::info("quad mesh vertex count = {}",     canvas.mesh(quadId).vertices.size());
 
     // Explicit-cleanup demonstration: register a transient diamond mesh,
     // briefly bind the pentagon bellota to it, swap back to the original
@@ -149,7 +163,7 @@ int main()
         ImGui::Begin("Custom meshes");
         ImGui::Text("Left: user triangle mesh");
         ImGui::Text("Right: user pentagon mesh");
-        ImGui::Text("Bottom: implicit auto-quad");
+        ImGui::Text("Bottom: user quad mesh");
         ImGui::Checkbox("Swap triangle <-> pentagon", &swap);
         ImGui::End();
 
