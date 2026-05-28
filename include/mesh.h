@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 #include <iosfwd>
 #include <functional>
@@ -22,7 +23,7 @@ struct Vertex
 };
 
 /// Triangle index — vertex offsets are 32-bit unsigned integers.
-using Index = unsigned int;
+using Index = std::uint32_t;
 
 /// Vertex list type backing a Mesh.
 using Vertices = std::vector<Vertex>;
