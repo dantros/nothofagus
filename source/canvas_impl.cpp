@@ -1053,7 +1053,7 @@ void Canvas::CanvasImpl::replaceBellota(const BellotaId bellotaId, const Bellota
     const bool newTextureEntryAdded = mTextureUsageMonitor.addEntry(bellotaId, newTextureId);
     debugCheck(newTextureEntryAdded, "Failed to add new texture entry to usage monitor during bellota replacement");
 
-    // Mesh-usage shuffle. Three cases:
+    // Mesh-usage shuffle. Two cases:
     //   * new bellota has explicit MeshId — drop the old MeshId, register the new one
     //   * new bellota has no MeshId — caller (setTexture) wants a fresh auto-quad
     //     sized to the new texture; materialise it now and stamp the bellota copy
