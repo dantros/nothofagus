@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <vector>
 #include <iosfwd>
+#include <functional>
 
 namespace Nothofagus
 {
@@ -56,8 +57,6 @@ struct MeshId
 };
 
 }
-
-#include <functional>
 
 namespace std
 {

@@ -112,10 +112,7 @@ public:
     const TextureId& texture() const { return mTextureId; }
 
     const std::optional<MeshId>& meshId() const { return mMeshId; }
-
-    /* Internal: stamped by CanvasImpl::addBellota when materializing the auto-quad
-       for a bellota constructed without an explicit MeshId. Not intended for user code. */
-    void setMeshId(MeshId meshId) { mMeshId = meshId; }
+    std::optional<MeshId>& meshId() { return mMeshId; }
 
     const std::int8_t& depthOffset() const { return mDepthOffset; }
     std::int8_t& depthOffset() { return mDepthOffset; }

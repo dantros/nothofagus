@@ -238,7 +238,7 @@ BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)
     if (not newBellota.meshId().has_value())
     {
         const MeshId autoQuadId = materializeAutoQuad(newBellota);
-        newBellota.setMeshId(autoQuadId);
+        newBellota.meshId() = autoQuadId;
     }
     else
     {
@@ -1067,7 +1067,7 @@ void Canvas::CanvasImpl::replaceBellota(const BellotaId bellotaId, const Bellota
     if (not stampedNewBellota.meshId().has_value())
     {
         const MeshId autoQuadId = materializeAutoQuad(stampedNewBellota);
-        stampedNewBellota.setMeshId(autoQuadId);
+        stampedNewBellota.meshId() = autoQuadId;
     }
     else
     {
