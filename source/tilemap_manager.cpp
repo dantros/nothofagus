@@ -21,10 +21,10 @@ TilemapId TilemapManager::addTilemap(Tilemap tilemap)
 
 void TilemapManager::removeTilemap(TilemapId tilemapId)
 {
-    for (const auto& [viewIdx, viewPack] : mTilemapViews)
+    for (const auto& [viewIdx, viewPack] : mTilemapExplorers)
     {
         debugCheck(viewPack.view.tilemap().id != tilemapId.id,
-            "Cannot remove Tilemap while a TilemapView still references it — remove the view first.");
+            "Cannot remove Tilemap while a TilemapExplorer still references it — remove the view first.");
     }
     mTilemaps.remove(tilemapId.id);
 }
@@ -39,24 +39,24 @@ const Tilemap& TilemapManager::tilemap(TilemapId tilemapId) const
     return mTilemaps.at(tilemapId.id);
 }
 
-TilemapViewId TilemapManager::addTilemapView(TilemapView view, Canvas& canvas)
+TilemapExplorerId TilemapManager::addTilemapExplorer(TilemapExplorer view, Canvas& canvas)
 {
     debugCheck(mTilemaps.contains(view.tilemap().id),
-        "TilemapView references a TilemapId not registered with this canvas.");
+        "TilemapExplorer references a TilemapId not registered with this canvas.");
 
-    TilemapViewPack pack(view);
+    TilemapExplorerPack pack(view);
     buildPoolSlots(pack, canvas);
-    return TilemapViewId{ mTilemapViews.add(std::move(pack)) };
+    return TilemapExplorerId{ mTilemapExplorers.add(std::move(pack)) };
 }
 
-void TilemapManager::removeTilemapView(TilemapViewId viewId, Canvas& canvas)
+void TilemapManager::removeTilemapExplorer(TilemapExplorerId viewId, Canvas& canvas)
 {
-    TilemapViewPack& pack = mTilemapViews.at(viewId.id);
+    TilemapExplorerPack& pack = mTilemapExplorers.at(viewId.id);
     teardownPoolSlots(pack, canvas);
-    mTilemapViews.remove(viewId.id);
+    mTilemapExplorers.remove(viewId.id);
 }
 
-void TilemapManager::buildPoolSlots(TilemapViewPack& pack, Canvas& canvas)
+void TilemapManager::buildPoolSlots(TilemapExplorerPack& pack, Canvas& canvas)
 {
     const Tilemap& sourceTilemap = mTilemaps.at(pack.view.tilemap().id);
 
@@ -91,45 +91,45 @@ void TilemapManager::buildPoolSlots(TilemapViewPack& pack, Canvas& canvas)
         IndirectTexture slotTexture(sourceTilemap.cacheTexture(), chunkSize);
 
         TextureId texId = canvas.addTexture(slotTexture);
-        mViewManagedTextureIds.insert(texId.id);
+        mExplorerManagedTextureIds.insert(texId.id);
 
         Bellota slotBellota(Transform(glm::vec2(0.0f, 0.0f)), texId, depthOffset);
         slotBellota.visible() = false; // hidden until per-frame pass assigns it
         BellotaId bellotaId = canvas.addBellota(slotBellota);
-        mViewManagedBellotaIds.insert(bellotaId.id);
+        mExplorerManagedBellotaIds.insert(bellotaId.id);
 
         pack.slots.push_back(PoolSlot{ texId, bellotaId, glm::ivec2{-1, -1}, 0 });
     }
 }
 
-void TilemapManager::teardownPoolSlots(TilemapViewPack& pack, Canvas& canvas)
+void TilemapManager::teardownPoolSlots(TilemapExplorerPack& pack, Canvas& canvas)
 {
     // Untag first so the canvas's removeBellota / removeTexture debugCheck passes.
     // Tear down each slot's bellota before its texture so the usage monitor
     // moves the texture into the unused set ahead of removeTexture.
     for (const PoolSlot& slot : pack.slots)
     {
-        mViewManagedBellotaIds.erase(slot.bellotaId.id);
+        mExplorerManagedBellotaIds.erase(slot.bellotaId.id);
         canvas.removeBellota(slot.bellotaId);
-        mViewManagedTextureIds.erase(slot.textureId.id);
+        mExplorerManagedTextureIds.erase(slot.textureId.id);
         canvas.removeTexture(slot.textureId);
     }
     pack.slots.clear();
 }
 
-TilemapView& TilemapManager::tilemapView(TilemapViewId viewId)
+TilemapExplorer& TilemapManager::tilemapExplorer(TilemapExplorerId viewId)
 {
-    return mTilemapViews.at(viewId.id).view;
+    return mTilemapExplorers.at(viewId.id).view;
 }
 
-const TilemapView& TilemapManager::tilemapView(TilemapViewId viewId) const
+const TilemapExplorer& TilemapManager::tilemapExplorer(TilemapExplorerId viewId) const
 {
-    return mTilemapViews.at(viewId.id).view;
+    return mTilemapExplorers.at(viewId.id).view;
 }
 
-void TilemapManager::updateViews(Canvas& canvas)
+void TilemapManager::updateExplorers(Canvas& canvas)
 {
-    if (mTilemapViews.size() == 0) return;
+    if (mTilemapExplorers.size() == 0) return;
 
     const ScreenSize& screen = canvas.screenSize();
     const glm::vec2 canvasCenter{
@@ -137,7 +137,7 @@ void TilemapManager::updateViews(Canvas& canvas)
         static_cast<float>(screen.height) * 0.5f
     };
 
-    for (auto& [viewIdx, viewPack] : mTilemapViews)
+    for (auto& [viewIdx, viewPack] : mTilemapExplorers)
     {
         const TilemapId tilemapId = viewPack.view.tilemap();
         if (!mTilemaps.contains(tilemapId.id)) continue;

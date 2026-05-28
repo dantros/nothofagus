@@ -11,7 +11,7 @@ namespace Nothofagus
 {
 
 /// World data for huge tilemaps: cell grid, shared tile atlas, palette. Does not render —
-/// pair with a `TilemapView` for that. Internally a single `IndirectTexture` sized to the
+/// pair with a `TilemapExplorer` for that. Internally a single `IndirectTexture` sized to the
 /// full world (atlas + palette + `setMap(mapSize)` cell grid) plus per-chunk generation
 /// counters; the texture is never registered with the canvas, so no GPU resources are
 /// allocated. See CLAUDE.md "Huge tilemaps" for the full design.
@@ -56,16 +56,16 @@ public:
 
     /// Materialize one chunk's cell grid (row-major, `chunkSize.x * chunkSize.y` bytes).
     /// Edge chunks (when mapSize is not divisible by chunkSize) zero-fill the out-of-world cells.
-    /// Used by `TilemapView` slots when scrolling brings a chunk into view.
+    /// Used by `TilemapExplorer` slots when scrolling brings a chunk into view.
     std::vector<std::uint8_t> chunkData(glm::ivec2 chunkPos) const;
 
     /// Same as `chunkData`, but writes into a caller-provided buffer — no allocation.
     /// `out.size()` must equal `chunkSize.x * chunkSize.y`. Used on the per-frame
-    /// re-sync hot path by `TilemapView`.
+    /// re-sync hot path by `TilemapExplorer`.
     void chunkDataInto(glm::ivec2 chunkPos, std::span<std::uint8_t> out) const;
 
     /// Generation counter for one chunk — bumps on any `setCell` inside that chunk.
-    /// `TilemapView` slots compare against their `syncedGeneration` to detect world edits.
+    /// `TilemapExplorer` slots compare against their `syncedGeneration` to detect world edits.
     std::uint64_t chunkGeneration(glm::ivec2 chunkPos) const;
 
 private:

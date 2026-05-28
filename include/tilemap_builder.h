@@ -1,7 +1,7 @@
 #pragma once
 
 #include "tilemap_id.h"
-#include "tilemap_view_id.h"
+#include "tilemap_explorer_id.h"
 #include "texture.h"
 #include <glm/glm.hpp>
 #include <cstdint>
@@ -15,14 +15,14 @@ class Canvas;
 
 /// Handles returned by `createTilemap` — caller keeps both the Tilemap id (for
 /// world-cell edits via `canvas.tilemap(tilemapId).setCell(...)`) and the
-/// TilemapView id (for camera/scroll via `canvas.tilemapView(viewId).setCamera(...)`).
+/// TilemapExplorer id (for camera/scroll via `canvas.tilemapExplorer(viewId).setCamera(...)`).
 struct TilemapHandles
 {
     TilemapId     tilemapId;
-    TilemapViewId viewId;
+    TilemapExplorerId viewId;
 };
 
-/// Build a Tilemap + a TilemapView in one shot and register both with the canvas.
+/// Build a Tilemap + a TilemapExplorer in one shot and register both with the canvas.
 ///
 /// @param mapSize       World extent in cells (e.g. {256, 256}).
 /// @param chunkSize     Cells per pool slot (e.g. {32, 32}). Pool slot count depends

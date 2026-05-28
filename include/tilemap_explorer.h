@@ -1,7 +1,7 @@
 #pragma once
 
 #include "tilemap_id.h"
-#include "tilemap_view_id.h"
+#include "tilemap_explorer_id.h"
 #include <glm/glm.hpp>
 #include <cstdint>
 
@@ -12,10 +12,10 @@ namespace Nothofagus
 /// scrolling via `setCamera`. Camera = world-pixel coordinate shown at the canvas center;
 /// `(0,0)` centers the world origin. See CLAUDE.md "Huge tilemaps" for pool semantics and
 /// view-managed lifecycle rules.
-class TilemapView
+class TilemapExplorer
 {
 public:
-    explicit TilemapView(TilemapId tilemapId):
+    explicit TilemapExplorer(TilemapId tilemapId):
         mTilemapId(tilemapId),
         mCamera(0.0f, 0.0f),
         mDepthOffset(0)

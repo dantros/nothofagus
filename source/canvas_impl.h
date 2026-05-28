@@ -2,7 +2,7 @@
 
 #include "canvas.h"
 #include "tilemap.h"
-#include "tilemap_view.h"
+#include "tilemap_explorer.h"
 #include "tilemap_manager.h"
 #include "texture_container.h"
 #include "bellota_container.h"
@@ -126,10 +126,10 @@ public:
     Tilemap& tilemap(TilemapId tilemapId);
     const Tilemap& tilemap(TilemapId tilemapId) const;
 
-    TilemapViewId addTilemapView(TilemapView view, Canvas& canvas);
-    void removeTilemapView(TilemapViewId viewId, Canvas& canvas);
-    TilemapView& tilemapView(TilemapViewId viewId);
-    const TilemapView& tilemapView(TilemapViewId viewId) const;
+    TilemapExplorerId addTilemapExplorer(TilemapExplorer view, Canvas& canvas);
+    void removeTilemapExplorer(TilemapExplorerId viewId, Canvas& canvas);
+    TilemapExplorer& tilemapExplorer(TilemapExplorerId viewId);
+    const TilemapExplorer& tilemapExplorer(TilemapExplorerId viewId) const;
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 

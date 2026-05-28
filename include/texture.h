@@ -434,7 +434,7 @@ public:
 
     /// Overwrite the entire cell grid in one shot. Requires `setMap` to have been
     /// called previously; `cells.size()` must equal `mapSize.x * mapSize.y`.
-    /// Used by `TilemapView` pool slots to swap in a new chunk's worth of cells
+    /// Used by `TilemapExplorer` pool slots to swap in a new chunk's worth of cells
     /// without going through `setCell` cell_count² times.
     IndirectTexture& setMapBulk(std::span<const std::uint8_t> cells);
 

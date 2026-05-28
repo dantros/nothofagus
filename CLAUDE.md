@@ -299,17 +299,17 @@ Nothofagus::TextureId tileMapTexId = canvas.addTexture(tileMap);
 - `bellota.currentLayer()` is unused for tilemap textures — per-cell layer choice is driven by the cell grid, not by a global layer index. Animation state machines should target non-tilemap `IndirectTexture` instances.
 - `setCell` triggers `mMapDirty` and is hot-uploadable per-frame; per-pixel `setPixels` triggers `mAtlasDirty` for tile-graphic mutations.
 - The palette is shared between the tile-map and indirect rendering paths — `setPallete` works the same way.
-- `setMapBulk(span)` overwrites the entire cell grid in one shot (used internally by `TilemapView` to swap chunks; useful directly when bulk-replacing a tilemap's cells).
+- `setMapBulk(span)` overwrites the entire cell grid in one shot (used internally by `TilemapExplorer` to swap chunks; useful directly when bulk-replacing a tilemap's cells).
 
-### Huge tilemaps via `Tilemap` + `TilemapView`
+### Huge tilemaps via `Tilemap` + `TilemapExplorer`
 
-Single-`IndirectTexture` tilemaps scale poorly: any `setCell` re-uploads the entire world's map texture, and the bellota's mesh covers the whole world even when only a small window is visible. For huge maps (open worlds, side-scrolling levels), use the **`Tilemap` + `TilemapView` pair** instead. The world data lives once in a `Tilemap`; a `TilemapView` owns a small pool of `IndirectTexture` + `Bellota` slots sized to the canvas viewport + a 1-chunk margin. Slots are anchored to pool indices; world chunks rotate through them as the camera scrolls. Only border slots crossing into/out of view get their cell data rewritten — smooth scrolling within a chunk is a zero-rebind frame.
+Single-`IndirectTexture` tilemaps scale poorly: any `setCell` re-uploads the entire world's map texture, and the bellota's mesh covers the whole world even when only a small window is visible. For huge maps (open worlds, side-scrolling levels), use the **`Tilemap` + `TilemapExplorer` pair** instead. The world data lives once in a `Tilemap`; a `TilemapExplorer` owns a small pool of `IndirectTexture` + `Bellota` slots sized to the canvas viewport + a 1-chunk margin. Slots are anchored to pool indices; world chunks rotate through them as the camera scrolls. Only border slots crossing into/out of view get their cell data rewritten — smooth scrolling within a chunk is a zero-rebind frame.
 
 ```cpp
 // Build the tile graphics (palette indices, one std::vector per atlas layer).
 std::vector<std::vector<std::uint8_t>> tileGraphics{ /* layer 0, layer 1, ... */ };
 
-// createTilemap registers both the Tilemap (world data) and the TilemapView
+// createTilemap registers both the Tilemap (world data) and the TilemapExplorer
 // (pooled renderer) in one shot and returns handles for both.
 Nothofagus::TilemapHandles handles = Nothofagus::createTilemap(
     canvas,
@@ -328,12 +328,12 @@ if (canvas.tilemap(handles.tilemapId).inBounds({worldCol, worldRow}))
     canvas.tilemap(handles.tilemapId).setCell({worldCol, worldRow}, layerIndex);
 
 // Pan the view via the camera (world pixels; (0,0) = world origin centered).
-canvas.tilemapView(handles.viewId).setCamera({scrollX, scrollY});
+canvas.tilemapExplorer(handles.viewId).setCamera({scrollX, scrollY});
 ```
 
 **How it works:**
 - `Tilemap` is internally a single `IndirectTexture` shaped to the full world (atlas + palette + `setMap(mapSize)` cell grid) plus per-chunk generation counters. The cache texture is never registered with the canvas, so no GPU resources are allocated — `IndirectTexture` is reused purely for its storage layout and tested mutation methods (`setCell` / `cell` / `setMapBulk`). Use `tilemap.cacheTexture()` to inspect or clone the underlying texture.
-- `TilemapView` is registered against a `TilemapId`; on registration the canvas allocates a `ceil(screenSize / chunkPixelSize) + 2` grid of pool slots. Each slot is an `IndirectTexture` (with its own copy of the atlas + palette, chunk-sized map storage) plus a `Bellota`. Both are **view-managed**: calling `canvas.removeBellota`/`canvas.removeTexture` on those ids fires a `debugCheck`. Use `canvas.removeTilemapView(viewId)` to tear the pool down.
+- `TilemapExplorer` is registered against a `TilemapId`; on registration the canvas allocates a `ceil(screenSize / chunkPixelSize) + 2` grid of pool slots. Each slot is an `IndirectTexture` (with its own copy of the atlas + palette, chunk-sized map storage) plus a `Bellota`. Both are **view-managed**: calling `canvas.removeBellota`/`canvas.removeTexture` on those ids fires a `debugCheck`. Use `canvas.removeTilemapExplorer(viewId)` to tear the pool down.
 - Per-frame pre-pass (runs between the user update callback and the texture-upload pass): for each view, compute which world chunk each slot should display based on the camera; for any slot whose desired chunk changed (or whose chunk's generation advanced), memcpy the chunk's cells into the slot's IndirectTexture via `setMapBulk` and reposition the slot's bellota. The existing dirty-upload path then re-uploads only those small chunk map textures.
 - Renderer learns nothing new — pool slots flow through the existing 3-binding tilemap path. No shader, backend, or render-loop changes.
 - **Pool resize on `setScreenSize`:** the pre-pass also compares the canvas's current `screenSize()` against the size the pool was built for. If they differ, the pool is torn down and rebuilt against the new size in one frame, then chunk-synced — `canvas.setScreenSize(...)` "just works" with active views. Window resize / fullscreen don't trigger this because the letterbox preserves the logical canvas; only explicit `setScreenSize` does.
@@ -345,10 +345,10 @@ canvas.tilemapView(handles.viewId).setCamera({scrollX, scrollY});
 - Independent of world size beyond the cell grid itself: a 1000×1000-cell world (~1 MB cell grid) uses ~50 IndirectTextures and ~50 bellotas, regardless of how big the world is.
 
 **Lifecycle rules:**
-- `addTilemap` / `addTilemapView` register the data and the renderer; `createTilemap` is a convenience that calls both.
-- `removeTilemap(tilemapId)` fails if any `TilemapView` still references it.
-- `removeTilemapView(viewId)` removes all pool bellotas and textures it owns.
-- Multiple `TilemapView` instances may reference the same `Tilemap` (e.g., main view + mini-map view); each polls per-chunk generation counters independently.
+- `addTilemap` / `addTilemapExplorer` register the data and the renderer; `createTilemap` is a convenience that calls both.
+- `removeTilemap(tilemapId)` fails if any `TilemapExplorer` still references it.
+- `removeTilemapExplorer(viewId)` removes all pool bellotas and textures it owns.
+- Multiple `TilemapExplorer` instances may reference the same `Tilemap` (e.g., main view + mini-map view); each polls per-chunk generation counters independently.
 
 **Camera convention (v1):** `setCamera(offset)` sets the world-pixel coordinate that appears at the canvas center. `(0, 0)` = world origin centered. The `Tilemap`'s coordinate space is bottom-left = `(0, 0)` cell, top-right = `(mapSize.x - 1, mapSize.y - 1)`.
 
@@ -597,7 +597,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_screenshot.cpp` | `takeScreenshot()` — capture frame as DirectTexture, display thumbnail |
 | `hello_headless.cpp` | Headless mode + `tick()` — no window, manual frame stepping, screenshot to terminal |
 | `hello_tilemap.cpp` | Tile-map mode of `IndirectTexture` — `setMap` + `setCell` over a layered atlas |
-| `hello_tilemap_huge.cpp` | Huge tilemaps via `Tilemap` + `TilemapView` pool — WASD camera, teleport, recreate, live memory breakdown, stress controls (auto-pan + edits/frame) |
+| `hello_tilemap_huge.cpp` | Huge tilemaps via `Tilemap` + `TilemapExplorer` pool — WASD camera, teleport, recreate, live memory breakdown, stress controls (auto-pan + edits/frame) |
 | `test_tilemap_correctness.cpp` | Pure-data `Tilemap` tests — `inBounds`, `setCell`/`cell` round-trip, `chunkData`/`chunkDataInto` byte-equivalence, edge-chunk zero-fill, generation counter |
 | `hello_mesh.cpp` | Custom triangle meshes via `addMesh` + `Bellota(Transform, TextureId, MeshId)` — register geometry once, attach to bellotas, swap with `setMesh` |
 | `hello_render_to_texture.cpp` | `addRenderTarget` / `renderTo` — sprites drawn into an off-screen texture sampled by another bellota |

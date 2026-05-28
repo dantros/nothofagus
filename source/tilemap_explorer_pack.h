@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tilemap_view.h"
+#include "tilemap_explorer.h"
 #include "bellota.h"
 #include "indexed_container.h"
 #include "screen_size.h"
@@ -11,7 +11,7 @@
 namespace Nothofagus
 {
 
-/// One slot in a TilemapView's chunk pool — IDs are stable for the slot's lifetime.
+/// One slot in a TilemapExplorer's chunk pool — IDs are stable for the slot's lifetime.
 struct PoolSlot
 {
     TextureId     textureId;
@@ -20,17 +20,17 @@ struct PoolSlot
     std::uint64_t syncedGeneration{0};       ///< Tilemap chunk generation last written into this slot.
 };
 
-struct TilemapViewPack
+struct TilemapExplorerPack
 {
-    TilemapView               view;
+    TilemapExplorer               view;
     glm::ivec2                poolGridSize{0, 0};
-    ScreenSize                poolSizedFor{0, 0}; ///< Canvas screenSize the current pool was sized for; drives re-allocation in updateViews.
+    ScreenSize                poolSizedFor{0, 0}; ///< Canvas screenSize the current pool was sized for; drives re-allocation in updateExplorers.
     std::vector<PoolSlot>     slots;
     std::vector<std::uint8_t> chunkScratch; ///< Reused per re-sync; resized to `chunkSize.x * chunkSize.y` when the pool is (re)built.
 
-    explicit TilemapViewPack(TilemapView v): view(v) {}
+    explicit TilemapExplorerPack(TilemapExplorer v): view(v) {}
 };
 
-using TilemapViewContainer = IndexedContainer<TilemapViewPack>;
+using TilemapExplorerContainer = IndexedContainer<TilemapExplorerPack>;
 
 }

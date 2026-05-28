@@ -1,7 +1,7 @@
 /// hello_tilemap_huge.cpp
-/// Demonstrates the pooled `Tilemap` + `TilemapView` huge-tilemap pipeline.
+/// Demonstrates the pooled `Tilemap` + `TilemapExplorer` huge-tilemap pipeline.
 /// Builds a 256×256-cell world (≈64 chunks of 32×32) with a small tile atlas,
-/// then lets the user pan with WASD via `tilemapView.setCamera(...)`. Only the
+/// then lets the user pan with WASD via `tilemapExplorer.setCamera(...)`. Only the
 /// pool slots covering the visible window + a 1-chunk margin are drawn each
 /// frame; world chunks rotate through the pool as the camera moves.
 ///
@@ -208,19 +208,19 @@ int main()
                 writeChunkLabel(chunkRow, chunkCol);
     };
 
-    // Build the initial Tilemap (world data) + TilemapView (pooled renderer).
+    // Build the initial Tilemap (world data) + TilemapExplorer (pooled renderer).
     Nothofagus::TilemapHandles handles = Nothofagus::createTilemap(
         canvas, mapSize, chunkSize, tileSize, palette,
         std::span<const std::vector<std::uint8_t>>(tileGraphics));
     populateWorld(canvas.tilemap(handles.tilemapId), mapSize);
 
     // Tear down the current view+tilemap and rebuild at a new size. Safe to call
-    // from inside the update callback: removeTilemapView/removeTilemap drop pool
+    // from inside the update callback: removeTilemapExplorer/removeTilemap drop pool
     // bellotas+textures and the world data; createTilemap registers fresh ones;
     // the per-frame view pass picks them up the same frame.
     auto rebuild = [&](glm::ivec2 newSize)
     {
-        canvas.removeTilemapView(handles.viewId);
+        canvas.removeTilemapExplorer(handles.viewId);
         canvas.removeTilemap(handles.tilemapId);
         mapSize = newSize;
         handles = Nothofagus::createTilemap(
@@ -279,11 +279,11 @@ int main()
                 camera += (dir / len) * (panSpeed * dt);
             }
         }
-        canvas.tilemapView(handles.viewId).setCamera(camera);
+        canvas.tilemapExplorer(handles.viewId).setCamera(camera);
 
         // ── Edit storm ─────────────────────────────────────────────────
         // Randomly setCell across the world — each edit bumps its chunk's
-        // generation counter, forcing chunkDataInto on the next updateViews
+        // generation counter, forcing chunkDataInto on the next updateExplorers
         // pass for whichever slot is painting that chunk.
         if (editsPerFrame > 0)
         {
@@ -416,7 +416,7 @@ int main()
 
         ImGui::Separator();
 
-        // Resize canvas — exercises M4 (TilemapView pool re-allocates against the new size).
+        // Resize canvas — exercises M4 (TilemapExplorer pool re-allocates against the new size).
         ImGui::Text("Resize canvas:");
         ImGui::InputInt("canvas w", &newCanvasWidth);
         ImGui::InputInt("canvas h", &newCanvasHeight);

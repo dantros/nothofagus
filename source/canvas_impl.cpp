@@ -257,8 +257,8 @@ BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)
 
 void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
 {
-    debugCheck(!mTilemapManager.isViewManagedBellota(bellotaId.id),
-        "Bellota is owned by a TilemapView pool — use canvas.removeTilemapView() instead of removing slot bellotas directly.");
+    debugCheck(!mTilemapManager.isExplorerManagedBellota(bellotaId.id),
+        "Bellota is owned by a TilemapExplorer pool — use canvas.removeTilemapExplorer() instead of removing slot bellotas directly.");
     BellotaPack& bellotaPackToRemove = mBellotas.at(bellotaId.id);
     const TextureId textureId = bellotaPackToRemove.bellota.texture();
     const std::optional<MeshId>& meshIdOpt = bellotaPackToRemove.bellota.meshId();
@@ -284,8 +284,8 @@ TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
 
 void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 {
-    debugCheck(!mTilemapManager.isViewManagedTexture(textureId.id),
-        "Texture is owned by a TilemapView pool — use canvas.removeTilemapView() instead of removing slot textures directly.");
+    debugCheck(!mTilemapManager.isExplorerManagedTexture(textureId.id),
+        "Texture is owned by a TilemapExplorer pool — use canvas.removeTilemapExplorer() instead of removing slot textures directly.");
     const bool textureWasRemoved = mTextureUsageMonitor.removeUnused(textureId);
     debugCheck(textureWasRemoved, "Texture is not in the unused set — still referenced by a bellota or already removed");
 
@@ -558,24 +558,24 @@ const Tilemap& Canvas::CanvasImpl::tilemap(TilemapId tilemapId) const
     return mTilemapManager.tilemap(tilemapId);
 }
 
-TilemapViewId Canvas::CanvasImpl::addTilemapView(TilemapView view, Canvas& canvas)
+TilemapExplorerId Canvas::CanvasImpl::addTilemapExplorer(TilemapExplorer view, Canvas& canvas)
 {
-    return mTilemapManager.addTilemapView(view, canvas);
+    return mTilemapManager.addTilemapExplorer(view, canvas);
 }
 
-void Canvas::CanvasImpl::removeTilemapView(TilemapViewId viewId, Canvas& canvas)
+void Canvas::CanvasImpl::removeTilemapExplorer(TilemapExplorerId viewId, Canvas& canvas)
 {
-    mTilemapManager.removeTilemapView(viewId, canvas);
+    mTilemapManager.removeTilemapExplorer(viewId, canvas);
 }
 
-TilemapView& Canvas::CanvasImpl::tilemapView(TilemapViewId viewId)
+TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId viewId)
 {
-    return mTilemapManager.tilemapView(viewId);
+    return mTilemapManager.tilemapExplorer(viewId);
 }
 
-const TilemapView& Canvas::CanvasImpl::tilemapView(TilemapViewId viewId) const
+const TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId viewId) const
 {
-    return mTilemapManager.tilemapView(viewId);
+    return mTilemapManager.tilemapExplorer(viewId);
 }
 
 void Canvas::CanvasImpl::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)
@@ -814,8 +814,8 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
     }
 
     {
-        ZoneScopedN("TilemapViews");
-        mTilemapManager.updateViews(canvas);
+        ZoneScopedN("TilemapExplorers");
+        mTilemapManager.updateExplorers(canvas);
     }
 
     const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);

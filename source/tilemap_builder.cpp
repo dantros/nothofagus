@@ -1,6 +1,6 @@
 #include "tilemap_builder.h"
 #include "tilemap.h"
-#include "tilemap_view.h"
+#include "tilemap_explorer.h"
 #include "canvas.h"
 
 namespace Nothofagus
@@ -15,7 +15,7 @@ TilemapHandles createTilemap(Canvas& canvas,
 {
     TilemapId tilemapId = canvas.addTilemap(
         Tilemap(mapSize, chunkSize, tileSize, palette, tileGraphics));
-    TilemapViewId viewId = canvas.addTilemapView(TilemapView(tilemapId));
+    TilemapExplorerId viewId = canvas.addTilemapExplorer(TilemapExplorer(tilemapId));
     return TilemapHandles{ tilemapId, viewId };
 }
 
