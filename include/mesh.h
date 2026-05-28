@@ -40,6 +40,9 @@ struct Mesh
 {
     Vertices vertices;
     Indices  indices;
+
+    /// Appends `other`'s vertices and (re-offset) indices to this mesh.
+    Mesh& operator<<(const Mesh& other);
 };
 
 /// Returns a new mesh built by concatenating `rhs` and `lhs`, re-offsetting
