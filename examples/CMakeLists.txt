@@ -105,3 +105,9 @@ add_executable(hello_mesh
 )
 set_property(TARGET hello_mesh PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_mesh PRIVATE nothofagus)
+
+add_executable(hello_markdown
+    "hello_markdown.cpp"
+)
+set_property(TARGET hello_markdown PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_markdown PRIVATE nothofagus)
