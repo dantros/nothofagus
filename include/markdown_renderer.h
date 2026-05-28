@@ -66,8 +66,8 @@ public:
     explicit MarkdownRenderer(Canvas& canvas);
     ~MarkdownRenderer();
 
-    MarkdownRenderer(const MarkdownRenderer&) = delete;
-    MarkdownRenderer& operator=(const MarkdownRenderer&) = delete;
+    MarkdownRenderer(const MarkdownRenderer&);
+    MarkdownRenderer& operator=(const MarkdownRenderer&);
     MarkdownRenderer(MarkdownRenderer&&) noexcept;
     MarkdownRenderer& operator=(MarkdownRenderer&&) noexcept;
 

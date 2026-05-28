@@ -12,7 +12,7 @@ namespace Nothofagus
 struct MarkdownRenderer::Impl : public imgui_md
 {
     explicit Impl(Canvas& canvas) noexcept
-        : mCanvas(canvas)
+        : mCanvas(&canvas)
     {
     }
 
@@ -85,12 +85,14 @@ protected:
 private:
     ImFont* resolve(ImguiFontId id) const
     {
-        if (!mCanvas.isImguiFontReady(id))
+        if (mCanvas == nullptr)
+            return nullptr;  // unbound canvas — fall back to current font
+        if (!mCanvas->isImguiFontReady(id))
             return nullptr;  // deferred-bake window — defer to current font
-        return mCanvas.getImguiFontPtr(id);
+        return mCanvas->getImguiFontPtr(id);
     }
 
-    Canvas& mCanvas;
+    Canvas* mCanvas;
     MarkdownStyle mStyle{};
     std::function<void(std::string_view)> mOpenUrlCallback;
 };
@@ -103,6 +105,18 @@ MarkdownRenderer::MarkdownRenderer(Canvas& canvas)
 MarkdownRenderer::~MarkdownRenderer() = default;
 MarkdownRenderer::MarkdownRenderer(MarkdownRenderer&&) noexcept = default;
 MarkdownRenderer& MarkdownRenderer::operator=(MarkdownRenderer&&) noexcept = default;
+
+MarkdownRenderer::MarkdownRenderer(const MarkdownRenderer& other)
+    : mImpl(std::make_unique<Impl>(*other.mImpl))
+{
+}
+
+MarkdownRenderer& MarkdownRenderer::operator=(const MarkdownRenderer& other)
+{
+    if (this != &other)
+        mImpl = std::make_unique<Impl>(*other.mImpl);
+    return *this;
+}
 
 void MarkdownRenderer::setStyle(const MarkdownStyle& style)
 {
