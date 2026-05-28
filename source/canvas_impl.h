@@ -5,7 +5,7 @@
 #include "bellota_container.h"
 #include "mesh_container.h"
 #include "render_target_container.h"
-#include "usage_monitor.h"
+#include "resource_usage_monitor.h"
 #include "imgui_rtt_manager.h"
 #include "imgui_font_source_id.h"
 #include "aa_box.h"
