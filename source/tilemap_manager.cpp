@@ -200,7 +200,8 @@ void TilemapManager::updateExplorers(Canvas& canvas)
                 PoolSlot& slot = explorerPack.slots[slotIdx];
 
                 Bellota& slotBellota = canvas.bellota(slot.bellotaId);
-                slotBellota.depthOffset() = depthOffset;
+                if (slotBellota.depthOffset() != depthOffset)
+                    slotBellota.depthOffset() = depthOffset;
 
                 const float desiredXf = slotOriginChunkX + static_cast<float>(px);
                 const float desiredYf = slotOriginChunkY + static_cast<float>(py);
@@ -213,6 +214,12 @@ void TilemapManager::updateExplorers(Canvas& canvas)
                 if (outOfWorld)
                 {
                     slotBellota.visible() = false;
+                    // Reset to the unassigned sentinel so the slot doesn't carry
+                    // "what chunk am I painting" state while hidden — when it
+                    // scrolls back into the world the desired-vs-current check
+                    // will trigger a fresh sync.
+                    slot.currentWorldChunk = glm::ivec2{-1, -1};
+                    slot.syncedGeneration  = 0;
                     continue;
                 }
 
