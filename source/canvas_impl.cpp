@@ -275,14 +275,14 @@ TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
     TexturePack texturePack{texture, std::nullopt, std::nullopt, std::nullopt, textureSize};
     texturePack.mode = textureModeOf(texture);
     TextureId newTextureId{mTextures.add(std::move(texturePack))};
-    const bool textureWasAdded = mTextureUsageMonitor.addUnusedTexture(newTextureId);
+    const bool textureWasAdded = mTextureUsageMonitor.addUnused(newTextureId);
     debugCheck(textureWasAdded, "Texture ID already present in usage monitor — duplicate addTexture call");
     return newTextureId;
 }
 
 void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 {
-    const bool textureWasRemoved = mTextureUsageMonitor.removeUnusedTexture(textureId);
+    const bool textureWasRemoved = mTextureUsageMonitor.removeUnused(textureId);
     debugCheck(textureWasRemoved, "Texture is not in the unused set — still referenced by a bellota or already removed");
 
     TexturePack& texturePackToRemove = mTextures.at(textureId.id);
@@ -299,7 +299,7 @@ void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 
 void Canvas::CanvasImpl::clearUnusedTextures()
 {
-    const std::unordered_set<TextureId> unusedTextureIdsCopy = mTextureUsageMonitor.getUnusedTextureIds();
+    const std::unordered_set<TextureId> unusedTextureIdsCopy = mTextureUsageMonitor.getUnusedIds();
     for (TextureId textureId : unusedTextureIdsCopy)
     {
         // Proxy entries are owned by their RenderTargetPack — skip auto-cleanup.
@@ -307,7 +307,7 @@ void Canvas::CanvasImpl::clearUnusedTextures()
             continue;
         removeTexture(textureId);
     }
-    mTextureUsageMonitor.clearUnusedTextureIds();
+    mTextureUsageMonitor.clearUnusedIds();
 }
 
 MeshId Canvas::CanvasImpl::materializeAutoQuad(const Bellota& bellota)
@@ -322,7 +322,7 @@ MeshId Canvas::CanvasImpl::materializeAutoQuad(const Bellota& bellota)
     pack.dmeshOpt = std::nullopt;
     pack.isAutoQuad = true;
     const MeshId newMeshId{mMeshes.add(std::move(pack))};
-    const bool added = mMeshUsageMonitor.addUnusedMesh(newMeshId);
+    const bool added = mMeshUsageMonitor.addUnused(newMeshId);
     debugCheck(added, "materializeAutoQuad: MeshId collision in usage monitor");
     return newMeshId;
 }
@@ -334,7 +334,7 @@ MeshId Canvas::CanvasImpl::addMesh(const Mesh& mesh)
     pack.dmeshOpt = std::nullopt;
     pack.isAutoQuad = false;
     const MeshId newMeshId{mMeshes.add(std::move(pack))};
-    const bool added = mMeshUsageMonitor.addUnusedMesh(newMeshId);
+    const bool added = mMeshUsageMonitor.addUnused(newMeshId);
     debugCheck(added, "Mesh ID already present in usage monitor — duplicate addMesh call");
     return newMeshId;
 }
@@ -346,7 +346,7 @@ MeshId Canvas::CanvasImpl::addMesh(Mesh&& mesh)
     pack.dmeshOpt = std::nullopt;
     pack.isAutoQuad = false;
     const MeshId newMeshId{mMeshes.add(std::move(pack))};
-    const bool added = mMeshUsageMonitor.addUnusedMesh(newMeshId);
+    const bool added = mMeshUsageMonitor.addUnused(newMeshId);
     debugCheck(added, "Mesh ID already present in usage monitor — duplicate addMesh call");
     return newMeshId;
 }
@@ -357,7 +357,7 @@ void Canvas::CanvasImpl::removeMesh(MeshId meshId)
     debugCheck(not mMeshes.at(meshId.id).isAutoQuad,
                "removeMesh: cannot remove an engine-allocated auto-quad — it is owned by the canvas");
 
-    const bool wasRemoved = mMeshUsageMonitor.removeUnusedMesh(meshId);
+    const bool wasRemoved = mMeshUsageMonitor.removeUnused(meshId);
     debugCheck(wasRemoved, "Mesh is not in the unused set — still referenced by a bellota or already removed");
 
     MeshPack& packToRemove = mMeshes.at(meshId.id);
@@ -403,12 +403,12 @@ const Mesh& Canvas::CanvasImpl::mesh(BellotaId bellotaId) const
 
 void Canvas::CanvasImpl::clearUnusedMeshes()
 {
-    const std::unordered_set<MeshId> unusedMeshIdsCopy = mMeshUsageMonitor.getUnusedMeshIds();
+    const std::unordered_set<MeshId> unusedMeshIdsCopy = mMeshUsageMonitor.getUnusedIds();
     for (MeshId meshId : unusedMeshIdsCopy)
     {
         // Auto-quads use the same eligibility rules as user meshes; the isAutoQuad
         // flag exists only to gate the public `removeMesh` entry point.
-        const bool wasRemoved = mMeshUsageMonitor.removeUnusedMesh(meshId);
+        const bool wasRemoved = mMeshUsageMonitor.removeUnused(meshId);
         debugCheck(wasRemoved, "clearUnusedMeshes: mesh disappeared from unused set unexpectedly");
 
         MeshPack& packToRemove = mMeshes.at(meshId.id);
@@ -490,7 +490,7 @@ RenderTargetId Canvas::CanvasImpl::addRenderTarget(ScreenSize size)
     proxyPack.dtextureOpt = std::nullopt;
     proxyPack.mTextureSize = texSize;
     TextureId proxyTexId{mTextures.add(proxyPack)};
-    mTextureUsageMonitor.addUnusedTexture(proxyTexId);
+    mTextureUsageMonitor.addUnused(proxyTexId);
 
     RenderTargetPack renderTargetPack;
     renderTargetPack.renderTarget = RenderTarget{texSize, proxyTexId};
@@ -524,7 +524,7 @@ void Canvas::CanvasImpl::removeRenderTarget(RenderTargetId renderTargetId)
     mTextures.remove(proxyTexId.id);
 
     // Remove from usage monitor if currently unused (i.e. no bellotas reference it).
-    mTextureUsageMonitor.removeUnusedTexture(proxyTexId);
+    mTextureUsageMonitor.removeUnused(proxyTexId);
 
     mRenderTargets.remove(renderTargetId.id);
 }
