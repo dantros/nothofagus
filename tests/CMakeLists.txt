@@ -1,17 +1,19 @@
-add_executable(rendering_tests
-    "rendering_tests.cpp"
-    "golden_image.cpp"
-)
-set_property(TARGET rendering_tests PROPERTY CXX_STANDARD 20)
-target_include_directories(rendering_tests PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-)
-target_link_libraries(rendering_tests PRIVATE nothofagus Catch2::Catch2WithMain)
+# Orchestrator for the two test groups. Each group is independent — enabling
+# rendering tests pulls in Catch2 and golden-image infrastructure; enabling
+# correctness tests does not.
+option(NOTHOFAGUS_BUILD_TESTS_RENDERING   "Build GPU/golden-image rendering tests (pulls Catch2)" ON)
+option(NOTHOFAGUS_BUILD_TESTS_CORRECTNESS "Build CPU-only correctness tests" ON)
 
-# Point tests at the golden directory (source tree, so updates persist).
-target_compile_definitions(rendering_tests PRIVATE
-    NOTHOFAGUS_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
-)
+if(NOTHOFAGUS_BUILD_TESTS_RENDERING)
+    # Catch2 is only needed for the rendering tests today; keep its inclusion
+    # gated here so the correctness group can build without it.
+    add_subdirectory(
+        "${CMAKE_SOURCE_DIR}/third_party/Catch2"
+        "${CMAKE_BINARY_DIR}/third_party/Catch2"
+    )
+    add_subdirectory(rendering)
+endif()
 
-include(Catch)
-catch_discover_tests(rendering_tests)
+if(NOTHOFAGUS_BUILD_TESTS_CORRECTNESS)
+    add_subdirectory(tilemap_correctness)
+endif()

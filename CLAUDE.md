@@ -598,12 +598,22 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_headless.cpp` | Headless mode + `tick()` — no window, manual frame stepping, screenshot to terminal |
 | `hello_tilemap.cpp` | Tile-map mode of `IndirectTexture` — `setMap` + `setCell` over a layered atlas |
 | `hello_tilemap_huge.cpp` | Huge tilemaps via `Tilemap` + `TilemapExplorer` pool — WASD camera, teleport, recreate, live memory breakdown, stress controls (auto-pan + edits/frame) |
-| `test_tilemap_correctness.cpp` | Pure-data `Tilemap` tests — `inBounds`, `setCell`/`cell` round-trip, `chunkData`/`chunkDataInto` byte-equivalence, edge-chunk zero-fill, generation counter |
 | `hello_mesh.cpp` | Custom triangle meshes via `addMesh` + `Bellota(Transform, TextureId, MeshId)` — register geometry once, attach to bellotas, swap with `setMesh` |
 | `hello_render_to_texture.cpp` | `addRenderTarget` / `renderTo` — sprites drawn into an off-screen texture sampled by another bellota |
 | `hello_nested_render_targets.cpp` | Nested RTTs — one render target's output feeds another |
 | `hello_imgui_rtt.cpp` | `renderImguiTo` — diegetic ImGui panel drawn into an RTT, sampled by a rotating bellota |
 | `hello_custom_font.cpp` | User-supplied TTF via `addImguiFontSource` — typeable path field, editable text, integer min/max + slider for size, default-vs-user side-by-side with `TextWrapped` |
+
+## Tests
+
+Enable with `-DNOTHOFAGUS_BUILD_TESTS=ON`. Two independent groups, each behind its own sub-option (both default ON when tests are enabled):
+
+| Group | Folder | Sub-option | Stack |
+|-------|--------|------------|-------|
+| Rendering (GPU + golden image) | [tests/rendering/](tests/rendering/) | `NOTHOFAGUS_BUILD_TESTS_RENDERING` | Catch2 + render backend |
+| Tilemap correctness (CPU-only) | [tests/tilemap_correctness/](tests/tilemap_correctness/) | `NOTHOFAGUS_BUILD_TESTS_CORRECTNESS` | hand-rolled, no third-party deps |
+
+Run via CTest from the build directory. Catch2 is only configured when the rendering group is enabled — the correctness group builds standalone.
 
 ## Dependencies (third_party/ submodules)
 

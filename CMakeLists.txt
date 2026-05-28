@@ -255,7 +255,6 @@ endif()
 
 option(NOTHOFAGUS_BUILD_TESTS "Build Nothofagus tests?" OFF)
 if (${NOTHOFAGUS_BUILD_TESTS})
-    add_subdirectory("third_party/Catch2")
     include(CTest)
     add_subdirectory("tests")
 endif()

@@ -106,11 +106,6 @@ add_executable(hello_tilemap_huge
 set_property(TARGET hello_tilemap_huge PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_tilemap_huge PRIVATE nothofagus)
 
-add_executable(test_tilemap_correctness
-    "test_tilemap_correctness.cpp"
-)
-set_property(TARGET test_tilemap_correctness PROPERTY CXX_STANDARD 20)
-target_link_libraries(test_tilemap_correctness PRIVATE nothofagus)
 add_executable(hello_mesh
     "hello_mesh.cpp"
 )
