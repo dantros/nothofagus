@@ -1,27 +1,12 @@
-/// test_tilemap_correctness.cpp
-/// Pure-data correctness tests for the Tilemap class. No canvas, no GPU.
-/// Verifies inBounds at boundaries, setCell/cell round-trip, chunkData vs
-/// chunkDataInto byte-equivalence, edge-chunk zero-fill, and per-chunk
-/// generation counter behaviour.
-
+#include <catch2/catch_test_macros.hpp>
 #include <nothofagus.h>
 #include <algorithm>
 #include <cstdint>
-#include <cstdio>
 #include <span>
 #include <vector>
 
 namespace
 {
-
-int failures = 0;
-
-#define CHECK(cond, msg) do {                                                  \
-    if (!(cond)) {                                                             \
-        std::printf("  FAIL [%s:%d] %s\n", __FILE__, __LINE__, msg);           \
-        ++failures;                                                            \
-    }                                                                          \
-} while (0)
 
 Nothofagus::ColorPallete makeMinimalPalette()
 {
@@ -43,33 +28,45 @@ std::vector<std::vector<std::uint8_t>> makeTrivialAtlas(glm::ivec2 tileSize, std
     return out;
 }
 
-void testInBounds()
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// Tilemap::inBounds — corners, just-outside-each-edge, far-out values
+// ---------------------------------------------------------------------------
+TEST_CASE("Tilemap::inBounds reports world-cell membership correctly", "[tilemap]")
 {
-    std::printf("inBounds...\n");
     auto atlas = makeTrivialAtlas({8, 8}, 4);
     const Nothofagus::Tilemap tm({10, 6}, {4, 3}, {8, 8}, makeMinimalPalette(),
                                  std::span<const std::vector<std::uint8_t>>(atlas));
 
-    // Corners
-    CHECK( tm.inBounds({0, 0}),                  "(0,0) in bounds");
-    CHECK( tm.inBounds({9, 5}),                  "(mapSize.x-1, mapSize.y-1) in bounds");
-    CHECK( tm.inBounds({0, 5}),                  "(0, mapSize.y-1) in bounds");
-    CHECK( tm.inBounds({9, 0}),                  "(mapSize.x-1, 0) in bounds");
+    SECTION("corners are inside")
+    {
+        CHECK(tm.inBounds({0, 0}));
+        CHECK(tm.inBounds({9, 5}));
+        CHECK(tm.inBounds({0, 5}));
+        CHECK(tm.inBounds({9, 0}));
+    }
 
-    // Just outside each edge
-    CHECK(!tm.inBounds({-1, 0}),                 "(-1, 0) out");
-    CHECK(!tm.inBounds({0, -1}),                 "(0, -1) out");
-    CHECK(!tm.inBounds({10, 0}),                 "(mapSize.x, 0) out");
-    CHECK(!tm.inBounds({0, 6}),                  "(0, mapSize.y) out");
+    SECTION("one step outside each edge is rejected")
+    {
+        CHECK_FALSE(tm.inBounds({-1, 0}));
+        CHECK_FALSE(tm.inBounds({0, -1}));
+        CHECK_FALSE(tm.inBounds({10, 0}));
+        CHECK_FALSE(tm.inBounds({0, 6}));
+    }
 
-    // Far values
-    CHECK(!tm.inBounds({-1000, -1000}),          "far-negative out");
-    CHECK(!tm.inBounds({1000, 1000}),            "far-positive out");
+    SECTION("far-out values are rejected")
+    {
+        CHECK_FALSE(tm.inBounds({-1000, -1000}));
+        CHECK_FALSE(tm.inBounds({1000, 1000}));
+    }
 }
 
-void testRoundTrip()
+// ---------------------------------------------------------------------------
+// Tilemap::setCell / cell round-trip across the whole world
+// ---------------------------------------------------------------------------
+TEST_CASE("Tilemap::cell returns what setCell wrote", "[tilemap]")
 {
-    std::printf("setCell/cell round-trip...\n");
     auto atlas = makeTrivialAtlas({4, 4}, 4);
     Nothofagus::Tilemap tm({12, 8}, {3, 2}, {4, 4}, makeMinimalPalette(),
                            std::span<const std::vector<std::uint8_t>>(atlas));
@@ -80,15 +77,14 @@ void testRoundTrip()
 
     for (int y = 0; y < 8; ++y)
         for (int x = 0; x < 12; ++x)
-        {
-            const std::uint8_t expected = static_cast<std::uint8_t>((x + y) % 4);
-            CHECK(tm.cell({x, y}) == expected, "cell value matches what setCell wrote");
-        }
+            CHECK(tm.cell({x, y}) == static_cast<std::uint8_t>((x + y) % 4));
 }
 
-void testChunkDataConsistency()
+// ---------------------------------------------------------------------------
+// Tilemap::chunkData and chunkDataInto produce identical bytes
+// ---------------------------------------------------------------------------
+TEST_CASE("Tilemap::chunkData and chunkDataInto produce identical bytes", "[tilemap]")
 {
-    std::printf("chunkData / chunkDataInto byte-equivalence...\n");
     auto atlas = makeTrivialAtlas({4, 4}, 4);
     Nothofagus::Tilemap tm({12, 8}, {3, 2}, {4, 4}, makeMinimalPalette(),
                            std::span<const std::vector<std::uint8_t>>(atlas));
@@ -106,22 +102,23 @@ void testChunkDataConsistency()
         {
             std::vector<std::uint8_t> byValue = tm.chunkData({cx, cy});
             tm.chunkDataInto({cx, cy}, std::span<std::uint8_t>(intoBuf));
-            CHECK(byValue.size() == intoBuf.size(), "chunkData size matches scratch buffer");
-            CHECK(std::equal(byValue.begin(), byValue.end(), intoBuf.begin()),
-                  "chunkData and chunkDataInto produce identical bytes");
+            REQUIRE(byValue.size() == intoBuf.size());
+            CHECK(std::equal(byValue.begin(), byValue.end(), intoBuf.begin()));
         }
 }
 
-void testEdgeChunkZeroFill()
+// ---------------------------------------------------------------------------
+// Tilemap edge chunks zero-fill out-of-world cells when mapSize is not a
+// multiple of chunkSize
+// ---------------------------------------------------------------------------
+TEST_CASE("Tilemap edge chunks zero-fill out-of-world cells", "[tilemap]")
 {
-    std::printf("edge-chunk zero-fill (mapSize not divisible by chunkSize)...\n");
     auto atlas = makeTrivialAtlas({2, 2}, 4);
     Nothofagus::Tilemap tm({10, 6}, {4, 4}, {2, 2}, makeMinimalPalette(),
                            std::span<const std::vector<std::uint8_t>>(atlas));
 
-    CHECK(tm.chunkGridSize() == glm::ivec2(3, 2), "chunkGridSize is ceil-divided");
+    REQUIRE(tm.chunkGridSize() == glm::ivec2(3, 2));
 
-    // Paint every in-world cell with layer 3.
     for (int y = 0; y < 6; ++y)
         for (int x = 0; x < 10; ++x)
             tm.setCell({x, y}, 3);
@@ -139,52 +136,33 @@ void testEdgeChunkZeroFill()
             const std::uint8_t value = buf[static_cast<std::size_t>(localRow * 4 + localCol)];
             const bool inWorld = worldCol < 10 && worldRow < 6;
             if (inWorld)
-                CHECK(value == 3, "in-world cell carries assigned value");
+                CHECK(value == 3);
             else
-                CHECK(value == 0, "out-of-world cell is zero-filled");
+                CHECK(value == 0);
         }
 }
 
-void testGenerationCounter()
+// ---------------------------------------------------------------------------
+// Per-chunk generation counter — bumps only for the chunk receiving an edit
+// ---------------------------------------------------------------------------
+TEST_CASE("Tilemap per-chunk generation counter bumps locally", "[tilemap]")
 {
-    std::printf("per-chunk generation counter...\n");
     auto atlas = makeTrivialAtlas({4, 4}, 4);
     Nothofagus::Tilemap tm({8, 8}, {4, 4}, {4, 4}, makeMinimalPalette(),
                            std::span<const std::vector<std::uint8_t>>(atlas));
 
-    CHECK(tm.chunkGeneration({0, 0}) == 0, "initial gen is 0");
-    CHECK(tm.chunkGeneration({1, 0}) == 0, "initial gen is 0");
+    CHECK(tm.chunkGeneration({0, 0}) == 0);
+    CHECK(tm.chunkGeneration({1, 0}) == 0);
 
     tm.setCell({2, 2}, 1);
-    CHECK(tm.chunkGeneration({0, 0}) == 1, "chunk (0,0) gen bumped after edit inside it");
-    CHECK(tm.chunkGeneration({1, 0}) == 0, "neighbouring chunk gen untouched");
+    CHECK(tm.chunkGeneration({0, 0}) == 1);
+    CHECK(tm.chunkGeneration({1, 0}) == 0);
 
     tm.setCell({0, 0}, 2);
     tm.setCell({3, 3}, 3);
-    CHECK(tm.chunkGeneration({0, 0}) == 3, "chunk (0,0) gen reflects every edit");
+    CHECK(tm.chunkGeneration({0, 0}) == 3);
 
     tm.setCell({5, 5}, 1);
-    CHECK(tm.chunkGeneration({1, 1}) == 1, "chunk (1,1) gen bumped after edit inside it");
-    CHECK(tm.chunkGeneration({0, 0}) == 3, "edits to other chunks do not affect (0,0)");
-}
-
-}  // namespace
-
-int main()
-{
-    std::printf("Running Tilemap correctness tests...\n");
-
-    testInBounds();
-    testRoundTrip();
-    testChunkDataConsistency();
-    testEdgeChunkZeroFill();
-    testGenerationCounter();
-
-    if (failures == 0)
-    {
-        std::printf("OK — all Tilemap correctness tests passed.\n");
-        return 0;
-    }
-    std::printf("FAILED — %d Tilemap correctness check(s) failed.\n", failures);
-    return 1;
+    CHECK(tm.chunkGeneration({1, 1}) == 1);
+    CHECK(tm.chunkGeneration({0, 0}) == 3);
 }
