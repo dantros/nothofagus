@@ -2,7 +2,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <optional>
 #include "transform.h"
+#include "mesh.h"
 
 namespace Nothofagus
 {
@@ -27,6 +30,34 @@ struct BellotaId
     }
 };
 
+}
+
+namespace std
+{
+
+template<>
+struct hash<Nothofagus::TextureId>
+{
+    std::size_t operator()(const Nothofagus::TextureId& textureId) const
+    {
+        return std::hash<std::size_t>{}(textureId.id);
+    }
+};
+
+template<>
+struct hash<Nothofagus::BellotaId>
+{
+    std::size_t operator()(const Nothofagus::BellotaId& bellotaId) const
+    {
+        return std::hash<std::size_t>{}(bellotaId.id);
+    }
+};
+
+}
+
+namespace Nothofagus
+{
+
 /* Drawable element */
 class Bellota
 {
@@ -34,22 +65,44 @@ public:
     Bellota(Transform transform, TextureId textureId):
         mTransform( transform ),
         mTextureId{ textureId },
+        mMeshId{ std::nullopt },
         mCurrentLayer{ 0 },
         mDepthOffset{ 0 },
         mVisible{ true },
         mOpacity{ 1.0f }
-
     {
     }
 
     Bellota(Transform transform, TextureId textureId, std::int8_t depthOffset) :
         mTransform( transform ),
         mTextureId{ textureId },
+        mMeshId{ std::nullopt },
         mCurrentLayer{ 0 },
         mDepthOffset{ depthOffset },
         mVisible{ true },
         mOpacity{ 1.0f }
+    {
+    }
 
+    Bellota(Transform transform, TextureId textureId, MeshId meshId):
+        mTransform( transform ),
+        mTextureId{ textureId },
+        mMeshId{ meshId },
+        mCurrentLayer{ 0 },
+        mDepthOffset{ 0 },
+        mVisible{ true },
+        mOpacity{ 1.0f }
+    {
+    }
+
+    Bellota(Transform transform, TextureId textureId, MeshId meshId, std::int8_t depthOffset) :
+        mTransform( transform ),
+        mTextureId{ textureId },
+        mMeshId{ meshId },
+        mCurrentLayer{ 0 },
+        mDepthOffset{ depthOffset },
+        mVisible{ true },
+        mOpacity{ 1.0f }
     {
     }
 
@@ -57,6 +110,9 @@ public:
     Transform& transform() { return mTransform; }
 
     const TextureId& texture() const { return mTextureId; }
+
+    const std::optional<MeshId>& meshId() const { return mMeshId; }
+    std::optional<MeshId>& meshId() { return mMeshId; }
 
     const std::int8_t& depthOffset() const { return mDepthOffset; }
     std::int8_t& depthOffset() { return mDepthOffset; }
@@ -73,6 +129,7 @@ public:
 private:
     Transform mTransform;
     TextureId mTextureId;
+    std::optional<MeshId> mMeshId;    /**< nullopt only during the construction → addBellota window; always set inside the BellotaContainer. */
     std::size_t mCurrentLayer;        /**< The current layer being displayed */
 
     /* Greater values means closer to the viewer. Default is 0. Example, a background image could use depth offset -1. */

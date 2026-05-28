@@ -1,19 +1,20 @@
 
 #include "mesh.h"
+#include <ostream>
 
 namespace Nothofagus
 {
 
-Mesh& Mesh::operator<<(const Mesh& mesh)
+Mesh& Mesh::operator<<(const Mesh& other)
 {
-    Index offset = indices.size();
+    const Index offset = static_cast<Index>(vertices.size());
 
-    // TODO: resize before pushing new elements
-
-    for (auto const& vertex : mesh.vertices)
+    vertices.reserve(vertices.size() + other.vertices.size());
+    for (const auto& vertex : other.vertices)
         vertices.push_back(vertex);
-    
-    for (auto const& index : mesh.indices)
+
+    indices.reserve(indices.size() + other.indices.size());
+    for (const auto& index : other.indices)
         indices.push_back(offset + index);
 
     return *this;
@@ -32,24 +33,28 @@ namespace
     std::ostream& to_ostream(std::ostream& os, const std::vector<ValueT>& values)
     {
         os << "[";
-        
+
         auto valueIt = values.begin();
         while (valueIt != values.end())
         {
-            auto& value = *valueIt;
-            os << value;
-            valueIt++;
+            os << *valueIt;
+            ++valueIt;
 
             if (valueIt != values.end())
                 os << ", ";
         }
-        
-        os << "]";
 
+        os << "]";
         return os;
     }
 }
 
+}
+
+std::ostream& operator<<(std::ostream& os, const Nothofagus::Vertex& vertex)
+{
+    return os << "(" << vertex.position.x << ", " << vertex.position.y
+              << ", " << vertex.uv.x << ", " << vertex.uv.y << ")";
 }
 
 std::ostream& operator<<(std::ostream& os, const Nothofagus::Vertices& vertices)
@@ -67,6 +72,5 @@ std::ostream& operator<<(std::ostream& os, const Nothofagus::Mesh& mesh)
     os << "{ vertices: " << mesh.vertices
        << ", indices: " << mesh.indices
        << "}";
-
     return os;
 }

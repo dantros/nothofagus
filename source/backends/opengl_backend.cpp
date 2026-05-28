@@ -62,19 +62,15 @@ void OpenGLBackend::setupVAO(OpenGLMesh& glMesh)
     glBindBuffer(GL_ARRAY_BUFFER, glMesh.vbo);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, glMesh.ebo);
 
-    constexpr unsigned int positionAttribLength = 2;
-    constexpr unsigned int textureAttribLength  = 2;
-    constexpr unsigned int stride = positionAttribLength + textureAttribLength;
-
     const auto positionAttribLocation = glGetAttribLocation(mShaderProgram, "position");
     const auto textureAttribLocation  = glGetAttribLocation(mShaderProgram, "texture");
 
-    glVertexAttribPointer(positionAttribLocation, positionAttribLength, GL_FLOAT, GL_FALSE,
-                          stride * sizeof(GLfloat), (void*)(0 * sizeof(GLfloat)));
+    glVertexAttribPointer(positionAttribLocation, 2, GL_FLOAT, GL_FALSE,
+                          sizeof(Vertex), (void*)offsetof(Vertex, position));
     glEnableVertexAttribArray(positionAttribLocation);
 
-    glVertexAttribPointer(textureAttribLocation, textureAttribLength, GL_FLOAT, GL_FALSE,
-                          stride * sizeof(GLfloat), (void*)(positionAttribLength * sizeof(GLfloat)));
+    glVertexAttribPointer(textureAttribLocation, 2, GL_FLOAT, GL_FALSE,
+                          sizeof(Vertex), (void*)offsetof(Vertex, uv));
     glEnableVertexAttribArray(textureAttribLocation);
 
     glBindVertexArray(0);
