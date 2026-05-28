@@ -22,13 +22,13 @@ struct PoolSlot
 
 struct TilemapExplorerPack
 {
-    TilemapExplorer               view;
+    TilemapExplorer               explorer;
     glm::ivec2                poolGridSize{0, 0};
     ScreenSize                poolSizedFor{0, 0}; ///< Canvas screenSize the current pool was sized for; drives re-allocation in updateExplorers.
     std::vector<PoolSlot>     slots;
     std::vector<std::uint8_t> chunkScratch; ///< Reused per re-sync; resized to `chunkSize.x * chunkSize.y` when the pool is (re)built.
 
-    explicit TilemapExplorerPack(TilemapExplorer v): view(v) {}
+    explicit TilemapExplorerPack(TilemapExplorer v): explorer(v) {}
 };
 
 using TilemapExplorerContainer = IndexedContainer<TilemapExplorerPack>;

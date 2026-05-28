@@ -214,13 +214,13 @@ int main()
         std::span<const std::vector<std::uint8_t>>(tileGraphics));
     populateWorld(canvas.tilemap(handles.tilemapId), mapSize);
 
-    // Tear down the current view+tilemap and rebuild at a new size. Safe to call
+    // Tear down the current explorer+tilemap and rebuild at a new size. Safe to call
     // from inside the update callback: removeTilemapExplorer/removeTilemap drop pool
     // bellotas+textures and the world data; createTilemap registers fresh ones;
-    // the per-frame view pass picks them up the same frame.
+    // the per-frame explorer pass picks them up the same frame.
     auto rebuild = [&](glm::ivec2 newSize)
     {
-        canvas.removeTilemapExplorer(handles.viewId);
+        canvas.removeTilemapExplorer(handles.explorerId);
         canvas.removeTilemap(handles.tilemapId);
         mapSize = newSize;
         handles = Nothofagus::createTilemap(
@@ -279,7 +279,7 @@ int main()
                 camera += (dir / len) * (panSpeed * dt);
             }
         }
-        canvas.tilemapExplorer(handles.viewId).setCamera(camera);
+        canvas.tilemapExplorer(handles.explorerId).setCamera(camera);
 
         // ── Edit storm ─────────────────────────────────────────────────
         // Randomly setCell across the world — each edit bumps its chunk's
@@ -377,7 +377,7 @@ int main()
         {
             teleportCellX = std::clamp(teleportCellX, 0, mapSize.x - 1);
             teleportCellY = std::clamp(teleportCellY, 0, mapSize.y - 1);
-            // Camera takes a world-pixel coordinate; +0.5 centers the cell in view.
+            // Camera takes a world-pixel coordinate; +0.5 centers the cell in explorer.
             camera = glm::vec2{
                 (static_cast<float>(teleportCellX) + 0.5f) * static_cast<float>(tileSize.x),
                 (static_cast<float>(teleportCellY) + 0.5f) * static_cast<float>(tileSize.y)

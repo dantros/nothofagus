@@ -15,8 +15,8 @@ TilemapHandles createTilemap(Canvas& canvas,
 {
     TilemapId tilemapId = canvas.addTilemap(
         Tilemap(mapSize, chunkSize, tileSize, palette, tileGraphics));
-    TilemapExplorerId viewId = canvas.addTilemapExplorer(TilemapExplorer(tilemapId));
-    return TilemapHandles{ tilemapId, viewId };
+    TilemapExplorerId explorerId = canvas.addTilemapExplorer(TilemapExplorer(tilemapId));
+    return TilemapHandles{ tilemapId, explorerId };
 }
 
 }

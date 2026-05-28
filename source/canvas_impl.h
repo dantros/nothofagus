@@ -126,10 +126,10 @@ public:
     Tilemap& tilemap(TilemapId tilemapId);
     const Tilemap& tilemap(TilemapId tilemapId) const;
 
-    TilemapExplorerId addTilemapExplorer(TilemapExplorer view, Canvas& canvas);
-    void removeTilemapExplorer(TilemapExplorerId viewId, Canvas& canvas);
-    TilemapExplorer& tilemapExplorer(TilemapExplorerId viewId);
-    const TilemapExplorer& tilemapExplorer(TilemapExplorerId viewId) const;
+    TilemapExplorerId addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas);
+    void removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas);
+    TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId);
+    const TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId) const;
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 
@@ -264,7 +264,7 @@ private:
     BellotaContainer mBellotas; ///< Container for Bellota objects.
     MeshContainer mMeshes; ///< Container for Mesh assets (user-registered + engine-allocated auto-quads).
     RenderTargetContainer mRenderTargets; ///< Container for RenderTarget objects.
-    TilemapManager mTilemapManager; ///< Huge-tilemap storage + per-frame view pool logic.
+    TilemapManager mTilemapManager; ///< Huge-tilemap storage + per-frame explorer pool logic.
     TextureUsageMonitor mTextureUsageMonitor;
     MeshUsageMonitor mMeshUsageMonitor;
 

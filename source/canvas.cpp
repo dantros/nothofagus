@@ -186,24 +186,24 @@ const Tilemap& Canvas::tilemap(TilemapId tilemapId) const
     return mCanvasImpl->tilemap(tilemapId);
 }
 
-TilemapExplorerId Canvas::addTilemapExplorer(TilemapExplorer view)
+TilemapExplorerId Canvas::addTilemapExplorer(TilemapExplorer explorer)
 {
-    return mCanvasImpl->addTilemapExplorer(view, *this);
+    return mCanvasImpl->addTilemapExplorer(explorer, *this);
 }
 
-void Canvas::removeTilemapExplorer(TilemapExplorerId viewId)
+void Canvas::removeTilemapExplorer(TilemapExplorerId explorerId)
 {
-    mCanvasImpl->removeTilemapExplorer(viewId, *this);
+    mCanvasImpl->removeTilemapExplorer(explorerId, *this);
 }
 
-TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId viewId)
+TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId explorerId)
 {
-    return mCanvasImpl->tilemapExplorer(viewId);
+    return mCanvasImpl->tilemapExplorer(explorerId);
 }
 
-const TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId viewId) const
+const TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId explorerId) const
 {
-    return mCanvasImpl->tilemapExplorer(viewId);
+    return mCanvasImpl->tilemapExplorer(explorerId);
 }
 
 void Canvas::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)

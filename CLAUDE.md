@@ -303,7 +303,7 @@ Nothofagus::TextureId tileMapTexId = canvas.addTexture(tileMap);
 
 ### Huge tilemaps via `Tilemap` + `TilemapExplorer`
 
-Single-`IndirectTexture` tilemaps scale poorly: any `setCell` re-uploads the entire world's map texture, and the bellota's mesh covers the whole world even when only a small window is visible. For huge maps (open worlds, side-scrolling levels), use the **`Tilemap` + `TilemapExplorer` pair** instead. The world data lives once in a `Tilemap`; a `TilemapExplorer` owns a small pool of `IndirectTexture` + `Bellota` slots sized to the canvas viewport + a 1-chunk margin. Slots are anchored to pool indices; world chunks rotate through them as the camera scrolls. Only border slots crossing into/out of view get their cell data rewritten — smooth scrolling within a chunk is a zero-rebind frame.
+Single-`IndirectTexture` tilemaps scale poorly: any `setCell` re-uploads the entire world's map texture, and the bellota's mesh covers the whole world even when only a small window is visible. For huge maps (open worlds, side-scrolling levels), use the **`Tilemap` + `TilemapExplorer` pair** instead. The world data lives once in a `Tilemap`; a `TilemapExplorer` owns a small pool of `IndirectTexture` + `Bellota` slots sized to the canvas viewport + a 1-chunk margin. Slots are anchored to pool indices; world chunks rotate through them as the camera scrolls. Only border slots crossing into/out of explorer get their cell data rewritten — smooth scrolling within a chunk is a zero-rebind frame.
 
 ```cpp
 // Build the tile graphics (palette indices, one std::vector per atlas layer).
@@ -327,14 +327,14 @@ canvas.tilemap(handles.tilemapId).setCell({worldCol, worldRow}, layerIndex);
 if (canvas.tilemap(handles.tilemapId).inBounds({worldCol, worldRow}))
     canvas.tilemap(handles.tilemapId).setCell({worldCol, worldRow}, layerIndex);
 
-// Pan the view via the camera (world pixels; (0,0) = world origin centered).
-canvas.tilemapExplorer(handles.viewId).setCamera({scrollX, scrollY});
+// Pan the explorer via the camera (world pixels; (0,0) = world origin centered).
+canvas.tilemapExplorer(handles.explorerId).setCamera({scrollX, scrollY});
 ```
 
 **How it works:**
 - `Tilemap` is internally a single `IndirectTexture` shaped to the full world (atlas + palette + `setMap(mapSize)` cell grid) plus per-chunk generation counters. The cache texture is never registered with the canvas, so no GPU resources are allocated — `IndirectTexture` is reused purely for its storage layout and tested mutation methods (`setCell` / `cell` / `setMapBulk`). Use `tilemap.cacheTexture()` to inspect or clone the underlying texture.
-- `TilemapExplorer` is registered against a `TilemapId`; on registration the canvas allocates a `ceil(screenSize / chunkPixelSize) + 2` grid of pool slots. Each slot is an `IndirectTexture` (with its own copy of the atlas + palette, chunk-sized map storage) plus a `Bellota`. Both are **view-managed**: calling `canvas.removeBellota`/`canvas.removeTexture` on those ids fires a `debugCheck`. Use `canvas.removeTilemapExplorer(viewId)` to tear the pool down.
-- Per-frame pre-pass (runs between the user update callback and the texture-upload pass): for each view, compute which world chunk each slot should display based on the camera; for any slot whose desired chunk changed (or whose chunk's generation advanced), memcpy the chunk's cells into the slot's IndirectTexture via `setMapBulk` and reposition the slot's bellota. The existing dirty-upload path then re-uploads only those small chunk map textures.
+- `TilemapExplorer` is registered against a `TilemapId`; on registration the canvas allocates a `ceil(screenSize / chunkPixelSize) + 2` grid of pool slots. Each slot is an `IndirectTexture` (with its own copy of the atlas + palette, chunk-sized map storage) plus a `Bellota`. Both are **explorer-managed**: calling `canvas.removeBellota`/`canvas.removeTexture` on those ids fires a `debugCheck`. Use `canvas.removeTilemapExplorer(explorerId)` to tear the pool down.
+- Per-frame pre-pass (runs between the user update callback and the texture-upload pass): for each explorer, compute which world chunk each slot should display based on the camera; for any slot whose desired chunk changed (or whose chunk's generation advanced), memcpy the chunk's cells into the slot's IndirectTexture via `setMapBulk` and reposition the slot's bellota. The existing dirty-upload path then re-uploads only those small chunk map textures.
 - Renderer learns nothing new — pool slots flow through the existing 3-binding tilemap path. No shader, backend, or render-loop changes.
 - **Pool resize on `setScreenSize`:** the pre-pass also compares the canvas's current `screenSize()` against the size the pool was built for. If they differ, the pool is torn down and rebuilt against the new size in one frame, then chunk-synced — `canvas.setScreenSize(...)` "just works" with active views. Window resize / fullscreen don't trigger this because the letterbox preserves the logical canvas; only explicit `setScreenSize` does.
 
@@ -347,8 +347,8 @@ canvas.tilemapExplorer(handles.viewId).setCamera({scrollX, scrollY});
 **Lifecycle rules:**
 - `addTilemap` / `addTilemapExplorer` register the data and the renderer; `createTilemap` is a convenience that calls both.
 - `removeTilemap(tilemapId)` fails if any `TilemapExplorer` still references it.
-- `removeTilemapExplorer(viewId)` removes all pool bellotas and textures it owns.
-- Multiple `TilemapExplorer` instances may reference the same `Tilemap` (e.g., main view + mini-map view); each polls per-chunk generation counters independently.
+- `removeTilemapExplorer(explorerId)` removes all pool bellotas and textures it owns.
+- Multiple `TilemapExplorer` instances may reference the same `Tilemap` (e.g., main explorer + mini-map explorer); each polls per-chunk generation counters independently.
 
 **Camera convention (v1):** `setCamera(offset)` sets the world-pixel coordinate that appears at the canvas center. `(0, 0)` = world origin centered. The `Tilemap`'s coordinate space is bottom-left = `(0, 0)` cell, top-right = `(mapSize.x - 1, mapSize.y - 1)`.
 
@@ -468,7 +468,7 @@ canvas.run([&](float dt) {
 
 **Rules:**
 - Call `renderTo(...)` from inside the `run()` / `tick()` update callback. It enqueues the pass; execution happens before the main draw each frame.
-- The bellotas passed to `renderTo` render **both** into the RTT and onto the main canvas — they don't disappear from the main view.
+- The bellotas passed to `renderTo` render **both** into the RTT and onto the main canvas — they don't disappear from the main explorer.
 - The RTT uses its own coordinate space: bottom-left = (0, 0), top-right = (width, height), in RTT pixels. The bellotas' own `x, y` are interpreted in that space when rendered into the RTT.
 - `renderTargetTexture(renderTargetId)` returns a `TextureId` proxy valid for the lifetime of the RTT. Do **not** call `removeTexture()` on it — the RTT owns the underlying GPU texture.
 - `removeRenderTarget(renderTargetId)` frees the FBO / VkImage + framebuffer and the proxy texture in one call.

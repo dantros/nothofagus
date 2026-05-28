@@ -558,24 +558,24 @@ const Tilemap& Canvas::CanvasImpl::tilemap(TilemapId tilemapId) const
     return mTilemapManager.tilemap(tilemapId);
 }
 
-TilemapExplorerId Canvas::CanvasImpl::addTilemapExplorer(TilemapExplorer view, Canvas& canvas)
+TilemapExplorerId Canvas::CanvasImpl::addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas)
 {
-    return mTilemapManager.addTilemapExplorer(view, canvas);
+    return mTilemapManager.addTilemapExplorer(explorer, canvas);
 }
 
-void Canvas::CanvasImpl::removeTilemapExplorer(TilemapExplorerId viewId, Canvas& canvas)
+void Canvas::CanvasImpl::removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas)
 {
-    mTilemapManager.removeTilemapExplorer(viewId, canvas);
+    mTilemapManager.removeTilemapExplorer(explorerId, canvas);
 }
 
-TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId viewId)
+TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId explorerId)
 {
-    return mTilemapManager.tilemapExplorer(viewId);
+    return mTilemapManager.tilemapExplorer(explorerId);
 }
 
-const TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId viewId) const
+const TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId explorerId) const
 {
-    return mTilemapManager.tilemapExplorer(viewId);
+    return mTilemapManager.tilemapExplorer(explorerId);
 }
 
 void Canvas::CanvasImpl::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)

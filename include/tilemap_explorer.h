@@ -11,7 +11,7 @@ namespace Nothofagus
 /// Windowed renderer for a `Tilemap`: a canvas-owned chunk pool draws the visible region,
 /// scrolling via `setCamera`. Camera = world-pixel coordinate shown at the canvas center;
 /// `(0,0)` centers the world origin. See CLAUDE.md "Huge tilemaps" for pool semantics and
-/// view-managed lifecycle rules.
+/// explorer-managed lifecycle rules.
 class TilemapExplorer
 {
 public:

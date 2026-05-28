@@ -200,15 +200,15 @@ public:
     const Tilemap& tilemap(TilemapId tilemapId) const;
 
     /// Register a TilemapExplorer (renderer) against a previously-added Tilemap.
-    /// Allocates the chunk pool (small IndirectTexture + Bellota slots tagged view-managed).
-    TilemapExplorerId addTilemapExplorer(TilemapExplorer view);
+    /// Allocates the chunk pool (small IndirectTexture + Bellota slots tagged explorer-managed).
+    TilemapExplorerId addTilemapExplorer(TilemapExplorer explorer);
 
     /// Remove a TilemapExplorer and tear down its pool slots.
-    void removeTilemapExplorer(TilemapExplorerId viewId);
+    void removeTilemapExplorer(TilemapExplorerId explorerId);
 
     /// Access a registered TilemapExplorer (mutable; use `setCamera` to scroll).
-    TilemapExplorer& tilemapExplorer(TilemapExplorerId viewId);
-    const TilemapExplorer& tilemapExplorer(TilemapExplorerId viewId) const;
+    TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId);
+    const TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId) const;
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 

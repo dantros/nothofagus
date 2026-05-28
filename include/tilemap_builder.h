@@ -15,11 +15,11 @@ class Canvas;
 
 /// Handles returned by `createTilemap` — caller keeps both the Tilemap id (for
 /// world-cell edits via `canvas.tilemap(tilemapId).setCell(...)`) and the
-/// TilemapExplorer id (for camera/scroll via `canvas.tilemapExplorer(viewId).setCamera(...)`).
+/// TilemapExplorer id (for camera/scroll via `canvas.tilemapExplorer(explorerId).setCamera(...)`).
 struct TilemapHandles
 {
     TilemapId     tilemapId;
-    TilemapExplorerId viewId;
+    TilemapExplorerId explorerId;
 };
 
 /// Build a Tilemap + a TilemapExplorer in one shot and register both with the canvas.
