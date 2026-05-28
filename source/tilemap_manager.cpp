@@ -8,6 +8,8 @@
 #include "bellota.h"
 #include <glm/glm.hpp>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <span>
 #include <variant>
 
@@ -62,7 +64,18 @@ void TilemapManager::buildPoolSlots(TilemapExplorerPack& pack, Canvas& canvas)
 
     const glm::ivec2 chunkSize = sourceTilemap.chunkSize();
     const glm::ivec2 tileSize  = sourceTilemap.tileSize();
-    const glm::ivec2 chunkPixelSize{ chunkSize.x * tileSize.x, chunkSize.y * tileSize.y };
+    // Multiply in int64 to detect overflow before the result is narrowed to int.
+    // chunkSize * tileSize fitting in int is a reasonable contract — a single
+    // chunk over ~2 billion pixels wide makes no physical sense anyway.
+    const std::int64_t chunkPixelWidth64  = static_cast<std::int64_t>(chunkSize.x) * static_cast<std::int64_t>(tileSize.x);
+    const std::int64_t chunkPixelHeight64 = static_cast<std::int64_t>(chunkSize.y) * static_cast<std::int64_t>(tileSize.y);
+    debugCheck(chunkPixelWidth64  > 0 && chunkPixelWidth64  <= std::numeric_limits<int>::max()
+            && chunkPixelHeight64 > 0 && chunkPixelHeight64 <= std::numeric_limits<int>::max(),
+        "Tilemap chunkSize * tileSize exceeds int range.");
+    const glm::ivec2 chunkPixelSize{
+        static_cast<int>(chunkPixelWidth64),
+        static_cast<int>(chunkPixelHeight64)
+    };
     const ScreenSize& screen = canvas.screenSize();
     const glm::ivec2 screenSize{
         static_cast<int>(screen.width),
@@ -157,18 +170,20 @@ void TilemapManager::updateExplorers(Canvas& canvas)
         const glm::ivec2 chunkSize     = sourceTilemap.chunkSize();
         const glm::ivec2 tileSize      = sourceTilemap.tileSize();
         const glm::ivec2 chunkGridSize = sourceTilemap.chunkGridSize();
+        // Cast to float before multiplying so the product can't overflow int.
         const glm::vec2  chunkPixelSize{
-            static_cast<float>(chunkSize.x * tileSize.x),
-            static_cast<float>(chunkSize.y * tileSize.y)
+            static_cast<float>(chunkSize.x) * static_cast<float>(tileSize.x),
+            static_cast<float>(chunkSize.y) * static_cast<float>(tileSize.y)
         };
 
         const glm::vec2 camera = explorerPack.explorer.camera();
         const glm::vec2 worldBottomLeft = camera - canvasCenter;
 
-        const glm::ivec2 slotOriginChunk{
-            static_cast<int>(std::floor(worldBottomLeft.x / chunkPixelSize.x)) - 1,
-            static_cast<int>(std::floor(worldBottomLeft.y / chunkPixelSize.y)) - 1
-        };
+        // Stay in float space until the per-slot bounds check confirms the value
+        // is inside [0, chunkGridSize) — otherwise an extreme camera position
+        // would produce a floor result outside int range, which is UB on cast.
+        const float slotOriginChunkX = std::floor(worldBottomLeft.x / chunkPixelSize.x) - 1.0f;
+        const float slotOriginChunkY = std::floor(worldBottomLeft.y / chunkPixelSize.y) - 1.0f;
 
         const std::int8_t depthOffset = explorerPack.explorer.depthOffset();
 
@@ -184,19 +199,25 @@ void TilemapManager::updateExplorers(Canvas& canvas)
                 Bellota& slotBellota = canvas.bellota(slot.bellotaId);
                 slotBellota.depthOffset() = depthOffset;
 
-                const glm::ivec2 desired{
-                    slotOriginChunk.x + px,
-                    slotOriginChunk.y + py
-                };
+                const float desiredXf = slotOriginChunkX + static_cast<float>(px);
+                const float desiredYf = slotOriginChunkY + static_cast<float>(py);
+
                 const bool outOfWorld =
-                    desired.x < 0 || desired.y < 0 ||
-                    desired.x >= chunkGridSize.x || desired.y >= chunkGridSize.y;
+                    desiredXf < 0.0f || desiredYf < 0.0f ||
+                    desiredXf >= static_cast<float>(chunkGridSize.x) ||
+                    desiredYf >= static_cast<float>(chunkGridSize.y);
 
                 if (outOfWorld)
                 {
                     slotBellota.visible() = false;
                     continue;
                 }
+
+                // Safe to int-cast — desired is now bounded by `chunkGridSize`.
+                const glm::ivec2 desired{
+                    static_cast<int>(desiredXf),
+                    static_cast<int>(desiredYf)
+                };
 
                 const std::uint64_t currentGen = sourceTilemap.chunkGeneration(desired);
                 if (desired != slot.currentWorldChunk || currentGen != slot.syncedGeneration)
