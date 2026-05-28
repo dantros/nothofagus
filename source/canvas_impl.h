@@ -20,8 +20,8 @@ struct ImFont;
 namespace Nothofagus
 {
 
-using TextureUsageMonitor = UsageMonitor<TextureId>;
-using MeshUsageMonitor    = UsageMonitor<MeshId>;
+using TextureUsageMonitor = ResourceUsageMonitor<TextureId>;
+using MeshUsageMonitor    = ResourceUsageMonitor<MeshId>;
 
 /**
  * @class Canvas::CanvasImpl

@@ -10,10 +10,10 @@ namespace Nothofagus
 {
 
 template <typename ResourceId>
-class UsageMonitor
+class ResourceUsageMonitor
 {
 public:
-    UsageMonitor() = default;
+    ResourceUsageMonitor() = default;
 
     bool addUnused(ResourceId resourceId);
     bool hasUnused(ResourceId resourceId) const;
@@ -33,7 +33,7 @@ private:
     std::unordered_set<ResourceId> mUnusedResources;
 };
 
-extern template class UsageMonitor<TextureId>;
-extern template class UsageMonitor<MeshId>;
+extern template class ResourceUsageMonitor<TextureId>;
+extern template class ResourceUsageMonitor<MeshId>;
 
 }

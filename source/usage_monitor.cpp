@@ -6,26 +6,26 @@ namespace Nothofagus
 {
 
 template <typename ResourceId>
-bool UsageMonitor<ResourceId>::addUnused(ResourceId resourceId)
+bool ResourceUsageMonitor<ResourceId>::addUnused(ResourceId resourceId)
 {
     auto pair = mUnusedResources.insert(resourceId);
     return pair.second;
 }
 
 template <typename ResourceId>
-bool UsageMonitor<ResourceId>::hasUnused(ResourceId resourceId) const
+bool ResourceUsageMonitor<ResourceId>::hasUnused(ResourceId resourceId) const
 {
     return mUnusedResources.contains(resourceId);
 }
 
 template <typename ResourceId>
-bool UsageMonitor<ResourceId>::has(ResourceId resourceId) const
+bool ResourceUsageMonitor<ResourceId>::has(ResourceId resourceId) const
 {
     return mUnusedResources.contains(resourceId) or mResourceToBellotas.contains(resourceId);
 }
 
 template <typename ResourceId>
-bool UsageMonitor<ResourceId>::removeUnused(ResourceId resourceId)
+bool ResourceUsageMonitor<ResourceId>::removeUnused(ResourceId resourceId)
 {
     if (not mUnusedResources.contains(resourceId))
         return false;
@@ -35,7 +35,7 @@ bool UsageMonitor<ResourceId>::removeUnused(ResourceId resourceId)
 }
 
 template <typename ResourceId>
-bool UsageMonitor<ResourceId>::addEntry(BellotaId bellotaId, ResourceId resourceId)
+bool ResourceUsageMonitor<ResourceId>::addEntry(BellotaId bellotaId, ResourceId resourceId)
 {
     if (mResourceToBellotas.contains(resourceId))
     {
@@ -58,7 +58,7 @@ bool UsageMonitor<ResourceId>::addEntry(BellotaId bellotaId, ResourceId resource
 }
 
 template <typename ResourceId>
-bool UsageMonitor<ResourceId>::hasEntry(BellotaId bellotaId, ResourceId resourceId) const
+bool ResourceUsageMonitor<ResourceId>::hasEntry(BellotaId bellotaId, ResourceId resourceId) const
 {
     if (not mResourceToBellotas.contains(resourceId))
         return false;
@@ -68,7 +68,7 @@ bool UsageMonitor<ResourceId>::hasEntry(BellotaId bellotaId, ResourceId resource
 }
 
 template <typename ResourceId>
-bool UsageMonitor<ResourceId>::removeEntry(BellotaId bellotaId, ResourceId resourceId)
+bool ResourceUsageMonitor<ResourceId>::removeEntry(BellotaId bellotaId, ResourceId resourceId)
 {
     if (not hasEntry(bellotaId, resourceId))
         return false;
@@ -90,24 +90,24 @@ bool UsageMonitor<ResourceId>::removeEntry(BellotaId bellotaId, ResourceId resou
 }
 
 template <typename ResourceId>
-const std::unordered_set<ResourceId>& UsageMonitor<ResourceId>::getUnusedIds() const
+const std::unordered_set<ResourceId>& ResourceUsageMonitor<ResourceId>::getUnusedIds() const
 {
     return mUnusedResources;
 }
 
 template <typename ResourceId>
-void UsageMonitor<ResourceId>::clearUnusedIds()
+void ResourceUsageMonitor<ResourceId>::clearUnusedIds()
 {
     mUnusedResources.clear();
 }
 
 template <typename ResourceId>
-std::size_t UsageMonitor<ResourceId>::loaded() const
+std::size_t ResourceUsageMonitor<ResourceId>::loaded() const
 {
     return mUnusedResources.size() + mResourceToBellotas.size();
 }
 
-template class UsageMonitor<TextureId>;
-template class UsageMonitor<MeshId>;
+template class ResourceUsageMonitor<TextureId>;
+template class ResourceUsageMonitor<MeshId>;
 
 }
