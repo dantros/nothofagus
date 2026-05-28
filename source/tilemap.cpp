@@ -62,6 +62,8 @@ void Tilemap::setCell(glm::ivec2 worldCell, std::uint8_t layerIndex)
 
 std::uint8_t Tilemap::cell(glm::ivec2 worldCell) const
 {
+    debugCheck(inBounds(worldCell),
+               "Tilemap::cell coordinate out of world bounds.");
     return mCache.cell(worldCell.x, worldCell.y);
 }
 
