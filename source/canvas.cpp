@@ -61,6 +61,11 @@ void Canvas::setAutoRemoveUnusedTextures(bool enabled)
     mCanvasImpl->setAutoRemoveUnusedTextures(enabled);
 }
 
+void Canvas::setAutoRemoveUnusedMeshes(bool enabled)
+{
+    mCanvasImpl->setAutoRemoveUnusedMeshes(enabled);
+}
+
 void Canvas::setWindowTitle(const std::string& title)
 {
     mCanvasImpl->setWindowTitle(title);
@@ -114,6 +119,36 @@ void Canvas::setTextureMinFilter(const TextureId textureId, TextureSampleMode mo
 void Canvas::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)
 {
     mCanvasImpl->setTextureMagFilter(textureId, mode);
+}
+
+MeshId Canvas::addMesh(const Mesh& mesh)
+{
+    return mCanvasImpl->addMesh(mesh);
+}
+
+MeshId Canvas::addMesh(Mesh&& mesh)
+{
+    return mCanvasImpl->addMesh(std::move(mesh));
+}
+
+void Canvas::removeMesh(MeshId meshId)
+{
+    mCanvasImpl->removeMesh(meshId);
+}
+
+void Canvas::setMesh(const BellotaId bellotaId, const MeshId meshId)
+{
+    mCanvasImpl->setMesh(bellotaId, meshId);
+}
+
+const Mesh& Canvas::mesh(MeshId meshId) const
+{
+    return mCanvasImpl->mesh(meshId);
+}
+
+const Mesh& Canvas::mesh(BellotaId bellotaId) const
+{
+    return mCanvasImpl->mesh(bellotaId);
 }
 
 RenderTargetId Canvas::addRenderTarget(ScreenSize size)

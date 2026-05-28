@@ -6,8 +6,9 @@
 #include "tilemap_manager.h"
 #include "texture_container.h"
 #include "bellota_container.h"
+#include "mesh_container.h"
 #include "render_target_container.h"
-#include "texture_usage_monitor.h"
+#include "resource_usage_monitor.h"
 #include "imgui_rtt_manager.h"
 #include "imgui_font_source_id.h"
 #include "aa_box.h"
@@ -21,6 +22,9 @@ struct ImFont;
 
 namespace Nothofagus
 {
+
+using TextureUsageMonitor = ResourceUsageMonitor<TextureId>;
+using MeshUsageMonitor    = ResourceUsageMonitor<MeshId>;
 
 /**
  * @class Canvas::CanvasImpl
@@ -103,6 +107,13 @@ public:
     void markTextureAsDirty(const TextureId textureId);
     void setTextureMinFilter(const TextureId textureId, TextureSampleMode mode);
     void setTextureMagFilter(const TextureId textureId, TextureSampleMode mode);
+
+    MeshId addMesh(const Mesh& mesh);
+    MeshId addMesh(Mesh&& mesh);
+    void removeMesh(MeshId meshId);
+    void setMesh(const BellotaId bellotaId, const MeshId meshId);
+    const Mesh& mesh(MeshId meshId) const;
+    const Mesh& mesh(BellotaId bellotaId) const;
 
     RenderTargetId addRenderTarget(ScreenSize size);
 
@@ -227,6 +238,7 @@ public:
     void tick(Canvas& canvas, float deltaTimeMS);
 
     void setAutoRemoveUnusedTextures(bool enabled);
+    void setAutoRemoveUnusedMeshes(bool enabled);
 
     /// Close the canvas and release resources.
     void close();
@@ -237,6 +249,9 @@ public:
 private:
     void replaceBellota(const BellotaId bellotaId, const Bellota& bellota);
     void clearUnusedTextures();
+    void clearUnusedMeshes();
+    /// Allocate, register and stamp a fresh auto-quad MeshId sized to the bellota's texture.
+    MeshId materializeAutoQuad(const Bellota& bellota);
     void ensureSessionStarted(Controller& controller);
     void runOneFrame(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
@@ -247,9 +262,11 @@ private:
 
     TextureContainer mTextures; ///< Container for Texture objects.
     BellotaContainer mBellotas; ///< Container for Bellota objects.
+    MeshContainer mMeshes; ///< Container for Mesh assets (user-registered + engine-allocated auto-quads).
     RenderTargetContainer mRenderTargets; ///< Container for RenderTarget objects.
     TilemapManager mTilemapManager; ///< Huge-tilemap storage + per-frame view pool logic.
     TextureUsageMonitor mTextureUsageMonitor;
+    MeshUsageMonitor mMeshUsageMonitor;
 
     /// RTT passes queued by renderTo() during the update callback, executed before the main render.
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
@@ -267,6 +284,7 @@ private:
     bool mHeadless{false}; ///< When true, the window is hidden (no visible UI).
     bool mSessionStarted{false}; ///< True after ensureSessionStarted() has been called.
     bool mAutoTextureGC{true}; ///< When true, unreferenced textures are removed each frame.
+    bool mAutoMeshGC{true};    ///< When true, unreferenced meshes are removed each frame.
     std::vector<const BellotaPack*> mSortedBellotaPacks; ///< Reusable depth-sorted draw list.
 
     struct Window; ///< Forward declaration for window management.

@@ -4,6 +4,7 @@
 #include <spdlog/spdlog.h>
 #include "texture.h"
 #include "transform.h"
+#include "mesh.h"
 #include "bellota.h"
 #include "canvas.h"
 #include "render_target.h"
@@ -15,5 +16,6 @@
 #include "mouse.h"
 #include "gamepad.h"
 #include "text.h"
+#include "markdown_renderer.h"
 #include "animation_state.h"
 #include "animation_state_machine.h"

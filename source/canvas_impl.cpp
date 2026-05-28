@@ -5,6 +5,7 @@
 #include "performance_monitor.h"
 #include "texture_container.h"
 #include "bellota_container.h"
+#include "mesh_container.h"
 #include "render_target_container.h"
 #include "keyboard.h"
 #include "mouse.h"
@@ -113,11 +114,16 @@ Canvas::CanvasImpl::~CanvasImpl()
     // a live device/context.
     mImguiRtt.releaseAll();
 
-    // Free meshes
+    // Free meshes (CPU + GPU resources owned by the mesh container)
+    for (auto& [meshIndex, meshPack] : mMeshes)
+    {
+        if (meshPack.dmeshOpt.has_value())
+            mBackend.freeMesh(meshPack.dmeshOpt.value());
+        meshPack.clear();
+    }
+
     for (auto& [bellotaIndex, bellotaPack] : mBellotas)
     {
-        if (bellotaPack.dmeshOpt.has_value())
-            mBackend.freeMesh(bellotaPack.dmeshOpt.value());
         bellotaPack.clear();
     }
 
@@ -201,6 +207,11 @@ void Canvas::CanvasImpl::setAutoRemoveUnusedTextures(bool enabled)
     mAutoTextureGC = enabled;
 }
 
+void Canvas::CanvasImpl::setAutoRemoveUnusedMeshes(bool enabled)
+{
+    mAutoMeshGC = enabled;
+}
+
 void Canvas::CanvasImpl::setWindowTitle(const std::string& title)
 {
     mTitle = title;
@@ -217,10 +228,30 @@ ViewportRect Canvas::CanvasImpl::gameViewport() const { return mGameViewport; }
 
 BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)
 {
-    BellotaId newBellotaId{mBellotas.add({bellota, std::nullopt, std::nullopt})};
+    BellotaId newBellotaId{mBellotas.add({bellota, std::nullopt})};
     Bellota& newBellota = this->bellota(newBellotaId);
+
     TextureId newTextureId = newBellota.texture();
     mTextureUsageMonitor.addEntry(newBellotaId, newTextureId);
+
+    // Materialize an auto-quad if the user didn't supply a mesh explicitly.
+    if (not newBellota.meshId().has_value())
+    {
+        const MeshId autoQuadId = materializeAutoQuad(newBellota);
+        newBellota.meshId() = autoQuadId;
+    }
+    else
+    {
+        // User-supplied MeshId — caller must have registered it via addMesh().
+        debugCheck(mMeshes.contains(newBellota.meshId().value().id),
+                   "Bellota constructed with a MeshId that is not registered in this canvas");
+        // Tile-map textures need the auto-quad's exact UV invariant (UVs in [0, 1]
+        // over the full tile-map extent). Custom meshes can't satisfy that.
+        debugCheck(mTextures.at(newTextureId.id).mode != TextureMode::TileMap,
+                   "Bellota constructed with a custom MeshId on a tile-map texture — combination is unsupported");
+    }
+    mMeshUsageMonitor.addEntry(newBellotaId, newBellota.meshId().value());
+
     return newBellotaId;
 }
 
@@ -229,12 +260,15 @@ void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
     debugCheck(!mTilemapManager.isViewManagedBellota(bellotaId.id),
         "Bellota is owned by a TilemapView pool — use canvas.removeTilemapView() instead of removing slot bellotas directly.");
     BellotaPack& bellotaPackToRemove = mBellotas.at(bellotaId.id);
-    TextureId textureId = bellotaPackToRemove.bellota.texture();
-    if (bellotaPackToRemove.dmeshOpt.has_value())
-        mBackend.freeMesh(bellotaPackToRemove.dmeshOpt.value());
+    const TextureId textureId = bellotaPackToRemove.bellota.texture();
+    const std::optional<MeshId>& meshIdOpt = bellotaPackToRemove.bellota.meshId();
+    debugCheck(meshIdOpt.has_value(), "BellotaPack is missing a MeshId — invariant broken");
+    const MeshId meshId = meshIdOpt.value();
+
     bellotaPackToRemove.clear();
     mBellotas.remove(bellotaId.id);
     mTextureUsageMonitor.removeEntry(bellotaId, textureId);
+    mMeshUsageMonitor.removeEntry(bellotaId, meshId);
 }
 
 TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
@@ -243,7 +277,7 @@ TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
     TexturePack texturePack{texture, std::nullopt, std::nullopt, std::nullopt, textureSize};
     texturePack.mode = textureModeOf(texture);
     TextureId newTextureId{mTextures.add(std::move(texturePack))};
-    const bool textureWasAdded = mTextureUsageMonitor.addUnusedTexture(newTextureId);
+    const bool textureWasAdded = mTextureUsageMonitor.addUnused(newTextureId);
     debugCheck(textureWasAdded, "Texture ID already present in usage monitor — duplicate addTexture call");
     return newTextureId;
 }
@@ -252,7 +286,7 @@ void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 {
     debugCheck(!mTilemapManager.isViewManagedTexture(textureId.id),
         "Texture is owned by a TilemapView pool — use canvas.removeTilemapView() instead of removing slot textures directly.");
-    const bool textureWasRemoved = mTextureUsageMonitor.removeUnusedTexture(textureId);
+    const bool textureWasRemoved = mTextureUsageMonitor.removeUnused(textureId);
     debugCheck(textureWasRemoved, "Texture is not in the unused set — still referenced by a bellota or already removed");
 
     TexturePack& texturePackToRemove = mTextures.at(textureId.id);
@@ -269,7 +303,7 @@ void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 
 void Canvas::CanvasImpl::clearUnusedTextures()
 {
-    const std::unordered_set<TextureId> unusedTextureIdsCopy = mTextureUsageMonitor.getUnusedTextureIds();
+    const std::unordered_set<TextureId> unusedTextureIdsCopy = mTextureUsageMonitor.getUnusedIds();
     for (TextureId textureId : unusedTextureIdsCopy)
     {
         // Proxy entries are owned by their RenderTargetPack — skip auto-cleanup.
@@ -277,19 +311,142 @@ void Canvas::CanvasImpl::clearUnusedTextures()
             continue;
         removeTexture(textureId);
     }
-    mTextureUsageMonitor.clearUnusedTextureIds();
+    mTextureUsageMonitor.clearUnusedIds();
+}
+
+MeshId Canvas::CanvasImpl::materializeAutoQuad(const Bellota& bellota)
+{
+    const TextureId textureId = bellota.texture();
+    debugCheck(mTextures.contains(textureId.id),
+               "materializeAutoQuad: bellota references an unknown texture");
+    const glm::ivec2 textureSize = mTextures.at(textureId.id).mTextureSize;
+
+    MeshPack pack;
+    pack.mesh = generateQuadMesh(textureSize);
+    pack.dmeshOpt = std::nullopt;
+    pack.isAutoQuad = true;
+    const MeshId newMeshId{mMeshes.add(std::move(pack))};
+    const bool added = mMeshUsageMonitor.addUnused(newMeshId);
+    debugCheck(added, "materializeAutoQuad: MeshId collision in usage monitor");
+    return newMeshId;
+}
+
+MeshId Canvas::CanvasImpl::addMesh(const Mesh& mesh)
+{
+    MeshPack pack;
+    pack.mesh = mesh;
+    pack.dmeshOpt = std::nullopt;
+    pack.isAutoQuad = false;
+    const MeshId newMeshId{mMeshes.add(std::move(pack))};
+    const bool added = mMeshUsageMonitor.addUnused(newMeshId);
+    debugCheck(added, "Mesh ID already present in usage monitor — duplicate addMesh call");
+    return newMeshId;
+}
+
+MeshId Canvas::CanvasImpl::addMesh(Mesh&& mesh)
+{
+    MeshPack pack;
+    pack.mesh = std::move(mesh);
+    pack.dmeshOpt = std::nullopt;
+    pack.isAutoQuad = false;
+    const MeshId newMeshId{mMeshes.add(std::move(pack))};
+    const bool added = mMeshUsageMonitor.addUnused(newMeshId);
+    debugCheck(added, "Mesh ID already present in usage monitor — duplicate addMesh call");
+    return newMeshId;
+}
+
+void Canvas::CanvasImpl::removeMesh(MeshId meshId)
+{
+    debugCheck(mMeshes.contains(meshId.id), "removeMesh: unknown MeshId");
+    debugCheck(not mMeshes.at(meshId.id).isAutoQuad,
+               "removeMesh: cannot remove an engine-allocated auto-quad — it is owned by the canvas");
+
+    const bool wasRemoved = mMeshUsageMonitor.removeUnused(meshId);
+    debugCheck(wasRemoved, "Mesh is not in the unused set — still referenced by a bellota or already removed");
+
+    MeshPack& packToRemove = mMeshes.at(meshId.id);
+    if (packToRemove.dmeshOpt.has_value())
+        mBackend.freeMesh(packToRemove.dmeshOpt.value());
+    packToRemove.clear();
+    mMeshes.remove(meshId.id);
+}
+
+void Canvas::CanvasImpl::setMesh(const BellotaId bellotaId, const MeshId meshId)
+{
+    debugCheck(mMeshes.contains(meshId.id), "setMesh: unknown MeshId");
+    const Bellota& bellotaOriginal = bellota(bellotaId);
+    // Tile-map textures rely on the auto-quad UV invariant; custom meshes
+    // would produce nonsense cell lookups in the tile-map shader.
+    debugCheck(mTextures.at(bellotaOriginal.texture().id).mode != TextureMode::TileMap,
+               "setMesh: cannot attach a custom mesh to a bellota whose texture is in tile-map mode");
+
+    Bellota bellotaWithNewMesh(
+        bellotaOriginal.transform(),
+        bellotaOriginal.texture(),
+        meshId,
+        bellotaOriginal.depthOffset()
+    );
+    bellotaWithNewMesh.visible() = bellotaOriginal.visible();
+    bellotaWithNewMesh.currentLayer() = bellotaOriginal.currentLayer();
+    bellotaWithNewMesh.opacity() = bellotaOriginal.opacity();
+    replaceBellota(bellotaId, bellotaWithNewMesh);
+}
+
+const Mesh& Canvas::CanvasImpl::mesh(MeshId meshId) const
+{
+    debugCheck(mMeshes.contains(meshId.id), "mesh: unknown MeshId");
+    return mMeshes.at(meshId.id).mesh;
+}
+
+const Mesh& Canvas::CanvasImpl::mesh(BellotaId bellotaId) const
+{
+    const Bellota& target = bellota(bellotaId);
+    debugCheck(target.meshId().has_value(), "mesh(BellotaId): bellota has no MeshId — invariant broken");
+    return mesh(target.meshId().value());
+}
+
+void Canvas::CanvasImpl::clearUnusedMeshes()
+{
+    const std::unordered_set<MeshId> unusedMeshIdsCopy = mMeshUsageMonitor.getUnusedIds();
+    for (MeshId meshId : unusedMeshIdsCopy)
+    {
+        // Auto-quads use the same eligibility rules as user meshes; the isAutoQuad
+        // flag exists only to gate the public `removeMesh` entry point.
+        const bool wasRemoved = mMeshUsageMonitor.removeUnused(meshId);
+        debugCheck(wasRemoved, "clearUnusedMeshes: mesh disappeared from unused set unexpectedly");
+
+        MeshPack& packToRemove = mMeshes.at(meshId.id);
+        if (packToRemove.dmeshOpt.has_value())
+            mBackend.freeMesh(packToRemove.dmeshOpt.value());
+        packToRemove.clear();
+        mMeshes.remove(meshId.id);
+    }
 }
 
 void Canvas::CanvasImpl::setTexture(const BellotaId bellotaId, const TextureId textureId)
 {
     const Bellota& bellotaOriginal = bellota(bellotaId);
-    Bellota bellotaWithNewTexture(
-        bellotaOriginal.transform(),
-        textureId,
-        bellotaOriginal.depthOffset()
-    );
+    const std::optional<MeshId>& meshIdOpt = bellotaOriginal.meshId();
+    debugCheck(meshIdOpt.has_value(), "BellotaPack is missing a MeshId — invariant broken");
+
+    const bool currentMeshIsAutoQuad = mMeshes.at(meshIdOpt.value().id).isAutoQuad;
+    // Switching to a tile-map texture is only valid when the bellota uses an
+    // auto-quad (which will be re-materialized below sized to the new texture).
+    // A user mesh's UVs can't satisfy the tile-map shader's cell-lookup invariant.
+    debugCheck(currentMeshIsAutoQuad or mTextures.at(textureId.id).mode != TextureMode::TileMap,
+               "setTexture: cannot switch a bellota with a custom mesh onto a tile-map texture");
+
+    Bellota bellotaWithNewTexture = currentMeshIsAutoQuad
+        // Auto-quad needs to be regenerated for the new texture size — drop the MeshId here;
+        // replaceBellota → addEntry path doesn't try to re-register an auto-quad, so we
+        // re-materialize it below.
+        ? Bellota(bellotaOriginal.transform(), textureId, bellotaOriginal.depthOffset())
+        : Bellota(bellotaOriginal.transform(), textureId, meshIdOpt.value(), bellotaOriginal.depthOffset());
+
     bellotaWithNewTexture.visible() = bellotaOriginal.visible();
     bellotaWithNewTexture.currentLayer() = bellotaOriginal.currentLayer();
+    bellotaWithNewTexture.opacity() = bellotaOriginal.opacity();
+
     replaceBellota(bellotaId, bellotaWithNewTexture);
 }
 
@@ -337,7 +494,7 @@ RenderTargetId Canvas::CanvasImpl::addRenderTarget(ScreenSize size)
     proxyPack.dtextureOpt = std::nullopt;
     proxyPack.mTextureSize = texSize;
     TextureId proxyTexId{mTextures.add(proxyPack)};
-    mTextureUsageMonitor.addUnusedTexture(proxyTexId);
+    mTextureUsageMonitor.addUnused(proxyTexId);
 
     RenderTargetPack renderTargetPack;
     renderTargetPack.renderTarget = RenderTarget{texSize, proxyTexId};
@@ -371,7 +528,7 @@ void Canvas::CanvasImpl::removeRenderTarget(RenderTargetId renderTargetId)
     mTextures.remove(proxyTexId.id);
 
     // Remove from usage monitor if currently unused (i.e. no bellotas reference it).
-    mTextureUsageMonitor.removeUnusedTexture(proxyTexId);
+    mTextureUsageMonitor.removeUnused(proxyTexId);
 
     mRenderTargets.remove(renderTargetId.id);
 }
@@ -666,6 +823,9 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
     if (mAutoTextureGC)
         clearUnusedTextures();
 
+    if (mAutoMeshGC)
+        clearUnusedMeshes();
+
     {
         ZoneScopedN("TextureUpload");
         for (auto& [textureIndex, texturePack] : mTextures)
@@ -762,13 +922,10 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
 
     {
         ZoneScopedN("MeshUpload");
-        for (auto& [bellotaIndex, bellotaPack] : mBellotas)
+        for (auto& [meshIndex, meshPack] : mMeshes)
         {
-            if (bellotaPack.isDirty())
-            {
-                bellotaPack.meshOpt  = generateMesh(mTextures, bellotaPack.bellota);
-                bellotaPack.dmeshOpt = mBackend.uploadMesh(bellotaPack.meshOpt.value());
-            }
+            if (meshPack.isDirty())
+                meshPack.dmeshOpt = mBackend.uploadMesh(meshPack.mesh);
         }
     }
 
@@ -817,7 +974,9 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
             for (const BellotaPack* packPtr : renderTargetSortedPacks)
             {
                 if (!packPtr->bellota.visible()) continue;
-                if (!packPtr->dmeshOpt.has_value()) continue;
+                if (!packPtr->bellota.meshId().has_value()) continue;
+                const MeshPack& meshPack = mMeshes.at(packPtr->bellota.meshId().value().id);
+                if (!meshPack.dmeshOpt.has_value()) continue;
                 const TexturePack& texturePack = mTextures.at(packPtr->bellota.texture().id);
                 if (!texturePack.dtextureOpt.has_value()) continue;
                 SpriteDrawParams drawParams = makeSpriteDrawParams(*packPtr, renderTargetWorldTransform);
@@ -827,7 +986,7 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
                     drawParams.paletteTexture = texturePack.dpaletteTextureOpt.value();
                 if (texturePack.mode == TextureMode::TileMap && texturePack.dmapTextureOpt.has_value())
                     drawParams.mapTexture = texturePack.dmapTextureOpt.value();
-                mBackend.drawSprite(packPtr->dmeshOpt.value(), texturePack.dtextureOpt.value(), drawParams);
+                mBackend.drawSprite(meshPack.dmeshOpt.value(), texturePack.dtextureOpt.value(), drawParams);
             }
 
             mBackend.endRttPass();
@@ -848,7 +1007,9 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
         for (const BellotaPack* packPtr : mSortedBellotaPacks)
         {
             if (!packPtr->bellota.visible()) continue;
-            if (!packPtr->dmeshOpt.has_value()) continue;
+            if (!packPtr->bellota.meshId().has_value()) continue;
+            const MeshPack& meshPack = mMeshes.at(packPtr->bellota.meshId().value().id);
+            if (!meshPack.dmeshOpt.has_value()) continue;
             const TexturePack& texturePack = mTextures.at(packPtr->bellota.texture().id);
             if (!texturePack.dtextureOpt.has_value()) continue;
             SpriteDrawParams drawParams = makeSpriteDrawParams(*packPtr, worldTransformMat);
@@ -858,7 +1019,7 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
                 drawParams.paletteTexture = texturePack.dpaletteTextureOpt.value();
             if (texturePack.mode == TextureMode::TileMap && texturePack.dmapTextureOpt.has_value())
                 drawParams.mapTexture = texturePack.dmapTextureOpt.value();
-            mBackend.drawSprite(packPtr->dmeshOpt.value(), texturePack.dtextureOpt.value(), drawParams);
+            mBackend.drawSprite(meshPack.dmeshOpt.value(), texturePack.dtextureOpt.value(), drawParams);
         }
     }
 
@@ -934,15 +1095,38 @@ void Canvas::CanvasImpl::replaceBellota(const BellotaId bellotaId, const Bellota
     BellotaPack& bellotaPack = mBellotas.at(bellotaId.id);
 
     TextureId textureIdToReplace = bellotaPack.bellota.texture();
-    const bool oldEntryRemoved = mTextureUsageMonitor.removeEntry(bellotaId, textureIdToReplace);
-    debugCheck(oldEntryRemoved, "Failed to remove old texture entry from usage monitor during bellota replacement");
+    const bool oldTextureEntryRemoved = mTextureUsageMonitor.removeEntry(bellotaId, textureIdToReplace);
+    debugCheck(oldTextureEntryRemoved, "Failed to remove old texture entry from usage monitor during bellota replacement");
 
     TextureId newTextureId = newBellota.texture();
-    const bool newEntryAdded = mTextureUsageMonitor.addEntry(bellotaId, newTextureId);
-    debugCheck(newEntryAdded, "Failed to add new texture entry to usage monitor during bellota replacement");
+    const bool newTextureEntryAdded = mTextureUsageMonitor.addEntry(bellotaId, newTextureId);
+    debugCheck(newTextureEntryAdded, "Failed to add new texture entry to usage monitor during bellota replacement");
 
-    bellotaPack.clearMesh();
-    bellotaPack.bellota = newBellota;
+    // Mesh-usage shuffle. Two cases:
+    //   * new bellota has explicit MeshId — drop the old MeshId, register the new one
+    //   * new bellota has no MeshId — caller (setTexture) wants a fresh auto-quad
+    //     sized to the new texture; materialise it now and stamp the bellota copy
+    const std::optional<MeshId>& oldMeshIdOpt = bellotaPack.bellota.meshId();
+    debugCheck(oldMeshIdOpt.has_value(), "BellotaPack is missing a MeshId — invariant broken");
+    const MeshId oldMeshId = oldMeshIdOpt.value();
+    const bool oldMeshEntryRemoved = mMeshUsageMonitor.removeEntry(bellotaId, oldMeshId);
+    debugCheck(oldMeshEntryRemoved, "Failed to remove old mesh entry from usage monitor during bellota replacement");
+
+    Bellota stampedNewBellota = newBellota;
+    if (not stampedNewBellota.meshId().has_value())
+    {
+        const MeshId autoQuadId = materializeAutoQuad(stampedNewBellota);
+        stampedNewBellota.meshId() = autoQuadId;
+    }
+    else
+    {
+        debugCheck(mMeshes.contains(stampedNewBellota.meshId().value().id),
+                   "Replacement bellota references a MeshId that is not registered");
+    }
+    const bool newMeshEntryAdded = mMeshUsageMonitor.addEntry(bellotaId, stampedNewBellota.meshId().value());
+    debugCheck(newMeshEntryAdded, "Failed to add new mesh entry to usage monitor during bellota replacement");
+
+    bellotaPack.bellota = stampedNewBellota;
 }
 
 ScreenSize getPrimaryMonitorSize()
