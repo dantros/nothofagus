@@ -1,9 +1,11 @@
 #include "markdown_renderer.h"
 
 #include "canvas.h"
+#include "check.h"
 #include "imgui_md.h"
 
 #include <imgui.h>
+#include <spdlog/spdlog.h>
 #include <utility>
 
 namespace Nothofagus
@@ -85,8 +87,12 @@ protected:
 private:
     ImFont* resolve(ImguiFontId id) const
     {
+        debugCheck(mCanvas != nullptr, "MarkdownRenderer has unbound canvas");
         if (mCanvas == nullptr)
+        {
+            spdlog::error("MarkdownRenderer::resolve called on a renderer with an unbound canvas");
             return nullptr;  // unbound canvas — fall back to current font
+        }
         if (!mCanvas->isImguiFontReady(id))
             return nullptr;  // deferred-bake window — defer to current font
         return mCanvas->getImguiFontPtr(id);
