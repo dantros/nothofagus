@@ -9,13 +9,9 @@
 namespace Nothofagus
 {
 
-namespace
+struct MarkdownRenderer::Impl : public imgui_md
 {
-
-class NothofagusMarkdown : public imgui_md
-{
-public:
-    NothofagusMarkdown(Canvas& canvas) noexcept
+    explicit Impl(Canvas& canvas) noexcept
         : mCanvas(canvas)
     {
     }
@@ -99,15 +95,6 @@ private:
     std::function<void(std::string_view)> mOpenUrlCallback;
 };
 
-} // namespace
-
-struct MarkdownRenderer::Impl
-{
-    explicit Impl(Canvas& canvas) : markdown(canvas) {}
-
-    NothofagusMarkdown markdown;
-};
-
 MarkdownRenderer::MarkdownRenderer(Canvas& canvas)
     : mImpl(std::make_unique<Impl>(canvas))
 {
@@ -119,24 +106,24 @@ MarkdownRenderer& MarkdownRenderer::operator=(MarkdownRenderer&&) noexcept = def
 
 void MarkdownRenderer::setStyle(const MarkdownStyle& style)
 {
-    mImpl->markdown.setStyle(style);
+    mImpl->setStyle(style);
 }
 
 const MarkdownStyle& MarkdownRenderer::style() const noexcept
 {
-    return mImpl->markdown.style();
+    return mImpl->style();
 }
 
 void MarkdownRenderer::setOpenUrlCallback(std::function<void(std::string_view)> callback)
 {
-    mImpl->markdown.setOpenUrlCallback(std::move(callback));
+    mImpl->setOpenUrlCallback(std::move(callback));
 }
 
 void MarkdownRenderer::print(std::string_view markdownText)
 {
     const char* begin = markdownText.data();
     const char* end   = begin + markdownText.size();
-    mImpl->markdown.print(begin, end);
+    mImpl->print(begin, end);
 }
 
 } // namespace Nothofagus
