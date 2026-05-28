@@ -88,6 +88,7 @@ add_library(nothofagus
     "source/mesh.cpp"
     "source/transform.cpp"
     "source/texture.cpp"
+    "source/usage_monitor.cpp"
     "source/performance_monitor.cpp"
     "source/controller.cpp"
     "source/keyboard.cpp"
