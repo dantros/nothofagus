@@ -89,6 +89,9 @@ void TilemapManager::buildPoolSlots(TilemapExplorerPack& pack, Canvas& canvas)
     pack.poolGridSize = poolGridSize;
     pack.poolSizedFor = screen;
     pack.slots.clear();
+    // slotCount cannot overflow size_t: each poolGridSize axis is bounded by
+    // (screen_px / chunk_px) + 2 with chunkPixelSize asserted positive above, so
+    // both factors fit in int and their product fits comfortably in size_t.
     const std::size_t slotCount =
         static_cast<std::size_t>(poolGridSize.x) * static_cast<std::size_t>(poolGridSize.y);
     pack.slots.reserve(slotCount);
