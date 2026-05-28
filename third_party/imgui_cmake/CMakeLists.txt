@@ -36,10 +36,14 @@ add_library(imgui STATIC
     "${IMGUI_PATH}/imgui_widgets.cpp"
     "${IMGUI_BACKEND_SRC}"
     ${IMGUI_BACKEND_SOURCES}
+    "../md4c/src/md4c.c"
+    "../imgui_md/imgui_md.cpp"
 )
 set_property(TARGET imgui PROPERTY CXX_STANDARD 11)
 target_include_directories(imgui PRIVATE
     "${IMGUI_PATH}"
+    "../md4c/src"
+    "../imgui_md"
     ${IMGUI_BACKEND_INC}
 )
 if(IMGUI_BACKEND_DEFS)

@@ -99,3 +99,9 @@ add_executable(hello_tilemap
 )
 set_property(TARGET hello_tilemap PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_tilemap PRIVATE nothofagus)
+
+add_executable(hello_markdown
+    "hello_markdown.cpp"
+)
+set_property(TARGET hello_markdown PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_markdown PRIVATE nothofagus)
