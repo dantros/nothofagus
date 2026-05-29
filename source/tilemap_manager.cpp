@@ -60,9 +60,8 @@ void TilemapManager::buildPoolSlots(TilemapExplorerPack& pack, Canvas& canvas)
 {
     const Tilemap& sourceTilemap = mTilemaps.at(pack.explorer.tilemap().id);
 
-    const glm::ivec2 chunkSize = sourceTilemap.chunkSize();
-    const glm::ivec2 tileSize  = sourceTilemap.tileSize();
-    const glm::ivec2 chunkPixelSize{ chunkSize.x * tileSize.x, chunkSize.y * tileSize.y };
+    const glm::ivec2 chunkSize      = sourceTilemap.chunkSize();
+    const glm::ivec2 chunkPixelSize = sourceTilemap.chunkPixelSize();
     const ScreenSize& screen = canvas.screenSize();
     const glm::ivec2 screenSize{
         static_cast<int>(screen.width),
@@ -165,13 +164,7 @@ void TilemapManager::updateExplorer(
 
     const Tilemap& sourceTilemap = mTilemaps.at(tilemapId.id);
 
-    const glm::ivec2 chunkSize     = sourceTilemap.chunkSize();
-    const glm::ivec2 tileSize      = sourceTilemap.tileSize();
-    const glm::ivec2 chunkGridSize = sourceTilemap.chunkGridSize();
-    const glm::vec2  chunkPixelSize{
-        static_cast<float>(chunkSize.x * tileSize.x),
-        static_cast<float>(chunkSize.y * tileSize.y)
-    };
+    const glm::vec2 chunkPixelSize = glm::vec2(sourceTilemap.chunkPixelSize());
 
     const glm::vec2 camera = explorerPack.explorer.camera();
     const glm::vec2 worldBottomLeft = camera - canvasCenter;
@@ -188,10 +181,7 @@ void TilemapManager::updateExplorer(
     {
         for (int px = 0; px < explorerPack.poolGridSize.x; ++px)
         {
-            const std::size_t slotIdx =
-                static_cast<std::size_t>(py) * static_cast<std::size_t>(explorerPack.poolGridSize.x) +
-                static_cast<std::size_t>(px);
-            PoolSlot& slot = explorerPack.slots[slotIdx];
+            PoolSlot& slot = explorerPack.slotAt(px, py);
 
             const glm::ivec2 desired{
                 slotOriginChunk.x + px,
@@ -200,7 +190,7 @@ void TilemapManager::updateExplorer(
             exploreCell(
                 slot, desired,
                 canvas, sourceTilemap,
-                chunkGridSize, chunkPixelSize,
+                chunkPixelSize,
                 camera, canvasCenter,
                 depthOffset,
                 chunkScratch);
@@ -213,7 +203,6 @@ void TilemapManager::exploreCell(
     const glm::ivec2& desired,
     Canvas& canvas,
     const Tilemap& sourceTilemap,
-    const glm::ivec2& chunkGridSize,
     const glm::vec2& chunkPixelSize,
     const glm::vec2& camera,
     const glm::vec2& canvasCenter,
@@ -224,19 +213,10 @@ void TilemapManager::exploreCell(
     if (slotBellota.depthOffset() != depthOffset)
         slotBellota.depthOffset() = depthOffset;
 
-    const bool outOfWorld =
-        desired.x < 0 || desired.y < 0 ||
-        desired.x >= chunkGridSize.x || desired.y >= chunkGridSize.y;
-
-    if (outOfWorld)
+    if (!sourceTilemap.chunkInBounds(desired))
     {
         slotBellota.visible() = false;
-        // Reset to the unassigned sentinel so the slot doesn't carry
-        // "what chunk am I painting" state while hidden — when it
-        // scrolls back into the world the desired-vs-current check
-        // will trigger a fresh sync.
-        slot.currentWorldChunk = glm::ivec2{-1, -1};
-        slot.syncedGeneration  = 0;
+        slot.markUnassigned();
         return;
     }
 

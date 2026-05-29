@@ -87,7 +87,6 @@ private:
         const glm::ivec2& desired,
         Canvas& canvas,
         const Tilemap& sourceTilemap,
-        const glm::ivec2& chunkGridSize,
         const glm::vec2& chunkPixelSize,
         const glm::vec2& camera,
         const glm::vec2& canvasCenter,
