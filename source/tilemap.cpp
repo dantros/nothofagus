@@ -53,6 +53,19 @@ Tilemap::Tilemap(glm::ivec2 mapSize,
     // Functionally harmless; the chunk pool textures own the GPU side.
 }
 
+bool Tilemap::inBounds(glm::ivec2 worldCell) const
+{
+    const glm::ivec2 size = mCache.mapSize();
+    return worldCell.x >= 0 && worldCell.x < size.x
+        && worldCell.y >= 0 && worldCell.y < size.y;
+}
+
+bool Tilemap::chunkInBounds(glm::ivec2 chunkPos) const
+{
+    return chunkPos.x >= 0 && chunkPos.x < mChunkGridSize.x
+        && chunkPos.y >= 0 && chunkPos.y < mChunkGridSize.y;
+}
+
 void Tilemap::setCell(glm::ivec2 worldCell, std::uint8_t layerIndex)
 {
     debugCheck(inBounds(worldCell),
