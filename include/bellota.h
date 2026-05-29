@@ -106,6 +106,23 @@ public:
     {
     }
 
+    /// Return a copy with the texture replaced. Every other field — transform,
+    /// mesh id, current layer, depth offset, visible, opacity — is preserved.
+    Bellota withTexture(TextureId textureId) const
+    {
+        Bellota copy = *this;
+        copy.mTextureId = textureId;
+        return copy;
+    }
+
+    /// Return a copy with the mesh replaced. Every other field is preserved.
+    Bellota withMesh(MeshId meshId) const
+    {
+        Bellota copy = *this;
+        copy.mMeshId = meshId;
+        return copy;
+    }
+
     const Transform& transform() const { return mTransform; }
     Transform& transform() { return mTransform; }
 

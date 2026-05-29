@@ -1,12 +1,7 @@
 
 #include "canvas_impl.h"
 #include "check.h"
-#include "bellota_to_mesh.h"
 #include "performance_monitor.h"
-#include "texture_container.h"
-#include "bellota_container.h"
-#include "mesh_container.h"
-#include "render_target_container.h"
 #include "keyboard.h"
 #include "mouse.h"
 #include "controller.h"
@@ -69,7 +64,8 @@ Canvas::CanvasImpl::CanvasImpl(
     mTitle(title),
     mClearColor(clearColor),
     mPixelSize(pixelSize),
-    mImguiRtt(mBackend, mRenderTargets,
+    mAssets(mBackend),
+    mImguiRtt(mBackend, mAssets.renderTargets(),
               assets_Roboto_VariableFont_wdth_wght_ttf,
               assets_Roboto_VariableFont_wdth_wght_ttf_len,
               imguiFontSize),
@@ -104,60 +100,13 @@ Canvas::CanvasImpl::CanvasImpl(
 
 Canvas::CanvasImpl::~CanvasImpl()
 {
-    // Needs to be defined in the cpp file to avoid incomplete type errors due to the pimpl idiom for struct Window.
-    // GPU resources must be freed while the GL/Vulkan context (owned by mWindow) is still alive.
-    // Member destructors run after this body, so mWindow is valid here.
-
-    // Tear down secondary ImGui contexts for any render target that hosted one.
-    // Must happen before mBackend.shutdown() — the per-context backend owns GPU
-    // resources (Vulkan pipeline + descriptor pool, GL shader program) that need
-    // a live device/context.
+    // Defined here (not =default) to keep the pimpl idiom for struct Window working.
+    // GPU resources must be freed while the GL/Vulkan context is still alive:
+    // - ImGui RTT secondary contexts own per-RTT pipeline/descriptor resources
+    // - mAssets owns texture/mesh/render-target GPU handles
+    // mBackend.shutdown() runs last; mBackend itself is destroyed only after this body.
     mImguiRtt.releaseAll();
-
-    // Free meshes (CPU + GPU resources owned by the mesh container)
-    for (auto& [meshIndex, meshPack] : mMeshes)
-    {
-        if (meshPack.dmeshOpt.has_value())
-            mBackend.freeMesh(meshPack.dmeshOpt.value());
-        meshPack.clear();
-    }
-
-    for (auto& [bellotaIndex, bellotaPack] : mBellotas)
-    {
-        bellotaPack.clear();
-    }
-
-    // Render targets must be freed before textures: freeRenderTarget also removes the
-    // proxy entry from the backend's texture map (without calling glDeleteTextures on it),
-    // then deletes the FBO + color attachment in one call.
-    for (auto& [renderTargetIndex, renderTargetPack] : mRenderTargets)
-    {
-        if (renderTargetPack.dRenderTargetOpt.has_value())
-        {
-            const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
-            if (mTextures.contains(proxyTexId.id))
-            {
-                const TexturePack& proxyPack = mTextures.at(proxyTexId.id);
-                if (proxyPack.dtextureOpt.has_value())
-                {
-                    mBackend.freeRenderTarget(
-                        renderTargetPack.dRenderTargetOpt.value(),
-                        proxyPack.dtextureOpt.value()
-                    );
-                    mTextures.at(proxyTexId.id).dtextureOpt = std::nullopt;
-                }
-            }
-        }
-        renderTargetPack.clear();
-    }
-
-    for (auto& [textureIndex, texturePack] : mTextures)
-    {
-        if (texturePack.dtextureOpt.has_value() && !texturePack.isProxy())
-            mBackend.freeTexture(texturePack.dtextureOpt.value());
-        texturePack.clear();
-    }
-
+    mAssets.freeAllGpuResources();
     mBackend.shutdown();
 }
 
@@ -226,399 +175,94 @@ ScreenSize Canvas::CanvasImpl::windowSize() const
 
 ViewportRect Canvas::CanvasImpl::gameViewport() const { return mGameViewport; }
 
-BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)
-{
-    BellotaId newBellotaId{mBellotas.add({bellota, std::nullopt})};
-    Bellota& newBellota = this->bellota(newBellotaId);
+// ---------------------------------------------------------------------------
+// Asset forwarders — most map straight onto AssetRegistry. The remove paths
+// that interact with TilemapExplorer pools or the per-RTT ImGui contexts
+// keep their gates here before forwarding.
+// ---------------------------------------------------------------------------
 
-    TextureId newTextureId = newBellota.texture();
-    mTextureUsageMonitor.addEntry(newBellotaId, newTextureId);
-
-    // Materialize an auto-quad if the user didn't supply a mesh explicitly.
-    if (not newBellota.meshId().has_value())
-    {
-        const MeshId autoQuadId = materializeAutoQuad(newBellota);
-        newBellota.meshId() = autoQuadId;
-    }
-    else
-    {
-        // User-supplied MeshId — caller must have registered it via addMesh().
-        debugCheck(mMeshes.contains(newBellota.meshId().value().id),
-                   "Bellota constructed with a MeshId that is not registered in this canvas");
-        // Tile-map textures need the auto-quad's exact UV invariant (UVs in [0, 1]
-        // over the full tile-map extent). Custom meshes can't satisfy that.
-        debugCheck(mTextures.at(newTextureId.id).mode != TextureMode::TileMap,
-                   "Bellota constructed with a custom MeshId on a tile-map texture — combination is unsupported");
-    }
-    mMeshUsageMonitor.addEntry(newBellotaId, newBellota.meshId().value());
-
-    return newBellotaId;
-}
+BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)            { return mAssets.addBellota(bellota); }
 
 void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
 {
     debugCheck(!mTilemapManager.isExplorerManagedBellota(bellotaId.id)
             && !mSparsemapManager.isExplorerManagedBellota(bellotaId.id),
         "Bellota is owned by an explorer pool — use canvas.removeTilemapExplorer() / canvas.removeSparsemapExplorer() instead of removing slot bellotas directly.");
-    BellotaPack& bellotaPackToRemove = mBellotas.at(bellotaId.id);
-    const TextureId textureId = bellotaPackToRemove.bellota.texture();
-    const std::optional<MeshId>& meshIdOpt = bellotaPackToRemove.bellota.meshId();
-    debugCheck(meshIdOpt.has_value(), "BellotaPack is missing a MeshId — invariant broken");
-    const MeshId meshId = meshIdOpt.value();
-
-    bellotaPackToRemove.clear();
-    mBellotas.remove(bellotaId.id);
-    mTextureUsageMonitor.removeEntry(bellotaId, textureId);
-    mMeshUsageMonitor.removeEntry(bellotaId, meshId);
+    mAssets.removeBellota(bellotaId);
 }
 
-TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
-{
-    glm::ivec2 textureSize = std::visit(GetTextureSizeVisitor(), texture);
-    TexturePack texturePack{texture, std::nullopt, std::nullopt, std::nullopt, textureSize};
-    texturePack.mode = textureModeOf(texture);
-    TextureId newTextureId{mTextures.add(std::move(texturePack))};
-    const bool textureWasAdded = mTextureUsageMonitor.addUnused(newTextureId);
-    debugCheck(textureWasAdded, "Texture ID already present in usage monitor — duplicate addTexture call");
-    return newTextureId;
-}
+Bellota& Canvas::CanvasImpl::bellota(BellotaId bellotaId)                   { return mAssets.bellota(bellotaId); }
+const Bellota& Canvas::CanvasImpl::bellota(BellotaId bellotaId) const       { return mAssets.bellota(bellotaId); }
+void Canvas::CanvasImpl::setTint(BellotaId bellotaId, const Tint& tint)     { mAssets.setTint(bellotaId, tint); }
+void Canvas::CanvasImpl::removeTint(BellotaId bellotaId)                    { mAssets.removeTint(bellotaId); }
+
+TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)            { return mAssets.addTexture(texture); }
 
 void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 {
     debugCheck(!mTilemapManager.isExplorerManagedTexture(textureId.id)
             && !mSparsemapManager.isExplorerManagedTexture(textureId.id),
         "Texture is owned by an explorer pool — use canvas.removeTilemapExplorer() / canvas.removeSparsemapExplorer() instead of removing slot textures directly.");
-    const bool textureWasRemoved = mTextureUsageMonitor.removeUnused(textureId);
-    debugCheck(textureWasRemoved, "Texture is not in the unused set — still referenced by a bellota or already removed");
-
-    TexturePack& texturePackToRemove = mTextures.at(textureId.id);
-    if (texturePackToRemove.dpaletteTextureOpt.has_value())
-        mBackend.freePaletteTexture(texturePackToRemove.dpaletteTextureOpt.value());
-    if (texturePackToRemove.dmapTextureOpt.has_value())
-        mBackend.freeTileMapTexture(texturePackToRemove.dmapTextureOpt.value());
-    if (texturePackToRemove.dtextureOpt.has_value())
-        mBackend.freeTexture(texturePackToRemove.dtextureOpt.value());
-    texturePackToRemove.clear();
-
-    mTextures.remove(textureId.id);
+    mAssets.removeTexture(textureId);
 }
 
-void Canvas::CanvasImpl::clearUnusedTextures()
-{
-    const std::unordered_set<TextureId> unusedTextureIdsCopy = mTextureUsageMonitor.getUnusedIds();
-    for (TextureId textureId : unusedTextureIdsCopy)
-    {
-        // Proxy entries are owned by their RenderTargetPack — skip auto-cleanup.
-        if (mTextures.at(textureId.id).isProxy())
-            continue;
-        removeTexture(textureId);
-    }
-    mTextureUsageMonitor.clearUnusedIds();
-}
+void Canvas::CanvasImpl::setTexture(BellotaId bellotaId, TextureId textureId)            { mAssets.setTexture(bellotaId, textureId); }
+void Canvas::CanvasImpl::markTextureAsDirty(TextureId textureId)                          { mAssets.markTextureAsDirty(textureId); }
+void Canvas::CanvasImpl::setTextureMinFilter(TextureId textureId, TextureSampleMode mode) { mAssets.setTextureMinFilter(textureId, mode); }
+void Canvas::CanvasImpl::setTextureMagFilter(TextureId textureId, TextureSampleMode mode) { mAssets.setTextureMagFilter(textureId, mode); }
+Texture& Canvas::CanvasImpl::texture(TextureId textureId)                                 { return mAssets.texture(textureId); }
+const Texture& Canvas::CanvasImpl::texture(TextureId textureId) const                     { return mAssets.texture(textureId); }
 
-MeshId Canvas::CanvasImpl::materializeAutoQuad(const Bellota& bellota)
-{
-    const TextureId textureId = bellota.texture();
-    debugCheck(mTextures.contains(textureId.id),
-               "materializeAutoQuad: bellota references an unknown texture");
-    const glm::ivec2 textureSize = mTextures.at(textureId.id).mTextureSize;
+MeshId Canvas::CanvasImpl::addMesh(const Mesh& mesh)                                      { return mAssets.addMesh(mesh); }
+MeshId Canvas::CanvasImpl::addMesh(Mesh&& mesh)                                           { return mAssets.addMesh(std::move(mesh)); }
+void Canvas::CanvasImpl::removeMesh(MeshId meshId)                                        { mAssets.removeMesh(meshId); }
+void Canvas::CanvasImpl::setMesh(BellotaId bellotaId, MeshId meshId)                      { mAssets.setMesh(bellotaId, meshId); }
+const Mesh& Canvas::CanvasImpl::mesh(MeshId meshId) const                                 { return mAssets.mesh(meshId); }
+const Mesh& Canvas::CanvasImpl::mesh(BellotaId bellotaId) const                           { return mAssets.mesh(bellotaId); }
 
-    MeshPack pack;
-    pack.mesh = generateQuadMesh(textureSize);
-    pack.dmeshOpt = std::nullopt;
-    pack.isAutoQuad = true;
-    const MeshId newMeshId{mMeshes.add(std::move(pack))};
-    const bool added = mMeshUsageMonitor.addUnused(newMeshId);
-    debugCheck(added, "materializeAutoQuad: MeshId collision in usage monitor");
-    return newMeshId;
-}
-
-MeshId Canvas::CanvasImpl::addMesh(const Mesh& mesh)
-{
-    MeshPack pack;
-    pack.mesh = mesh;
-    pack.dmeshOpt = std::nullopt;
-    pack.isAutoQuad = false;
-    const MeshId newMeshId{mMeshes.add(std::move(pack))};
-    const bool added = mMeshUsageMonitor.addUnused(newMeshId);
-    debugCheck(added, "Mesh ID already present in usage monitor — duplicate addMesh call");
-    return newMeshId;
-}
-
-MeshId Canvas::CanvasImpl::addMesh(Mesh&& mesh)
-{
-    MeshPack pack;
-    pack.mesh = std::move(mesh);
-    pack.dmeshOpt = std::nullopt;
-    pack.isAutoQuad = false;
-    const MeshId newMeshId{mMeshes.add(std::move(pack))};
-    const bool added = mMeshUsageMonitor.addUnused(newMeshId);
-    debugCheck(added, "Mesh ID already present in usage monitor — duplicate addMesh call");
-    return newMeshId;
-}
-
-void Canvas::CanvasImpl::removeMesh(MeshId meshId)
-{
-    debugCheck(mMeshes.contains(meshId.id), "removeMesh: unknown MeshId");
-    debugCheck(not mMeshes.at(meshId.id).isAutoQuad,
-               "removeMesh: cannot remove an engine-allocated auto-quad — it is owned by the canvas");
-
-    const bool wasRemoved = mMeshUsageMonitor.removeUnused(meshId);
-    debugCheck(wasRemoved, "Mesh is not in the unused set — still referenced by a bellota or already removed");
-
-    MeshPack& packToRemove = mMeshes.at(meshId.id);
-    if (packToRemove.dmeshOpt.has_value())
-        mBackend.freeMesh(packToRemove.dmeshOpt.value());
-    packToRemove.clear();
-    mMeshes.remove(meshId.id);
-}
-
-void Canvas::CanvasImpl::setMesh(const BellotaId bellotaId, const MeshId meshId)
-{
-    debugCheck(mMeshes.contains(meshId.id), "setMesh: unknown MeshId");
-    const Bellota& bellotaOriginal = bellota(bellotaId);
-    // Tile-map textures rely on the auto-quad UV invariant; custom meshes
-    // would produce nonsense cell lookups in the tile-map shader.
-    debugCheck(mTextures.at(bellotaOriginal.texture().id).mode != TextureMode::TileMap,
-               "setMesh: cannot attach a custom mesh to a bellota whose texture is in tile-map mode");
-
-    Bellota bellotaWithNewMesh(
-        bellotaOriginal.transform(),
-        bellotaOriginal.texture(),
-        meshId,
-        bellotaOriginal.depthOffset()
-    );
-    bellotaWithNewMesh.visible() = bellotaOriginal.visible();
-    bellotaWithNewMesh.currentLayer() = bellotaOriginal.currentLayer();
-    bellotaWithNewMesh.opacity() = bellotaOriginal.opacity();
-    replaceBellota(bellotaId, bellotaWithNewMesh);
-}
-
-const Mesh& Canvas::CanvasImpl::mesh(MeshId meshId) const
-{
-    debugCheck(mMeshes.contains(meshId.id), "mesh: unknown MeshId");
-    return mMeshes.at(meshId.id).mesh;
-}
-
-const Mesh& Canvas::CanvasImpl::mesh(BellotaId bellotaId) const
-{
-    const Bellota& target = bellota(bellotaId);
-    debugCheck(target.meshId().has_value(), "mesh(BellotaId): bellota has no MeshId — invariant broken");
-    return mesh(target.meshId().value());
-}
-
-void Canvas::CanvasImpl::clearUnusedMeshes()
-{
-    const std::unordered_set<MeshId> unusedMeshIdsCopy = mMeshUsageMonitor.getUnusedIds();
-    for (MeshId meshId : unusedMeshIdsCopy)
-    {
-        // Auto-quads use the same eligibility rules as user meshes; the isAutoQuad
-        // flag exists only to gate the public `removeMesh` entry point.
-        const bool wasRemoved = mMeshUsageMonitor.removeUnused(meshId);
-        debugCheck(wasRemoved, "clearUnusedMeshes: mesh disappeared from unused set unexpectedly");
-
-        MeshPack& packToRemove = mMeshes.at(meshId.id);
-        if (packToRemove.dmeshOpt.has_value())
-            mBackend.freeMesh(packToRemove.dmeshOpt.value());
-        packToRemove.clear();
-        mMeshes.remove(meshId.id);
-    }
-}
-
-void Canvas::CanvasImpl::setTexture(const BellotaId bellotaId, const TextureId textureId)
-{
-    const Bellota& bellotaOriginal = bellota(bellotaId);
-    const std::optional<MeshId>& meshIdOpt = bellotaOriginal.meshId();
-    debugCheck(meshIdOpt.has_value(), "BellotaPack is missing a MeshId — invariant broken");
-
-    const bool currentMeshIsAutoQuad = mMeshes.at(meshIdOpt.value().id).isAutoQuad;
-    // Switching to a tile-map texture is only valid when the bellota uses an
-    // auto-quad (which will be re-materialized below sized to the new texture).
-    // A user mesh's UVs can't satisfy the tile-map shader's cell-lookup invariant.
-    debugCheck(currentMeshIsAutoQuad or mTextures.at(textureId.id).mode != TextureMode::TileMap,
-               "setTexture: cannot switch a bellota with a custom mesh onto a tile-map texture");
-
-    Bellota bellotaWithNewTexture = currentMeshIsAutoQuad
-        // Auto-quad needs to be regenerated for the new texture size — drop the MeshId here;
-        // replaceBellota → addEntry path doesn't try to re-register an auto-quad, so we
-        // re-materialize it below.
-        ? Bellota(bellotaOriginal.transform(), textureId, bellotaOriginal.depthOffset())
-        : Bellota(bellotaOriginal.transform(), textureId, meshIdOpt.value(), bellotaOriginal.depthOffset());
-
-    bellotaWithNewTexture.visible() = bellotaOriginal.visible();
-    bellotaWithNewTexture.currentLayer() = bellotaOriginal.currentLayer();
-    bellotaWithNewTexture.opacity() = bellotaOriginal.opacity();
-
-    replaceBellota(bellotaId, bellotaWithNewTexture);
-}
-
-void Canvas::CanvasImpl::markTextureAsDirty(const TextureId textureId)
-{
-    TexturePack& texturePack = mTextures.at(textureId.id);
-    debugCheck(not texturePack.isProxy(), "markTextureAsDirty called on a render target proxy texture.");
-
-    if (texturePack.dpaletteTextureOpt.has_value())
-        mBackend.freePaletteTexture(texturePack.dpaletteTextureOpt.value());
-    if (texturePack.dmapTextureOpt.has_value())
-        mBackend.freeTileMapTexture(texturePack.dmapTextureOpt.value());
-    if (texturePack.dtextureOpt.has_value())
-        mBackend.freeTexture(texturePack.dtextureOpt.value());
-    texturePack.clear();
-}
-
-void Canvas::CanvasImpl::setTextureMinFilter(const TextureId textureId, TextureSampleMode mode)
-{
-    TexturePack& texturePack = mTextures.at(textureId.id);
-    texturePack.minFilter = mode;
-    // Indirect index textures require GL_NEAREST — skip filter updates for them.
-    if (texturePack.mode == TextureMode::Indirect) return;
-    if (texturePack.dtextureOpt.has_value())
-        mBackend.setTextureMinFilter(texturePack.dtextureOpt.value(), mode);
-}
-
-void Canvas::CanvasImpl::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)
-{
-    TexturePack& texturePack = mTextures.at(textureId.id);
-    texturePack.magFilter = mode;
-    // Indirect index textures require GL_NEAREST — skip filter updates for them.
-    if (texturePack.mode == TextureMode::Indirect) return;
-    if (texturePack.dtextureOpt.has_value())
-        mBackend.setTextureMagFilter(texturePack.dtextureOpt.value(), mode);
-}
-
-RenderTargetId Canvas::CanvasImpl::addRenderTarget(ScreenSize size)
-{
-    const glm::ivec2 texSize{static_cast<int>(size.width), static_cast<int>(size.height)};
-
-    // Register a proxy TexturePack so bellotas can reference the render target like any other texture.
-    TexturePack proxyPack;
-    proxyPack.texture = std::nullopt;
-    proxyPack.dtextureOpt = std::nullopt;
-    proxyPack.mTextureSize = texSize;
-    TextureId proxyTexId{mTextures.add(proxyPack)};
-    mTextureUsageMonitor.addUnused(proxyTexId);
-
-    RenderTargetPack renderTargetPack;
-    renderTargetPack.renderTarget = RenderTarget{texSize, proxyTexId};
-    renderTargetPack.dRenderTargetOpt = std::nullopt;
-    RenderTargetId newId{mRenderTargets.add(renderTargetPack)};
-
-    return newId;
-}
+RenderTargetId Canvas::CanvasImpl::addRenderTarget(ScreenSize size)                       { return mAssets.addRenderTarget(size); }
 
 void Canvas::CanvasImpl::removeRenderTarget(RenderTargetId renderTargetId)
 {
-    RenderTargetPack& renderTargetPack = mRenderTargets.at(renderTargetId.id);
-    const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
-
-    // Tear down the secondary ImGui context for this RTT, if one was created.
-    // Must happen before mBackend.freeRenderTarget — the per-context backend
-    // owns GPU resources tied to the RTT's render pass / FBO.
+    // Tear down the secondary ImGui context for this RTT first — its per-context
+    // backend owns GPU resources tied to the RTT's render pass / FBO, which the
+    // registry's removeRenderTarget call is about to free.
     mImguiRtt.releaseContext(renderTargetId);
-
-    if (renderTargetPack.dRenderTargetOpt.has_value())
-    {
-        const TexturePack& proxyPack = mTextures.at(proxyTexId.id);
-        debugCheck(proxyPack.dtextureOpt.has_value(), "Render target initialized but proxy texture not initialized");
-        mBackend.freeRenderTarget(
-            renderTargetPack.dRenderTargetOpt.value(),
-            proxyPack.dtextureOpt.value()
-        );
-    }
-    renderTargetPack.clear();
-
-    mTextures.remove(proxyTexId.id);
-
-    // Remove from usage monitor if currently unused (i.e. no bellotas reference it).
-    mTextureUsageMonitor.removeUnused(proxyTexId);
-
-    mRenderTargets.remove(renderTargetId.id);
+    mAssets.removeRenderTarget(renderTargetId);
 }
 
-TextureId Canvas::CanvasImpl::renderTargetTexture(RenderTargetId renderTargetId) const
-{
-    return mRenderTargets.at(renderTargetId.id).renderTarget.mProxyTextureId;
-}
+TextureId Canvas::CanvasImpl::renderTargetTexture(RenderTargetId renderTargetId) const    { return mAssets.renderTargetTexture(renderTargetId); }
+void Canvas::CanvasImpl::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor) { mAssets.setRenderTargetClearColor(renderTargetId, clearColor); }
 
-TilemapId Canvas::CanvasImpl::addTilemap(Tilemap tilemap)
-{
-    return mTilemapManager.add(std::move(tilemap));
-}
+// ---------------------------------------------------------------------------
+// Tilemap forwarders
+// ---------------------------------------------------------------------------
 
-void Canvas::CanvasImpl::removeTilemap(TilemapId tilemapId)
-{
-    mTilemapManager.remove(tilemapId);
-}
+TilemapId Canvas::CanvasImpl::addTilemap(Tilemap tilemap)                                          { return mTilemapManager.add(std::move(tilemap)); }
+void Canvas::CanvasImpl::removeTilemap(TilemapId tilemapId)                                        { mTilemapManager.remove(tilemapId); }
+Tilemap& Canvas::CanvasImpl::tilemap(TilemapId tilemapId)                                          { return mTilemapManager.get(tilemapId); }
+const Tilemap& Canvas::CanvasImpl::tilemap(TilemapId tilemapId) const                              { return mTilemapManager.get(tilemapId); }
+TilemapExplorerId Canvas::CanvasImpl::addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas) { return mTilemapManager.addExplorer(explorer, canvas); }
+void Canvas::CanvasImpl::removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas)       { mTilemapManager.removeExplorer(explorerId, canvas); }
+TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId explorerId)                 { return mTilemapManager.getExplorer(explorerId); }
+const TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId explorerId) const     { return mTilemapManager.getExplorer(explorerId); }
 
-Tilemap& Canvas::CanvasImpl::tilemap(TilemapId tilemapId)
-{
-    return mTilemapManager.get(tilemapId);
-}
+// ---------------------------------------------------------------------------
+// Sparsemap forwarders
+// ---------------------------------------------------------------------------
 
-const Tilemap& Canvas::CanvasImpl::tilemap(TilemapId tilemapId) const
-{
-    return mTilemapManager.get(tilemapId);
-}
+SparsemapId Canvas::CanvasImpl::addSparsemap(Sparsemap sparsemap)                                          { return mSparsemapManager.add(std::move(sparsemap)); }
+void Canvas::CanvasImpl::removeSparsemap(SparsemapId sparsemapId)                                          { mSparsemapManager.remove(sparsemapId); }
+Sparsemap& Canvas::CanvasImpl::sparsemap(SparsemapId sparsemapId)                                          { return mSparsemapManager.get(sparsemapId); }
+const Sparsemap& Canvas::CanvasImpl::sparsemap(SparsemapId sparsemapId) const                              { return mSparsemapManager.get(sparsemapId); }
+SparsemapExplorerId Canvas::CanvasImpl::addSparsemapExplorer(SparsemapExplorer explorer, Canvas& canvas)   { return mSparsemapManager.addExplorer(explorer, canvas); }
+void Canvas::CanvasImpl::removeSparsemapExplorer(SparsemapExplorerId explorerId, Canvas& canvas)           { mSparsemapManager.removeExplorer(explorerId, canvas); }
+SparsemapExplorer& Canvas::CanvasImpl::sparsemapExplorer(SparsemapExplorerId explorerId)                   { return mSparsemapManager.getExplorer(explorerId); }
+const SparsemapExplorer& Canvas::CanvasImpl::sparsemapExplorer(SparsemapExplorerId explorerId) const       { return mSparsemapManager.getExplorer(explorerId); }
 
-TilemapExplorerId Canvas::CanvasImpl::addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas)
-{
-    return mTilemapManager.addExplorer(explorer, canvas);
-}
-
-void Canvas::CanvasImpl::removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas)
-{
-    mTilemapManager.removeExplorer(explorerId, canvas);
-}
-
-TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId explorerId)
-{
-    return mTilemapManager.getExplorer(explorerId);
-}
-
-const TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId explorerId) const
-{
-    return mTilemapManager.getExplorer(explorerId);
-}
-
-SparsemapId Canvas::CanvasImpl::addSparsemap(Sparsemap sparsemap)
-{
-    return mSparsemapManager.add(std::move(sparsemap));
-}
-
-void Canvas::CanvasImpl::removeSparsemap(SparsemapId sparsemapId)
-{
-    mSparsemapManager.remove(sparsemapId);
-}
-
-Sparsemap& Canvas::CanvasImpl::sparsemap(SparsemapId sparsemapId)
-{
-    return mSparsemapManager.get(sparsemapId);
-}
-
-const Sparsemap& Canvas::CanvasImpl::sparsemap(SparsemapId sparsemapId) const
-{
-    return mSparsemapManager.get(sparsemapId);
-}
-
-SparsemapExplorerId Canvas::CanvasImpl::addSparsemapExplorer(SparsemapExplorer explorer, Canvas& canvas)
-{
-    return mSparsemapManager.addExplorer(explorer, canvas);
-}
-
-void Canvas::CanvasImpl::removeSparsemapExplorer(SparsemapExplorerId explorerId, Canvas& canvas)
-{
-    mSparsemapManager.removeExplorer(explorerId, canvas);
-}
-
-SparsemapExplorer& Canvas::CanvasImpl::sparsemapExplorer(SparsemapExplorerId explorerId)
-{
-    return mSparsemapManager.getExplorer(explorerId);
-}
-
-const SparsemapExplorer& Canvas::CanvasImpl::sparsemapExplorer(SparsemapExplorerId explorerId) const
-{
-    return mSparsemapManager.getExplorer(explorerId);
-}
+// ---------------------------------------------------------------------------
+// RTT pass / ImGui-to-RTT scheduling
+// ---------------------------------------------------------------------------
 
 void Canvas::CanvasImpl::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)
 {
@@ -645,40 +289,17 @@ void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiFontI
         });
 }
 
-ImguiFontSourceId Canvas::CanvasImpl::addImguiFontSource(std::span<const std::byte> ttfBytes, GlyphRange glyphRange)
-{
-    return mImguiRtt.fonts().addSource(ttfBytes, glyphRange);
-}
+// ---------------------------------------------------------------------------
+// ImGui font forwarders
+// ---------------------------------------------------------------------------
 
-void Canvas::CanvasImpl::removeImguiFontSource(ImguiFontSourceId sourceId)
-{
-    mImguiRtt.fonts().removeSource(sourceId);
-}
-
-ImguiFontSourceId Canvas::CanvasImpl::defaultImguiFontSourceId() const
-{
-    return mImguiRtt.fonts().defaultSourceId();
-}
-
-ImguiFontId Canvas::CanvasImpl::bakeImguiFont(ImguiFontSourceId sourceId, float sizePx)
-{
-    return mImguiRtt.fonts().bake(sourceId, sizePx);
-}
-
-void Canvas::CanvasImpl::removeImguiFont(ImguiFontId id)
-{
-    mImguiRtt.fonts().remove(id);
-}
-
-bool Canvas::CanvasImpl::isImguiFontReady(ImguiFontId id) const
-{
-    return mImguiRtt.fonts().get(id) != nullptr;
-}
-
-ImFont* Canvas::CanvasImpl::getImguiFontPtr(ImguiFontId id) const
-{
-    return mImguiRtt.fonts().get(id);   // null when unknown or bake still pending
-}
+ImguiFontSourceId Canvas::CanvasImpl::addImguiFontSource(std::span<const std::byte> ttfBytes, GlyphRange glyphRange) { return mImguiRtt.fonts().addSource(ttfBytes, glyphRange); }
+void Canvas::CanvasImpl::removeImguiFontSource(ImguiFontSourceId sourceId)                                          { mImguiRtt.fonts().removeSource(sourceId); }
+ImguiFontSourceId Canvas::CanvasImpl::defaultImguiFontSourceId() const                                              { return mImguiRtt.fonts().defaultSourceId(); }
+ImguiFontId Canvas::CanvasImpl::bakeImguiFont(ImguiFontSourceId sourceId, float sizePx)                             { return mImguiRtt.fonts().bake(sourceId, sizePx); }
+void Canvas::CanvasImpl::removeImguiFont(ImguiFontId id)                                                            { mImguiRtt.fonts().remove(id); }
+bool Canvas::CanvasImpl::isImguiFontReady(ImguiFontId id) const                                                     { return mImguiRtt.fonts().get(id) != nullptr; }
+ImFont* Canvas::CanvasImpl::getImguiFontPtr(ImguiFontId id) const                                                   { return mImguiRtt.fonts().get(id); }
 
 void Canvas::CanvasImpl::pushImguiFont(ImguiFontId id)
 {
@@ -701,56 +322,8 @@ ImguiFontId Canvas::CanvasImpl::defaultImguiFontId() const
     return *idOpt;
 }
 
-void Canvas::CanvasImpl::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
-{
-    mRenderTargets.at(renderTargetId.id).renderTarget.mClearColor = clearColor;
-}
-
-void Canvas::CanvasImpl::setTint(const BellotaId bellotaId, const Tint& tint)
-{
-    debugCheck(mBellotas.contains(bellotaId.id), "There is no Bellota associated with the BellotaId provided");
-
-    BellotaPack& bellotaPack = mBellotas.at(bellotaId.id);
-    bellotaPack.tintOpt = tint;
-}
-
-void Canvas::CanvasImpl::removeTint(const BellotaId bellotaId)
-{
-    debugCheck(mBellotas.contains(bellotaId.id), "There is no Bellota associated with the BellotaId provided");
-
-    BellotaPack& bellotaPack = mBellotas.at(bellotaId.id);
-    bellotaPack.tintOpt = std::nullopt;
-}
-
-Bellota& Canvas::CanvasImpl::bellota(BellotaId bellotaId)
-{
-    return mBellotas.at(bellotaId.id).bellota;
-}
-
-const Bellota& Canvas::CanvasImpl::bellota(BellotaId bellotaId) const
-{
-    return mBellotas.at(bellotaId.id).bellota;
-}
-
-Texture& Canvas::CanvasImpl::texture(TextureId textureId)
-{
-    return mTextures.at(textureId.id).texture.value();
-}
-
-const Texture& Canvas::CanvasImpl::texture(TextureId textureId) const
-{
-    return mTextures.at(textureId.id).texture.value();
-}
-
-bool& Canvas::CanvasImpl::stats()
-{
-    return mStats;
-}
-
-const bool& Canvas::CanvasImpl::stats() const
-{
-    return mStats;
-}
+bool& Canvas::CanvasImpl::stats()                                           { return mStats; }
+const bool& Canvas::CanvasImpl::stats() const                               { return mStats; }
 
 DirectTexture Canvas::CanvasImpl::takeScreenshot() const
 {
@@ -761,13 +334,16 @@ DirectTexture Canvas::CanvasImpl::takeScreenshot() const
     return DirectTexture(std::move(textureData));
 }
 
+// ---------------------------------------------------------------------------
+// Frame loop
+// ---------------------------------------------------------------------------
 
 void Canvas::CanvasImpl::ensureSessionStarted(Controller& controller)
 {
     if (mSessionStarted)
         return;
     mWindow->beginSession(controller);
-    mSortedBellotaPacks.reserve(mBellotas.size() * 2);
+    mSortedBellotaPacks.reserve(mAssets.bellotas().size() * 2);
     mSessionStarted = true;
 }
 
@@ -823,6 +399,32 @@ static void sortByDepthOffset(const BellotaContainer& bellotas, std::vector<cons
     );
 }
 
+static void drawBellotaPacks(
+    std::span<const BellotaPack* const> sortedBellotaPacks,
+    const TextureContainer& textures,
+    const MeshContainer& meshes,
+    const glm::mat3& worldTransform,
+    ActiveBackend& backend)
+{
+    for (const BellotaPack* packPtr : sortedBellotaPacks)
+    {
+        if (!packPtr->bellota.visible()) continue;
+        if (!packPtr->bellota.meshId().has_value()) continue;
+        const MeshPack& meshPack = meshes.at(packPtr->bellota.meshId().value().id);
+        if (!meshPack.dmeshOpt.has_value()) continue;
+        const TexturePack& texturePack = textures.at(packPtr->bellota.texture().id);
+        if (!texturePack.dtextureOpt.has_value()) continue;
+        SpriteDrawParams drawParams = makeSpriteDrawParams(*packPtr, worldTransform);
+        drawParams.mode = texturePack.mode;
+        if ((texturePack.mode == TextureMode::Indirect || texturePack.mode == TextureMode::TileMap)
+            && texturePack.dpaletteTextureOpt.has_value())
+            drawParams.paletteTexture = texturePack.dpaletteTextureOpt.value();
+        if (texturePack.mode == TextureMode::TileMap && texturePack.dmapTextureOpt.has_value())
+            drawParams.mapTexture = texturePack.dmapTextureOpt.value();
+        backend.drawSprite(meshPack.dmeshOpt.value(), texturePack.dtextureOpt.value(), drawParams);
+    }
+}
+
 void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ZoneScopedN("runOneFrame");
@@ -868,14 +470,14 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
     const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
 
     if (mAutoTextureGC)
-        clearUnusedTextures();
+        mAssets.clearUnusedTextures();
 
     if (mAutoMeshGC)
-        clearUnusedMeshes();
+        mAssets.clearUnusedMeshes();
 
     {
         ZoneScopedN("TextureUpload");
-        for (auto& [textureIndex, texturePack] : mTextures)
+        for (auto& [textureIndex, texturePack] : mAssets.textures())
         {
             const bool isIndirectOrTileMap =
                 texturePack.mode == TextureMode::Indirect ||
@@ -955,21 +557,21 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
         }
     }
 
-    for (auto& [renderTargetIndex, renderTargetPack] : mRenderTargets)
+    for (auto& [renderTargetIndex, renderTargetPack] : mAssets.renderTargets())
     {
         if (renderTargetPack.isDirty())
         {
             const glm::ivec2 renderTargetSize = renderTargetPack.renderTarget.mSize;
             renderTargetPack.dRenderTargetOpt = mBackend.createRenderTarget(renderTargetSize);
             const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
-            mTextures.at(proxyTexId.id).dtextureOpt =
+            mAssets.textures().at(proxyTexId.id).dtextureOpt =
                 mBackend.getRenderTargetTexture(renderTargetPack.dRenderTargetOpt.value());
         }
     }
 
     {
         ZoneScopedN("MeshUpload");
-        for (auto& [meshIndex, meshPack] : mMeshes)
+        for (auto& [meshIndex, meshPack] : mAssets.meshes())
         {
             if (meshPack.isDirty())
                 meshPack.dmeshOpt = mBackend.uploadMesh(meshPack.mesh);
@@ -978,7 +580,7 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
 
     {
         ZoneScopedN("DepthSort");
-        sortByDepthOffset(mBellotas, mSortedBellotaPacks);
+        sortByDepthOffset(mAssets.bellotas(), mSortedBellotaPacks);
     }
 
     {
@@ -987,10 +589,10 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
         // before drawing to the main framebuffer.
         for (auto& [renderTargetId, bellotaIds] : mPendingRttPasses)
         {
-            if (not mRenderTargets.contains(renderTargetId.id))
+            if (not mAssets.renderTargets().contains(renderTargetId.id))
                 continue;
 
-            RenderTargetPack& renderTargetPack = mRenderTargets.at(renderTargetId.id);
+            RenderTargetPack& renderTargetPack = mAssets.renderTargets().at(renderTargetId.id);
             if (not renderTargetPack.dRenderTargetOpt.has_value())
                 continue;
 
@@ -1008,8 +610,8 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
             std::vector<const BellotaPack*> renderTargetSortedPacks;
             for (const BellotaId bellotaId : bellotaIds)
             {
-                if (mBellotas.contains(bellotaId.id))
-                    renderTargetSortedPacks.push_back(&mBellotas.at(bellotaId.id));
+                if (mAssets.bellotas().contains(bellotaId.id))
+                    renderTargetSortedPacks.push_back(&mAssets.bellotas().at(bellotaId.id));
             }
             std::sort(renderTargetSortedPacks.begin(), renderTargetSortedPacks.end(),
                 [](const BellotaPack* lhs, const BellotaPack* rhs)
@@ -1018,23 +620,7 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
                 }
             );
 
-            for (const BellotaPack* packPtr : renderTargetSortedPacks)
-            {
-                if (!packPtr->bellota.visible()) continue;
-                if (!packPtr->bellota.meshId().has_value()) continue;
-                const MeshPack& meshPack = mMeshes.at(packPtr->bellota.meshId().value().id);
-                if (!meshPack.dmeshOpt.has_value()) continue;
-                const TexturePack& texturePack = mTextures.at(packPtr->bellota.texture().id);
-                if (!texturePack.dtextureOpt.has_value()) continue;
-                SpriteDrawParams drawParams = makeSpriteDrawParams(*packPtr, renderTargetWorldTransform);
-                drawParams.mode = texturePack.mode;
-                if ((texturePack.mode == TextureMode::Indirect || texturePack.mode == TextureMode::TileMap)
-                    && texturePack.dpaletteTextureOpt.has_value())
-                    drawParams.paletteTexture = texturePack.dpaletteTextureOpt.value();
-                if (texturePack.mode == TextureMode::TileMap && texturePack.dmapTextureOpt.has_value())
-                    drawParams.mapTexture = texturePack.dmapTextureOpt.value();
-                mBackend.drawSprite(meshPack.dmeshOpt.value(), texturePack.dtextureOpt.value(), drawParams);
-            }
+            drawBellotaPacks(renderTargetSortedPacks, mAssets.textures(), mAssets.meshes(), renderTargetWorldTransform, mBackend);
 
             mBackend.endRttPass();
         }
@@ -1051,23 +637,7 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
 
     {
         ZoneScopedN("MainDraw");
-        for (const BellotaPack* packPtr : mSortedBellotaPacks)
-        {
-            if (!packPtr->bellota.visible()) continue;
-            if (!packPtr->bellota.meshId().has_value()) continue;
-            const MeshPack& meshPack = mMeshes.at(packPtr->bellota.meshId().value().id);
-            if (!meshPack.dmeshOpt.has_value()) continue;
-            const TexturePack& texturePack = mTextures.at(packPtr->bellota.texture().id);
-            if (!texturePack.dtextureOpt.has_value()) continue;
-            SpriteDrawParams drawParams = makeSpriteDrawParams(*packPtr, worldTransformMat);
-            drawParams.mode = texturePack.mode;
-            if ((texturePack.mode == TextureMode::Indirect || texturePack.mode == TextureMode::TileMap)
-                && texturePack.dpaletteTextureOpt.has_value())
-                drawParams.paletteTexture = texturePack.dpaletteTextureOpt.value();
-            if (texturePack.mode == TextureMode::TileMap && texturePack.dmapTextureOpt.has_value())
-                drawParams.mapTexture = texturePack.dmapTextureOpt.value();
-            mBackend.drawSprite(meshPack.dmeshOpt.value(), texturePack.dtextureOpt.value(), drawParams);
-        }
+        drawBellotaPacks(mSortedBellotaPacks, mAssets.textures(), mAssets.meshes(), worldTransformMat, mBackend);
     }
 
     if (mStats)
@@ -1102,7 +672,7 @@ void Canvas::CanvasImpl::run(Canvas& canvas, std::function<void(float deltaTime)
     mWindow->beginSession(controller);
     if (!mSessionStarted)
     {
-        mSortedBellotaPacks.reserve(mBellotas.size() * 2);
+        mSortedBellotaPacks.reserve(mAssets.bellotas().size() * 2);
         mSessionStarted = true;
     }
 
@@ -1135,45 +705,6 @@ void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS)
 void Canvas::CanvasImpl::close()
 {
     mWindow->requestClose();
-}
-
-void Canvas::CanvasImpl::replaceBellota(const BellotaId bellotaId, const Bellota& newBellota)
-{
-    BellotaPack& bellotaPack = mBellotas.at(bellotaId.id);
-
-    TextureId textureIdToReplace = bellotaPack.bellota.texture();
-    const bool oldTextureEntryRemoved = mTextureUsageMonitor.removeEntry(bellotaId, textureIdToReplace);
-    debugCheck(oldTextureEntryRemoved, "Failed to remove old texture entry from usage monitor during bellota replacement");
-
-    TextureId newTextureId = newBellota.texture();
-    const bool newTextureEntryAdded = mTextureUsageMonitor.addEntry(bellotaId, newTextureId);
-    debugCheck(newTextureEntryAdded, "Failed to add new texture entry to usage monitor during bellota replacement");
-
-    // Mesh-usage shuffle. Two cases:
-    //   * new bellota has explicit MeshId — drop the old MeshId, register the new one
-    //   * new bellota has no MeshId — caller (setTexture) wants a fresh auto-quad
-    //     sized to the new texture; materialise it now and stamp the bellota copy
-    const std::optional<MeshId>& oldMeshIdOpt = bellotaPack.bellota.meshId();
-    debugCheck(oldMeshIdOpt.has_value(), "BellotaPack is missing a MeshId — invariant broken");
-    const MeshId oldMeshId = oldMeshIdOpt.value();
-    const bool oldMeshEntryRemoved = mMeshUsageMonitor.removeEntry(bellotaId, oldMeshId);
-    debugCheck(oldMeshEntryRemoved, "Failed to remove old mesh entry from usage monitor during bellota replacement");
-
-    Bellota stampedNewBellota = newBellota;
-    if (not stampedNewBellota.meshId().has_value())
-    {
-        const MeshId autoQuadId = materializeAutoQuad(stampedNewBellota);
-        stampedNewBellota.meshId() = autoQuadId;
-    }
-    else
-    {
-        debugCheck(mMeshes.contains(stampedNewBellota.meshId().value().id),
-                   "Replacement bellota references a MeshId that is not registered");
-    }
-    const bool newMeshEntryAdded = mMeshUsageMonitor.addEntry(bellotaId, stampedNewBellota.meshId().value());
-    debugCheck(newMeshEntryAdded, "Failed to add new mesh entry to usage monitor during bellota replacement");
-
-    bellotaPack.bellota = stampedNewBellota;
 }
 
 ScreenSize getPrimaryMonitorSize()
