@@ -136,31 +136,6 @@ void Canvas::CanvasImpl::setWindowed()
     mWindow->setWindowed(mLastWindowedAABox);
 }
 
-const ScreenSize& Canvas::CanvasImpl::screenSize() const
-{
-    return mScreenSize;
-}
-
-void Canvas::CanvasImpl::setScreenSize(const ScreenSize& screenSize)
-{
-    mScreenSize = screenSize;
-}
-
-void Canvas::CanvasImpl::setClearColor(glm::vec3 clearColor)
-{
-    mClearColor = clearColor;
-}
-
-void Canvas::CanvasImpl::setAutoRemoveUnusedTextures(bool enabled)
-{
-    mAutoTextureGC = enabled;
-}
-
-void Canvas::CanvasImpl::setAutoRemoveUnusedMeshes(bool enabled)
-{
-    mAutoMeshGC = enabled;
-}
-
 void Canvas::CanvasImpl::setWindowTitle(const std::string& title)
 {
     mTitle = title;
@@ -173,15 +148,12 @@ ScreenSize Canvas::CanvasImpl::windowSize() const
     return mWindow->getWindowSize();
 }
 
-ViewportRect Canvas::CanvasImpl::gameViewport() const { return mGameViewport; }
-
 // ---------------------------------------------------------------------------
-// Asset forwarders — most map straight onto AssetRegistry. The remove paths
-// that interact with TilemapExplorer pools or the per-RTT ImGui contexts
-// keep their gates here before forwarding.
+// Asset/font remove paths with cross-cutting gates. Plain forwarders are
+// inlined in canvas_impl.h directly onto AssetRegistry / TilemapManager /
+// mImguiRtt.fonts(); only the methods that layer a check or need imgui.h
+// stay here.
 // ---------------------------------------------------------------------------
-
-BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)            { return mAssets.addBellota(bellota); }
 
 void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
 {
@@ -190,35 +162,12 @@ void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
     mAssets.removeBellota(bellotaId);
 }
 
-Bellota& Canvas::CanvasImpl::bellota(BellotaId bellotaId)                   { return mAssets.bellota(bellotaId); }
-const Bellota& Canvas::CanvasImpl::bellota(BellotaId bellotaId) const       { return mAssets.bellota(bellotaId); }
-void Canvas::CanvasImpl::setTint(BellotaId bellotaId, const Tint& tint)     { mAssets.setTint(bellotaId, tint); }
-void Canvas::CanvasImpl::removeTint(BellotaId bellotaId)                    { mAssets.removeTint(bellotaId); }
-
-TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)            { return mAssets.addTexture(texture); }
-
 void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 {
     debugCheck(!mTilemapManager.isExplorerManagedTexture(textureId.id),
         "Texture is owned by a TilemapExplorer pool — use canvas.removeTilemapExplorer() instead of removing slot textures directly.");
     mAssets.removeTexture(textureId);
 }
-
-void Canvas::CanvasImpl::setTexture(BellotaId bellotaId, TextureId textureId)            { mAssets.setTexture(bellotaId, textureId); }
-void Canvas::CanvasImpl::markTextureAsDirty(TextureId textureId)                          { mAssets.markTextureAsDirty(textureId); }
-void Canvas::CanvasImpl::setTextureMinFilter(TextureId textureId, TextureSampleMode mode) { mAssets.setTextureMinFilter(textureId, mode); }
-void Canvas::CanvasImpl::setTextureMagFilter(TextureId textureId, TextureSampleMode mode) { mAssets.setTextureMagFilter(textureId, mode); }
-Texture& Canvas::CanvasImpl::texture(TextureId textureId)                                 { return mAssets.texture(textureId); }
-const Texture& Canvas::CanvasImpl::texture(TextureId textureId) const                     { return mAssets.texture(textureId); }
-
-MeshId Canvas::CanvasImpl::addMesh(const Mesh& mesh)                                      { return mAssets.addMesh(mesh); }
-MeshId Canvas::CanvasImpl::addMesh(Mesh&& mesh)                                           { return mAssets.addMesh(std::move(mesh)); }
-void Canvas::CanvasImpl::removeMesh(MeshId meshId)                                        { mAssets.removeMesh(meshId); }
-void Canvas::CanvasImpl::setMesh(BellotaId bellotaId, MeshId meshId)                      { mAssets.setMesh(bellotaId, meshId); }
-const Mesh& Canvas::CanvasImpl::mesh(MeshId meshId) const                                 { return mAssets.mesh(meshId); }
-const Mesh& Canvas::CanvasImpl::mesh(BellotaId bellotaId) const                           { return mAssets.mesh(bellotaId); }
-
-RenderTargetId Canvas::CanvasImpl::addRenderTarget(ScreenSize size)                       { return mAssets.addRenderTarget(size); }
 
 void Canvas::CanvasImpl::removeRenderTarget(RenderTargetId renderTargetId)
 {
@@ -227,31 +176,6 @@ void Canvas::CanvasImpl::removeRenderTarget(RenderTargetId renderTargetId)
     // registry's removeRenderTarget call is about to free.
     mImguiRtt.releaseContext(renderTargetId);
     mAssets.removeRenderTarget(renderTargetId);
-}
-
-TextureId Canvas::CanvasImpl::renderTargetTexture(RenderTargetId renderTargetId) const    { return mAssets.renderTargetTexture(renderTargetId); }
-void Canvas::CanvasImpl::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor) { mAssets.setRenderTargetClearColor(renderTargetId, clearColor); }
-
-// ---------------------------------------------------------------------------
-// Tilemap forwarders
-// ---------------------------------------------------------------------------
-
-TilemapId Canvas::CanvasImpl::addTilemap(Tilemap tilemap)                                  { return mTilemapManager.addTilemap(std::move(tilemap)); }
-void Canvas::CanvasImpl::removeTilemap(TilemapId tilemapId)                                { mTilemapManager.removeTilemap(tilemapId); }
-Tilemap& Canvas::CanvasImpl::tilemap(TilemapId tilemapId)                                  { return mTilemapManager.tilemap(tilemapId); }
-const Tilemap& Canvas::CanvasImpl::tilemap(TilemapId tilemapId) const                      { return mTilemapManager.tilemap(tilemapId); }
-TilemapExplorerId Canvas::CanvasImpl::addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas) { return mTilemapManager.addTilemapExplorer(explorer, canvas); }
-void Canvas::CanvasImpl::removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas)       { mTilemapManager.removeTilemapExplorer(explorerId, canvas); }
-TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId explorerId)                 { return mTilemapManager.tilemapExplorer(explorerId); }
-const TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId explorerId) const     { return mTilemapManager.tilemapExplorer(explorerId); }
-
-// ---------------------------------------------------------------------------
-// RTT pass / ImGui-to-RTT scheduling
-// ---------------------------------------------------------------------------
-
-void Canvas::CanvasImpl::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)
-{
-    mPendingRttPasses.emplace_back(renderTargetId, std::move(bellotaIds));
 }
 
 void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback)
@@ -274,18 +198,6 @@ void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiFontI
         });
 }
 
-// ---------------------------------------------------------------------------
-// ImGui font forwarders
-// ---------------------------------------------------------------------------
-
-ImguiFontSourceId Canvas::CanvasImpl::addImguiFontSource(std::span<const std::byte> ttfBytes, GlyphRange glyphRange) { return mImguiRtt.fonts().addSource(ttfBytes, glyphRange); }
-void Canvas::CanvasImpl::removeImguiFontSource(ImguiFontSourceId sourceId)                                          { mImguiRtt.fonts().removeSource(sourceId); }
-ImguiFontSourceId Canvas::CanvasImpl::defaultImguiFontSourceId() const                                              { return mImguiRtt.fonts().defaultSourceId(); }
-ImguiFontId Canvas::CanvasImpl::bakeImguiFont(ImguiFontSourceId sourceId, float sizePx)                             { return mImguiRtt.fonts().bake(sourceId, sizePx); }
-void Canvas::CanvasImpl::removeImguiFont(ImguiFontId id)                                                            { mImguiRtt.fonts().remove(id); }
-bool Canvas::CanvasImpl::isImguiFontReady(ImguiFontId id) const                                                     { return mImguiRtt.fonts().get(id) != nullptr; }
-ImFont* Canvas::CanvasImpl::getImguiFontPtr(ImguiFontId id) const                                                   { return mImguiRtt.fonts().get(id); }
-
 void Canvas::CanvasImpl::pushImguiFont(ImguiFontId id)
 {
     ImFont* font = getImguiFontPtr(id);
@@ -306,9 +218,6 @@ ImguiFontId Canvas::CanvasImpl::defaultImguiFontId() const
         "Canvas::defaultImguiFontId: no default font registered (CanvasImpl ctor seeds this — should never fire)");
     return *idOpt;
 }
-
-bool& Canvas::CanvasImpl::stats()                                           { return mStats; }
-const bool& Canvas::CanvasImpl::stats() const                               { return mStats; }
 
 DirectTexture Canvas::CanvasImpl::takeScreenshot() const
 {
