@@ -121,6 +121,11 @@ std::uint8_t Sparsemap::cell(glm::ivec2 worldCell) const
     return it->second.cells[localIdx];
 }
 
+bool Sparsemap::chunkInBounds(glm::ivec2 chunkPos) const
+{
+    return mChunks.contains(chunkPos);
+}
+
 void Sparsemap::chunkDataInto(glm::ivec2 chunkPos, std::span<std::uint8_t> out) const
 {
     const std::size_t cellsPerChunk =

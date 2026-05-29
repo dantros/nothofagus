@@ -36,20 +36,11 @@ public:
     std::uint8_t cell(glm::ivec2 worldCell) const;
 
     /// True iff `worldCell` lies inside `[0, mapSize.x) × [0, mapSize.y)`.
-    bool inBounds(glm::ivec2 worldCell) const
-    {
-        const glm::ivec2 size = mCache.mapSize();
-        return worldCell.x >= 0 && worldCell.x < size.x
-            && worldCell.y >= 0 && worldCell.y < size.y;
-    }
+    bool inBounds(glm::ivec2 worldCell) const;
 
     /// True iff `chunkPos` lies inside `[0, chunkGridSize.x) × [0, chunkGridSize.y)`.
     /// Satisfies the `TilemapLike` concept; for dense maps every in-grid chunk exists.
-    bool chunkInBounds(glm::ivec2 chunkPos) const
-    {
-        return chunkPos.x >= 0 && chunkPos.x < mChunkGridSize.x
-            && chunkPos.y >= 0 && chunkPos.y < mChunkGridSize.y;
-    }
+    bool chunkInBounds(glm::ivec2 chunkPos) const;
 
     glm::ivec2 mapSize()        const { return mCache.mapSize(); }
     glm::ivec2 chunkSize()      const { return mChunkSize; }
