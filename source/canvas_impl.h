@@ -4,11 +4,7 @@
 #include "tilemap.h"
 #include "tilemap_explorer.h"
 #include "tilemap_manager.h"
-#include "texture_container.h"
-#include "bellota_container.h"
-#include "mesh_container.h"
-#include "render_target_container.h"
-#include "resource_usage_monitor.h"
+#include "asset_registry.h"
 #include "imgui_rtt_manager.h"
 #include "imgui_font_source_id.h"
 #include "aa_box.h"
@@ -22,9 +18,6 @@ struct ImFont;
 
 namespace Nothofagus
 {
-
-using TextureUsageMonitor = ResourceUsageMonitor<TextureId>;
-using MeshUsageMonitor    = ResourceUsageMonitor<MeshId>;
 
 /**
  * @class Canvas::CanvasImpl
@@ -247,11 +240,6 @@ public:
     DirectTexture takeScreenshot() const;
 
 private:
-    void replaceBellota(const BellotaId bellotaId, const Bellota& bellota);
-    void clearUnusedTextures();
-    void clearUnusedMeshes();
-    /// Allocate, register and stamp a fresh auto-quad MeshId sized to the bellota's texture.
-    MeshId materializeAutoQuad(const Bellota& bellota);
     void ensureSessionStarted(Controller& controller);
     void runOneFrame(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
@@ -260,24 +248,24 @@ private:
     glm::vec3 mClearColor; ///< The background color of the canvas.
     unsigned int mPixelSize; ///< The pixel size on the canvas.
 
-    TextureContainer mTextures; ///< Container for Texture objects.
-    BellotaContainer mBellotas; ///< Container for Bellota objects.
-    MeshContainer mMeshes; ///< Container for Mesh assets (user-registered + engine-allocated auto-quads).
-    RenderTargetContainer mRenderTargets; ///< Container for RenderTarget objects.
+    ActiveBackend mBackend; ///< GPU rendering backend (compile-time selected).
+
+    /// Owns the four CPU-side asset containers (textures, bellotas, meshes,
+    /// render targets) and the two usage monitors. Holds a reference to
+    /// mBackend so per-asset removes can free GPU resources eagerly;
+    /// bulk teardown goes through mAssets.freeAllGpuResources() in the dtor.
+    /// Declared after mBackend so the reference is bound to a live backend.
+    AssetRegistry mAssets;
+
     TilemapManager mTilemapManager; ///< Huge-tilemap storage + per-frame explorer pool logic.
-    TextureUsageMonitor mTextureUsageMonitor;
-    MeshUsageMonitor mMeshUsageMonitor;
 
     /// RTT passes queued by renderTo() during the update callback, executed before the main render.
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
 
-    ActiveBackend mBackend; ///< GPU rendering backend (compile-time selected).
-
     /// Owns per-RTT secondary ImGuiContexts + the per-frame RTT pass queue,
     /// AND the canvas-wide ImGui font manager (main HiDPI font + RTT default
     /// + user-baked sizes; deferred bake/remove queue + atlas rebuild).
-    /// Declared after mBackend / mRenderTargets so initialization order is
-    /// well-defined.
+    /// Declared after mBackend / mAssets so initialization order is well-defined.
     ImguiRttManager mImguiRtt;
 
     bool mStats; ///< Flag to indicate whether stats should be displayed.
