@@ -781,6 +781,32 @@ static void sortByDepthOffset(const BellotaContainer& bellotas, std::vector<cons
     );
 }
 
+static void drawBellotaPacks(
+    std::span<const BellotaPack* const> sortedBellotaPacks,
+    const TextureContainer& textures,
+    const MeshContainer& meshes,
+    const glm::mat3& worldTransform,
+    ActiveBackend& backend)
+{
+    for (const BellotaPack* packPtr : sortedBellotaPacks)
+    {
+        if (!packPtr->bellota.visible()) continue;
+        if (!packPtr->bellota.meshId().has_value()) continue;
+        const MeshPack& meshPack = meshes.at(packPtr->bellota.meshId().value().id);
+        if (!meshPack.dmeshOpt.has_value()) continue;
+        const TexturePack& texturePack = textures.at(packPtr->bellota.texture().id);
+        if (!texturePack.dtextureOpt.has_value()) continue;
+        SpriteDrawParams drawParams = makeSpriteDrawParams(*packPtr, worldTransform);
+        drawParams.mode = texturePack.mode;
+        if ((texturePack.mode == TextureMode::Indirect || texturePack.mode == TextureMode::TileMap)
+            && texturePack.dpaletteTextureOpt.has_value())
+            drawParams.paletteTexture = texturePack.dpaletteTextureOpt.value();
+        if (texturePack.mode == TextureMode::TileMap && texturePack.dmapTextureOpt.has_value())
+            drawParams.mapTexture = texturePack.dmapTextureOpt.value();
+        backend.drawSprite(meshPack.dmeshOpt.value(), texturePack.dtextureOpt.value(), drawParams);
+    }
+}
+
 void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ZoneScopedN("runOneFrame");
@@ -971,23 +997,7 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
                 }
             );
 
-            for (const BellotaPack* packPtr : renderTargetSortedPacks)
-            {
-                if (!packPtr->bellota.visible()) continue;
-                if (!packPtr->bellota.meshId().has_value()) continue;
-                const MeshPack& meshPack = mMeshes.at(packPtr->bellota.meshId().value().id);
-                if (!meshPack.dmeshOpt.has_value()) continue;
-                const TexturePack& texturePack = mTextures.at(packPtr->bellota.texture().id);
-                if (!texturePack.dtextureOpt.has_value()) continue;
-                SpriteDrawParams drawParams = makeSpriteDrawParams(*packPtr, renderTargetWorldTransform);
-                drawParams.mode = texturePack.mode;
-                if ((texturePack.mode == TextureMode::Indirect || texturePack.mode == TextureMode::TileMap)
-                    && texturePack.dpaletteTextureOpt.has_value())
-                    drawParams.paletteTexture = texturePack.dpaletteTextureOpt.value();
-                if (texturePack.mode == TextureMode::TileMap && texturePack.dmapTextureOpt.has_value())
-                    drawParams.mapTexture = texturePack.dmapTextureOpt.value();
-                mBackend.drawSprite(meshPack.dmeshOpt.value(), texturePack.dtextureOpt.value(), drawParams);
-            }
+            drawBellotaPacks(renderTargetSortedPacks, mTextures, mMeshes, renderTargetWorldTransform, mBackend);
 
             mBackend.endRttPass();
         }
@@ -1004,23 +1014,7 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
 
     {
         ZoneScopedN("MainDraw");
-        for (const BellotaPack* packPtr : mSortedBellotaPacks)
-        {
-            if (!packPtr->bellota.visible()) continue;
-            if (!packPtr->bellota.meshId().has_value()) continue;
-            const MeshPack& meshPack = mMeshes.at(packPtr->bellota.meshId().value().id);
-            if (!meshPack.dmeshOpt.has_value()) continue;
-            const TexturePack& texturePack = mTextures.at(packPtr->bellota.texture().id);
-            if (!texturePack.dtextureOpt.has_value()) continue;
-            SpriteDrawParams drawParams = makeSpriteDrawParams(*packPtr, worldTransformMat);
-            drawParams.mode = texturePack.mode;
-            if ((texturePack.mode == TextureMode::Indirect || texturePack.mode == TextureMode::TileMap)
-                && texturePack.dpaletteTextureOpt.has_value())
-                drawParams.paletteTexture = texturePack.dpaletteTextureOpt.value();
-            if (texturePack.mode == TextureMode::TileMap && texturePack.dmapTextureOpt.has_value())
-                drawParams.mapTexture = texturePack.dmapTextureOpt.value();
-            mBackend.drawSprite(meshPack.dmeshOpt.value(), texturePack.dtextureOpt.value(), drawParams);
-        }
+        drawBellotaPacks(mSortedBellotaPacks, mTextures, mMeshes, worldTransformMat, mBackend);
     }
 
     if (mStats)
