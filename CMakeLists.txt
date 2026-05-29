@@ -98,7 +98,6 @@ add_library(nothofagus
     "source/animation_state_machine.cpp"
     "source/animation_state.cpp"
     "source/tilemap.cpp"
-    "source/tilemap_builder.cpp"
     "source/tilemap_manager.cpp"
     "source/markdown_renderer.cpp"
 

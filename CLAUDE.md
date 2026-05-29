@@ -312,26 +312,28 @@ Single-`IndirectTexture` tilemaps scale poorly: any `setCell` re-uploads the ent
 // Build the tile graphics (palette indices, one std::vector per atlas layer).
 std::vector<std::vector<std::uint8_t>> tileGraphics{ /* layer 0, layer 1, ... */ };
 
-// createTilemap registers both the Tilemap (world data) and the TilemapExplorer
-// (pooled renderer) in one shot and returns handles for both.
-Nothofagus::TilemapHandles handles = Nothofagus::createTilemap(
-    canvas,
-    /*mapSize  */ glm::ivec2{256, 256},   // world cells
-    /*chunkSize*/ glm::ivec2{32, 32},     // cells per pool slot
-    /*tileSize */ glm::ivec2{16, 16},     // pixels per cell
-    palette,
-    std::span<const std::vector<std::uint8_t>>(tileGraphics));
+// Register the Tilemap (world data) and a TilemapExplorer (pooled renderer)
+// against the canvas. The explorer takes the TilemapId it draws from.
+Nothofagus::TilemapId tilemapId = canvas.addTilemap(
+    Nothofagus::Tilemap(
+        /*mapSize  */ glm::ivec2{256, 256},   // world cells
+        /*chunkSize*/ glm::ivec2{32, 32},     // cells per pool slot
+        /*tileSize */ glm::ivec2{16, 16},     // pixels per cell
+        palette,
+        std::span<const std::vector<std::uint8_t>>(tileGraphics)));
+Nothofagus::TilemapExplorerId explorerId =
+    canvas.addTilemapExplorer(Nothofagus::TilemapExplorer(tilemapId));
 
 // Edit the world at world-cell coordinates — the owning chunk's generation
 // bumps, the pool slot displaying it (if any) re-syncs next frame.
-canvas.tilemap(handles.tilemapId).setCell({worldCol, worldRow}, layerIndex);
+canvas.tilemap(tilemapId).setCell({worldCol, worldRow}, layerIndex);
 
 // Guard arbitrary coordinates against the world extent before editing.
-if (canvas.tilemap(handles.tilemapId).inBounds({worldCol, worldRow}))
-    canvas.tilemap(handles.tilemapId).setCell({worldCol, worldRow}, layerIndex);
+if (canvas.tilemap(tilemapId).inBounds({worldCol, worldRow}))
+    canvas.tilemap(tilemapId).setCell({worldCol, worldRow}, layerIndex);
 
 // Pan the explorer via the camera (world pixels; (0,0) = world origin centered).
-canvas.tilemapExplorer(handles.explorerId).setCamera({scrollX, scrollY});
+canvas.tilemapExplorer(explorerId).setCamera({scrollX, scrollY});
 ```
 
 **How it works:**
@@ -348,7 +350,7 @@ canvas.tilemapExplorer(handles.explorerId).setCamera({scrollX, scrollY});
 - Independent of world size beyond the cell grid itself: a 1000×1000-cell world (~1 MB cell grid) uses ~50 IndirectTextures and ~50 bellotas, regardless of how big the world is.
 
 **Lifecycle rules:**
-- `addTilemap` / `addTilemapExplorer` register the data and the renderer; `createTilemap` is a convenience that calls both.
+- `addTilemap` registers the world data and returns a `TilemapId`; `addTilemapExplorer(TilemapExplorer(tilemapId))` registers the pooled renderer against that id.
 - **Tear down explorers before their tilemaps.** `removeTilemap(tilemapId)` fires a `debugCheck` if any `TilemapExplorer` still references it; call `removeTilemapExplorer(explorerId)` on every owning explorer first. (See [examples/hello_tilemap_huge.cpp](examples/hello_tilemap_huge.cpp) `rebuild` lambda for the canonical pattern.)
 - `removeTilemapExplorer(explorerId)` removes all pool bellotas and textures it owns.
 - Multiple `TilemapExplorer` instances may reference the same `Tilemap` (e.g., main explorer + mini-map explorer); each polls per-chunk generation counters independently.
