@@ -4,8 +4,12 @@
 #include "tilemap_explorer.h"
 #include "tilemap_explorer_pack.h"
 #include "indexed_container.h"
+#include "screen_size.h"
 #include <cstddef>
+#include <cstdint>
+#include <span>
 #include <unordered_set>
+#include <glm/glm.hpp>
 
 namespace Nothofagus
 {
@@ -65,6 +69,30 @@ private:
     /// clears `pack.slots`. Used at removal time and at the head of `buildPoolSlots`'s
     /// re-allocation path.
     void teardownPoolSlots(TilemapExplorerPack& pack, Canvas& canvas);
+
+    /// Per-frame work for a single explorer: resize the pool if the canvas size
+    /// changed, compute the visible chunk window, then sync each pool slot via
+    /// `exploreCell`.
+    void updateExplorer(
+        TilemapExplorerPack& explorerPack,
+        Canvas& canvas,
+        const ScreenSize& screen,
+        const glm::vec2& canvasCenter);
+
+    /// Per-frame work for a single pool slot: assign the desired world chunk,
+    /// memcpy its cells via `setMapBulk` if the chunk or its generation changed,
+    /// and reposition / un-hide the slot bellota.
+    void exploreCell(
+        PoolSlot& slot,
+        const glm::ivec2& desired,
+        Canvas& canvas,
+        const Tilemap& sourceTilemap,
+        const glm::ivec2& chunkGridSize,
+        const glm::vec2& chunkPixelSize,
+        const glm::vec2& camera,
+        const glm::vec2& canvasCenter,
+        std::int8_t depthOffset,
+        std::span<std::uint8_t> chunkScratch);
 
     IndexedContainer<Tilemap>       mTilemaps;
     TilemapExplorerContainer            mTilemapExplorers;

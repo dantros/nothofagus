@@ -139,94 +139,125 @@ void TilemapManager::updateExplorers(Canvas& canvas)
 
     for (auto& [explorerIdx, explorerPack] : mTilemapExplorers)
     {
-        const TilemapId tilemapId = explorerPack.explorer.tilemap();
-        if (!mTilemaps.contains(tilemapId.id)) continue;
+        updateExplorer(explorerPack, canvas, screen, canvasCenter);
+    }
+}
 
-        // Canvas was resized since this pool was built — tear it down and
-        // rebuild against the new screenSize. Fresh slots have currentWorldChunk
-        // = {-1,-1}, so the chunk-sync pass below re-syncs every slot this frame.
-        // Cost: N GPU texture frees + N uploads on the same frame (N = slot count).
-        if (screen.width  != explorerPack.poolSizedFor.width ||
-            screen.height != explorerPack.poolSizedFor.height)
+void TilemapManager::updateExplorer(
+    TilemapExplorerPack& explorerPack,
+    Canvas& canvas,
+    const ScreenSize& screen,
+    const glm::vec2& canvasCenter)
+{
+    const TilemapId tilemapId = explorerPack.explorer.tilemap();
+    if (!mTilemaps.contains(tilemapId.id)) return;
+
+    // Canvas was resized since this pool was built — tear it down and
+    // rebuild against the new screenSize. Fresh slots have currentWorldChunk
+    // = {-1,-1}, so the chunk-sync pass below re-syncs every slot this frame.
+    // Cost: N GPU texture frees + N uploads on the same frame (N = slot count).
+    if (screen.width  != explorerPack.poolSizedFor.width ||
+        screen.height != explorerPack.poolSizedFor.height)
+    {
+        teardownPoolSlots(explorerPack, canvas);
+        buildPoolSlots(explorerPack, canvas);
+    }
+
+    const Tilemap& sourceTilemap = mTilemaps.at(tilemapId.id);
+
+    const glm::ivec2 chunkSize     = sourceTilemap.chunkSize();
+    const glm::ivec2 tileSize      = sourceTilemap.tileSize();
+    const glm::ivec2 chunkGridSize = sourceTilemap.chunkGridSize();
+    const glm::vec2  chunkPixelSize{
+        static_cast<float>(chunkSize.x * tileSize.x),
+        static_cast<float>(chunkSize.y * tileSize.y)
+    };
+
+    const glm::vec2 camera = explorerPack.explorer.camera();
+    const glm::vec2 worldBottomLeft = camera - canvasCenter;
+
+    const glm::ivec2 slotOriginChunk{
+        static_cast<int>(std::floor(worldBottomLeft.x / chunkPixelSize.x)) - 1,
+        static_cast<int>(std::floor(worldBottomLeft.y / chunkPixelSize.y)) - 1
+    };
+
+    const std::int8_t depthOffset = explorerPack.explorer.depthOffset();
+    const std::span<std::uint8_t> chunkScratch(explorerPack.chunkScratch);
+
+    for (int py = 0; py < explorerPack.poolGridSize.y; ++py)
+    {
+        for (int px = 0; px < explorerPack.poolGridSize.x; ++px)
         {
-            teardownPoolSlots(explorerPack, canvas);
-            buildPoolSlots(explorerPack, canvas);
-        }
+            const std::size_t slotIdx =
+                static_cast<std::size_t>(py) * static_cast<std::size_t>(explorerPack.poolGridSize.x) +
+                static_cast<std::size_t>(px);
+            PoolSlot& slot = explorerPack.slots[slotIdx];
 
-        const Tilemap& sourceTilemap = mTilemaps.at(tilemapId.id);
-
-        const glm::ivec2 chunkSize     = sourceTilemap.chunkSize();
-        const glm::ivec2 tileSize      = sourceTilemap.tileSize();
-        const glm::ivec2 chunkGridSize = sourceTilemap.chunkGridSize();
-        const glm::vec2  chunkPixelSize{
-            static_cast<float>(chunkSize.x * tileSize.x),
-            static_cast<float>(chunkSize.y * tileSize.y)
-        };
-
-        const glm::vec2 camera = explorerPack.explorer.camera();
-        const glm::vec2 worldBottomLeft = camera - canvasCenter;
-
-        const glm::ivec2 slotOriginChunk{
-            static_cast<int>(std::floor(worldBottomLeft.x / chunkPixelSize.x)) - 1,
-            static_cast<int>(std::floor(worldBottomLeft.y / chunkPixelSize.y)) - 1
-        };
-
-        const std::int8_t depthOffset = explorerPack.explorer.depthOffset();
-
-        for (int py = 0; py < explorerPack.poolGridSize.y; ++py)
-        {
-            for (int px = 0; px < explorerPack.poolGridSize.x; ++px)
-            {
-                const std::size_t slotIdx =
-                    static_cast<std::size_t>(py) * static_cast<std::size_t>(explorerPack.poolGridSize.x) +
-                    static_cast<std::size_t>(px);
-                PoolSlot& slot = explorerPack.slots[slotIdx];
-
-                Bellota& slotBellota = canvas.bellota(slot.bellotaId);
-                if (slotBellota.depthOffset() != depthOffset)
-                    slotBellota.depthOffset() = depthOffset;
-
-                const glm::ivec2 desired{
-                    slotOriginChunk.x + px,
-                    slotOriginChunk.y + py
-                };
-                const bool outOfWorld =
-                    desired.x < 0 || desired.y < 0 ||
-                    desired.x >= chunkGridSize.x || desired.y >= chunkGridSize.y;
-
-                if (outOfWorld)
-                {
-                    slotBellota.visible() = false;
-                    // Reset to the unassigned sentinel so the slot doesn't carry
-                    // "what chunk am I painting" state while hidden — when it
-                    // scrolls back into the world the desired-vs-current check
-                    // will trigger a fresh sync.
-                    slot.currentWorldChunk = glm::ivec2{-1, -1};
-                    slot.syncedGeneration  = 0;
-                    continue;
-                }
-
-                const std::uint64_t currentGen = sourceTilemap.chunkGeneration(desired);
-                if (desired != slot.currentWorldChunk || currentGen != slot.syncedGeneration)
-                {
-                    ZoneScopedN("TilemapChunkSync");
-                    IndirectTexture& slotTex = std::get<IndirectTexture>(
-                        canvas.texture(slot.textureId));
-                    sourceTilemap.chunkDataInto(desired, std::span<std::uint8_t>(explorerPack.chunkScratch));
-                    slotTex.setMapBulk(std::span<const std::uint8_t>(explorerPack.chunkScratch));
-                    slot.currentWorldChunk = desired;
-                    slot.syncedGeneration  = currentGen;
-                }
-
-                const glm::vec2 chunkCenterWorld{
-                    (static_cast<float>(desired.x) + 0.5f) * chunkPixelSize.x,
-                    (static_cast<float>(desired.y) + 0.5f) * chunkPixelSize.y
-                };
-                slotBellota.transform().location() = canvasCenter + chunkCenterWorld - camera;
-                slotBellota.visible() = true;
-            }
+            const glm::ivec2 desired{
+                slotOriginChunk.x + px,
+                slotOriginChunk.y + py
+            };
+            exploreCell(
+                slot, desired,
+                canvas, sourceTilemap,
+                chunkGridSize, chunkPixelSize,
+                camera, canvasCenter,
+                depthOffset,
+                chunkScratch);
         }
     }
+}
+
+void TilemapManager::exploreCell(
+    PoolSlot& slot,
+    const glm::ivec2& desired,
+    Canvas& canvas,
+    const Tilemap& sourceTilemap,
+    const glm::ivec2& chunkGridSize,
+    const glm::vec2& chunkPixelSize,
+    const glm::vec2& camera,
+    const glm::vec2& canvasCenter,
+    std::int8_t depthOffset,
+    std::span<std::uint8_t> chunkScratch)
+{
+    Bellota& slotBellota = canvas.bellota(slot.bellotaId);
+    if (slotBellota.depthOffset() != depthOffset)
+        slotBellota.depthOffset() = depthOffset;
+
+    const bool outOfWorld =
+        desired.x < 0 || desired.y < 0 ||
+        desired.x >= chunkGridSize.x || desired.y >= chunkGridSize.y;
+
+    if (outOfWorld)
+    {
+        slotBellota.visible() = false;
+        // Reset to the unassigned sentinel so the slot doesn't carry
+        // "what chunk am I painting" state while hidden — when it
+        // scrolls back into the world the desired-vs-current check
+        // will trigger a fresh sync.
+        slot.currentWorldChunk = glm::ivec2{-1, -1};
+        slot.syncedGeneration  = 0;
+        return;
+    }
+
+    const std::uint64_t currentGen = sourceTilemap.chunkGeneration(desired);
+    if (desired != slot.currentWorldChunk || currentGen != slot.syncedGeneration)
+    {
+        ZoneScopedN("TilemapChunkSync");
+        IndirectTexture& slotTex = std::get<IndirectTexture>(
+            canvas.texture(slot.textureId));
+        sourceTilemap.chunkDataInto(desired, chunkScratch);
+        slotTex.setMapBulk(std::span<const std::uint8_t>(chunkScratch));
+        slot.currentWorldChunk = desired;
+        slot.syncedGeneration  = currentGen;
+    }
+
+    const glm::vec2 chunkCenterWorld{
+        (static_cast<float>(desired.x) + 0.5f) * chunkPixelSize.x,
+        (static_cast<float>(desired.y) + 0.5f) * chunkPixelSize.y
+    };
+    slotBellota.transform().location() = canvasCenter + chunkCenterWorld - camera;
+    slotBellota.visible() = true;
 }
 
 }
