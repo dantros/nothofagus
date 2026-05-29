@@ -5,6 +5,19 @@
 namespace Nothofagus
 {
 
+IndirectTexture::IndirectTexture(const IndirectTexture& source, glm::ivec2 overrideMapSize):
+    mLayers(source.mLayers),
+    mSize(source.mSize),
+    mPixels(source.mPixels),
+    mPallete(source.mPallete),
+    mMapSize(overrideMapSize),
+    mMap(static_cast<std::size_t>(overrideMapSize.x) * static_cast<std::size_t>(overrideMapSize.y), 0),
+    mAtlasDirty(true),
+    mMapDirty(true),
+    mPaletteDirty(true)
+{
+}
+
 std::size_t indexOf(const std::size_t sizeI, const std::size_t sizeJ, const std::size_t i, const std::size_t j)
 {
     debugCheck(i < sizeI and j < sizeJ, "Invalid indices for this texture.");
@@ -95,6 +108,15 @@ std::uint8_t IndirectTexture::cell(int col, int row) const
 {
     debugCheck(col >= 0 && col < mMapSize.x && row >= 0 && row < mMapSize.y, "Cell out of bounds.");
     return mMap[static_cast<std::size_t>(row) * static_cast<std::size_t>(mMapSize.x) + static_cast<std::size_t>(col)];
+}
+
+IndirectTexture& IndirectTexture::setMapBulk(std::span<const std::uint8_t> cells)
+{
+    debugCheck(hasMap(), "setMapBulk requires setMap to have been called first.");
+    debugCheck(cells.size() == mMap.size(), "setMapBulk size does not match mapSize.x * mapSize.y.");
+    std::copy(cells.begin(), cells.end(), mMap.begin());
+    mMapDirty = true;
+    return *this;
 }
 
 std::vector<std::uint8_t> IndirectTexture::generateMapData() const

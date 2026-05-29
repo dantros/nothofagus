@@ -298,6 +298,10 @@ public:
         //debugCheck(layers > 0);
     }
 
+    /// Clone `source`'s atlas + palette + layers but allocate a fresh `mMap` of the
+    /// supplied size (or none, when `{0, 0}` is passed).
+    IndirectTexture(const IndirectTexture& source, glm::ivec2 overrideMapSize);
+
     /**
      * @brief Returns the number of layers in the texture.
      * 
@@ -428,6 +432,14 @@ public:
     /// Read the layer index for a specific cell. Bounds-checked.
     std::uint8_t cell(int col, int row) const;
 
+    /// Overwrite the entire cell grid in one shot. Requires `setMap` to have been
+    /// called previously; `cells.size()` must equal `mapSize.x * mapSize.y` and the
+    /// bytes are read in row-major order (the same layout `generateMapData` returns).
+    /// Each byte is a layer index, so every value must be `< layers()` for the GPU
+    /// path to render meaningfully. Marks the map dirty for the next upload.
+    /// Equivalent to calling `setCell` for every cell, but a single memcpy instead.
+    IndirectTexture& setMapBulk(std::span<const std::uint8_t> cells);
+
     /// Cell-grid dimensions. `{0, 0}` when not a tile-map.
     glm::ivec2 mapSize() const { return mMapSize; }
 
@@ -436,6 +448,12 @@ public:
 
     /// Map data for GPU upload (R8UI 2D source). Empty when `!hasMap()`.
     std::vector<std::uint8_t> generateMapData() const;
+
+    /// Non-copying view onto the cell-grid storage. Empty span when `!hasMap()`.
+    std::span<const std::uint8_t> mapData() const
+    {
+        return std::span<const std::uint8_t>(mMap);
+    }
 
     /// Atlas dirty flag — set by any pixel mutator, cleared after GPU upload.
     bool isAtlasDirty() const { return mAtlasDirty; }

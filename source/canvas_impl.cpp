@@ -257,6 +257,8 @@ BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)
 
 void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
 {
+    debugCheck(!mTilemapManager.isExplorerManagedBellota(bellotaId.id),
+        "Bellota is owned by a TilemapExplorer pool — use canvas.removeTilemapExplorer() instead of removing slot bellotas directly.");
     BellotaPack& bellotaPackToRemove = mBellotas.at(bellotaId.id);
     const TextureId textureId = bellotaPackToRemove.bellota.texture();
     const std::optional<MeshId>& meshIdOpt = bellotaPackToRemove.bellota.meshId();
@@ -282,6 +284,8 @@ TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
 
 void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 {
+    debugCheck(!mTilemapManager.isExplorerManagedTexture(textureId.id),
+        "Texture is owned by a TilemapExplorer pool — use canvas.removeTilemapExplorer() instead of removing slot textures directly.");
     const bool textureWasRemoved = mTextureUsageMonitor.removeUnused(textureId);
     debugCheck(textureWasRemoved, "Texture is not in the unused set — still referenced by a bellota or already removed");
 
@@ -534,6 +538,46 @@ TextureId Canvas::CanvasImpl::renderTargetTexture(RenderTargetId renderTargetId)
     return mRenderTargets.at(renderTargetId.id).renderTarget.mProxyTextureId;
 }
 
+TilemapId Canvas::CanvasImpl::addTilemap(Tilemap tilemap)
+{
+    return mTilemapManager.addTilemap(std::move(tilemap));
+}
+
+void Canvas::CanvasImpl::removeTilemap(TilemapId tilemapId)
+{
+    mTilemapManager.removeTilemap(tilemapId);
+}
+
+Tilemap& Canvas::CanvasImpl::tilemap(TilemapId tilemapId)
+{
+    return mTilemapManager.tilemap(tilemapId);
+}
+
+const Tilemap& Canvas::CanvasImpl::tilemap(TilemapId tilemapId) const
+{
+    return mTilemapManager.tilemap(tilemapId);
+}
+
+TilemapExplorerId Canvas::CanvasImpl::addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas)
+{
+    return mTilemapManager.addTilemapExplorer(explorer, canvas);
+}
+
+void Canvas::CanvasImpl::removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas)
+{
+    mTilemapManager.removeTilemapExplorer(explorerId, canvas);
+}
+
+TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId explorerId)
+{
+    return mTilemapManager.tilemapExplorer(explorerId);
+}
+
+const TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId explorerId) const
+{
+    return mTilemapManager.tilemapExplorer(explorerId);
+}
+
 void Canvas::CanvasImpl::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)
 {
     mPendingRttPasses.emplace_back(renderTargetId, std::move(bellotaIds));
@@ -737,7 +781,7 @@ static void sortByDepthOffset(const BellotaContainer& bellotas, std::vector<cons
     );
 }
 
-void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ZoneScopedN("runOneFrame");
 
@@ -767,6 +811,11 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
     {
         ZoneScopedN("UserUpdate");
         update(deltaTimeMS);
+    }
+
+    {
+        ZoneScopedN("TilemapExplorers");
+        mTilemapManager.updateExplorers(canvas);
     }
 
     const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
@@ -998,7 +1047,7 @@ void Canvas::CanvasImpl::runOneFrame(float deltaTimeMS, std::function<void(float
     FrameMark;
 }
 
-void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Controller& controller)
+void Canvas::CanvasImpl::run(Canvas& canvas, std::function<void(float deltaTime)> update, Controller& controller)
 {
     // Always call beginSession — it resets the window close flag and rebinds
     // input callbacks, which is required after a manifest switch (canvas.close()
@@ -1015,25 +1064,25 @@ void Canvas::CanvasImpl::run(std::function<void(float deltaTime)> update, Contro
     while (mWindow->isRunning())
     {
         performanceMonitor.update(mWindow->getTime());
-        runOneFrame(performanceMonitor.getMS(), update, controller);
+        runOneFrame(canvas, performanceMonitor.getMS(), update, controller);
     }
 }
 
-void Canvas::CanvasImpl::tick(float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ensureSessionStarted(controller);
-    runOneFrame(deltaTimeMS, update, controller);
+    runOneFrame(canvas, deltaTimeMS, update, controller);
 }
 
-void Canvas::CanvasImpl::tick(float deltaTimeMS, std::function<void(float)> update)
+void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update)
 {
     Controller controller;
-    tick(deltaTimeMS, update, controller);
+    tick(canvas, deltaTimeMS, update, controller);
 }
 
-void Canvas::CanvasImpl::tick(float deltaTimeMS)
+void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS)
 {
-    tick(deltaTimeMS, [](float){});
+    tick(canvas, deltaTimeMS, [](float){});
 }
 
 void Canvas::CanvasImpl::close()

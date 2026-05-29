@@ -8,6 +8,8 @@
 #include "bellota.h"
 #include "canvas.h"
 #include "render_target.h"
+#include "tilemap.h"
+#include "tilemap_explorer.h"
 #include "controller.h"
 #include "keyboard.h"
 #include "mouse.h"

@@ -5,6 +5,8 @@
 #include "mesh.h"
 #include "texture.h"
 #include "render_target.h"
+#include "tilemap.h"
+#include "tilemap_explorer.h"
 #include "controller.h"
 #include "tint.h"
 #include "screen_size.h"
@@ -185,6 +187,28 @@ public:
     void removeRenderTarget(RenderTargetId renderTargetId);
 
     TextureId renderTargetTexture(RenderTargetId renderTargetId) const;
+
+    /// Register a Tilemap (world data) with the canvas. Returns a stable id.
+    /// No GPU resources are allocated until a TilemapExplorer is registered against this Tilemap.
+    TilemapId addTilemap(Tilemap tilemap);
+
+    /// Remove a Tilemap. debugChecks that no TilemapExplorer still references it.
+    void removeTilemap(TilemapId tilemapId);
+
+    /// Access a registered Tilemap (mutable; use `setCell` to edit world data).
+    Tilemap& tilemap(TilemapId tilemapId);
+    const Tilemap& tilemap(TilemapId tilemapId) const;
+
+    /// Register a TilemapExplorer (renderer) against a previously-added Tilemap.
+    /// Allocates the chunk pool (small IndirectTexture + Bellota slots tagged explorer-managed).
+    TilemapExplorerId addTilemapExplorer(TilemapExplorer explorer);
+
+    /// Remove a TilemapExplorer and tear down its pool slots.
+    void removeTilemapExplorer(TilemapExplorerId explorerId);
+
+    /// Access a registered TilemapExplorer (mutable; use `setCamera` to scroll).
+    TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId);
+    const TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId) const;
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 

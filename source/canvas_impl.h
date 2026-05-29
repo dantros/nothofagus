@@ -1,6 +1,9 @@
 #pragma once
 
 #include "canvas.h"
+#include "tilemap.h"
+#include "tilemap_explorer.h"
+#include "tilemap_manager.h"
 #include "texture_container.h"
 #include "bellota_container.h"
 #include "mesh_container.h"
@@ -118,6 +121,16 @@ public:
 
     TextureId renderTargetTexture(RenderTargetId renderTargetId) const;
 
+    TilemapId addTilemap(Tilemap tilemap);
+    void removeTilemap(TilemapId tilemapId);
+    Tilemap& tilemap(TilemapId tilemapId);
+    const Tilemap& tilemap(TilemapId tilemapId) const;
+
+    TilemapExplorerId addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas);
+    void removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas);
+    TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId);
+    const TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId) const;
+
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 
     void renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback);
@@ -213,15 +226,16 @@ public:
 
     /**
      * @brief Runs the main loop of the canvas with a custom update function.
+     * @param canvas Reference to the owning Canvas, threaded through to TilemapManager.
      * @param update The custom update function to be called every frame.
      * @param controller The Controller object that handles user input.
      */
-    void run(std::function<void(float deltaTime)> update, Controller& controller);
+    void run(Canvas& canvas, std::function<void(float deltaTime)> update, Controller& controller);
 
     /// Execute a single frame with a caller-supplied delta time (in milliseconds).
-    void tick(float deltaTimeMS, std::function<void(float)> update, Controller& controller);
-    void tick(float deltaTimeMS, std::function<void(float)> update);
-    void tick(float deltaTimeMS);
+    void tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller);
+    void tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update);
+    void tick(Canvas& canvas, float deltaTimeMS);
 
     void setAutoRemoveUnusedTextures(bool enabled);
     void setAutoRemoveUnusedMeshes(bool enabled);
@@ -239,7 +253,7 @@ private:
     /// Allocate, register and stamp a fresh auto-quad MeshId sized to the bellota's texture.
     MeshId materializeAutoQuad(const Bellota& bellota);
     void ensureSessionStarted(Controller& controller);
-    void runOneFrame(float deltaTimeMS, std::function<void(float)> update, Controller& controller);
+    void runOneFrame(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
     ScreenSize mScreenSize; ///< The screen size of the canvas.
     std::string mTitle; ///< The title of the canvas window.
@@ -250,6 +264,7 @@ private:
     BellotaContainer mBellotas; ///< Container for Bellota objects.
     MeshContainer mMeshes; ///< Container for Mesh assets (user-registered + engine-allocated auto-quads).
     RenderTargetContainer mRenderTargets; ///< Container for RenderTarget objects.
+    TilemapManager mTilemapManager; ///< Huge-tilemap storage + per-frame explorer pool logic.
     TextureUsageMonitor mTextureUsageMonitor;
     MeshUsageMonitor mMeshUsageMonitor;
 

@@ -67,6 +67,9 @@ cmake --install build/windows-debug-glfw-opengl-examples
 - `NOTHOFAGUS_BUILD_EXAMPLES` — build demo apps (default OFF, enabled by `-examples` presets)
 - `NOTHOFAGUS_INSTALL` — install artifacts (default OFF, presets set ON)
 - `NOTHOFAGUS_BUILD_DOCS` — generate Doxygen docs (default OFF)
+- `NOTHOFAGUS_BUILD_TESTS` — master switch for the test infrastructure (default OFF). When ON, the two sub-options below become available; both still default OFF, so test targets are opt-in even with tests enabled.
+- `NOTHOFAGUS_BUILD_TESTS_VISUAL` — build the visual (golden-image) test group (default OFF). Requires a render backend; pulls in Catch2 + the golden-image helpers under `tests/visual/`.
+- `NOTHOFAGUS_BUILD_TESTS_NONVISUAL` — build the nonvisual (CPU-only data/logic) test group (default OFF). Pulls in Catch2; no render backend required.
 - `NOTHOFAGUS_WINDOW_BACKEND` — `"GLFW"` (default) or `"SDL3"`; selects the window/input backend at configure time
 - `NOTHOFAGUS_BACKEND_VULKAN` — use the Vulkan render backend instead of OpenGL (default OFF)
 - `NOTHOFAGUS_HEADLESS_VULKAN` — pure offscreen Vulkan rendering with no window or display server (default OFF; requires `NOTHOFAGUS_BACKEND_VULKAN=ON`). Replaces the window backend with `HeadlessBackend` and the Vulkan presentation policy with `HeadlessVulkanPresentation`. Intended for CI/CD rendering tests.
@@ -299,6 +302,63 @@ Nothofagus::TextureId tileMapTexId = canvas.addTexture(tileMap);
 - `bellota.currentLayer()` is unused for tilemap textures — per-cell layer choice is driven by the cell grid, not by a global layer index. Animation state machines should target non-tilemap `IndirectTexture` instances.
 - `setCell` triggers `mMapDirty` and is hot-uploadable per-frame; per-pixel `setPixels` triggers `mAtlasDirty` for tile-graphic mutations.
 - The palette is shared between the tile-map and indirect rendering paths — `setPallete` works the same way.
+- `setMapBulk(span)` overwrites the entire cell grid in one shot from a row-major byte buffer of `mapSize.x * mapSize.y` layer indices. Faster than per-cell `setCell` when replacing a large region — one memcpy + one dirty-flag set, no per-cell bookkeeping.
+
+### Huge tilemaps via `Tilemap` + `TilemapExplorer`
+
+Single-`IndirectTexture` tilemaps scale poorly: any `setCell` re-uploads the entire world's map texture, and the bellota's mesh covers the whole world even when only a small window is visible. For huge maps (open worlds, side-scrolling levels), use the **`Tilemap` + `TilemapExplorer` pair** instead. The world data lives once in a `Tilemap`; a `TilemapExplorer` owns a small pool of `IndirectTexture` + `Bellota` slots sized to the canvas viewport + a 1-chunk margin. Slots are anchored to pool indices; world chunks rotate through them as the camera scrolls. Only border slots crossing into/out of explorer get their cell data rewritten — smooth scrolling within a chunk is a zero-rebind frame.
+
+```cpp
+// Build the tile graphics (palette indices, one std::vector per atlas layer).
+std::vector<std::vector<std::uint8_t>> tileGraphics{ /* layer 0, layer 1, ... */ };
+
+// Register the Tilemap (world data) and a TilemapExplorer (pooled renderer)
+// against the canvas. The explorer takes the TilemapId it draws from.
+Nothofagus::TilemapId tilemapId = canvas.addTilemap(
+    Nothofagus::Tilemap(
+        /*mapSize  */ glm::ivec2{256, 256},   // world cells
+        /*chunkSize*/ glm::ivec2{32, 32},     // cells per pool slot
+        /*tileSize */ glm::ivec2{16, 16},     // pixels per cell
+        palette,
+        std::span<const std::vector<std::uint8_t>>(tileGraphics)));
+Nothofagus::TilemapExplorerId explorerId =
+    canvas.addTilemapExplorer(Nothofagus::TilemapExplorer(tilemapId));
+
+// Edit the world at world-cell coordinates — the owning chunk's generation
+// bumps, the pool slot displaying it (if any) re-syncs next frame.
+canvas.tilemap(tilemapId).setCell({worldCol, worldRow}, layerIndex);
+
+// Guard arbitrary coordinates against the world extent before editing.
+if (canvas.tilemap(tilemapId).inBounds({worldCol, worldRow}))
+    canvas.tilemap(tilemapId).setCell({worldCol, worldRow}, layerIndex);
+
+// Pan the explorer via the camera (world pixels; (0,0) = world origin centered).
+canvas.tilemapExplorer(explorerId).setCamera({scrollX, scrollY});
+```
+
+**How it works:**
+- `Tilemap` is internally a single `IndirectTexture` shaped to the full world (atlas + palette + `setMap(mapSize)` cell grid) plus per-chunk generation counters. The cache texture is never registered with the canvas, so no GPU resources are allocated — `IndirectTexture` is reused purely for its storage layout and tested mutation methods (`setCell` / `cell` / `setMapBulk`). Use `tilemap.cacheTexture()` to inspect or clone the underlying texture.
+- `TilemapExplorer` is registered against a `TilemapId`; on registration the canvas allocates a `ceil(screenSize / chunkPixelSize) + 2` grid of pool slots. Each slot is an `IndirectTexture` (with its own copy of the atlas + palette, chunk-sized map storage) plus a `Bellota`. Both are **explorer-managed**: calling `canvas.removeBellota`/`canvas.removeTexture` on those ids fires a `debugCheck`. Use `canvas.removeTilemapExplorer(explorerId)` to tear the pool down.
+- Per-frame pre-pass (runs between the user update callback and the texture-upload pass): for each explorer, compute which world chunk each slot should display based on the camera; for any slot whose desired chunk changed (or whose chunk's generation advanced), memcpy the chunk's cells into the slot's IndirectTexture via `setMapBulk` and reposition the slot's bellota. The existing dirty-upload path then re-uploads only those small chunk map textures.
+- Renderer learns nothing new — pool slots flow through the existing 3-binding tilemap path. No shader, backend, or render-loop changes.
+- **Pool resize on `setScreenSize`:** the pre-pass also compares the canvas's current `screenSize()` against the size the pool was built for. If they differ, the pool is torn down and rebuilt against the new size in one frame, then chunk-synced — `canvas.setScreenSize(...)` "just works" with active views. Window resize / fullscreen don't trigger this because the letterbox preserves the logical canvas; only explicit `setScreenSize` does.
+
+**Memory cost:**
+- Atlas: 1 copy in `Tilemap` + 1 copy per pool slot (~50 copies for typical viewports).
+- Palette: same — 1 + ~pool.
+- World cell grid: 1 byte per world cell, held once in `Tilemap`.
+- Independent of world size beyond the cell grid itself: a 1000×1000-cell world (~1 MB cell grid) uses ~50 IndirectTextures and ~50 bellotas, regardless of how big the world is.
+
+**Lifecycle rules:**
+- `addTilemap` registers the world data and returns a `TilemapId`; `addTilemapExplorer(TilemapExplorer(tilemapId))` registers the pooled renderer against that id.
+- **Tear down explorers before their tilemaps.** `removeTilemap(tilemapId)` fires a `debugCheck` if any `TilemapExplorer` still references it; call `removeTilemapExplorer(explorerId)` on every owning explorer first. (See [examples/hello_tilemap_huge.cpp](examples/hello_tilemap_huge.cpp) `rebuild` lambda for the canonical pattern.)
+- `removeTilemapExplorer(explorerId)` removes all pool bellotas and textures it owns.
+- Multiple `TilemapExplorer` instances may reference the same `Tilemap` (e.g., main explorer + mini-map explorer); each polls per-chunk generation counters independently.
+- The `Tilemap` constructor `debugCheck`s that `chunkSize.x * tileSize.x` and `chunkSize.y * tileSize.y` fit in `int`. This one-time bound keeps the per-frame chunk-pixel math in `tilemap_manager.cpp` safe in plain `int` without runtime overflow guards.
+
+**Camera convention (v1):** `setCamera(offset)` sets the world-pixel coordinate that appears at the canvas center. `(0, 0)` = world origin centered. The `Tilemap`'s coordinate space is bottom-left = `(0, 0)` cell, top-right = `(mapSize.x - 1, mapSize.y - 1)`.
+
+**Deferred:** streaming (world cell grid eviction to disk); RTT-targeted tilemap rendering; shader-scrolled single-draw fast path; per-cell partial GPU upload inside a chunk's map texture; direct rendering of small tilemaps via `canvas.addTexture(tilemap.cacheTexture())`.
 - **Custom meshes are forbidden on tile-map textures.** The tile-map shader treats incoming UVs as `[0, 1]` over the full tile-map extent and quantises to cell indices, so only the engine-generated auto-quad's UVs sample correctly. `addBellota`, `setMesh`, and `setTexture` enforce the restriction via `debugCheck`.
 
 ### Custom meshes
@@ -414,7 +474,7 @@ canvas.run([&](float dt) {
 
 **Rules:**
 - Call `renderTo(...)` from inside the `run()` / `tick()` update callback. It enqueues the pass; execution happens before the main draw each frame.
-- The bellotas passed to `renderTo` render **both** into the RTT and onto the main canvas — they don't disappear from the main view.
+- The bellotas passed to `renderTo` render **both** into the RTT and onto the main canvas — they don't disappear from the main explorer.
 - The RTT uses its own coordinate space: bottom-left = (0, 0), top-right = (width, height), in RTT pixels. The bellotas' own `x, y` are interpreted in that space when rendered into the RTT.
 - `renderTargetTexture(renderTargetId)` returns a `TextureId` proxy valid for the lifetime of the RTT. Do **not** call `removeTexture()` on it — the RTT owns the underlying GPU texture.
 - `removeRenderTarget(renderTargetId)` frees the FBO / VkImage + framebuffer and the proxy texture in one call.
@@ -543,11 +603,23 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_screenshot.cpp` | `takeScreenshot()` — capture frame as DirectTexture, display thumbnail |
 | `hello_headless.cpp` | Headless mode + `tick()` — no window, manual frame stepping, screenshot to terminal |
 | `hello_tilemap.cpp` | Tile-map mode of `IndirectTexture` — `setMap` + `setCell` over a layered atlas |
+| `hello_tilemap_huge.cpp` | Huge tilemaps via `Tilemap` + `TilemapExplorer` pool — WASD camera, teleport, recreate, live memory breakdown, stress controls (auto-pan + edits/frame) |
 | `hello_mesh.cpp` | Custom triangle meshes via `addMesh` + `Bellota(Transform, TextureId, MeshId)` — register geometry once, attach to bellotas, swap with `setMesh` |
 | `hello_render_to_texture.cpp` | `addRenderTarget` / `renderTo` — sprites drawn into an off-screen texture sampled by another bellota |
 | `hello_nested_render_targets.cpp` | Nested RTTs — one render target's output feeds another |
 | `hello_imgui_rtt.cpp` | `renderImguiTo` — diegetic ImGui panel drawn into an RTT, sampled by a rotating bellota |
 | `hello_custom_font.cpp` | User-supplied TTF via `addImguiFontSource` — typeable path field, editable text, integer min/max + slider for size, default-vs-user side-by-side with `TextWrapped` |
+
+## Tests
+
+Enable with `-DNOTHOFAGUS_BUILD_TESTS=ON`. Two independent groups, each behind its own opt-in sub-option (both default OFF — turning the master switch on does not implicitly turn either group on):
+
+| Group | Folder | Sub-option | Stack |
+|-------|--------|------------|-------|
+| Visual (pixel-level golden-image comparison) | [tests/visual/](tests/visual/) | `NOTHOFAGUS_BUILD_TESTS_VISUAL` | Catch2 + render backend + golden-image infrastructure |
+| Nonvisual (CPU-only data/logic checks) | [tests/nonvisual/](tests/nonvisual/) | `NOTHOFAGUS_BUILD_TESTS_NONVISUAL` | Catch2 only |
+
+Run via CTest from the build directory. Both groups use Catch2 (`catch_discover_tests` registers each `TEST_CASE` as a separate CTest entry); Catch2 is added once at the `tests/CMakeLists.txt` orchestrator level when either sub-option is enabled. The visual group additionally requires a render backend and the golden-image helpers in [tests/visual/golden_image.h](tests/visual/golden_image.h); the nonvisual group builds without any render backend (use it from CI lanes that don't have a display server). The current nonvisual file is [tests/nonvisual/tilemap_tests.cpp](tests/nonvisual/tilemap_tests.cpp) — pure-data tests for `Tilemap`, `IndirectTexture::setMapBulk`, and the `TilemapExplorer` pool-grid-size formula (mirrored from source).
 
 ## Dependencies (third_party/ submodules)
 

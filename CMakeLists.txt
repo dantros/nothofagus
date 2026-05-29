@@ -97,6 +97,8 @@ add_library(nothofagus
     "source/text.cpp"
     "source/animation_state_machine.cpp"
     "source/animation_state.cpp"
+    "source/tilemap.cpp"
+    "source/tilemap_manager.cpp"
     "source/markdown_renderer.cpp"
 
     # This is only required to show header files in the Visual Studio IDE solution browser
@@ -252,7 +254,6 @@ endif()
 
 option(NOTHOFAGUS_BUILD_TESTS "Build Nothofagus tests?" OFF)
 if (${NOTHOFAGUS_BUILD_TESTS})
-    add_subdirectory("third_party/Catch2")
     include(CTest)
     add_subdirectory("tests")
 endif()

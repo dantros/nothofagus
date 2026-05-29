@@ -166,6 +166,46 @@ TextureId Canvas::renderTargetTexture(RenderTargetId renderTargetId) const
     return mCanvasImpl->renderTargetTexture(renderTargetId);
 }
 
+TilemapId Canvas::addTilemap(Tilemap tilemap)
+{
+    return mCanvasImpl->addTilemap(std::move(tilemap));
+}
+
+void Canvas::removeTilemap(TilemapId tilemapId)
+{
+    mCanvasImpl->removeTilemap(tilemapId);
+}
+
+Tilemap& Canvas::tilemap(TilemapId tilemapId)
+{
+    return mCanvasImpl->tilemap(tilemapId);
+}
+
+const Tilemap& Canvas::tilemap(TilemapId tilemapId) const
+{
+    return mCanvasImpl->tilemap(tilemapId);
+}
+
+TilemapExplorerId Canvas::addTilemapExplorer(TilemapExplorer explorer)
+{
+    return mCanvasImpl->addTilemapExplorer(explorer, *this);
+}
+
+void Canvas::removeTilemapExplorer(TilemapExplorerId explorerId)
+{
+    mCanvasImpl->removeTilemapExplorer(explorerId, *this);
+}
+
+TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId explorerId)
+{
+    return mCanvasImpl->tilemapExplorer(explorerId);
+}
+
+const TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId explorerId) const
+{
+    return mCanvasImpl->tilemapExplorer(explorerId);
+}
+
 void Canvas::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)
 {
     mCanvasImpl->renderTo(renderTargetId, std::move(bellotaIds));
@@ -275,33 +315,33 @@ void Canvas::run()
 {
     auto update = [](float deltaTime){};
     Controller controller;
-    mCanvasImpl->run(update, controller);
+    mCanvasImpl->run(*this, update, controller);
 }
 
 void Canvas::run(std::function<void(float deltaTime)> update)
 {
     Controller controller;
-    mCanvasImpl->run(update, controller);
+    mCanvasImpl->run(*this, update, controller);
 }
 
 void Canvas::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
-    mCanvasImpl->run(update, controller);
+    mCanvasImpl->run(*this, update, controller);
 }
 
 void Canvas::tick(float deltaTime, std::function<void(float)> update, Controller& controller)
 {
-    mCanvasImpl->tick(deltaTime, update, controller);
+    mCanvasImpl->tick(*this, deltaTime, update, controller);
 }
 
 void Canvas::tick(float deltaTime, std::function<void(float)> update)
 {
-    mCanvasImpl->tick(deltaTime, update);
+    mCanvasImpl->tick(*this, deltaTime, update);
 }
 
 void Canvas::tick(float deltaTime)
 {
-    mCanvasImpl->tick(deltaTime);
+    mCanvasImpl->tick(*this, deltaTime);
 }
 
 void Canvas::close()

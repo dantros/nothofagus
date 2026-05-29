@@ -1,0 +1,256 @@
+#include "tilemap_manager.h"
+#include "canvas.h"
+#include "check.h"
+#include "profiling.h"
+#include "screen_size.h"
+#include "transform.h"
+#include "texture.h"
+#include "bellota.h"
+#include <glm/glm.hpp>
+#include <cmath>
+#include <span>
+#include <variant>
+
+namespace Nothofagus
+{
+
+namespace
+{
+
+/// Per-explorer constants borrowed by `exploreCell` for the duration of one
+/// `updateExplorer` call. All members are read-only inputs except `canvas`
+/// (the mutable rendering surface) and `chunkScratch` (a reusable upload
+/// buffer that lives on the owning `TilemapExplorerPack`).
+struct ExplorerFrame
+{
+    Canvas&                 canvas;
+    const Tilemap&          sourceTilemap;
+    glm::vec2               chunkPixelSize;
+    glm::vec2               camera;
+    glm::vec2               canvasCenter;
+    std::int8_t             depthOffset;
+    std::span<std::uint8_t> chunkScratch;
+};
+
+/// Per-frame work for a single pool slot: assign the desired world chunk,
+/// memcpy its cells via `setMapBulk` if the chunk or its generation changed,
+/// and reposition / un-hide the slot bellota.
+void exploreCell(PoolSlot& slot, glm::ivec2 desired, const ExplorerFrame& frame)
+{
+    Bellota& slotBellota = frame.canvas.bellota(slot.bellotaId);
+    if (slotBellota.depthOffset() != frame.depthOffset)
+        slotBellota.depthOffset() = frame.depthOffset;
+
+    if (!frame.sourceTilemap.chunkInBounds(desired))
+    {
+        slotBellota.visible() = false;
+        slot.markUnassigned();
+        return;
+    }
+
+    const std::uint64_t currentGen = frame.sourceTilemap.chunkGeneration(desired);
+    if (desired != slot.currentWorldChunk || currentGen != slot.syncedGeneration)
+    {
+        ZoneScopedN("TilemapChunkSync");
+        IndirectTexture& slotTex = std::get<IndirectTexture>(
+            frame.canvas.texture(slot.textureId));
+        frame.sourceTilemap.chunkDataInto(desired, frame.chunkScratch);
+        slotTex.setMapBulk(std::span<const std::uint8_t>(frame.chunkScratch));
+        slot.currentWorldChunk = desired;
+        slot.syncedGeneration  = currentGen;
+    }
+
+    const glm::vec2 chunkCenterWorld{
+        (static_cast<float>(desired.x) + 0.5f) * frame.chunkPixelSize.x,
+        (static_cast<float>(desired.y) + 0.5f) * frame.chunkPixelSize.y
+    };
+    slotBellota.transform().location() = frame.canvasCenter + chunkCenterWorld - frame.camera;
+    slotBellota.visible() = true;
+}
+
+}  // namespace
+
+TilemapId TilemapManager::addTilemap(Tilemap tilemap)
+{
+    return TilemapId{ mTilemaps.add(std::move(tilemap)) };
+}
+
+void TilemapManager::removeTilemap(TilemapId tilemapId)
+{
+    for (const auto& [explorerIdx, explorerPack] : mTilemapExplorers)
+    {
+        debugCheck(explorerPack.explorer.tilemap().id != tilemapId.id,
+            "Cannot remove Tilemap while a TilemapExplorer still references it — remove the explorer first.");
+    }
+    mTilemaps.remove(tilemapId.id);
+}
+
+Tilemap& TilemapManager::tilemap(TilemapId tilemapId)
+{
+    return mTilemaps.at(tilemapId.id);
+}
+
+const Tilemap& TilemapManager::tilemap(TilemapId tilemapId) const
+{
+    return mTilemaps.at(tilemapId.id);
+}
+
+TilemapExplorerId TilemapManager::addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas)
+{
+    debugCheck(mTilemaps.contains(explorer.tilemap().id),
+        "TilemapExplorer references a TilemapId not registered with this canvas.");
+
+    TilemapExplorerPack pack(explorer);
+    buildPoolSlots(pack, canvas);
+    return TilemapExplorerId{ mTilemapExplorers.add(std::move(pack)) };
+}
+
+void TilemapManager::removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas)
+{
+    TilemapExplorerPack& pack = mTilemapExplorers.at(explorerId.id);
+    teardownPoolSlots(pack, canvas);
+    mTilemapExplorers.remove(explorerId.id);
+}
+
+void TilemapManager::buildPoolSlots(TilemapExplorerPack& pack, Canvas& canvas)
+{
+    const Tilemap& sourceTilemap = mTilemaps.at(pack.explorer.tilemap().id);
+
+    const glm::ivec2 chunkSize      = sourceTilemap.chunkSize();
+    const glm::ivec2 chunkPixelSize = sourceTilemap.chunkPixelSize();
+    const ScreenSize& screen = canvas.screenSize();
+    const glm::ivec2 screenSize{
+        static_cast<int>(screen.width),
+        static_cast<int>(screen.height)
+    };
+    const glm::ivec2 poolGridSize{
+        (screenSize.x + chunkPixelSize.x - 1) / chunkPixelSize.x + 2,
+        (screenSize.y + chunkPixelSize.y - 1) / chunkPixelSize.y + 2
+    };
+
+    pack.poolGridSize = poolGridSize;
+    pack.poolSizedFor = screen;
+    pack.slots.clear();
+    const std::size_t slotCount =
+        static_cast<std::size_t>(poolGridSize.x) * static_cast<std::size_t>(poolGridSize.y);
+    pack.slots.reserve(slotCount);
+    pack.chunkScratch.resize(
+        static_cast<std::size_t>(chunkSize.x) * static_cast<std::size_t>(chunkSize.y));
+
+    const std::int8_t depthOffset = pack.explorer.depthOffset();
+
+    for (std::size_t slotIdx = 0; slotIdx < slotCount; ++slotIdx)
+    {
+        // Clone the Tilemap's cache (atlas + palette + layers) and replace its
+        // world-sized map with a chunk-sized one — slot draws are over chunkSize.
+        IndirectTexture slotTexture(sourceTilemap.cacheTexture(), chunkSize);
+
+        TextureId texId = canvas.addTexture(slotTexture);
+        mExplorerManagedTextureIds.insert(texId.id);
+
+        Bellota slotBellota(Transform(glm::vec2(0.0f, 0.0f)), texId, depthOffset);
+        slotBellota.visible() = false; // hidden until per-frame pass assigns it
+        BellotaId bellotaId = canvas.addBellota(slotBellota);
+        mExplorerManagedBellotaIds.insert(bellotaId.id);
+
+        pack.slots.push_back(PoolSlot{ texId, bellotaId, glm::ivec2{-1, -1}, 0 });
+    }
+}
+
+void TilemapManager::teardownPoolSlots(TilemapExplorerPack& pack, Canvas& canvas)
+{
+    // Untag first so the canvas's removeBellota / removeTexture debugCheck passes.
+    // Tear down each slot's bellota before its texture so the usage monitor
+    // moves the texture into the unused set ahead of removeTexture.
+    for (const PoolSlot& slot : pack.slots)
+    {
+        mExplorerManagedBellotaIds.erase(slot.bellotaId.id);
+        canvas.removeBellota(slot.bellotaId);
+        mExplorerManagedTextureIds.erase(slot.textureId.id);
+        canvas.removeTexture(slot.textureId);
+    }
+    pack.slots.clear();
+}
+
+TilemapExplorer& TilemapManager::tilemapExplorer(TilemapExplorerId explorerId)
+{
+    return mTilemapExplorers.at(explorerId.id).explorer;
+}
+
+const TilemapExplorer& TilemapManager::tilemapExplorer(TilemapExplorerId explorerId) const
+{
+    return mTilemapExplorers.at(explorerId.id).explorer;
+}
+
+void TilemapManager::updateExplorers(Canvas& canvas)
+{
+    if (mTilemapExplorers.size() == 0) return;
+
+    const ScreenSize& screen = canvas.screenSize();
+    const glm::vec2 canvasCenter{
+        static_cast<float>(screen.width)  * 0.5f,
+        static_cast<float>(screen.height) * 0.5f
+    };
+
+    for (auto& [explorerIdx, explorerPack] : mTilemapExplorers)
+    {
+        updateExplorer(explorerPack, canvas, screen, canvasCenter);
+    }
+}
+
+void TilemapManager::updateExplorer(
+    TilemapExplorerPack& explorerPack,
+    Canvas& canvas,
+    const ScreenSize& screen,
+    const glm::vec2& canvasCenter)
+{
+    const TilemapId tilemapId = explorerPack.explorer.tilemap();
+    if (!mTilemaps.contains(tilemapId.id)) return;
+
+    // Canvas was resized since this pool was built — tear it down and
+    // rebuild against the new screenSize. Fresh slots have currentWorldChunk
+    // = {-1,-1}, so the chunk-sync pass below re-syncs every slot this frame.
+    // Cost: N GPU texture frees + N uploads on the same frame (N = slot count).
+    if (screen.width  != explorerPack.poolSizedFor.width ||
+        screen.height != explorerPack.poolSizedFor.height)
+    {
+        teardownPoolSlots(explorerPack, canvas);
+        buildPoolSlots(explorerPack, canvas);
+    }
+
+    const Tilemap& sourceTilemap = mTilemaps.at(tilemapId.id);
+
+    const glm::vec2 chunkPixelSize = glm::vec2(sourceTilemap.chunkPixelSize());
+
+    const glm::vec2 camera = explorerPack.explorer.camera();
+    const glm::vec2 worldBottomLeft = camera - canvasCenter;
+
+    const glm::ivec2 slotOriginChunk{
+        static_cast<int>(std::floor(worldBottomLeft.x / chunkPixelSize.x)) - 1,
+        static_cast<int>(std::floor(worldBottomLeft.y / chunkPixelSize.y)) - 1
+    };
+
+    const ExplorerFrame frame{
+        .canvas         = canvas,
+        .sourceTilemap  = sourceTilemap,
+        .chunkPixelSize = chunkPixelSize,
+        .camera         = camera,
+        .canvasCenter   = canvasCenter,
+        .depthOffset    = explorerPack.explorer.depthOffset(),
+        .chunkScratch   = std::span<std::uint8_t>(explorerPack.chunkScratch),
+    };
+
+    for (int py = 0; py < explorerPack.poolGridSize.y; ++py)
+    {
+        for (int px = 0; px < explorerPack.poolGridSize.x; ++px)
+        {
+            const glm::ivec2 desired{
+                slotOriginChunk.x + px,
+                slotOriginChunk.y + py
+            };
+            exploreCell(explorerPack.slotAt(px, py), desired, frame);
+        }
+    }
+}
+
+}

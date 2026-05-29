@@ -100,6 +100,12 @@ add_executable(hello_tilemap
 set_property(TARGET hello_tilemap PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_tilemap PRIVATE nothofagus)
 
+add_executable(hello_tilemap_huge
+    "hello_tilemap_huge.cpp"
+)
+set_property(TARGET hello_tilemap_huge PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_tilemap_huge PRIVATE nothofagus)
+
 add_executable(hello_mesh
     "hello_mesh.cpp"
 )
