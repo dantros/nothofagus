@@ -380,16 +380,7 @@ void Canvas::CanvasImpl::setMesh(const BellotaId bellotaId, const MeshId meshId)
     debugCheck(mTextures.at(bellotaOriginal.texture().id).mode != TextureMode::TileMap,
                "setMesh: cannot attach a custom mesh to a bellota whose texture is in tile-map mode");
 
-    Bellota bellotaWithNewMesh(
-        bellotaOriginal.transform(),
-        bellotaOriginal.texture(),
-        meshId,
-        bellotaOriginal.depthOffset()
-    );
-    bellotaWithNewMesh.visible() = bellotaOriginal.visible();
-    bellotaWithNewMesh.currentLayer() = bellotaOriginal.currentLayer();
-    bellotaWithNewMesh.opacity() = bellotaOriginal.opacity();
-    replaceBellota(bellotaId, bellotaWithNewMesh);
+    replaceBellota(bellotaId, bellotaOriginal.withMesh(meshId));
 }
 
 const Mesh& Canvas::CanvasImpl::mesh(MeshId meshId) const
@@ -436,16 +427,13 @@ void Canvas::CanvasImpl::setTexture(const BellotaId bellotaId, const TextureId t
     debugCheck(currentMeshIsAutoQuad or mTextures.at(textureId.id).mode != TextureMode::TileMap,
                "setTexture: cannot switch a bellota with a custom mesh onto a tile-map texture");
 
-    Bellota bellotaWithNewTexture = currentMeshIsAutoQuad
-        // Auto-quad needs to be regenerated for the new texture size — drop the MeshId here;
-        // replaceBellota → addEntry path doesn't try to re-register an auto-quad, so we
-        // re-materialize it below.
-        ? Bellota(bellotaOriginal.transform(), textureId, bellotaOriginal.depthOffset())
-        : Bellota(bellotaOriginal.transform(), textureId, meshIdOpt.value(), bellotaOriginal.depthOffset());
-
-    bellotaWithNewTexture.visible() = bellotaOriginal.visible();
-    bellotaWithNewTexture.currentLayer() = bellotaOriginal.currentLayer();
-    bellotaWithNewTexture.opacity() = bellotaOriginal.opacity();
+    Bellota bellotaWithNewTexture = bellotaOriginal.withTexture(textureId);
+    if (currentMeshIsAutoQuad)
+    {
+        // Auto-quad needs to be regenerated for the new texture size — drop the MeshId
+        // here; replaceBellota will re-materialize one sized to the new texture.
+        bellotaWithNewTexture.meshId() = std::nullopt;
+    }
 
     replaceBellota(bellotaId, bellotaWithNewTexture);
 }
