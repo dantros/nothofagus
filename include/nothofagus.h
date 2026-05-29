@@ -9,7 +9,6 @@
 #include "canvas.h"
 #include "render_target.h"
 #include "tilemap.h"
-#include "tilemap_explorer.h"
 #include "sparsemap.h"
 #include "explorer.h"
 #include "controller.h"
