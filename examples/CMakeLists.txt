@@ -106,6 +106,12 @@ add_executable(hello_tilemap_huge
 set_property(TARGET hello_tilemap_huge PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_tilemap_huge PRIVATE nothofagus)
 
+add_executable(hello_sparsemap
+    "hello_sparsemap.cpp"
+)
+set_property(TARGET hello_sparsemap PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_sparsemap PRIVATE nothofagus)
+
 add_executable(hello_mesh
     "hello_mesh.cpp"
 )

@@ -257,8 +257,9 @@ BellotaId Canvas::CanvasImpl::addBellota(const Bellota& bellota)
 
 void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
 {
-    debugCheck(!mTilemapManager.isExplorerManagedBellota(bellotaId.id),
-        "Bellota is owned by a TilemapExplorer pool — use canvas.removeTilemapExplorer() instead of removing slot bellotas directly.");
+    debugCheck(!mTilemapManager.isExplorerManagedBellota(bellotaId.id)
+            && !mSparsemapManager.isExplorerManagedBellota(bellotaId.id),
+        "Bellota is owned by an explorer pool — use canvas.removeTilemapExplorer() / canvas.removeSparsemapExplorer() instead of removing slot bellotas directly.");
     BellotaPack& bellotaPackToRemove = mBellotas.at(bellotaId.id);
     const TextureId textureId = bellotaPackToRemove.bellota.texture();
     const std::optional<MeshId>& meshIdOpt = bellotaPackToRemove.bellota.meshId();
@@ -284,8 +285,9 @@ TextureId Canvas::CanvasImpl::addTexture(const Texture& texture)
 
 void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
 {
-    debugCheck(!mTilemapManager.isExplorerManagedTexture(textureId.id),
-        "Texture is owned by a TilemapExplorer pool — use canvas.removeTilemapExplorer() instead of removing slot textures directly.");
+    debugCheck(!mTilemapManager.isExplorerManagedTexture(textureId.id)
+            && !mSparsemapManager.isExplorerManagedTexture(textureId.id),
+        "Texture is owned by an explorer pool — use canvas.removeTilemapExplorer() / canvas.removeSparsemapExplorer() instead of removing slot textures directly.");
     const bool textureWasRemoved = mTextureUsageMonitor.removeUnused(textureId);
     debugCheck(textureWasRemoved, "Texture is not in the unused set — still referenced by a bellota or already removed");
 
@@ -540,42 +542,82 @@ TextureId Canvas::CanvasImpl::renderTargetTexture(RenderTargetId renderTargetId)
 
 TilemapId Canvas::CanvasImpl::addTilemap(Tilemap tilemap)
 {
-    return mTilemapManager.addTilemap(std::move(tilemap));
+    return mTilemapManager.add(std::move(tilemap));
 }
 
 void Canvas::CanvasImpl::removeTilemap(TilemapId tilemapId)
 {
-    mTilemapManager.removeTilemap(tilemapId);
+    mTilemapManager.remove(tilemapId);
 }
 
 Tilemap& Canvas::CanvasImpl::tilemap(TilemapId tilemapId)
 {
-    return mTilemapManager.tilemap(tilemapId);
+    return mTilemapManager.get(tilemapId);
 }
 
 const Tilemap& Canvas::CanvasImpl::tilemap(TilemapId tilemapId) const
 {
-    return mTilemapManager.tilemap(tilemapId);
+    return mTilemapManager.get(tilemapId);
 }
 
 TilemapExplorerId Canvas::CanvasImpl::addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas)
 {
-    return mTilemapManager.addTilemapExplorer(explorer, canvas);
+    return mTilemapManager.addExplorer(explorer, canvas);
 }
 
 void Canvas::CanvasImpl::removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas)
 {
-    mTilemapManager.removeTilemapExplorer(explorerId, canvas);
+    mTilemapManager.removeExplorer(explorerId, canvas);
 }
 
 TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId explorerId)
 {
-    return mTilemapManager.tilemapExplorer(explorerId);
+    return mTilemapManager.getExplorer(explorerId);
 }
 
 const TilemapExplorer& Canvas::CanvasImpl::tilemapExplorer(TilemapExplorerId explorerId) const
 {
-    return mTilemapManager.tilemapExplorer(explorerId);
+    return mTilemapManager.getExplorer(explorerId);
+}
+
+SparsemapId Canvas::CanvasImpl::addSparsemap(Sparsemap sparsemap)
+{
+    return mSparsemapManager.add(std::move(sparsemap));
+}
+
+void Canvas::CanvasImpl::removeSparsemap(SparsemapId sparsemapId)
+{
+    mSparsemapManager.remove(sparsemapId);
+}
+
+Sparsemap& Canvas::CanvasImpl::sparsemap(SparsemapId sparsemapId)
+{
+    return mSparsemapManager.get(sparsemapId);
+}
+
+const Sparsemap& Canvas::CanvasImpl::sparsemap(SparsemapId sparsemapId) const
+{
+    return mSparsemapManager.get(sparsemapId);
+}
+
+SparsemapExplorerId Canvas::CanvasImpl::addSparsemapExplorer(SparsemapExplorer explorer, Canvas& canvas)
+{
+    return mSparsemapManager.addExplorer(explorer, canvas);
+}
+
+void Canvas::CanvasImpl::removeSparsemapExplorer(SparsemapExplorerId explorerId, Canvas& canvas)
+{
+    mSparsemapManager.removeExplorer(explorerId, canvas);
+}
+
+SparsemapExplorer& Canvas::CanvasImpl::sparsemapExplorer(SparsemapExplorerId explorerId)
+{
+    return mSparsemapManager.getExplorer(explorerId);
+}
+
+const SparsemapExplorer& Canvas::CanvasImpl::sparsemapExplorer(SparsemapExplorerId explorerId) const
+{
+    return mSparsemapManager.getExplorer(explorerId);
 }
 
 void Canvas::CanvasImpl::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)
@@ -816,6 +858,11 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
     {
         ZoneScopedN("TilemapExplorers");
         mTilemapManager.updateExplorers(canvas);
+    }
+
+    {
+        ZoneScopedN("SparsemapExplorers");
+        mSparsemapManager.updateExplorers(canvas);
     }
 
     const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);

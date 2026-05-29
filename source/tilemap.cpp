@@ -1,4 +1,5 @@
 #include "tilemap.h"
+#include "explorer.h"
 #include "check.h"
 #include <algorithm>
 #include <cstdint>
@@ -6,6 +7,10 @@
 
 namespace Nothofagus
 {
+
+// Concept conformance: if a `TilemapLike` requirement breaks the build at this line,
+// the missing/changed method shows up clearly instead of as a generic template error.
+static_assert(TilemapLike<Tilemap>);
 
 static glm::ivec2 computeChunkGridSize(glm::ivec2 mapSize, glm::ivec2 chunkSize)
 {

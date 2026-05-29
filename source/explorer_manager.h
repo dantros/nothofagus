@@ -1,0 +1,86 @@
+#pragma once
+
+#include "explorer.h"
+#include "explorer_pack.h"
+#include "indexed_container.h"
+#include <cstddef>
+#include <unordered_set>
+
+namespace Nothofagus
+{
+
+class Canvas;
+
+/// Storage and per-frame logic for a single `TilemapLike` backend: the data registry,
+/// the explorer pool packs, and the explorer-managed tag sets that police user-side
+/// bellota/texture removals. Three methods that need to touch canvas-owned
+/// bellotas/textures take a `Canvas&` and use only its public surface.
+///
+/// Instantiated once per backend in `CanvasImpl`: `ExplorerManager<Tilemap>` for the
+/// dense huge-tilemap path, `ExplorerManager<Sparsemap>` for the sparse / streaming
+/// path. The two managers are independent — their explorer-managed sets do not overlap.
+template<TilemapLike T>
+class ExplorerManager
+{
+public:
+    using DataId     = typename TilemapTraits<T>::DataId;
+    using ExplorerId = typename TilemapTraits<T>::ExplorerId;
+
+    ExplorerManager() = default;
+
+    // ── Data (pure storage) ───────────────────────────────────────────────
+    DataId   add(T data);
+    void     remove(DataId id);                ///< debugCheck: no explorer references it.
+    T&       get(DataId id);
+    const T& get(DataId id) const;
+
+    // ── Explorer lifecycle (need canvas access for pool init/teardown) ─
+    /// Allocates the pool: one `IndirectTexture` + one `Bellota` per slot,
+    /// registered through `canvas.addTexture` / `canvas.addBellota`
+    /// and tagged explorer-managed.
+    ExplorerId addExplorer(Explorer<T> explorer, Canvas& canvas);
+
+    /// Untags + removes every pool slot's bellota and texture via
+    /// `canvas.removeBellota` / `canvas.removeTexture`, then drops the explorer pack.
+    void removeExplorer(ExplorerId id, Canvas& canvas);
+
+    Explorer<T>&       getExplorer(ExplorerId id);
+    const Explorer<T>& getExplorer(ExplorerId id) const;
+
+    // ── Per-frame pre-pass (needs canvas access to mutate slot bellotas + textures) ─
+    /// Runs in `Canvas::CanvasImpl::runOneFrame` between the user update and
+    /// the texture upload pass. For each explorer, assigns visible world chunks
+    /// to pool slots (via `T::hasChunk`), memcpys chunk data into the slot's
+    /// `IndirectTexture` via `setMapBulk`, and repositions/un-hides the slot bellota.
+    void updateExplorers(Canvas& canvas);
+
+    // ── Explorer-managed predicates (consulted by removeBellota / removeTexture) ─
+    bool isExplorerManagedBellota(std::size_t bellotaId) const
+        { return mExplorerManagedBellotaIds.contains(bellotaId); }
+    bool isExplorerManagedTexture(std::size_t textureId) const
+        { return mExplorerManagedTextureIds.contains(textureId); }
+
+    std::size_t dataCount()     const { return mData.size(); }
+    std::size_t explorerCount() const { return mExplorers.size(); }
+
+private:
+    /// Allocates / resizes one explorer's pool against the current `canvas.screenSize()`.
+    /// Used both at registration time and by `updateExplorers` when the canvas size changes.
+    void buildPoolSlots(ExplorerPack<T>& pack, Canvas& canvas);
+
+    /// Tears down every slot's bellota + texture (untag, then canvas remove) and
+    /// clears `pack.slots`. Used at removal time and at the head of `buildPoolSlots`'s
+    /// re-allocation path.
+    void teardownPoolSlots(ExplorerPack<T>& pack, Canvas& canvas);
+
+    IndexedContainer<T>                  mData;
+    IndexedContainer<ExplorerPack<T>>    mExplorers;
+    std::unordered_set<std::size_t>      mExplorerManagedBellotaIds;
+    std::unordered_set<std::size_t>      mExplorerManagedTextureIds;
+};
+
+// Explicit instantiations live in explorer_manager.cpp.
+extern template class ExplorerManager<Tilemap>;
+extern template class ExplorerManager<Sparsemap>;
+
+}

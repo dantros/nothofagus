@@ -206,6 +206,46 @@ const TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId explorerId) con
     return mCanvasImpl->tilemapExplorer(explorerId);
 }
 
+SparsemapId Canvas::addSparsemap(Sparsemap sparsemap)
+{
+    return mCanvasImpl->addSparsemap(std::move(sparsemap));
+}
+
+void Canvas::removeSparsemap(SparsemapId sparsemapId)
+{
+    mCanvasImpl->removeSparsemap(sparsemapId);
+}
+
+Sparsemap& Canvas::sparsemap(SparsemapId sparsemapId)
+{
+    return mCanvasImpl->sparsemap(sparsemapId);
+}
+
+const Sparsemap& Canvas::sparsemap(SparsemapId sparsemapId) const
+{
+    return mCanvasImpl->sparsemap(sparsemapId);
+}
+
+SparsemapExplorerId Canvas::addSparsemapExplorer(SparsemapExplorer explorer)
+{
+    return mCanvasImpl->addSparsemapExplorer(explorer, *this);
+}
+
+void Canvas::removeSparsemapExplorer(SparsemapExplorerId explorerId)
+{
+    mCanvasImpl->removeSparsemapExplorer(explorerId, *this);
+}
+
+SparsemapExplorer& Canvas::sparsemapExplorer(SparsemapExplorerId explorerId)
+{
+    return mCanvasImpl->sparsemapExplorer(explorerId);
+}
+
+const SparsemapExplorer& Canvas::sparsemapExplorer(SparsemapExplorerId explorerId) const
+{
+    return mCanvasImpl->sparsemapExplorer(explorerId);
+}
+
 void Canvas::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)
 {
     mCanvasImpl->renderTo(renderTargetId, std::move(bellotaIds));

@@ -43,6 +43,14 @@ public:
             && worldCell.y >= 0 && worldCell.y < size.y;
     }
 
+    /// True iff `chunkPos` lies inside `[0, chunkGridSize.x) × [0, chunkGridSize.y)`.
+    /// Satisfies the `TilemapLike` concept; for dense maps every in-grid chunk exists.
+    bool hasChunk(glm::ivec2 chunkPos) const
+    {
+        return chunkPos.x >= 0 && chunkPos.x < mChunkGridSize.x
+            && chunkPos.y >= 0 && chunkPos.y < mChunkGridSize.y;
+    }
+
     glm::ivec2 mapSize()       const { return mCache.mapSize(); }
     glm::ivec2 chunkSize()     const { return mChunkSize; }
     glm::ivec2 tileSize()      const { return mCache.size(); }

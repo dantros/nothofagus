@@ -1,0 +1,84 @@
+#pragma once
+
+#include "tilemap.h"
+#include "tilemap_id.h"
+#include "tilemap_explorer_id.h"
+#include "sparsemap.h"
+#include "sparsemap_id.h"
+#include "sparsemap_explorer_id.h"
+#include "texture.h"
+#include <glm/glm.hpp>
+#include <concepts>
+#include <cstdint>
+#include <span>
+
+namespace Nothofagus
+{
+
+/// Shared interface satisfied by both `Tilemap` (dense) and `Sparsemap` (sparse). The
+/// `Explorer<T>` and the internal `ExplorerManager<T>` depend on this concept; satisfying
+/// it is what makes a backend pluggable into the chunk-pool renderer.
+template<typename T>
+concept TilemapLike = requires(const T& t, glm::ivec2 coord, std::span<std::uint8_t> out) {
+    { t.chunkSize()            } -> std::same_as<glm::ivec2>;
+    { t.tileSize()             } -> std::same_as<glm::ivec2>;
+    { t.palette()              } -> std::same_as<const ColorPallete&>;
+    { t.cacheTexture()         } -> std::same_as<const IndirectTexture&>;
+    { t.hasChunk(coord)        } -> std::same_as<bool>;
+    { t.chunkGeneration(coord) } -> std::same_as<std::uint64_t>;
+    t.chunkDataInto(coord, out);
+};
+
+/// Per-backend ID type binding: maps a `TilemapLike` type to its corresponding data ID
+/// and explorer ID. Specialized for each concrete backend.
+template<typename T> struct TilemapTraits;
+
+template<>
+struct TilemapTraits<Tilemap>
+{
+    using DataId     = TilemapId;
+    using ExplorerId = TilemapExplorerId;
+};
+
+template<>
+struct TilemapTraits<Sparsemap>
+{
+    using DataId     = SparsemapId;
+    using ExplorerId = SparsemapExplorerId;
+};
+
+/// Windowed renderer handle for any `TilemapLike` backend: holds the camera (world-pixel
+/// coordinate shown at the canvas center) and the depth offset for the pool's bellotas.
+/// The actual pool of bellotas + `IndirectTexture` slots is owned by `ExplorerManager<T>`
+/// inside the canvas. See CLAUDE.md "Huge tilemaps" / "Sparse tilemaps" for pool semantics
+/// and explorer-managed lifecycle rules.
+template<TilemapLike T>
+class Explorer
+{
+public:
+    using DataId = typename TilemapTraits<T>::DataId;
+
+    explicit Explorer(DataId tilemapId):
+        mTilemapId(tilemapId),
+        mCamera(0.0f, 0.0f),
+        mDepthOffset(0)
+    {}
+
+    DataId tilemap() const { return mTilemapId; }
+
+    void      setCamera(glm::vec2 worldOffset) { mCamera = worldOffset; }
+    glm::vec2 camera() const { return mCamera; }
+
+    void          setDepthOffset(std::int8_t offset) { mDepthOffset = offset; }
+    std::int8_t   depthOffset() const { return mDepthOffset; }
+
+private:
+    DataId      mTilemapId;
+    glm::vec2   mCamera;
+    std::int8_t mDepthOffset;
+};
+
+using TilemapExplorer   = Explorer<Tilemap>;
+using SparsemapExplorer = Explorer<Sparsemap>;
+
+}

@@ -3,7 +3,9 @@
 #include "canvas.h"
 #include "tilemap.h"
 #include "tilemap_explorer.h"
-#include "tilemap_manager.h"
+#include "sparsemap.h"
+#include "explorer.h"
+#include "explorer_manager.h"
 #include "texture_container.h"
 #include "bellota_container.h"
 #include "mesh_container.h"
@@ -130,6 +132,16 @@ public:
     void removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas);
     TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId);
     const TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId) const;
+
+    SparsemapId addSparsemap(Sparsemap sparsemap);
+    void removeSparsemap(SparsemapId sparsemapId);
+    Sparsemap& sparsemap(SparsemapId sparsemapId);
+    const Sparsemap& sparsemap(SparsemapId sparsemapId) const;
+
+    SparsemapExplorerId addSparsemapExplorer(SparsemapExplorer explorer, Canvas& canvas);
+    void removeSparsemapExplorer(SparsemapExplorerId explorerId, Canvas& canvas);
+    SparsemapExplorer& sparsemapExplorer(SparsemapExplorerId explorerId);
+    const SparsemapExplorer& sparsemapExplorer(SparsemapExplorerId explorerId) const;
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 
@@ -264,7 +276,8 @@ private:
     BellotaContainer mBellotas; ///< Container for Bellota objects.
     MeshContainer mMeshes; ///< Container for Mesh assets (user-registered + engine-allocated auto-quads).
     RenderTargetContainer mRenderTargets; ///< Container for RenderTarget objects.
-    TilemapManager mTilemapManager; ///< Huge-tilemap storage + per-frame explorer pool logic.
+    ExplorerManager<Tilemap>   mTilemapManager;   ///< Dense huge-tilemap storage + per-frame explorer pool logic.
+    ExplorerManager<Sparsemap> mSparsemapManager; ///< Sparse tilemap storage + per-frame explorer pool logic.
     TextureUsageMonitor mTextureUsageMonitor;
     MeshUsageMonitor mMeshUsageMonitor;
 
