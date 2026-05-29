@@ -209,24 +209,27 @@ int main()
     };
 
     // Build the initial Tilemap (world data) + TilemapExplorer (pooled renderer).
-    Nothofagus::TilemapHandles handles = Nothofagus::createTilemap(
-        canvas, mapSize, chunkSize, tileSize, palette,
-        std::span<const std::vector<std::uint8_t>>(tileGraphics));
-    populateWorld(canvas.tilemap(handles.tilemapId), mapSize);
+    Nothofagus::TilemapId tilemapId = canvas.addTilemap(
+        Nothofagus::Tilemap(mapSize, chunkSize, tileSize, palette,
+            std::span<const std::vector<std::uint8_t>>(tileGraphics)));
+    Nothofagus::TilemapExplorerId explorerId =
+        canvas.addTilemapExplorer(Nothofagus::TilemapExplorer(tilemapId));
+    populateWorld(canvas.tilemap(tilemapId), mapSize);
 
     // Tear down the current explorer+tilemap and rebuild at a new size. Safe to call
     // from inside the update callback: removeTilemapExplorer/removeTilemap drop pool
-    // bellotas+textures and the world data; createTilemap registers fresh ones;
-    // the per-frame explorer pass picks them up the same frame.
+    // bellotas+textures and the world data; the add* calls register fresh ones; the
+    // per-frame explorer pass picks them up the same frame.
     auto rebuild = [&](glm::ivec2 newSize)
     {
-        canvas.removeTilemapExplorer(handles.explorerId);
-        canvas.removeTilemap(handles.tilemapId);
+        canvas.removeTilemapExplorer(explorerId);
+        canvas.removeTilemap(tilemapId);
         mapSize = newSize;
-        handles = Nothofagus::createTilemap(
-            canvas, mapSize, chunkSize, tileSize, palette,
-            std::span<const std::vector<std::uint8_t>>(tileGraphics));
-        populateWorld(canvas.tilemap(handles.tilemapId), mapSize);
+        tilemapId = canvas.addTilemap(
+            Nothofagus::Tilemap(mapSize, chunkSize, tileSize, palette,
+                std::span<const std::vector<std::uint8_t>>(tileGraphics)));
+        explorerId = canvas.addTilemapExplorer(Nothofagus::TilemapExplorer(tilemapId));
+        populateWorld(canvas.tilemap(tilemapId), mapSize);
         camera = {0.0f, 0.0f};
     };
 
@@ -279,7 +282,7 @@ int main()
                 camera += (dir / len) * (panSpeed * dt);
             }
         }
-        canvas.tilemapExplorer(handles.explorerId).setCamera(camera);
+        canvas.tilemapExplorer(explorerId).setCamera(camera);
 
         // ── Edit storm ─────────────────────────────────────────────────
         // Randomly setCell across the world — each edit bumps its chunk's
@@ -287,7 +290,7 @@ int main()
         // pass for whichever slot is painting that chunk.
         if (editsPerFrame > 0)
         {
-            Nothofagus::Tilemap& world = canvas.tilemap(handles.tilemapId);
+            Nothofagus::Tilemap& world = canvas.tilemap(tilemapId);
             auto next = [&] { rngState = rngState * 1664525u + 1013904223u; return rngState; };
             for (int i = 0; i < editsPerFrame; ++i)
             {

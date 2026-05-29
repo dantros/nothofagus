@@ -111,15 +111,18 @@ int main()
         makeBorderedTile(tileSize, Pal::Green),   // layer 4
     };
 
-    // Build an empty Sparsemap + a SparsemapExplorer. Nothing renders until we
-    // start populating chunks below.
-    Nothofagus::SparsemapHandles handles = Nothofagus::createSparsemap(
-        canvas, chunkSize, tileSize, palette,
-        std::span<const std::vector<std::uint8_t>>(tileGraphics));
+    // Register the Sparsemap (world data) and a SparsemapExplorer (pooled renderer)
+    // against the canvas. The explorer takes the SparsemapId it draws from. Nothing
+    // renders until we start populating chunks below.
+    Nothofagus::SparsemapId sparsemapId = canvas.addSparsemap(
+        Nothofagus::Sparsemap(chunkSize, tileSize, palette,
+            std::span<const std::vector<std::uint8_t>>(tileGraphics)));
+    Nothofagus::SparsemapExplorerId explorerId =
+        canvas.addSparsemapExplorer(Nothofagus::SparsemapExplorer(sparsemapId));
 
     // Seed a few chunks near the origin so the camera starts on populated content.
     {
-        Nothofagus::Sparsemap& world = canvas.sparsemap(handles.sparsemapId);
+        Nothofagus::Sparsemap& world = canvas.sparsemap(sparsemapId);
         for (int cy = -2; cy <= 2; ++cy)
             for (int cx = -2; cx <= 2; ++cx)
             {
@@ -168,9 +171,9 @@ int main()
             const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
             camera += (dir / len) * (panSpeed * dt);
         }
-        canvas.sparsemapExplorer(handles.explorerId).setCamera(camera);
+        canvas.sparsemapExplorer(explorerId).setCamera(camera);
 
-        Nothofagus::Sparsemap& world = canvas.sparsemap(handles.sparsemapId);
+        Nothofagus::Sparsemap& world = canvas.sparsemap(sparsemapId);
 
         // ── Streaming around the camera (simulated load/unload) ─────────
         if (streamingOn)

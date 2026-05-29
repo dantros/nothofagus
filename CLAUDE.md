@@ -312,26 +312,28 @@ Single-`IndirectTexture` tilemaps scale poorly: any `setCell` re-uploads the ent
 // Build the tile graphics (palette indices, one std::vector per atlas layer).
 std::vector<std::vector<std::uint8_t>> tileGraphics{ /* layer 0, layer 1, ... */ };
 
-// createTilemap registers both the Tilemap (world data) and the TilemapExplorer
-// (pooled renderer) in one shot and returns handles for both.
-Nothofagus::TilemapHandles handles = Nothofagus::createTilemap(
-    canvas,
-    /*mapSize  */ glm::ivec2{256, 256},   // world cells
-    /*chunkSize*/ glm::ivec2{32, 32},     // cells per pool slot
-    /*tileSize */ glm::ivec2{16, 16},     // pixels per cell
-    palette,
-    std::span<const std::vector<std::uint8_t>>(tileGraphics));
+// Register the Tilemap (world data) and a TilemapExplorer (pooled renderer)
+// against the canvas. The explorer takes the TilemapId it draws from.
+Nothofagus::TilemapId tilemapId = canvas.addTilemap(
+    Nothofagus::Tilemap(
+        /*mapSize  */ glm::ivec2{256, 256},   // world cells
+        /*chunkSize*/ glm::ivec2{32, 32},     // cells per pool slot
+        /*tileSize */ glm::ivec2{16, 16},     // pixels per cell
+        palette,
+        std::span<const std::vector<std::uint8_t>>(tileGraphics)));
+Nothofagus::TilemapExplorerId explorerId =
+    canvas.addTilemapExplorer(Nothofagus::TilemapExplorer(tilemapId));
 
 // Edit the world at world-cell coordinates — the owning chunk's generation
 // bumps, the pool slot displaying it (if any) re-syncs next frame.
-canvas.tilemap(handles.tilemapId).setCell({worldCol, worldRow}, layerIndex);
+canvas.tilemap(tilemapId).setCell({worldCol, worldRow}, layerIndex);
 
 // Guard arbitrary coordinates against the world extent before editing.
-if (canvas.tilemap(handles.tilemapId).inBounds({worldCol, worldRow}))
-    canvas.tilemap(handles.tilemapId).setCell({worldCol, worldRow}, layerIndex);
+if (canvas.tilemap(tilemapId).inBounds({worldCol, worldRow}))
+    canvas.tilemap(tilemapId).setCell({worldCol, worldRow}, layerIndex);
 
 // Pan the explorer via the camera (world pixels; (0,0) = world origin centered).
-canvas.tilemapExplorer(handles.explorerId).setCamera({scrollX, scrollY});
+canvas.tilemapExplorer(explorerId).setCamera({scrollX, scrollY});
 ```
 
 **How it works:**
@@ -348,7 +350,7 @@ canvas.tilemapExplorer(handles.explorerId).setCamera({scrollX, scrollY});
 - Independent of world size beyond the cell grid itself: a 1000×1000-cell world (~1 MB cell grid) uses ~50 IndirectTextures and ~50 bellotas, regardless of how big the world is.
 
 **Lifecycle rules:**
-- `addTilemap` / `addTilemapExplorer` register the data and the renderer; `createTilemap` is a convenience that calls both.
+- `addTilemap` registers the world data and returns a `TilemapId`; `addTilemapExplorer(TilemapExplorer(tilemapId))` registers the pooled renderer against that id.
 - **Tear down explorers before their tilemaps.** `removeTilemap(tilemapId)` fires a `debugCheck` if any `TilemapExplorer` still references it; call `removeTilemapExplorer(explorerId)` on every owning explorer first. (See [examples/hello_tilemap_huge.cpp](examples/hello_tilemap_huge.cpp) `rebuild` lambda for the canonical pattern.)
 - `removeTilemapExplorer(explorerId)` removes all pool bellotas and textures it owns.
 - Multiple `TilemapExplorer` instances may reference the same `Tilemap` (e.g., main explorer + mini-map explorer); each polls per-chunk generation counters independently.
@@ -365,26 +367,29 @@ Sibling to `Tilemap` for **unbounded / sparse worlds**: same chunk-pool renderin
 Both `TilemapExplorer` and `SparsemapExplorer` are concrete typedefs of a shared `Explorer<T>` template constrained by the `TilemapLike` C++20 concept (see [include/explorer.h](include/explorer.h)); the per-frame chunk-sync pre-pass in [source/explorer_manager.cpp](source/explorer_manager.cpp) is written once and explicitly instantiated for both backends. The only specialization point is the `chunkInBounds(chunkPos)` predicate — dense returns `chunkPos` ∈ `[0, chunkGridSize)`, sparse returns `mChunks.contains(chunkPos)`. Each backend asserts conformance via `static_assert(TilemapLike<T>);` in its `.cpp` so a missing/changed method shows up as a clear concept error instead of an opaque template instantiation failure.
 
 ```cpp
-// Build an empty Sparsemap + a SparsemapExplorer in one shot. No mapSize.
-Nothofagus::SparsemapHandles handles = Nothofagus::createSparsemap(
-    canvas, chunkSize, tileSize, palette,
-    std::span<const std::vector<std::uint8_t>>(tileGraphics));
+// Register an empty Sparsemap (no mapSize) and a SparsemapExplorer (pooled renderer)
+// against the canvas. The explorer takes the SparsemapId it draws from.
+Nothofagus::SparsemapId sparsemapId = canvas.addSparsemap(
+    Nothofagus::Sparsemap(chunkSize, tileSize, palette,
+        std::span<const std::vector<std::uint8_t>>(tileGraphics)));
+Nothofagus::SparsemapExplorerId explorerId =
+    canvas.addSparsemapExplorer(Nothofagus::SparsemapExplorer(sparsemapId));
 
 // Bulk path: insert (or overwrite) a chunk at chunk coords. Cells span must
 // equal chunkSize.x * chunkSize.y (or be empty for zero-init).
-canvas.sparsemap(handles.sparsemapId).addChunk({chunkX, chunkY},
+canvas.sparsemap(sparsemapId).addChunk({chunkX, chunkY},
     std::span<const std::uint8_t>(cells));
 
 // Ad-hoc edit path: lazy-creates the owning chunk (zero-init) if missing,
 // then writes the cell. Bumps the chunk's generation counter.
-canvas.sparsemap(handles.sparsemapId).setCell({worldX, worldY}, layerIndex);
+canvas.sparsemap(sparsemapId).setCell({worldX, worldY}, layerIndex);
 
 // Streaming: drop a chunk once it leaves the camera's interest area. Pool
 // slots displaying it hide next frame via chunkInBounds.
-canvas.sparsemap(handles.sparsemapId).removeChunk({chunkX, chunkY});
+canvas.sparsemap(sparsemapId).removeChunk({chunkX, chunkY});
 
 // Same camera API as TilemapExplorer.
-canvas.sparsemapExplorer(handles.explorerId).setCamera({scrollX, scrollY});
+canvas.sparsemapExplorer(explorerId).setCamera({scrollX, scrollY});
 ```
 
 **Differences from `Tilemap`:**
@@ -396,7 +401,7 @@ canvas.sparsemapExplorer(handles.explorerId).setCamera({scrollX, scrollY});
 - The internal cache is an `IndirectTexture mCacheTemplate` carrying atlas + palette only (no `setMap` call). Slot textures still clone via `IndirectTexture(other, chunkSize)`; that constructor only needs atlas + palette + tileSize from the source.
 
 **Lifecycle rules:**
-- `addSparsemap` / `addSparsemapExplorer` register the data and the renderer; `createSparsemap` is a convenience that calls both.
+- `addSparsemap` registers the world data and returns a `SparsemapId`; `addSparsemapExplorer(SparsemapExplorer(sparsemapId))` registers the pooled renderer against that id.
 - **Tear down explorers before their sparsemaps.** `removeSparsemap` fires a `debugCheck` if any `SparsemapExplorer` still references it.
 - `removeSparsemapExplorer(explorerId)` removes all pool bellotas and textures it owns.
 - Multiple `SparsemapExplorer` instances may reference the same `Sparsemap`; each polls per-chunk generation counters independently.
