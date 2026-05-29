@@ -5,7 +5,7 @@
 /// unbounded and chunks exist only where added.
 ///
 /// What this demo shows:
-///   - An empty Sparsemap renders nothing (pool slots are hidden via `hasChunk`).
+///   - An empty Sparsemap renders nothing (pool slots are hidden via `chunkInBounds`).
 ///   - "Streaming" simulation: as the camera pans, chunks inside a load radius are
 ///     `addChunk`'d (zero-init or with a stamped pattern); chunks outside an unload
 ///     radius are `removeChunk`'d. Memory scales with `chunkCount`, not with how far
@@ -187,7 +187,7 @@ int main()
                 for (int dx = -loadRadiusChunks; dx <= loadRadiusChunks; ++dx)
                 {
                     const glm::ivec2 cp{cameraChunk.x + dx, cameraChunk.y + dy};
-                    if (!world.hasChunk(cp))
+                    if (!world.chunkInBounds(cp))
                     {
                         const auto data = uniformChunkData(chunkSize, patternForChunk(cp));
                         world.addChunk(cp, std::span<const std::uint8_t>(data));
@@ -251,7 +251,7 @@ int main()
         ImGui::TextWrapped(
             "Pan with WASD. Streaming loads chunks within Load radius of the camera and "
             "evicts those outside Unload radius. With streaming off, scrolling beyond the "
-            "resident set shows empty space — slots covering missing chunks hide via hasChunk.");
+            "resident set shows empty space — slots covering missing chunks hide via chunkInBounds.");
 
         ImGui::End();
     }, controller);

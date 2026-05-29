@@ -3,8 +3,10 @@
 #include "explorer.h"
 #include "explorer_pack.h"
 #include "indexed_container.h"
+#include "screen_size.h"
 #include <cstddef>
 #include <unordered_set>
+#include <glm/glm.hpp>
 
 namespace Nothofagus
 {
@@ -49,9 +51,9 @@ public:
 
     // ── Per-frame pre-pass (needs canvas access to mutate slot bellotas + textures) ─
     /// Runs in `Canvas::CanvasImpl::runOneFrame` between the user update and
-    /// the texture upload pass. For each explorer, assigns visible world chunks
-    /// to pool slots (via `T::hasChunk`), memcpys chunk data into the slot's
-    /// `IndirectTexture` via `setMapBulk`, and repositions/un-hides the slot bellota.
+    /// the texture upload pass. Iterates each explorer pack and delegates the
+    /// per-explorer work to `updateExplorer`, which in turn dispatches each pool
+    /// slot to the file-local `exploreCell` helper.
     void updateExplorers(Canvas& canvas);
 
     // ── Explorer-managed predicates (consulted by removeBellota / removeTexture) ─
@@ -72,6 +74,15 @@ private:
     /// clears `pack.slots`. Used at removal time and at the head of `buildPoolSlots`'s
     /// re-allocation path.
     void teardownPoolSlots(ExplorerPack<T>& pack, Canvas& canvas);
+
+    /// Per-frame work for a single explorer: resize the pool if the canvas size
+    /// changed, compute the visible chunk window, then sync each pool slot via
+    /// the file-local `exploreCell` helper.
+    void updateExplorer(
+        ExplorerPack<T>& explorerPack,
+        Canvas& canvas,
+        const ScreenSize& screen,
+        const glm::vec2& canvasCenter);
 
     IndexedContainer<T>                  mData;
     IndexedContainer<ExplorerPack<T>>    mExplorers;

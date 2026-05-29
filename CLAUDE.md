@@ -362,7 +362,7 @@ canvas.tilemapExplorer(handles.explorerId).setCamera({scrollX, scrollY});
 
 Sibling to `Tilemap` for **unbounded / sparse worlds**: same chunk-pool rendering, same shader path, same pool sizing math — but the world data lives in a hash-map of chunks keyed by chunk coordinate instead of a dense `mapSize`-shaped grid. Memory scales with **populated chunks**, not with how far the camera can travel. Ideal for procedural worlds, streaming, or hand-authored open worlds that don't fit in memory.
 
-Both `TilemapExplorer` and `SparsemapExplorer` are concrete typedefs of a shared `Explorer<T>` template constrained by the `TilemapLike` C++20 concept (see [include/explorer.h](include/explorer.h)); the per-frame chunk-sync pre-pass in [source/explorer_manager.cpp](source/explorer_manager.cpp) is written once and explicitly instantiated for both backends. The only specialization point is the `hasChunk(chunkPos)` predicate — dense returns `chunkPos` ∈ `[0, chunkGridSize)`, sparse returns `mChunks.contains(chunkPos)`. Each backend asserts conformance via `static_assert(TilemapLike<T>);` in its `.cpp` so a missing/changed method shows up as a clear concept error instead of an opaque template instantiation failure.
+Both `TilemapExplorer` and `SparsemapExplorer` are concrete typedefs of a shared `Explorer<T>` template constrained by the `TilemapLike` C++20 concept (see [include/explorer.h](include/explorer.h)); the per-frame chunk-sync pre-pass in [source/explorer_manager.cpp](source/explorer_manager.cpp) is written once and explicitly instantiated for both backends. The only specialization point is the `chunkInBounds(chunkPos)` predicate — dense returns `chunkPos` ∈ `[0, chunkGridSize)`, sparse returns `mChunks.contains(chunkPos)`. Each backend asserts conformance via `static_assert(TilemapLike<T>);` in its `.cpp` so a missing/changed method shows up as a clear concept error instead of an opaque template instantiation failure.
 
 ```cpp
 // Build an empty Sparsemap + a SparsemapExplorer in one shot. No mapSize.
@@ -380,7 +380,7 @@ canvas.sparsemap(handles.sparsemapId).addChunk({chunkX, chunkY},
 canvas.sparsemap(handles.sparsemapId).setCell({worldX, worldY}, layerIndex);
 
 // Streaming: drop a chunk once it leaves the camera's interest area. Pool
-// slots displaying it hide next frame via hasChunk.
+// slots displaying it hide next frame via chunkInBounds.
 canvas.sparsemap(handles.sparsemapId).removeChunk({chunkX, chunkY});
 
 // Same camera API as TilemapExplorer.
@@ -392,7 +392,7 @@ canvas.sparsemapExplorer(handles.explorerId).setCamera({scrollX, scrollY});
 - `setCell` is **lazy-creating** — writing into an unloaded chunk creates it (zero-initialised) instead of asserting. Convenient for editor flows.
 - `cell({worldX, worldY})` returns `0` if the owning chunk is missing (consistent with chunk-not-yet-loaded semantics).
 - `chunkGeneration(chunkPos)` returns `0` for missing chunks. Combined with `PoolSlot::syncedGeneration` starting at `0` and the off-world slot reset (`currentWorldChunk = {-1,-1}`), the dirty-check handles "chunk removed under a displaying slot" correctly: slot hides next frame; if it ever scrolls back to that coord and the chunk is re-added, a fresh sync runs.
-- No `inBounds` — every world coord is valid; only `hasChunk(chunkPos)` is meaningful.
+- No `inBounds` — every world coord is valid; only `chunkInBounds(chunkPos)` is meaningful.
 - The internal cache is an `IndirectTexture mCacheTemplate` carrying atlas + palette only (no `setMap` call). Slot textures still clone via `IndirectTexture(other, chunkSize)`; that constructor only needs atlas + palette + tileSize from the source.
 
 **Lifecycle rules:**

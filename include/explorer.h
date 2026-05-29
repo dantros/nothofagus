@@ -22,9 +22,10 @@ template<typename T>
 concept TilemapLike = requires(const T& t, glm::ivec2 coord, std::span<std::uint8_t> out) {
     { t.chunkSize()            } -> std::same_as<glm::ivec2>;
     { t.tileSize()             } -> std::same_as<glm::ivec2>;
+    { t.chunkPixelSize()       } -> std::same_as<glm::ivec2>;
     { t.palette()              } -> std::same_as<const ColorPallete&>;
     { t.cacheTexture()         } -> std::same_as<const IndirectTexture&>;
-    { t.hasChunk(coord)        } -> std::same_as<bool>;
+    { t.chunkInBounds(coord)   } -> std::same_as<bool>;
     { t.chunkGeneration(coord) } -> std::same_as<std::uint64_t>;
     t.chunkDataInto(coord, out);
 };

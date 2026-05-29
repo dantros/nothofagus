@@ -31,9 +31,9 @@ std::vector<std::vector<std::uint8_t>> makeTrivialAtlas(glm::ivec2 tileSize, std
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// Sparsemap::hasChunk — empty by default, true after addChunk, false after removeChunk
+// Sparsemap::chunkInBounds — empty by default, true after addChunk, false after removeChunk
 // ---------------------------------------------------------------------------
-TEST_CASE("Sparsemap::hasChunk tracks chunk lifecycle", "[sparsemap]")
+TEST_CASE("Sparsemap::chunkInBounds tracks chunk lifecycle", "[sparsemap]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
     Nothofagus::Sparsemap sm({3, 2}, {4, 4}, makeMinimalPalette(),
@@ -41,19 +41,19 @@ TEST_CASE("Sparsemap::hasChunk tracks chunk lifecycle", "[sparsemap]")
 
     SECTION("empty sparsemap has no chunks anywhere")
     {
-        CHECK_FALSE(sm.hasChunk({0, 0}));
-        CHECK_FALSE(sm.hasChunk({1, 1}));
-        CHECK_FALSE(sm.hasChunk({-1, -1}));
-        CHECK_FALSE(sm.hasChunk({1000, -1000}));
+        CHECK_FALSE(sm.chunkInBounds({0, 0}));
+        CHECK_FALSE(sm.chunkInBounds({1, 1}));
+        CHECK_FALSE(sm.chunkInBounds({-1, -1}));
+        CHECK_FALSE(sm.chunkInBounds({1000, -1000}));
         CHECK(sm.chunkCount() == 0);
     }
 
-    SECTION("addChunk makes hasChunk return true for that coord only")
+    SECTION("addChunk makes chunkInBounds return true for that coord only")
     {
         sm.addChunk({2, 3});
-        CHECK(sm.hasChunk({2, 3}));
-        CHECK_FALSE(sm.hasChunk({2, 2}));
-        CHECK_FALSE(sm.hasChunk({3, 3}));
+        CHECK(sm.chunkInBounds({2, 3}));
+        CHECK_FALSE(sm.chunkInBounds({2, 2}));
+        CHECK_FALSE(sm.chunkInBounds({3, 3}));
         CHECK(sm.chunkCount() == 1);
     }
 
@@ -61,14 +61,14 @@ TEST_CASE("Sparsemap::hasChunk tracks chunk lifecycle", "[sparsemap]")
     {
         sm.addChunk({2, 3});
         sm.removeChunk({2, 3});
-        CHECK_FALSE(sm.hasChunk({2, 3}));
+        CHECK_FALSE(sm.chunkInBounds({2, 3}));
         CHECK(sm.chunkCount() == 0);
     }
 
     SECTION("removeChunk on a never-present coord is a no-op")
     {
         sm.removeChunk({5, 5});
-        CHECK_FALSE(sm.hasChunk({5, 5}));
+        CHECK_FALSE(sm.chunkInBounds({5, 5}));
         CHECK(sm.chunkCount() == 0);
     }
 }
@@ -82,11 +82,11 @@ TEST_CASE("Sparsemap::setCell lazy-creates the owning chunk", "[sparsemap]")
     Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
-    REQUIRE_FALSE(sm.hasChunk({0, 0}));
+    REQUIRE_FALSE(sm.chunkInBounds({0, 0}));
 
     sm.setCell({1, 2}, 3);
 
-    CHECK(sm.hasChunk({0, 0}));
+    CHECK(sm.chunkInBounds({0, 0}));
     CHECK(sm.cell({1, 2}) == 3);
     // The non-written cells inside the freshly created chunk are zero.
     CHECK(sm.cell({0, 0}) == 0);
@@ -107,11 +107,11 @@ TEST_CASE("Sparsemap::setCell routes coordinates to the correct chunk", "[sparse
     sm.setCell({0,  4}, 3);   // chunk (0, 1), local (0, 0)
     sm.setCell({7,  7}, 1);   // chunk (1, 1), local (3, 3)
 
-    CHECK(sm.hasChunk({0, 0}));
-    CHECK(sm.hasChunk({1, 0}));
-    CHECK(sm.hasChunk({0, 1}));
-    CHECK(sm.hasChunk({1, 1}));
-    CHECK_FALSE(sm.hasChunk({2, 0}));
+    CHECK(sm.chunkInBounds({0, 0}));
+    CHECK(sm.chunkInBounds({1, 0}));
+    CHECK(sm.chunkInBounds({0, 1}));
+    CHECK(sm.chunkInBounds({1, 1}));
+    CHECK_FALSE(sm.chunkInBounds({2, 0}));
 
     CHECK(sm.cell({0, 0}) == 1);
     CHECK(sm.cell({4, 0}) == 2);
@@ -149,7 +149,7 @@ TEST_CASE("Sparsemap::addChunk with cellData round-trips through chunkDataInto",
     const std::vector<std::uint8_t> input{1, 2, 3, 0, 1, 2};  // 3 cols × 2 rows
     sm.addChunk({4, -2}, std::span<const std::uint8_t>(input));
 
-    REQUIRE(sm.hasChunk({4, -2}));
+    REQUIRE(sm.chunkInBounds({4, -2}));
     CHECK(sm.chunkGeneration({4, -2}) == 1);
 
     std::vector<std::uint8_t> out(input.size());
@@ -165,7 +165,7 @@ TEST_CASE("Sparsemap::addChunk with empty cellData zero-initializes the chunk", 
 
     sm.addChunk({0, 0});  // default cellData = {}
 
-    REQUIRE(sm.hasChunk({0, 0}));
+    REQUIRE(sm.chunkInBounds({0, 0}));
     std::vector<std::uint8_t> out(16);
     sm.chunkDataInto({0, 0}, std::span<std::uint8_t>(out));
     for (std::size_t i = 0; i < out.size(); ++i)
@@ -187,7 +187,7 @@ TEST_CASE("Sparsemap::chunkDataInto zero-fills missing chunks", "[sparsemap]")
 
     for (std::size_t i = 0; i < out.size(); ++i)
         CHECK(out[i] == 0);
-    CHECK_FALSE(sm.hasChunk({7, 7}));  // reading doesn't materialize the chunk
+    CHECK_FALSE(sm.chunkInBounds({7, 7}));  // reading doesn't materialize the chunk
 }
 
 // ---------------------------------------------------------------------------
@@ -232,12 +232,12 @@ TEST_CASE("Sparsemap::removeChunk drops generation; re-adding restarts at 1", "[
     REQUIRE(sm.chunkGeneration({0, 0}) == 2);
 
     sm.removeChunk({0, 0});
-    CHECK_FALSE(sm.hasChunk({0, 0}));
+    CHECK_FALSE(sm.chunkInBounds({0, 0}));
     CHECK(sm.chunkGeneration({0, 0}) == 0);
     CHECK(sm.cell({0, 0}) == 0);
 
     sm.addChunk({0, 0});
-    CHECK(sm.hasChunk({0, 0}));
+    CHECK(sm.chunkInBounds({0, 0}));
     CHECK(sm.chunkGeneration({0, 0}) == 1);
     CHECK(sm.cell({1, 1}) == 0);  // previous data is gone
 }

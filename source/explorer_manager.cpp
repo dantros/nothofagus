@@ -14,6 +14,64 @@
 namespace Nothofagus
 {
 
+namespace
+{
+
+/// Per-explorer constants borrowed by `exploreCell` for the duration of one
+/// `updateExplorer` call. All members are read-only inputs except `canvas`
+/// (the mutable rendering surface) and `chunkScratch` (a reusable upload
+/// buffer that lives on the owning `ExplorerPack<T>`).
+template<TilemapLike T>
+struct ExplorerFrame
+{
+    Canvas&                 canvas;
+    const T&                sourceData;
+    glm::vec2               chunkPixelSize;
+    glm::vec2               camera;
+    glm::vec2               canvasCenter;
+    std::int8_t             depthOffset;
+    std::span<std::uint8_t> chunkScratch;
+};
+
+/// Per-frame work for a single pool slot: assign the desired world chunk,
+/// memcpy its cells via `setMapBulk` if the chunk or its generation changed,
+/// and reposition / un-hide the slot bellota.
+template<TilemapLike T>
+void exploreCell(PoolSlot& slot, glm::ivec2 desired, const ExplorerFrame<T>& frame)
+{
+    Bellota& slotBellota = frame.canvas.bellota(slot.bellotaId);
+    if (slotBellota.depthOffset() != frame.depthOffset)
+        slotBellota.depthOffset() = frame.depthOffset;
+
+    if (!frame.sourceData.chunkInBounds(desired))
+    {
+        slotBellota.visible() = false;
+        slot.markUnassigned();
+        return;
+    }
+
+    const std::uint64_t currentGen = frame.sourceData.chunkGeneration(desired);
+    if (desired != slot.currentWorldChunk || currentGen != slot.syncedGeneration)
+    {
+        ZoneScopedN("TilemapChunkSync");
+        IndirectTexture& slotTex = std::get<IndirectTexture>(
+            frame.canvas.texture(slot.textureId));
+        frame.sourceData.chunkDataInto(desired, frame.chunkScratch);
+        slotTex.setMapBulk(std::span<const std::uint8_t>(frame.chunkScratch));
+        slot.currentWorldChunk = desired;
+        slot.syncedGeneration  = currentGen;
+    }
+
+    const glm::vec2 chunkCenterWorld{
+        (static_cast<float>(desired.x) + 0.5f) * frame.chunkPixelSize.x,
+        (static_cast<float>(desired.y) + 0.5f) * frame.chunkPixelSize.y
+    };
+    slotBellota.transform().location() = frame.canvasCenter + chunkCenterWorld - frame.camera;
+    slotBellota.visible() = true;
+}
+
+}  // namespace
+
 template<TilemapLike T>
 typename ExplorerManager<T>::DataId ExplorerManager<T>::add(T data)
 {
@@ -67,9 +125,8 @@ void ExplorerManager<T>::buildPoolSlots(ExplorerPack<T>& pack, Canvas& canvas)
 {
     const T& sourceData = mData.at(pack.explorer.tilemap().id);
 
-    const glm::ivec2 chunkSize = sourceData.chunkSize();
-    const glm::ivec2 tileSize  = sourceData.tileSize();
-    const glm::ivec2 chunkPixelSize{ chunkSize.x * tileSize.x, chunkSize.y * tileSize.y };
+    const glm::ivec2 chunkSize      = sourceData.chunkSize();
+    const glm::ivec2 chunkPixelSize = sourceData.chunkPixelSize();
     const ScreenSize& screen = canvas.screenSize();
     const glm::ivec2 screenSize{
         static_cast<int>(screen.width),
@@ -150,88 +207,62 @@ void ExplorerManager<T>::updateExplorers(Canvas& canvas)
 
     for (auto& [explorerIdx, explorerPack] : mExplorers)
     {
-        const DataId dataId = explorerPack.explorer.tilemap();
-        if (!mData.contains(dataId.id)) continue;
+        updateExplorer(explorerPack, canvas, screen, canvasCenter);
+    }
+}
 
-        // Canvas was resized since this pool was built — tear it down and
-        // rebuild against the new screenSize. Fresh slots have currentWorldChunk
-        // = {-1,-1}, so the chunk-sync pass below re-syncs every slot this frame.
-        // Cost: N GPU texture frees + N uploads on the same frame (N = slot count).
-        if (screen.width  != explorerPack.poolSizedFor.width ||
-            screen.height != explorerPack.poolSizedFor.height)
+template<TilemapLike T>
+void ExplorerManager<T>::updateExplorer(
+    ExplorerPack<T>& explorerPack,
+    Canvas& canvas,
+    const ScreenSize& screen,
+    const glm::vec2& canvasCenter)
+{
+    const DataId dataId = explorerPack.explorer.tilemap();
+    if (!mData.contains(dataId.id)) return;
+
+    // Canvas was resized since this pool was built — tear it down and
+    // rebuild against the new screenSize. Fresh slots have currentWorldChunk
+    // = {-1,-1}, so the chunk-sync pass below re-syncs every slot this frame.
+    // Cost: N GPU texture frees + N uploads on the same frame (N = slot count).
+    if (screen.width  != explorerPack.poolSizedFor.width ||
+        screen.height != explorerPack.poolSizedFor.height)
+    {
+        teardownPoolSlots(explorerPack, canvas);
+        buildPoolSlots(explorerPack, canvas);
+    }
+
+    const T& sourceData = mData.at(dataId.id);
+
+    const glm::vec2 chunkPixelSize = glm::vec2(sourceData.chunkPixelSize());
+
+    const glm::vec2 camera = explorerPack.explorer.camera();
+    const glm::vec2 worldBottomLeft = camera - canvasCenter;
+
+    const glm::ivec2 slotOriginChunk{
+        static_cast<int>(std::floor(worldBottomLeft.x / chunkPixelSize.x)) - 1,
+        static_cast<int>(std::floor(worldBottomLeft.y / chunkPixelSize.y)) - 1
+    };
+
+    const ExplorerFrame<T> frame{
+        .canvas         = canvas,
+        .sourceData     = sourceData,
+        .chunkPixelSize = chunkPixelSize,
+        .camera         = camera,
+        .canvasCenter   = canvasCenter,
+        .depthOffset    = explorerPack.explorer.depthOffset(),
+        .chunkScratch   = std::span<std::uint8_t>(explorerPack.chunkScratch),
+    };
+
+    for (int py = 0; py < explorerPack.poolGridSize.y; ++py)
+    {
+        for (int px = 0; px < explorerPack.poolGridSize.x; ++px)
         {
-            teardownPoolSlots(explorerPack, canvas);
-            buildPoolSlots(explorerPack, canvas);
-        }
-
-        const T& sourceData = mData.at(dataId.id);
-
-        const glm::ivec2 chunkSize = sourceData.chunkSize();
-        const glm::ivec2 tileSize  = sourceData.tileSize();
-        const glm::vec2  chunkPixelSize{
-            static_cast<float>(chunkSize.x * tileSize.x),
-            static_cast<float>(chunkSize.y * tileSize.y)
-        };
-
-        const glm::vec2 camera = explorerPack.explorer.camera();
-        const glm::vec2 worldBottomLeft = camera - canvasCenter;
-
-        const glm::ivec2 slotOriginChunk{
-            static_cast<int>(std::floor(worldBottomLeft.x / chunkPixelSize.x)) - 1,
-            static_cast<int>(std::floor(worldBottomLeft.y / chunkPixelSize.y)) - 1
-        };
-
-        const std::int8_t depthOffset = explorerPack.explorer.depthOffset();
-
-        for (int py = 0; py < explorerPack.poolGridSize.y; ++py)
-        {
-            for (int px = 0; px < explorerPack.poolGridSize.x; ++px)
-            {
-                const std::size_t slotIdx =
-                    static_cast<std::size_t>(py) * static_cast<std::size_t>(explorerPack.poolGridSize.x) +
-                    static_cast<std::size_t>(px);
-                PoolSlot& slot = explorerPack.slots[slotIdx];
-
-                Bellota& slotBellota = canvas.bellota(slot.bellotaId);
-                if (slotBellota.depthOffset() != depthOffset)
-                    slotBellota.depthOffset() = depthOffset;
-
-                const glm::ivec2 desired{
-                    slotOriginChunk.x + px,
-                    slotOriginChunk.y + py
-                };
-
-                if (!sourceData.hasChunk(desired))
-                {
-                    slotBellota.visible() = false;
-                    // Reset to the unassigned sentinel so the slot doesn't carry
-                    // "what chunk am I painting" state while hidden — when it
-                    // scrolls back into a present chunk the desired-vs-current
-                    // check will trigger a fresh sync.
-                    slot.currentWorldChunk = glm::ivec2{-1, -1};
-                    slot.syncedGeneration  = 0;
-                    continue;
-                }
-
-                const std::uint64_t currentGen = sourceData.chunkGeneration(desired);
-                if (desired != slot.currentWorldChunk || currentGen != slot.syncedGeneration)
-                {
-                    ZoneScopedN("TilemapChunkSync");
-                    IndirectTexture& slotTex = std::get<IndirectTexture>(
-                        canvas.texture(slot.textureId));
-                    sourceData.chunkDataInto(desired, std::span<std::uint8_t>(explorerPack.chunkScratch));
-                    slotTex.setMapBulk(std::span<const std::uint8_t>(explorerPack.chunkScratch));
-                    slot.currentWorldChunk = desired;
-                    slot.syncedGeneration  = currentGen;
-                }
-
-                const glm::vec2 chunkCenterWorld{
-                    (static_cast<float>(desired.x) + 0.5f) * chunkPixelSize.x,
-                    (static_cast<float>(desired.y) + 0.5f) * chunkPixelSize.y
-                };
-                slotBellota.transform().location() = canvasCenter + chunkCenterWorld - camera;
-                slotBellota.visible() = true;
-            }
+            const glm::ivec2 desired{
+                slotOriginChunk.x + px,
+                slotOriginChunk.y + py
+            };
+            exploreCell(explorerPack.slotAt(px, py), desired, frame);
         }
     }
 }
