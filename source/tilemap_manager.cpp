@@ -14,6 +14,62 @@
 namespace Nothofagus
 {
 
+namespace
+{
+
+/// Per-explorer constants borrowed by `exploreCell` for the duration of one
+/// `updateExplorer` call. All members are read-only inputs except `canvas`
+/// (the mutable rendering surface) and `chunkScratch` (a reusable upload
+/// buffer that lives on the owning `TilemapExplorerPack`).
+struct ExplorerFrame
+{
+    Canvas&                 canvas;
+    const Tilemap&          sourceTilemap;
+    glm::vec2               chunkPixelSize;
+    glm::vec2               camera;
+    glm::vec2               canvasCenter;
+    std::int8_t             depthOffset;
+    std::span<std::uint8_t> chunkScratch;
+};
+
+/// Per-frame work for a single pool slot: assign the desired world chunk,
+/// memcpy its cells via `setMapBulk` if the chunk or its generation changed,
+/// and reposition / un-hide the slot bellota.
+void exploreCell(PoolSlot& slot, glm::ivec2 desired, const ExplorerFrame& frame)
+{
+    Bellota& slotBellota = frame.canvas.bellota(slot.bellotaId);
+    if (slotBellota.depthOffset() != frame.depthOffset)
+        slotBellota.depthOffset() = frame.depthOffset;
+
+    if (!frame.sourceTilemap.chunkInBounds(desired))
+    {
+        slotBellota.visible() = false;
+        slot.markUnassigned();
+        return;
+    }
+
+    const std::uint64_t currentGen = frame.sourceTilemap.chunkGeneration(desired);
+    if (desired != slot.currentWorldChunk || currentGen != slot.syncedGeneration)
+    {
+        ZoneScopedN("TilemapChunkSync");
+        IndirectTexture& slotTex = std::get<IndirectTexture>(
+            frame.canvas.texture(slot.textureId));
+        frame.sourceTilemap.chunkDataInto(desired, frame.chunkScratch);
+        slotTex.setMapBulk(std::span<const std::uint8_t>(frame.chunkScratch));
+        slot.currentWorldChunk = desired;
+        slot.syncedGeneration  = currentGen;
+    }
+
+    const glm::vec2 chunkCenterWorld{
+        (static_cast<float>(desired.x) + 0.5f) * frame.chunkPixelSize.x,
+        (static_cast<float>(desired.y) + 0.5f) * frame.chunkPixelSize.y
+    };
+    slotBellota.transform().location() = frame.canvasCenter + chunkCenterWorld - frame.camera;
+    slotBellota.visible() = true;
+}
+
+}  // namespace
+
 TilemapId TilemapManager::addTilemap(Tilemap tilemap)
 {
     return TilemapId{ mTilemaps.add(std::move(tilemap)) };
@@ -174,70 +230,27 @@ void TilemapManager::updateExplorer(
         static_cast<int>(std::floor(worldBottomLeft.y / chunkPixelSize.y)) - 1
     };
 
-    const std::int8_t depthOffset = explorerPack.explorer.depthOffset();
-    const std::span<std::uint8_t> chunkScratch(explorerPack.chunkScratch);
+    const ExplorerFrame frame{
+        .canvas         = canvas,
+        .sourceTilemap  = sourceTilemap,
+        .chunkPixelSize = chunkPixelSize,
+        .camera         = camera,
+        .canvasCenter   = canvasCenter,
+        .depthOffset    = explorerPack.explorer.depthOffset(),
+        .chunkScratch   = std::span<std::uint8_t>(explorerPack.chunkScratch),
+    };
 
     for (int py = 0; py < explorerPack.poolGridSize.y; ++py)
     {
         for (int px = 0; px < explorerPack.poolGridSize.x; ++px)
         {
-            PoolSlot& slot = explorerPack.slotAt(px, py);
-
             const glm::ivec2 desired{
                 slotOriginChunk.x + px,
                 slotOriginChunk.y + py
             };
-            exploreCell(
-                slot, desired,
-                canvas, sourceTilemap,
-                chunkPixelSize,
-                camera, canvasCenter,
-                depthOffset,
-                chunkScratch);
+            exploreCell(explorerPack.slotAt(px, py), desired, frame);
         }
     }
-}
-
-void TilemapManager::exploreCell(
-    PoolSlot& slot,
-    const glm::ivec2& desired,
-    Canvas& canvas,
-    const Tilemap& sourceTilemap,
-    const glm::vec2& chunkPixelSize,
-    const glm::vec2& camera,
-    const glm::vec2& canvasCenter,
-    std::int8_t depthOffset,
-    std::span<std::uint8_t> chunkScratch)
-{
-    Bellota& slotBellota = canvas.bellota(slot.bellotaId);
-    if (slotBellota.depthOffset() != depthOffset)
-        slotBellota.depthOffset() = depthOffset;
-
-    if (!sourceTilemap.chunkInBounds(desired))
-    {
-        slotBellota.visible() = false;
-        slot.markUnassigned();
-        return;
-    }
-
-    const std::uint64_t currentGen = sourceTilemap.chunkGeneration(desired);
-    if (desired != slot.currentWorldChunk || currentGen != slot.syncedGeneration)
-    {
-        ZoneScopedN("TilemapChunkSync");
-        IndirectTexture& slotTex = std::get<IndirectTexture>(
-            canvas.texture(slot.textureId));
-        sourceTilemap.chunkDataInto(desired, chunkScratch);
-        slotTex.setMapBulk(std::span<const std::uint8_t>(chunkScratch));
-        slot.currentWorldChunk = desired;
-        slot.syncedGeneration  = currentGen;
-    }
-
-    const glm::vec2 chunkCenterWorld{
-        (static_cast<float>(desired.x) + 0.5f) * chunkPixelSize.x,
-        (static_cast<float>(desired.y) + 0.5f) * chunkPixelSize.y
-    };
-    slotBellota.transform().location() = canvasCenter + chunkCenterWorld - camera;
-    slotBellota.visible() = true;
 }
 
 }
