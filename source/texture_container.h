@@ -4,6 +4,7 @@
 #include "texture_mode.h"
 #include "indexed_container.h"
 #include "dtexture.h"
+#include "backends/render_backend_select.h"
 #include <optional>
 #include <glm/glm.hpp>
 
@@ -26,13 +27,21 @@ struct TexturePack
     bool isProxy() const { return not texture.has_value(); }
     bool isDirty() const { return not dtextureOpt.has_value(); }
 
-    // GPU cleanup is done externally via the backend before calling clear().
+    /// Reset every GPU-side optional to nullopt. Does NOT touch the backend —
+    /// the caller is responsible for freeing the underlying handles first.
+    /// Use `freeGpuResources(backend)` when you want both at once.
     void clear()
     {
         dtextureOpt        = std::nullopt;
         dpaletteTextureOpt = std::nullopt;
         dmapTextureOpt     = std::nullopt;
     }
+
+    /// Free every backend handle this pack owns (palette + map + main texture),
+    /// then reset the optionals. The main texture is only freed for non-proxy
+    /// entries — proxy textures (render target color attachments) are owned by
+    /// their RenderTargetPack and freed through `freeRenderTarget`.
+    void freeGpuResources(ActiveBackend& backend);
 };
 
 using TextureContainer = IndexedContainer<TexturePack>;
