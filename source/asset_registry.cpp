@@ -102,15 +102,7 @@ void AssetRegistry::removeTexture(const TextureId textureId)
     const bool textureWasRemoved = mTextureUsageMonitor.removeUnused(textureId);
     debugCheck(textureWasRemoved, "Texture is not in the unused set — still referenced by a bellota or already removed");
 
-    TexturePack& texturePackToRemove = mTextures.at(textureId.id);
-    if (texturePackToRemove.dpaletteTextureOpt.has_value())
-        mBackend.freePaletteTexture(texturePackToRemove.dpaletteTextureOpt.value());
-    if (texturePackToRemove.dmapTextureOpt.has_value())
-        mBackend.freeTileMapTexture(texturePackToRemove.dmapTextureOpt.value());
-    if (texturePackToRemove.dtextureOpt.has_value())
-        mBackend.freeTexture(texturePackToRemove.dtextureOpt.value());
-    texturePackToRemove.clear();
-
+    mTextures.at(textureId.id).freeGpuResources(mBackend);
     mTextures.remove(textureId.id);
 }
 
@@ -142,14 +134,7 @@ void AssetRegistry::markTextureAsDirty(const TextureId textureId)
 {
     TexturePack& texturePack = mTextures.at(textureId.id);
     debugCheck(not texturePack.isProxy(), "markTextureAsDirty called on a render target proxy texture.");
-
-    if (texturePack.dpaletteTextureOpt.has_value())
-        mBackend.freePaletteTexture(texturePack.dpaletteTextureOpt.value());
-    if (texturePack.dmapTextureOpt.has_value())
-        mBackend.freeTileMapTexture(texturePack.dmapTextureOpt.value());
-    if (texturePack.dtextureOpt.has_value())
-        mBackend.freeTexture(texturePack.dtextureOpt.value());
-    texturePack.clear();
+    texturePack.freeGpuResources(mBackend);
 }
 
 void AssetRegistry::setTextureMinFilter(const TextureId textureId, TextureSampleMode mode)
@@ -249,10 +234,7 @@ void AssetRegistry::removeMesh(MeshId meshId)
     const bool wasRemoved = mMeshUsageMonitor.removeUnused(meshId);
     debugCheck(wasRemoved, "Mesh is not in the unused set — still referenced by a bellota or already removed");
 
-    MeshPack& packToRemove = mMeshes.at(meshId.id);
-    if (packToRemove.dmeshOpt.has_value())
-        mBackend.freeMesh(packToRemove.dmeshOpt.value());
-    packToRemove.clear();
+    mMeshes.at(meshId.id).freeGpuResources(mBackend);
     mMeshes.remove(meshId.id);
 }
 
@@ -291,10 +273,7 @@ void AssetRegistry::clearUnusedMeshes()
         const bool wasRemoved = mMeshUsageMonitor.removeUnused(meshId);
         debugCheck(wasRemoved, "clearUnusedMeshes: mesh disappeared from unused set unexpectedly");
 
-        MeshPack& packToRemove = mMeshes.at(meshId.id);
-        if (packToRemove.dmeshOpt.has_value())
-            mBackend.freeMesh(packToRemove.dmeshOpt.value());
-        packToRemove.clear();
+        mMeshes.at(meshId.id).freeGpuResources(mBackend);
         mMeshes.remove(meshId.id);
     }
 }
@@ -327,17 +306,7 @@ void AssetRegistry::removeRenderTarget(RenderTargetId renderTargetId)
 {
     RenderTargetPack& renderTargetPack = mRenderTargets.at(renderTargetId.id);
     const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
-
-    if (renderTargetPack.dRenderTargetOpt.has_value())
-    {
-        const TexturePack& proxyPack = mTextures.at(proxyTexId.id);
-        debugCheck(proxyPack.dtextureOpt.has_value(), "Render target initialized but proxy texture not initialized");
-        mBackend.freeRenderTarget(
-            renderTargetPack.dRenderTargetOpt.value(),
-            proxyPack.dtextureOpt.value()
-        );
-    }
-    renderTargetPack.clear();
+    renderTargetPack.freeGpuResources(mBackend, mTextures.at(proxyTexId.id));
 
     mTextures.remove(proxyTexId.id);
 
@@ -363,49 +332,27 @@ void AssetRegistry::setRenderTargetClearColor(RenderTargetId renderTargetId, glm
 
 void AssetRegistry::freeAllGpuResources()
 {
-    // Free meshes (CPU + GPU resources owned by the mesh container)
     for (auto& [meshIndex, meshPack] : mMeshes)
-    {
-        if (meshPack.dmeshOpt.has_value())
-            mBackend.freeMesh(meshPack.dmeshOpt.value());
-        meshPack.clear();
-    }
+        meshPack.freeGpuResources(mBackend);
 
     for (auto& [bellotaIndex, bellotaPack] : mBellotas)
-    {
         bellotaPack.clear();
-    }
 
-    // Render targets must be freed before textures: freeRenderTarget also removes
-    // the proxy entry from the backend's texture map (without calling glDeleteTextures
-    // on it), then deletes the FBO + color attachment in one call.
+    // Render targets must be processed before textures: freeRenderTarget frees
+    // the FBO + the proxy's color attachment in one backend call, and nulls the
+    // proxy's dtextureOpt so the subsequent texture loop's isProxy() guard is
+    // hit on a clean slate.
     for (auto& [renderTargetIndex, renderTargetPack] : mRenderTargets)
     {
-        if (renderTargetPack.dRenderTargetOpt.has_value())
-        {
-            const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
-            if (mTextures.contains(proxyTexId.id))
-            {
-                TexturePack& proxyPack = mTextures.at(proxyTexId.id);
-                if (proxyPack.dtextureOpt.has_value())
-                {
-                    mBackend.freeRenderTarget(
-                        renderTargetPack.dRenderTargetOpt.value(),
-                        proxyPack.dtextureOpt.value()
-                    );
-                    proxyPack.dtextureOpt = std::nullopt;
-                }
-            }
-        }
-        renderTargetPack.clear();
+        const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
+        if (mTextures.contains(proxyTexId.id))
+            renderTargetPack.freeGpuResources(mBackend, mTextures.at(proxyTexId.id));
+        else
+            renderTargetPack.clear();
     }
 
     for (auto& [textureIndex, texturePack] : mTextures)
-    {
-        if (texturePack.dtextureOpt.has_value() && !texturePack.isProxy())
-            mBackend.freeTexture(texturePack.dtextureOpt.value());
-        texturePack.clear();
-    }
+        texturePack.freeGpuResources(mBackend);
 }
 
 // ---------------------------------------------------------------------------

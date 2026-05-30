@@ -82,6 +82,9 @@ add_library(nothofagus
     "source/canvas.cpp"
     "source/canvas_impl.cpp"
     "source/asset_registry.cpp"
+    "source/texture_container.cpp"
+    "source/mesh_container.cpp"
+    "source/render_target_container.cpp"
     "source/imgui_rtt_manager.cpp"
     "source/imgui_font_manager.cpp"
     ${NOTHOFAGUS_BACKEND_SRC}

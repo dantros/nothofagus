@@ -24,8 +24,15 @@ namespace Nothofagus
  * @class Canvas::CanvasImpl
  * @brief Implementation of the Canvas class, responsible for managing the actual window, textures, Bellotas, and rendering.
  *
- * This class encapsulates the low-level details of the Canvas, such as handling textures, Bellotas, and the OpenGL context.
- * It provides methods to manage graphical objects, set window properties, and handle the main rendering loop.
+ * Encapsulates the low-level details of the Canvas: window/input backend,
+ * GPU rendering backend, asset containers, the frame loop, and screenshot
+ * capture. Most asset/state accessors are inline forwarders onto the
+ * `mAssets` (AssetRegistry), `mTilemapManager`, and `mImguiRtt.fonts()`
+ * members. The out-of-line definitions in canvas_impl.cpp are the ones
+ * that (a) depend on the pimpl-hidden `Window` type, (b) need imgui.h or
+ * carry non-trivial multi-statement logic, or (c) layer a cross-cutting
+ * gate (tilemap-pool ownership, ImGui RTT teardown) on top of an asset
+ * forwarder.
  */
 class Canvas::CanvasImpl
 {
@@ -43,209 +50,105 @@ public:
     /// Destructor to clean up resources and terminate the window backend
     ~CanvasImpl();
 
-    // the number of monitor where the top left corner of the canvas is currently at
+    // ----- Window / display (depend on pimpl-hidden Window) -----
     std::size_t getCurrentMonitor() const;
-
     bool isFullscreen() const;
-
     void setFullScreenOnMonitor(std::size_t monitor = 0);
-
     AABox getWindowAABox() const;
-
     void setWindowed();
-
-    /**
-     * @brief Gets the screen size of the canvas.
-     * @return The screen size as a ScreenSize object.
-     */
-    const ScreenSize& screenSize() const;
-
-    void setScreenSize(const ScreenSize& screenSize);
-
-    void setClearColor(glm::vec3 clearColor);
-
     void setWindowTitle(const std::string& title);
-
     ScreenSize windowSize() const;
+    void close();
 
-    ViewportRect gameViewport() const;
+    // ----- Canvas state -----
+    const ScreenSize& screenSize() const                                                    { return mScreenSize; }
+    void setScreenSize(const ScreenSize& screenSize)                                        { mScreenSize = screenSize; }
+    void setClearColor(glm::vec3 clearColor)                                                { mClearColor = clearColor; }
+    ViewportRect gameViewport() const                                                       { return mGameViewport; }
+    bool& stats()                                                                           { return mStats; }
+    const bool& stats() const                                                               { return mStats; }
+    void setAutoRemoveUnusedTextures(bool enabled)                                          { mAutoTextureGC = enabled; }
+    void setAutoRemoveUnusedMeshes(bool enabled)                                            { mAutoMeshGC = enabled; }
 
-    /**
-     * @brief Adds a Bellota object to the canvas.
-     * @param bellota The Bellota object to add.
-     * @return The ID of the added Bellota.
-     */
-    BellotaId addBellota(const Bellota& bellota);
+    // ----- Bellotas -----
+    BellotaId addBellota(const Bellota& bellota)                                            { return mAssets.addBellota(bellota); }
+    void removeBellota(const BellotaId bellotaId);     // tilemap-pool ownership gate — defined in cpp
+    Bellota& bellota(BellotaId bellotaId)                                                   { return mAssets.bellota(bellotaId); }
+    const Bellota& bellota(BellotaId bellotaId) const                                       { return mAssets.bellota(bellotaId); }
+    void setTint(const BellotaId bellotaId, const Tint& tint)                               { mAssets.setTint(bellotaId, tint); }
+    void removeTint(const BellotaId bellotaId)                                              { mAssets.removeTint(bellotaId); }
 
-    /**
-     * @brief Removes a Bellota object from the canvas.
-     * @param bellotaId The ID of the Bellota to remove.
-     */
-    void removeBellota(const BellotaId bellotaId);
+    // ----- Textures -----
+    TextureId addTexture(const Texture& texture)                                            { return mAssets.addTexture(texture); }
+    void removeTexture(const TextureId textureId);     // tilemap-pool ownership gate — defined in cpp
+    void setTexture(const BellotaId bellotaId, const TextureId textureId)                   { mAssets.setTexture(bellotaId, textureId); }
+    void markTextureAsDirty(const TextureId textureId)                                      { mAssets.markTextureAsDirty(textureId); }
+    void setTextureMinFilter(const TextureId textureId, TextureSampleMode mode)             { mAssets.setTextureMinFilter(textureId, mode); }
+    void setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)             { mAssets.setTextureMagFilter(textureId, mode); }
+    Texture& texture(TextureId textureId)                                                   { return mAssets.texture(textureId); }
+    const Texture& texture(TextureId textureId) const                                       { return mAssets.texture(textureId); }
+    Texture& textureArray(TextureId textureId);                                             // legacy declaration — no definition; calling it is a link error
+    const Texture& textureArray(TextureId textureId) const;                                 // legacy declaration — no definition; calling it is a link error
 
-    /**
-     * @brief Adds a Texture object to the canvas.
-     * @param texture The Texture object to add.
-     * @return The ID of the added Texture.
-     */
-    TextureId addTexture(const Texture& texture);
+    // ----- Meshes -----
+    MeshId addMesh(const Mesh& mesh)                                                        { return mAssets.addMesh(mesh); }
+    MeshId addMesh(Mesh&& mesh)                                                             { return mAssets.addMesh(std::move(mesh)); }
+    void removeMesh(MeshId meshId)                                                          { mAssets.removeMesh(meshId); }
+    void setMesh(const BellotaId bellotaId, const MeshId meshId)                            { mAssets.setMesh(bellotaId, meshId); }
+    const Mesh& mesh(MeshId meshId) const                                                   { return mAssets.mesh(meshId); }
+    const Mesh& mesh(BellotaId bellotaId) const                                             { return mAssets.mesh(bellotaId); }
 
-    /**
-     * @brief Removes a Texture object from the canvas.
-     * @param textureId The ID of the Texture to remove.
-     */
-    void removeTexture(const TextureId textureId);
+    // ----- Render targets -----
+    RenderTargetId addRenderTarget(ScreenSize size)                                         { return mAssets.addRenderTarget(size); }
+    void removeRenderTarget(RenderTargetId renderTargetId);    // ImGui RTT context teardown first — defined in cpp
+    TextureId renderTargetTexture(RenderTargetId renderTargetId) const                      { return mAssets.renderTargetTexture(renderTargetId); }
+    void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)     { mAssets.setRenderTargetClearColor(renderTargetId, clearColor); }
 
-    void setTexture(const BellotaId bellotaId, const TextureId textureId);
+    // ----- Tilemaps -----
+    TilemapId addTilemap(Tilemap tilemap)                                                   { return mTilemapManager.add(std::move(tilemap)); }
+    void removeTilemap(TilemapId tilemapId)                                                 { mTilemapManager.remove(tilemapId); }
+    Tilemap& tilemap(TilemapId tilemapId)                                                   { return mTilemapManager.get(tilemapId); }
+    const Tilemap& tilemap(TilemapId tilemapId) const                                       { return mTilemapManager.get(tilemapId); }
+    TilemapExplorerId addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas)          { return mTilemapManager.addExplorer(explorer, canvas); }
+    void removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas)                { mTilemapManager.removeExplorer(explorerId, canvas); }
+    TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId)                          { return mTilemapManager.getExplorer(explorerId); }
+    const TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId) const              { return mTilemapManager.getExplorer(explorerId); }
 
-    void markTextureAsDirty(const TextureId textureId);
-    void setTextureMinFilter(const TextureId textureId, TextureSampleMode mode);
-    void setTextureMagFilter(const TextureId textureId, TextureSampleMode mode);
+    // ----- Sparsemaps -----
+    SparsemapId addSparsemap(Sparsemap sparsemap)                                                   { return mSparsemapManager.add(std::move(sparsemap)); }
+    void removeSparsemap(SparsemapId sparsemapId)                                                   { mSparsemapManager.remove(sparsemapId); }
+    Sparsemap& sparsemap(SparsemapId sparsemapId)                                                   { return mSparsemapManager.get(sparsemapId); }
+    const Sparsemap& sparsemap(SparsemapId sparsemapId) const                                       { return mSparsemapManager.get(sparsemapId); }
+    SparsemapExplorerId addSparsemapExplorer(SparsemapExplorer explorer, Canvas& canvas)            { return mSparsemapManager.addExplorer(explorer, canvas); }
+    void removeSparsemapExplorer(SparsemapExplorerId explorerId, Canvas& canvas)                    { mSparsemapManager.removeExplorer(explorerId, canvas); }
+    SparsemapExplorer& sparsemapExplorer(SparsemapExplorerId explorerId)                            { return mSparsemapManager.getExplorer(explorerId); }
+    const SparsemapExplorer& sparsemapExplorer(SparsemapExplorerId explorerId) const                { return mSparsemapManager.getExplorer(explorerId); }
 
-    MeshId addMesh(const Mesh& mesh);
-    MeshId addMesh(Mesh&& mesh);
-    void removeMesh(MeshId meshId);
-    void setMesh(const BellotaId bellotaId, const MeshId meshId);
-    const Mesh& mesh(MeshId meshId) const;
-    const Mesh& mesh(BellotaId bellotaId) const;
-
-    RenderTargetId addRenderTarget(ScreenSize size);
-
-    void removeRenderTarget(RenderTargetId renderTargetId);
-
-    TextureId renderTargetTexture(RenderTargetId renderTargetId) const;
-
-    TilemapId addTilemap(Tilemap tilemap);
-    void removeTilemap(TilemapId tilemapId);
-    Tilemap& tilemap(TilemapId tilemapId);
-    const Tilemap& tilemap(TilemapId tilemapId) const;
-
-    TilemapExplorerId addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas);
-    void removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas);
-    TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId);
-    const TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId) const;
-
-    SparsemapId addSparsemap(Sparsemap sparsemap);
-    void removeSparsemap(SparsemapId sparsemapId);
-    Sparsemap& sparsemap(SparsemapId sparsemapId);
-    const Sparsemap& sparsemap(SparsemapId sparsemapId) const;
-
-    SparsemapExplorerId addSparsemapExplorer(SparsemapExplorer explorer, Canvas& canvas);
-    void removeSparsemapExplorer(SparsemapExplorerId explorerId, Canvas& canvas);
-    SparsemapExplorer& sparsemapExplorer(SparsemapExplorerId explorerId);
-    const SparsemapExplorer& sparsemapExplorer(SparsemapExplorerId explorerId) const;
-
-    void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
-
+    // ----- RTT pass scheduling -----
+    void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)         { mPendingRttPasses.emplace_back(renderTargetId, std::move(bellotaIds)); }
     void renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback);
 
-    ImguiFontSourceId addImguiFontSource(std::span<const std::byte> ttfBytes, GlyphRange glyphRange);
+    // ----- ImGui fonts -----
+    ImguiFontSourceId addImguiFontSource(std::span<const std::byte> ttfBytes, GlyphRange glyphRange) { return mImguiRtt.fonts().addSource(ttfBytes, glyphRange); }
+    void removeImguiFontSource(ImguiFontSourceId sourceId)                                           { mImguiRtt.fonts().removeSource(sourceId); }
+    ImguiFontSourceId defaultImguiFontSourceId() const                                               { return mImguiRtt.fonts().defaultSourceId(); }
+    ImguiFontId bakeImguiFont(ImguiFontSourceId sourceId, float sizePx)                              { return mImguiRtt.fonts().bake(sourceId, sizePx); }
+    void removeImguiFont(ImguiFontId id)                                                             { mImguiRtt.fonts().remove(id); }
+    bool isImguiFontReady(ImguiFontId id) const                                                      { return mImguiRtt.fonts().get(id) != nullptr; }
+    ImFont* getImguiFontPtr(ImguiFontId id) const                                                    { return mImguiRtt.fonts().get(id); }
+    void pushImguiFont(ImguiFontId id);            // needs imgui.h + debugCheck on optional — defined in cpp
+    void popImguiFont();                            // needs imgui.h — defined in cpp
+    ImguiFontId defaultImguiFontId() const;         // debugCheck on optional — defined in cpp
 
-    void removeImguiFontSource(ImguiFontSourceId sourceId);
-
-    ImguiFontSourceId defaultImguiFontSourceId() const;
-
-    ImguiFontId bakeImguiFont(ImguiFontSourceId sourceId, float sizePx);
-
-    void removeImguiFont(ImguiFontId id);
-
-    bool isImguiFontReady(ImguiFontId id) const;
-
-    ImFont* getImguiFontPtr(ImguiFontId id) const;
-
-    void pushImguiFont(ImguiFontId id);
-
-    void popImguiFont();
-
-    ImguiFontId defaultImguiFontId() const;
-
-    void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
-
-    /**
-     * @brief Sets a tint color for a Bellota.
-     * @param bellotaId The ID of the Bellota.
-     * @param tint The tint color to apply.
-     */
-    void setTint(const BellotaId bellotaId, const Tint& tint);
-
-    /**
-     * @brief Removes the tint color from a Bellota.
-     * @param bellotaId The ID of the Bellota.
-     */
-    void removeTint(const BellotaId bellotaId);
-
-    /**
-     * @brief Retrieves a Bellota by its ID.
-     * @param bellotaId The ID of the Bellota.
-     * @return A reference to the Bellota object.
-     */
-    Bellota& bellota(BellotaId bellotaId);
-
-    /**
-     * @brief Retrieves a const Bellota by its ID.
-     * @param bellotaId The ID of the Bellota.
-     * @return A const reference to the Bellota object.
-     */
-    const Bellota& bellota(BellotaId bellotaId) const;
-
-    /**
-     * @brief Retrieves a Texture by its ID.
-     * @param textureId The ID of the Texture.
-     * @return A reference to the Texture object.
-     */
-    Texture& texture(TextureId textureId);
-
-    /**
-     * @brief Retrieves a const Texture by its ID.
-     * @param textureId The ID of the Texture.
-     * @return A const reference to the Texture object.
-     */
-    const Texture& texture(TextureId textureId) const;
-
-    /**
-     * @brief Retrieves a TextureArray by its ID.
-     * @param textureId The ID of the TextureArray.
-     * @return A reference to the TextureArray object.
-     */
-    Texture& textureArray(TextureId textureId);
-
-    /**
-     * @brief Retrieves a const TextureArray by its ID.
-     * @param textureId The ID of the TextureArray.
-     * @return A const reference to the TextureArray object.
-     */
-    const Texture& textureArray(TextureId textureId) const;
-
-    /**
-     * @brief Accesses or modifies the stats flag.
-     * @return A reference to the stats flag (true to display stats).
-     */
-    bool& stats();
-
-    /**
-     * @brief Retrieves the current stats flag.
-     * @return A const reference to the stats flag.
-     */
-    const bool& stats() const;
-
-    /**
-     * @brief Runs the main loop of the canvas with a custom update function.
-     * @param canvas Reference to the owning Canvas, threaded through to TilemapManager.
-     * @param update The custom update function to be called every frame.
-     * @param controller The Controller object that handles user input.
-     */
+    // ----- Lifecycle -----
+    /// Runs the main loop of the canvas with a custom update function.
+    /// @param canvas Reference to the owning Canvas, threaded through to TilemapManager.
     void run(Canvas& canvas, std::function<void(float deltaTime)> update, Controller& controller);
 
     /// Execute a single frame with a caller-supplied delta time (in milliseconds).
     void tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller);
     void tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update);
     void tick(Canvas& canvas, float deltaTimeMS);
-
-    void setAutoRemoveUnusedTextures(bool enabled);
-    void setAutoRemoveUnusedMeshes(bool enabled);
-
-    /// Close the canvas and release resources.
-    void close();
 
     /// Captures the last rendered frame visible to the user as a DirectTexture (RGBA).
     DirectTexture takeScreenshot() const;
