@@ -1,8 +1,55 @@
 #include "canvas.h"
-#include "canvas_impl.h"
+#include "frame_runner.h"
+#include "asset_registry.h"
+#include "imgui_rtt_manager.h"
+#include "check.h"
+#include "roboto_font.h"
+#include <imgui.h>
 
 namespace Nothofagus
 {
+
+/**
+ * @struct Canvas::Implementation
+ * @brief Single nested pimpl holding every internal collaborator by value.
+ *        Owning a single Implementation struct lets `canvas.h` expose only this
+ *        one nested forward declaration — `Nothofagus::FrameRunner`,
+ *        `Nothofagus::AssetRegistry`, and `Nothofagus::ImguiRttManager` never
+ *        appear in the public header.
+ *
+ * Member declaration order = construction order:
+ *   `frameRunner` first (builds mBackend, creates window, init ImGui)
+ *   → `assets` (binds to frameRunner.backend())
+ *   → `imguiRtt` (binds to frameRunner.backend() and assets.renderTargets()).
+ *
+ * Reverse-destruction matches the GPU teardown sequence (ImGui RTT contexts
+ * → asset GPU handles → ~FrameRunner runs mBackend.shutdown()).
+ */
+struct Canvas::Implementation
+{
+    Implementation(
+        const ScreenSize& screenSize,
+        const std::string& title,
+        const glm::vec3 clearColor,
+        const unsigned int pixelSize,
+        const float imguiFontSize,
+        bool headless)
+        : frameRunner(screenSize, title, clearColor, pixelSize, headless),
+          assets(frameRunner.backend()),
+          imguiRtt(frameRunner.backend(), assets.renderTargets(),
+                   assets_Roboto_VariableFont_wdth_wght_ttf,
+                   assets_Roboto_VariableFont_wdth_wght_ttf_len,
+                   imguiFontSize)
+    {
+        // Main HiDPI font bake — needs the backend's ImGui renderer to be live,
+        // which it is once FrameRunner's ctor has returned.
+        imguiRtt.fonts().initialize(frameRunner.contentScale());
+    }
+
+    FrameRunner      frameRunner;
+    AssetRegistry    assets;
+    ImguiRttManager  imguiRtt;
+};
 
 Canvas::Canvas(
     const ScreenSize& screenSize,
@@ -12,386 +59,247 @@ Canvas::Canvas(
     const float imguiFontSize,
     bool headless
 )
+    : mImplPtr(std::make_unique<Implementation>(
+          screenSize, title, clearColor, pixelSize, imguiFontSize, headless))
 {
-    mCanvasImpl = std::make_unique<CanvasImpl>(screenSize, title, clearColor, pixelSize, imguiFontSize, headless);
 }
 
 Canvas::~Canvas()
 {
-
+    // GPU resources must be freed while the backend is still alive. Drain
+    // imguiRtt and assets explicitly here; the by-value members inside
+    // Implementation then destroy in reverse declaration order
+    // (imguiRtt → assets → frameRunner, where the last one shuts the backend down).
+    mImplPtr->imguiRtt.releaseAll();
+    mImplPtr->assets.freeAllGpuResources();
 }
 
-std::size_t Canvas::getCurrentMonitor() const
-{
-    return mCanvasImpl->getCurrentMonitor();;
-}
+// ---------------------------------------------------------------------------
+// Window / display — forward to FrameRunner
+// ---------------------------------------------------------------------------
 
-bool Canvas::isFullscreen() const
-{
-    return mCanvasImpl->isFullscreen();
-}
+std::size_t Canvas::getCurrentMonitor() const                   { return mImplPtr->frameRunner.getCurrentMonitor(); }
+bool Canvas::isFullscreen() const                               { return mImplPtr->frameRunner.isFullscreen(); }
+void Canvas::setFullScreenOnMonitor(std::size_t monitor)        { mImplPtr->frameRunner.setFullScreenOnMonitor(monitor); }
+void Canvas::setWindowed()                                       { mImplPtr->frameRunner.setWindowed(); }
+const ScreenSize& Canvas::screenSize() const                    { return mImplPtr->frameRunner.screenSize(); }
+void Canvas::setScreenSize(const ScreenSize& screenSize)        { mImplPtr->frameRunner.setScreenSize(screenSize); }
+void Canvas::setClearColor(glm::vec3 clearColor)                { mImplPtr->frameRunner.setClearColor(clearColor); }
+void Canvas::setAutoRemoveUnusedTextures(bool enabled)          { mImplPtr->frameRunner.setAutoRemoveUnusedTextures(enabled); }
+void Canvas::setAutoRemoveUnusedMeshes(bool enabled)            { mImplPtr->frameRunner.setAutoRemoveUnusedMeshes(enabled); }
+void Canvas::setWindowTitle(const std::string& title)           { mImplPtr->frameRunner.setWindowTitle(title); }
+ScreenSize Canvas::windowSize() const                            { return mImplPtr->frameRunner.windowSize(); }
+ViewportRect Canvas::gameViewport() const                       { return mImplPtr->frameRunner.gameViewport(); }
 
-void Canvas::setFullScreenOnMonitor(std::size_t monitor)
-{
-    mCanvasImpl->setFullScreenOnMonitor(monitor);
-}
+// ---------------------------------------------------------------------------
+// Bellotas — forward to AssetRegistry; remove gates against TilemapExplorer pool
+// ---------------------------------------------------------------------------
 
-void Canvas::setWindowed()
-{
-    mCanvasImpl->setWindowed();
-}
-
-const ScreenSize& Canvas::screenSize() const
-{
-    return mCanvasImpl->screenSize();
-}
-
-void Canvas::setScreenSize(const ScreenSize& screenSize)
-{
-    mCanvasImpl->setScreenSize(screenSize);
-}
-
-void Canvas::setClearColor(glm::vec3 clearColor)
-{
-    mCanvasImpl->setClearColor(clearColor);
-}
-
-void Canvas::setAutoRemoveUnusedTextures(bool enabled)
-{
-    mCanvasImpl->setAutoRemoveUnusedTextures(enabled);
-}
-
-void Canvas::setAutoRemoveUnusedMeshes(bool enabled)
-{
-    mCanvasImpl->setAutoRemoveUnusedMeshes(enabled);
-}
-
-void Canvas::setWindowTitle(const std::string& title)
-{
-    mCanvasImpl->setWindowTitle(title);
-}
-
-ScreenSize Canvas::windowSize() const
-{
-    return mCanvasImpl->windowSize();
-}
-
-ViewportRect Canvas::gameViewport() const
-{
-    return mCanvasImpl->gameViewport();
-}
-
-BellotaId Canvas::addBellota(const Bellota& bellota)
-{
-    return mCanvasImpl->addBellota(bellota);
-}
+BellotaId Canvas::addBellota(const Bellota& bellota)            { return mImplPtr->assets.addBellota(bellota); }
 
 void Canvas::removeBellota(const BellotaId bellotaId)
 {
-    mCanvasImpl->removeBellota(bellotaId);
+    debugCheck(!mImplPtr->frameRunner.isExplorerManagedBellota(bellotaId.id),
+        "Bellota is owned by an explorer pool — use canvas.removeTilemapExplorer() / canvas.removeSparsemapExplorer() instead of removing slot bellotas directly.");
+    mImplPtr->assets.removeBellota(bellotaId);
 }
 
-TextureId Canvas::addTexture(const Texture& texture)
-{
-    return mCanvasImpl->addTexture(texture);
-}
+Bellota& Canvas::bellota(BellotaId bellotaId)                   { return mImplPtr->assets.bellota(bellotaId); }
+const Bellota& Canvas::bellota(BellotaId bellotaId) const       { return mImplPtr->assets.bellota(bellotaId); }
+void Canvas::setTint(const BellotaId bellotaId, const Tint& tint) { mImplPtr->assets.setTint(bellotaId, tint); }
+void Canvas::removeTint(const BellotaId bellotaId)              { mImplPtr->assets.removeTint(bellotaId); }
+
+// ---------------------------------------------------------------------------
+// Textures — forward to AssetRegistry; remove gates against TilemapExplorer pool
+// ---------------------------------------------------------------------------
+
+TextureId Canvas::addTexture(const Texture& texture)            { return mImplPtr->assets.addTexture(texture); }
 
 void Canvas::removeTexture(const TextureId textureId)
 {
-    mCanvasImpl->removeTexture(textureId);
+    debugCheck(!mImplPtr->frameRunner.isExplorerManagedTexture(textureId.id),
+        "Texture is owned by an explorer pool — use canvas.removeTilemapExplorer() / canvas.removeSparsemapExplorer() instead of removing slot textures directly.");
+    mImplPtr->assets.removeTexture(textureId);
 }
 
-void Canvas::setTexture(const BellotaId bellotaId, const TextureId textureId)
-{
-    mCanvasImpl->setTexture(bellotaId, textureId);
-}
+void Canvas::setTexture(const BellotaId bellotaId, const TextureId textureId)            { mImplPtr->assets.setTexture(bellotaId, textureId); }
+void Canvas::markTextureAsDirty(const TextureId textureId)                                { mImplPtr->assets.markTextureAsDirty(textureId); }
+void Canvas::setTextureMinFilter(const TextureId textureId, TextureSampleMode mode)       { mImplPtr->assets.setTextureMinFilter(textureId, mode); }
+void Canvas::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)       { mImplPtr->assets.setTextureMagFilter(textureId, mode); }
+Texture& Canvas::texture(TextureId textureId)                                             { return mImplPtr->assets.texture(textureId); }
+const Texture& Canvas::texture(TextureId textureId) const                                 { return mImplPtr->assets.texture(textureId); }
 
-void Canvas::markTextureAsDirty(const TextureId textureId)
-{
-    mCanvasImpl->markTextureAsDirty(textureId);
-}
+// ---------------------------------------------------------------------------
+// Meshes — forward to AssetRegistry
+// ---------------------------------------------------------------------------
 
-void Canvas::setTextureMinFilter(const TextureId textureId, TextureSampleMode mode)
-{
-    mCanvasImpl->setTextureMinFilter(textureId, mode);
-}
+MeshId Canvas::addMesh(const Mesh& mesh)                                                  { return mImplPtr->assets.addMesh(mesh); }
+MeshId Canvas::addMesh(Mesh&& mesh)                                                       { return mImplPtr->assets.addMesh(std::move(mesh)); }
+void Canvas::removeMesh(MeshId meshId)                                                    { mImplPtr->assets.removeMesh(meshId); }
+void Canvas::setMesh(const BellotaId bellotaId, const MeshId meshId)                      { mImplPtr->assets.setMesh(bellotaId, meshId); }
+const Mesh& Canvas::mesh(MeshId meshId) const                                             { return mImplPtr->assets.mesh(meshId); }
+const Mesh& Canvas::mesh(BellotaId bellotaId) const                                       { return mImplPtr->assets.mesh(bellotaId); }
 
-void Canvas::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)
-{
-    mCanvasImpl->setTextureMagFilter(textureId, mode);
-}
+// ---------------------------------------------------------------------------
+// Render targets — forward to AssetRegistry; remove tears down the per-RTT
+// ImGui secondary context first (its backend resources are tied to the RTT
+// render pass / FBO that the registry is about to free).
+// ---------------------------------------------------------------------------
 
-MeshId Canvas::addMesh(const Mesh& mesh)
-{
-    return mCanvasImpl->addMesh(mesh);
-}
-
-MeshId Canvas::addMesh(Mesh&& mesh)
-{
-    return mCanvasImpl->addMesh(std::move(mesh));
-}
-
-void Canvas::removeMesh(MeshId meshId)
-{
-    mCanvasImpl->removeMesh(meshId);
-}
-
-void Canvas::setMesh(const BellotaId bellotaId, const MeshId meshId)
-{
-    mCanvasImpl->setMesh(bellotaId, meshId);
-}
-
-const Mesh& Canvas::mesh(MeshId meshId) const
-{
-    return mCanvasImpl->mesh(meshId);
-}
-
-const Mesh& Canvas::mesh(BellotaId bellotaId) const
-{
-    return mCanvasImpl->mesh(bellotaId);
-}
-
-RenderTargetId Canvas::addRenderTarget(ScreenSize size)
-{
-    return mCanvasImpl->addRenderTarget(size);
-}
+RenderTargetId Canvas::addRenderTarget(ScreenSize size)                                   { return mImplPtr->assets.addRenderTarget(size); }
 
 void Canvas::removeRenderTarget(RenderTargetId renderTargetId)
 {
-    mCanvasImpl->removeRenderTarget(renderTargetId);
+    mImplPtr->imguiRtt.releaseContext(renderTargetId);
+    mImplPtr->assets.removeRenderTarget(renderTargetId);
 }
 
-TextureId Canvas::renderTargetTexture(RenderTargetId renderTargetId) const
-{
-    return mCanvasImpl->renderTargetTexture(renderTargetId);
-}
+TextureId Canvas::renderTargetTexture(RenderTargetId renderTargetId) const                { return mImplPtr->assets.renderTargetTexture(renderTargetId); }
+void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor) { mImplPtr->assets.setRenderTargetClearColor(renderTargetId, clearColor); }
 
-TilemapId Canvas::addTilemap(Tilemap tilemap)
-{
-    return mCanvasImpl->addTilemap(std::move(tilemap));
-}
+// ---------------------------------------------------------------------------
+// Tilemaps — forward to FrameRunner (TilemapManager lives there)
+// ---------------------------------------------------------------------------
 
-void Canvas::removeTilemap(TilemapId tilemapId)
-{
-    mCanvasImpl->removeTilemap(tilemapId);
-}
+TilemapId Canvas::addTilemap(Tilemap tilemap)                                              { return mImplPtr->frameRunner.addTilemap(std::move(tilemap)); }
+void Canvas::removeTilemap(TilemapId tilemapId)                                            { mImplPtr->frameRunner.removeTilemap(tilemapId); }
+Tilemap& Canvas::tilemap(TilemapId tilemapId)                                              { return mImplPtr->frameRunner.tilemap(tilemapId); }
+const Tilemap& Canvas::tilemap(TilemapId tilemapId) const                                  { return mImplPtr->frameRunner.tilemap(tilemapId); }
+TilemapExplorerId Canvas::addTilemapExplorer(TilemapExplorer explorer)                     { return mImplPtr->frameRunner.addTilemapExplorer(explorer, *this); }
+void Canvas::removeTilemapExplorer(TilemapExplorerId explorerId)                           { mImplPtr->frameRunner.removeTilemapExplorer(explorerId, *this); }
+TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId explorerId)                     { return mImplPtr->frameRunner.tilemapExplorer(explorerId); }
+const TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId explorerId) const         { return mImplPtr->frameRunner.tilemapExplorer(explorerId); }
 
-Tilemap& Canvas::tilemap(TilemapId tilemapId)
-{
-    return mCanvasImpl->tilemap(tilemapId);
-}
+// ---------------------------------------------------------------------------
+// Sparsemaps — forward to FrameRunner (ExplorerManager<Sparsemap> lives there)
+// ---------------------------------------------------------------------------
 
-const Tilemap& Canvas::tilemap(TilemapId tilemapId) const
-{
-    return mCanvasImpl->tilemap(tilemapId);
-}
+SparsemapId Canvas::addSparsemap(Sparsemap sparsemap)                                              { return mImplPtr->frameRunner.addSparsemap(std::move(sparsemap)); }
+void Canvas::removeSparsemap(SparsemapId sparsemapId)                                              { mImplPtr->frameRunner.removeSparsemap(sparsemapId); }
+Sparsemap& Canvas::sparsemap(SparsemapId sparsemapId)                                              { return mImplPtr->frameRunner.sparsemap(sparsemapId); }
+const Sparsemap& Canvas::sparsemap(SparsemapId sparsemapId) const                                  { return mImplPtr->frameRunner.sparsemap(sparsemapId); }
+SparsemapExplorerId Canvas::addSparsemapExplorer(SparsemapExplorer explorer)                       { return mImplPtr->frameRunner.addSparsemapExplorer(explorer, *this); }
+void Canvas::removeSparsemapExplorer(SparsemapExplorerId explorerId)                               { mImplPtr->frameRunner.removeSparsemapExplorer(explorerId, *this); }
+SparsemapExplorer& Canvas::sparsemapExplorer(SparsemapExplorerId explorerId)                       { return mImplPtr->frameRunner.sparsemapExplorer(explorerId); }
+const SparsemapExplorer& Canvas::sparsemapExplorer(SparsemapExplorerId explorerId) const           { return mImplPtr->frameRunner.sparsemapExplorer(explorerId); }
 
-TilemapExplorerId Canvas::addTilemapExplorer(TilemapExplorer explorer)
-{
-    return mCanvasImpl->addTilemapExplorer(explorer, *this);
-}
-
-void Canvas::removeTilemapExplorer(TilemapExplorerId explorerId)
-{
-    mCanvasImpl->removeTilemapExplorer(explorerId, *this);
-}
-
-TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId explorerId)
-{
-    return mCanvasImpl->tilemapExplorer(explorerId);
-}
-
-const TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId explorerId) const
-{
-    return mCanvasImpl->tilemapExplorer(explorerId);
-}
-
-SparsemapId Canvas::addSparsemap(Sparsemap sparsemap)
-{
-    return mCanvasImpl->addSparsemap(std::move(sparsemap));
-}
-
-void Canvas::removeSparsemap(SparsemapId sparsemapId)
-{
-    mCanvasImpl->removeSparsemap(sparsemapId);
-}
-
-Sparsemap& Canvas::sparsemap(SparsemapId sparsemapId)
-{
-    return mCanvasImpl->sparsemap(sparsemapId);
-}
-
-const Sparsemap& Canvas::sparsemap(SparsemapId sparsemapId) const
-{
-    return mCanvasImpl->sparsemap(sparsemapId);
-}
-
-SparsemapExplorerId Canvas::addSparsemapExplorer(SparsemapExplorer explorer)
-{
-    return mCanvasImpl->addSparsemapExplorer(explorer, *this);
-}
-
-void Canvas::removeSparsemapExplorer(SparsemapExplorerId explorerId)
-{
-    mCanvasImpl->removeSparsemapExplorer(explorerId, *this);
-}
-
-SparsemapExplorer& Canvas::sparsemapExplorer(SparsemapExplorerId explorerId)
-{
-    return mCanvasImpl->sparsemapExplorer(explorerId);
-}
-
-const SparsemapExplorer& Canvas::sparsemapExplorer(SparsemapExplorerId explorerId) const
-{
-    return mCanvasImpl->sparsemapExplorer(explorerId);
-}
+// ---------------------------------------------------------------------------
+// RTT pass scheduling (the queue lives on FrameRunner; the ImGui-to-RTT
+// scheduling lives on ImguiRttManager)
+// ---------------------------------------------------------------------------
 
 void Canvas::renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)
 {
-    mCanvasImpl->renderTo(renderTargetId, std::move(bellotaIds));
+    mImplPtr->frameRunner.renderTo(renderTargetId, std::move(bellotaIds));
 }
 
 void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback)
 {
-    mCanvasImpl->renderImguiTo(renderTargetId, fontId, std::move(imguiDrawCallback));
+    // Wrap the user's callback with auto-push/pop of fontId. Graceful fallback:
+    // if the bake is still pending or the id was removed, the callback runs
+    // without an explicit push (the secondary-context default stays in effect).
+    mImplPtr->imguiRtt.enqueue(renderTargetId,
+        [this, fontId, cb = std::move(imguiDrawCallback)] {
+            if (isImguiFontReady(fontId))
+            {
+                pushImguiFont(fontId);
+                cb();
+                popImguiFont();
+            }
+            else
+            {
+                cb();
+            }
+        });
 }
 
-ImguiFontSourceId Canvas::addImguiFontSource(std::span<const std::byte> ttfBytes, GlyphRange glyphRange)
-{
-    return mCanvasImpl->addImguiFontSource(ttfBytes, glyphRange);
-}
+// ---------------------------------------------------------------------------
+// ImGui fonts — forward to mImplPtr->imguiRtt.fonts() (or wrap in imgui.h calls)
+// ---------------------------------------------------------------------------
 
-void Canvas::removeImguiFontSource(ImguiFontSourceId sourceId)
-{
-    mCanvasImpl->removeImguiFontSource(sourceId);
-}
-
-ImguiFontSourceId Canvas::defaultImguiFontSourceId() const
-{
-    return mCanvasImpl->defaultImguiFontSourceId();
-}
-
-ImguiFontId Canvas::bakeImguiFont(ImguiFontSourceId sourceId, float sizePx)
-{
-    return mCanvasImpl->bakeImguiFont(sourceId, sizePx);
-}
-
-void Canvas::removeImguiFont(ImguiFontId id)
-{
-    mCanvasImpl->removeImguiFont(id);
-}
-
-bool Canvas::isImguiFontReady(ImguiFontId id) const
-{
-    return mCanvasImpl->isImguiFontReady(id);
-}
-
-ImFont* Canvas::getImguiFontPtr(ImguiFontId id) const
-{
-    return mCanvasImpl->getImguiFontPtr(id);
-}
+ImguiFontSourceId Canvas::addImguiFontSource(std::span<const std::byte> ttfBytes, GlyphRange glyphRange) { return mImplPtr->imguiRtt.fonts().addSource(ttfBytes, glyphRange); }
+void Canvas::removeImguiFontSource(ImguiFontSourceId sourceId)                                          { mImplPtr->imguiRtt.fonts().removeSource(sourceId); }
+ImguiFontSourceId Canvas::defaultImguiFontSourceId() const                                              { return mImplPtr->imguiRtt.fonts().defaultSourceId(); }
+ImguiFontId Canvas::bakeImguiFont(ImguiFontSourceId sourceId, float sizePx)                             { return mImplPtr->imguiRtt.fonts().bake(sourceId, sizePx); }
+void Canvas::removeImguiFont(ImguiFontId id)                                                            { mImplPtr->imguiRtt.fonts().remove(id); }
+bool Canvas::isImguiFontReady(ImguiFontId id) const                                                     { return mImplPtr->imguiRtt.fonts().get(id) != nullptr; }
+ImFont* Canvas::getImguiFontPtr(ImguiFontId id) const                                                   { return mImplPtr->imguiRtt.fonts().get(id); }
 
 void Canvas::pushImguiFont(ImguiFontId id)
 {
-    mCanvasImpl->pushImguiFont(id);
+    ImFont* font = getImguiFontPtr(id);
+    debugCheck(font != nullptr,
+        "Canvas::pushImguiFont: id is not registered or its bake is still pending — guard with isImguiFontReady()");
+    ImGui::PushFont(font);
 }
 
 void Canvas::popImguiFont()
 {
-    mCanvasImpl->popImguiFont();
+    ImGui::PopFont();
 }
 
 ImguiFontId Canvas::defaultImguiFontId() const
 {
-    return mCanvasImpl->defaultImguiFontId();
+    auto idOpt = mImplPtr->imguiRtt.fonts().defaultFontId();
+    debugCheck(idOpt.has_value(),
+        "Canvas::defaultImguiFontId: no default font registered (Canvas ctor seeds this — should never fire)");
+    return *idOpt;
 }
 
-void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
-{
-    mCanvasImpl->setRenderTargetClearColor(renderTargetId, clearColor);
-}
+// ---------------------------------------------------------------------------
+// Stats flag
+// ---------------------------------------------------------------------------
 
-void Canvas::setTint(const BellotaId bellotaId, const Tint& tint)
-{
-    mCanvasImpl->setTint(bellotaId, tint);
-}
+bool& Canvas::stats()                                            { return mImplPtr->frameRunner.stats(); }
+const bool& Canvas::stats() const                                { return mImplPtr->frameRunner.stats(); }
 
-void Canvas::removeTint(const BellotaId bellotaId)
-{
-    mCanvasImpl->removeTint(bellotaId);
-}
-
-Bellota& Canvas::bellota(BellotaId bellotaId)
-{
-    return mCanvasImpl->bellota(bellotaId);
-}
-
-const Bellota& Canvas::bellota(BellotaId bellotaId) const
-{
-    return mCanvasImpl->bellota(bellotaId);
-}
-
-Texture& Canvas::texture(TextureId textureId)
-{
-    return mCanvasImpl->texture(textureId);
-}
-
-const Texture& Canvas::texture(TextureId textureId) const
-{
-    return mCanvasImpl->texture(textureId);
-}
-
-bool& Canvas::stats()
-{
-    return mCanvasImpl->stats();
-}
-
-const bool& Canvas::stats() const
-{
-    return mCanvasImpl->stats();
-}
+// ---------------------------------------------------------------------------
+// Lifecycle — thread the assets + imguiRtt managers into the frame loop
+// ---------------------------------------------------------------------------
 
 void Canvas::run()
 {
-    auto update = [](float deltaTime){};
+    auto update = [](float){};
     Controller controller;
-    mCanvasImpl->run(*this, update, controller);
+    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, update, controller);
 }
 
 void Canvas::run(std::function<void(float deltaTime)> update)
 {
     Controller controller;
-    mCanvasImpl->run(*this, update, controller);
+    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, update, controller);
 }
 
 void Canvas::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
-    mCanvasImpl->run(*this, update, controller);
+    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, update, controller);
 }
 
 void Canvas::tick(float deltaTime, std::function<void(float)> update, Controller& controller)
 {
-    mCanvasImpl->tick(*this, deltaTime, update, controller);
+    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, deltaTime, update, controller);
 }
 
 void Canvas::tick(float deltaTime, std::function<void(float)> update)
 {
-    mCanvasImpl->tick(*this, deltaTime, update);
+    Controller controller;
+    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, deltaTime, update, controller);
 }
 
 void Canvas::tick(float deltaTime)
 {
-    mCanvasImpl->tick(*this, deltaTime);
+    Controller controller;
+    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, deltaTime, [](float){}, controller);
 }
 
 void Canvas::close()
 {
-    mCanvasImpl->close();
+    mImplPtr->frameRunner.close();
 }
 
 DirectTexture Canvas::takeScreenshot() const
 {
-    return mCanvasImpl->takeScreenshot();
+    return mImplPtr->frameRunner.takeScreenshot();
 }
 
 }

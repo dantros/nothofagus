@@ -722,7 +722,7 @@ void VulkanBackend::initImGuiRenderer()
     ImGui_ImplVulkan_Init(&imguiInfo);
     // Font upload is deferred: ImGui_ImplVulkan_NewFrame() calls
     // ImGui_ImplVulkan_CreateFontsTexture() automatically on the first frame,
-    // after canvas_impl has finished adding custom fonts (Roboto, etc.).
+    // after FrameRunner has finished adding custom fonts (Roboto, etc.).
 }
 
 // ---------------------------------------------------------------------------
@@ -841,7 +841,7 @@ void VulkanBackend::shutdown()
     vkDestroyDescriptorPool(mDevice, mImguiDescriptorPool, nullptr);
 
     // Per-RTT ImGui descriptor pools (secondary contexts were already shut down by
-    // CanvasImpl before freeing the render targets, so only the pool remains).
+    // FrameRunner before freeing the render targets, so only the pool remains).
     for (auto& [id, pool] : mRttImguiDescriptorPools)
         vkDestroyDescriptorPool(mDevice, pool, nullptr);
     mRttImguiDescriptorPools.clear();

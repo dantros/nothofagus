@@ -26,6 +26,11 @@ struct RenderTargetPack
     /// also null the proxy texture's `dtextureOpt` (which the backend frees
     /// as part of `freeRenderTarget`). Resets this pack's optional.
     void freeGpuResources(ActiveBackend& backend, TexturePack& proxyPack);
+
+    /// Per-frame GPU sync: lazy-create the render target on first use and
+    /// stamp its color attachment as the proxy texture's `dtextureOpt` so
+    /// bellotas that sample the proxy pick up a live handle.
+    void syncToGpu(ActiveBackend& backend, TexturePack& proxyPack);
 };
 
 using RenderTargetContainer = IndexedContainer<RenderTargetPack>;

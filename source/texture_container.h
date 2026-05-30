@@ -42,6 +42,12 @@ struct TexturePack
     /// entries — proxy textures (render target color attachments) are owned by
     /// their RenderTargetPack and freed through `freeRenderTarget`.
     void freeGpuResources(ActiveBackend& backend);
+
+    /// Per-frame GPU sync: lazy-upload on first use, then re-upload / patch
+    /// whichever subset of atlas / map / palette the CPU side has marked dirty.
+    /// Proxy entries (render-target color attachments) are skipped here — the
+    /// owning RenderTargetPack manages their GPU side via its own `syncToGpu`.
+    void syncToGpu(ActiveBackend& backend);
 };
 
 using TextureContainer = IndexedContainer<TexturePack>;

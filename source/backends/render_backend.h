@@ -94,7 +94,7 @@ concept RenderBackend = requires(
     { backend.endFrame(imguiData, framebufferWidth, framebufferHeight) } -> std::same_as<void>;
 
     // ImGui-to-render-target hooks — called with a secondary ImGuiContext active
-    // (created per render target by canvas_impl). See renderImguiTo() in canvas.h.
+    // (created per render target by FrameRunner). See renderImguiTo() in canvas.h.
     // Init/shutdown run once per render target that hosts ImGui content; the new-frame
     // and render hooks run every frame between beginRttPass/endRttPass.
     { backend.initImguiForRenderTarget(renderTarget)           } -> std::same_as<void>;

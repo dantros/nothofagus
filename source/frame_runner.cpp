@@ -1,11 +1,12 @@
 
-#include "canvas_impl.h"
+#include "frame_runner.h"
 #include "check.h"
 #include "performance_monitor.h"
 #include "keyboard.h"
 #include "mouse.h"
 #include "controller.h"
-#include "roboto_font.h"
+#include "asset_registry.h"
+#include "imgui_rtt_manager.h"
 #include "backends/render_backend_select.h"
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_transform_2d.hpp>
@@ -16,6 +17,7 @@
 #include <cmath>
 #include <optional>
 #include <vector>
+#include <span>
 #include <format>
 #include <algorithm>
 #include "profiling.h"
@@ -23,9 +25,9 @@
 namespace Nothofagus
 {
 
-// Window is the selected backend type. Forward declared in canvas_impl.h;
+// Window is the selected backend type. Forward declared in frame_runner.h;
 // defined here so the backend headers are only included from this translation unit.
-struct Canvas::CanvasImpl::Window : public SelectedWindowBackend
+struct FrameRunner::Window : public SelectedWindowBackend
 {
     using SelectedWindowBackend::SelectedWindowBackend;
 };
@@ -52,23 +54,17 @@ static ViewportRect computeLetterboxViewport(int framebufferWidth, int framebuff
     return { viewportX, viewportY, viewportWidth, viewportHeight };
 }
 
-Canvas::CanvasImpl::CanvasImpl(
+FrameRunner::FrameRunner(
     const ScreenSize& screenSize,
     const std::string& title,
     const glm::vec3 clearColor,
     const unsigned int pixelSize,
-    const float imguiFontSize,
     bool headless)
     :
     mScreenSize(screenSize),
     mTitle(title),
     mClearColor(clearColor),
     mPixelSize(pixelSize),
-    mAssets(mBackend),
-    mImguiRtt(mBackend, mAssets.renderTargets(),
-              assets_Roboto_VariableFont_wdth_wght_ttf,
-              assets_Roboto_VariableFont_wdth_wght_ttf_len,
-              imguiFontSize),
     mStats(false),
     mHeadless(headless),
     mGameViewport{0, 0, 0, 0}
@@ -92,136 +88,64 @@ Canvas::CanvasImpl::CanvasImpl(
     mBackend.initialize(mWindow->nativeHandle(), {static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)});
     mBackend.initImGuiRenderer();
 
-    // Font setup — bake the main HiDPI font (imguiFontSize * contentScale²
-    // for crisp DPI-aware glyphs on the main UI) and seed the secondary-context
-    // default at the unscaled imguiFontSize for diegetic RTT panels.
-    mImguiRtt.fonts().initialize(mWindow->contentScale());
+    // Font setup happens after construction at the Canvas level — once `mAssets`
+    // and `mImguiRtt` exist, Canvas calls `mImguiRtt->fonts().initialize(...)`.
 }
 
-Canvas::CanvasImpl::~CanvasImpl()
+FrameRunner::~FrameRunner()
 {
-    // Defined here (not =default) to keep the pimpl idiom for struct Window working.
-    // GPU resources must be freed while the GL/Vulkan context is still alive:
-    // - ImGui RTT secondary contexts own per-RTT pipeline/descriptor resources
-    // - mAssets owns texture/mesh/render-target GPU handles
-    // mBackend.shutdown() runs last; mBackend itself is destroyed only after this body.
-    mImguiRtt.releaseAll();
-    mAssets.freeAllGpuResources();
+    // Defined here (not =default) to keep the pimpl idiom for struct Window
+    // working. Canvas's dtor is responsible for draining `mImguiRtt` and
+    // `mAssets` GPU resources BEFORE destroying FrameRunner — by the time this
+    // body runs they're already torn down, leaving us to shut the backend.
     mBackend.shutdown();
 }
 
-std::size_t Canvas::CanvasImpl::getCurrentMonitor() const
+float FrameRunner::contentScale() const
+{
+    debugCheck(mWindow != nullptr, "FrameRunner::contentScale called before window init");
+    return mWindow->contentScale();
+}
+
+std::size_t FrameRunner::getCurrentMonitor() const
 {
     return mWindow->getCurrentMonitor();
 }
 
-bool Canvas::CanvasImpl::isFullscreen() const
+bool FrameRunner::isFullscreen() const
 {
     return mWindow->isFullscreen();
 }
 
-void Canvas::CanvasImpl::setFullScreenOnMonitor(std::size_t monitorIndex)
+void FrameRunner::setFullScreenOnMonitor(std::size_t monitorIndex)
 {
     mLastWindowedAABox = mWindow->getWindowAABox();
     mWindow->setFullscreenOnMonitor(monitorIndex);
 }
 
-AABox Canvas::CanvasImpl::getWindowAABox() const
+AABox FrameRunner::getWindowAABox() const
 {
     return mWindow->getWindowAABox();
 }
 
-void Canvas::CanvasImpl::setWindowed()
+void FrameRunner::setWindowed()
 {
     mWindow->setWindowed(mLastWindowedAABox);
 }
 
-void Canvas::CanvasImpl::setWindowTitle(const std::string& title)
+void FrameRunner::setWindowTitle(const std::string& title)
 {
     mTitle = title;
     mWindow->setWindowTitle(title);
 }
 
-ScreenSize Canvas::CanvasImpl::windowSize() const
+ScreenSize FrameRunner::windowSize() const
 {
     debugCheck(mWindow != nullptr, "Canvas window has not been initialized");
     return mWindow->getWindowSize();
 }
 
-// ---------------------------------------------------------------------------
-// Asset/font remove paths with cross-cutting gates. Plain forwarders are
-// inlined in canvas_impl.h directly onto AssetRegistry / TilemapManager /
-// mImguiRtt.fonts(); only the methods that layer a check or need imgui.h
-// stay here.
-// ---------------------------------------------------------------------------
-
-void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
-{
-    debugCheck(!mTilemapManager.isExplorerManagedBellota(bellotaId.id)
-            && !mSparsemapManager.isExplorerManagedBellota(bellotaId.id),
-        "Bellota is owned by an explorer pool — use canvas.removeTilemapExplorer() / canvas.removeSparsemapExplorer() instead of removing slot bellotas directly.");
-    mAssets.removeBellota(bellotaId);
-}
-
-void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
-{
-    debugCheck(!mTilemapManager.isExplorerManagedTexture(textureId.id)
-            && !mSparsemapManager.isExplorerManagedTexture(textureId.id),
-        "Texture is owned by an explorer pool — use canvas.removeTilemapExplorer() / canvas.removeSparsemapExplorer() instead of removing slot textures directly.");
-    mAssets.removeTexture(textureId);
-}
-
-void Canvas::CanvasImpl::removeRenderTarget(RenderTargetId renderTargetId)
-{
-    // Tear down the secondary ImGui context for this RTT first — its per-context
-    // backend owns GPU resources tied to the RTT's render pass / FBO, which the
-    // registry's removeRenderTarget call is about to free.
-    mImguiRtt.releaseContext(renderTargetId);
-    mAssets.removeRenderTarget(renderTargetId);
-}
-
-void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback)
-{
-    // Wrap the user's callback with auto-push/pop of fontId. Graceful fallback:
-    // if the bake is still pending or the id was removed, the callback runs
-    // without an explicit push (the secondary-context default stays in effect).
-    mImguiRtt.enqueue(renderTargetId,
-        [this, fontId, cb = std::move(imguiDrawCallback)] {
-            if (isImguiFontReady(fontId))
-            {
-                pushImguiFont(fontId);
-                cb();
-                popImguiFont();
-            }
-            else
-            {
-                cb();
-            }
-        });
-}
-
-void Canvas::CanvasImpl::pushImguiFont(ImguiFontId id)
-{
-    ImFont* font = getImguiFontPtr(id);
-    debugCheck(font != nullptr,
-        "Canvas::pushImguiFont: id is not registered or its bake is still pending — guard with isImguiFontReady()");
-    ImGui::PushFont(font);
-}
-
-void Canvas::CanvasImpl::popImguiFont()
-{
-    ImGui::PopFont();
-}
-
-ImguiFontId Canvas::CanvasImpl::defaultImguiFontId() const
-{
-    auto idOpt = mImguiRtt.fonts().defaultFontId();
-    debugCheck(idOpt.has_value(),
-        "Canvas::defaultImguiFontId: no default font registered (CanvasImpl ctor seeds this — should never fire)");
-    return *idOpt;
-}
-
-DirectTexture Canvas::CanvasImpl::takeScreenshot() const
+DirectTexture FrameRunner::takeScreenshot() const
 {
     const glm::ivec2 gameSize{static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)};
     ScreenshotPixels pixels = mBackend.takeScreenshot(mGameViewport, gameSize);
@@ -234,12 +158,11 @@ DirectTexture Canvas::CanvasImpl::takeScreenshot() const
 // Frame loop
 // ---------------------------------------------------------------------------
 
-void Canvas::CanvasImpl::ensureSessionStarted(Controller& controller)
+void FrameRunner::ensureSessionStarted(Controller& controller)
 {
     if (mSessionStarted)
         return;
     mWindow->beginSession(controller);
-    mSortedBellotaPacks.reserve(mAssets.bellotas().size() * 2);
     mSessionStarted = true;
 }
 
@@ -321,7 +244,8 @@ static void drawBellotaPacks(
     }
 }
 
-void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                                     float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ZoneScopedN("runOneFrame");
 
@@ -335,7 +259,7 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
     // the previous frame's ImGui::Render() and this frame's ImGui::NewFrame().
     // Must run BEFORE mBackend.imguiNewFrame() so ImGui_Impl*_NewFrame()'s
     // lazy font-texture re-upload picks up the rebuilt atlas.
-    mImguiRtt.drainPendingFontOps(mWindow->contentScale());
+    imguiRtt.drainPendingFontOps(mWindow->contentScale());
 
     // Get current framebuffer size and compute letterboxed viewport
     auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
@@ -366,117 +290,32 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
     const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
 
     if (mAutoTextureGC)
-        mAssets.clearUnusedTextures();
+        assets.clearUnusedTextures();
 
     if (mAutoMeshGC)
-        mAssets.clearUnusedMeshes();
+        assets.clearUnusedMeshes();
 
     {
         ZoneScopedN("TextureUpload");
-        for (auto& [textureIndex, texturePack] : mAssets.textures())
-        {
-            const bool isIndirectOrTileMap =
-                texturePack.mode == TextureMode::Indirect ||
-                texturePack.mode == TextureMode::TileMap;
-
-            if (texturePack.isDirty() && !texturePack.isProxy())
-            {
-                texturePack.dtextureOpt = mBackend.uploadTexture(
-                    texturePack.texture.value(), texturePack.minFilter, texturePack.magFilter);
-
-                if (isIndirectOrTileMap)
-                {
-                    auto& indirectTexture = std::get<IndirectTexture>(texturePack.texture.value());
-                    texturePack.dpaletteTextureOpt = mBackend.uploadPaletteTexture(
-                        indirectTexture.generatePaletteData());
-
-                    if (texturePack.mode == TextureMode::TileMap)
-                    {
-                        const auto mapData = indirectTexture.generateMapData();
-                        texturePack.dmapTextureOpt = mBackend.uploadTileMapTexture(
-                            std::span<const std::uint8_t>(mapData), indirectTexture.mapSize());
-                        mBackend.linkTileMapTextures(
-                            texturePack.dtextureOpt.value(),
-                            texturePack.dmapTextureOpt.value(),
-                            texturePack.dpaletteTextureOpt.value());
-                    }
-                    else
-                    {
-                        mBackend.linkIndirectTextures(
-                            texturePack.dtextureOpt.value(), texturePack.dpaletteTextureOpt.value());
-                    }
-                    indirectTexture.clearAtlasDirty();
-                    indirectTexture.clearMapDirty();
-                    indirectTexture.clearPaletteDirty();
-                }
-            }
-            else if (isIndirectOrTileMap && !texturePack.isProxy() && texturePack.dtextureOpt.has_value())
-            {
-                auto& indirectTexture = std::get<IndirectTexture>(texturePack.texture.value());
-
-                if (indirectTexture.isAtlasDirty() && texturePack.dpaletteTextureOpt.has_value())
-                {
-                    mBackend.freeTexture(texturePack.dtextureOpt.value());
-                    texturePack.dtextureOpt = mBackend.uploadTexture(
-                        texturePack.texture.value(), texturePack.minFilter, texturePack.magFilter);
-                    if (texturePack.mode == TextureMode::TileMap && texturePack.dmapTextureOpt.has_value())
-                        mBackend.linkTileMapTextures(
-                            texturePack.dtextureOpt.value(),
-                            texturePack.dmapTextureOpt.value(),
-                            texturePack.dpaletteTextureOpt.value());
-                    else
-                        mBackend.linkIndirectTextures(
-                            texturePack.dtextureOpt.value(), texturePack.dpaletteTextureOpt.value());
-                    indirectTexture.clearAtlasDirty();
-                }
-                if (texturePack.mode == TextureMode::TileMap && indirectTexture.isMapDirty()
-                    && texturePack.dmapTextureOpt.has_value() && texturePack.dpaletteTextureOpt.has_value())
-                {
-                    mBackend.freeTileMapTexture(texturePack.dmapTextureOpt.value());
-                    const auto mapData = indirectTexture.generateMapData();
-                    texturePack.dmapTextureOpt = mBackend.uploadTileMapTexture(
-                        std::span<const std::uint8_t>(mapData), indirectTexture.mapSize());
-                    mBackend.linkTileMapTextures(
-                        texturePack.dtextureOpt.value(),
-                        texturePack.dmapTextureOpt.value(),
-                        texturePack.dpaletteTextureOpt.value());
-                    indirectTexture.clearMapDirty();
-                }
-                if (indirectTexture.isPaletteDirty() && texturePack.dpaletteTextureOpt.has_value())
-                {
-                    mBackend.updatePaletteTexture(
-                        texturePack.dpaletteTextureOpt.value(),
-                        indirectTexture.generatePaletteData());
-                    indirectTexture.clearPaletteDirty();
-                }
-            }
-        }
+        for (auto& [textureIndex, texturePack] : assets.textures())
+            texturePack.syncToGpu(mBackend);
     }
 
-    for (auto& [renderTargetIndex, renderTargetPack] : mAssets.renderTargets())
+    for (auto& [renderTargetIndex, renderTargetPack] : assets.renderTargets())
     {
-        if (renderTargetPack.isDirty())
-        {
-            const glm::ivec2 renderTargetSize = renderTargetPack.renderTarget.mSize;
-            renderTargetPack.dRenderTargetOpt = mBackend.createRenderTarget(renderTargetSize);
-            const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
-            mAssets.textures().at(proxyTexId.id).dtextureOpt =
-                mBackend.getRenderTargetTexture(renderTargetPack.dRenderTargetOpt.value());
-        }
+        const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
+        renderTargetPack.syncToGpu(mBackend, assets.textures().at(proxyTexId.id));
     }
 
     {
         ZoneScopedN("MeshUpload");
-        for (auto& [meshIndex, meshPack] : mAssets.meshes())
-        {
-            if (meshPack.isDirty())
-                meshPack.dmeshOpt = mBackend.uploadMesh(meshPack.mesh);
-        }
+        for (auto& [meshIndex, meshPack] : assets.meshes())
+            meshPack.syncToGpu(mBackend);
     }
 
     {
         ZoneScopedN("DepthSort");
-        sortByDepthOffset(mAssets.bellotas(), mSortedBellotaPacks);
+        sortByDepthOffset(assets.bellotas(), mSortedBellotaPacks);
     }
 
     {
@@ -485,10 +324,10 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
         // before drawing to the main framebuffer.
         for (auto& [renderTargetId, bellotaIds] : mPendingRttPasses)
         {
-            if (not mAssets.renderTargets().contains(renderTargetId.id))
+            if (not assets.renderTargets().contains(renderTargetId.id))
                 continue;
 
-            RenderTargetPack& renderTargetPack = mAssets.renderTargets().at(renderTargetId.id);
+            RenderTargetPack& renderTargetPack = assets.renderTargets().at(renderTargetId.id);
             if (not renderTargetPack.dRenderTargetOpt.has_value())
                 continue;
 
@@ -506,8 +345,8 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
             std::vector<const BellotaPack*> renderTargetSortedPacks;
             for (const BellotaId bellotaId : bellotaIds)
             {
-                if (mAssets.bellotas().contains(bellotaId.id))
-                    renderTargetSortedPacks.push_back(&mAssets.bellotas().at(bellotaId.id));
+                if (assets.bellotas().contains(bellotaId.id))
+                    renderTargetSortedPacks.push_back(&assets.bellotas().at(bellotaId.id));
             }
             std::sort(renderTargetSortedPacks.begin(), renderTargetSortedPacks.end(),
                 [](const BellotaPack* lhs, const BellotaPack* rhs)
@@ -516,7 +355,7 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
                 }
             );
 
-            drawBellotaPacks(renderTargetSortedPacks, mAssets.textures(), mAssets.meshes(), renderTargetWorldTransform, mBackend);
+            drawBellotaPacks(renderTargetSortedPacks, assets.textures(), assets.meshes(), renderTargetWorldTransform, mBackend);
 
             mBackend.endRttPass();
         }
@@ -526,14 +365,14 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
         // render target, rendered with a pipeline compiled against the RTT render
         // pass (Vulkan) or into the RTT FBO (OpenGL). Lazy context creation on
         // first use; destroyed in removeRenderTarget() and the destructor.
-        mImguiRtt.flushPending(deltaTimeMS, ImGui::GetIO().Fonts);
+        imguiRtt.flushPending(deltaTimeMS, ImGui::GetIO().Fonts);
     }
 
     mBackend.beginMainPass(mGameViewport);
 
     {
         ZoneScopedN("MainDraw");
-        drawBellotaPacks(mSortedBellotaPacks, mAssets.textures(), mAssets.meshes(), worldTransformMat, mBackend);
+        drawBellotaPacks(mSortedBellotaPacks, assets.textures(), assets.meshes(), worldTransformMat, mBackend);
     }
 
     if (mStats)
@@ -560,7 +399,8 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
     FrameMark;
 }
 
-void Canvas::CanvasImpl::run(Canvas& canvas, std::function<void(float deltaTime)> update, Controller& controller)
+void FrameRunner::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                             std::function<void(float deltaTime)> update, Controller& controller)
 {
     // Always call beginSession — it resets the window close flag and rebinds
     // input callbacks, which is required after a manifest switch (canvas.close()
@@ -568,7 +408,7 @@ void Canvas::CanvasImpl::run(Canvas& canvas, std::function<void(float deltaTime)
     mWindow->beginSession(controller);
     if (!mSessionStarted)
     {
-        mSortedBellotaPacks.reserve(mAssets.bellotas().size() * 2);
+        mSortedBellotaPacks.reserve(assets.bellotas().size() * 2);
         mSessionStarted = true;
     }
 
@@ -577,28 +417,18 @@ void Canvas::CanvasImpl::run(Canvas& canvas, std::function<void(float deltaTime)
     while (mWindow->isRunning())
     {
         performanceMonitor.update(mWindow->getTime());
-        runOneFrame(canvas, performanceMonitor.getMS(), update, controller);
+        runOneFrame(canvas, assets, imguiRtt, performanceMonitor.getMS(), update, controller);
     }
 }
 
-void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+void FrameRunner::tick(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                              float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ensureSessionStarted(controller);
-    runOneFrame(canvas, deltaTimeMS, update, controller);
+    runOneFrame(canvas, assets, imguiRtt, deltaTimeMS, update, controller);
 }
 
-void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update)
-{
-    Controller controller;
-    tick(canvas, deltaTimeMS, update, controller);
-}
-
-void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS)
-{
-    tick(canvas, deltaTimeMS, [](float){});
-}
-
-void Canvas::CanvasImpl::close()
+void FrameRunner::close()
 {
     mWindow->requestClose();
 }

@@ -9,7 +9,7 @@ namespace Nothofagus
 struct DRenderTarget
 {
     std::size_t id;
-    glm::ivec2 size; ///< Cached size — used by canvas_impl to compute RTT world transform.
+    glm::ivec2 size; ///< Cached size — used by FrameRunner to compute RTT world transform.
 };
 
 }
