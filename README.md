@@ -34,13 +34,19 @@ texture.setPallete(pallete)
     }
 );
 Nothofagus::TextureId textureId = canvas.addTexture(texture);
-Nothofagus::BellotaId bellotaId = canvas.addBellota({{{75.0f, 75.0f}}, textureId});
+
+Nothofagus::Transform transform({75.0f, 75.0f});
+Nothofagus::Bellota   bellota(transform, textureId);
+Nothofagus::BellotaId bellotaId = canvas.addBellota(bellota);
 
 canvas.run(update);
 ```
 
-A `Bellota` is a drawable element. Each number in the texture is an index into
-the `ColorPallete` — yes, it is an indirect color scheme.
+A `Bellota` ("acorn") is a drawable element — a `Transform` (position, scale,
+rotation in degrees) bound to a `TextureId`, with optional extras like
+`depthOffset` for Z-ordering, a custom `MeshId`, opacity, tint, or a
+multi-layer frame index. Each number in the texture above is an index into the
+`ColorPallete` — yes, it is an indirect color scheme.
 
 Animate by providing an `update` callback:
 
