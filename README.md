@@ -153,6 +153,30 @@ canvas.addBellota({{{x, y}}, texId});
 
 → [examples/hello_direct_texture.cpp](examples/hello_direct_texture.cpp)
 
+### Text rendering
+
+`writeText` / `writeChar` paint glyphs from the bundled `font8x8` bitmap font
+directly into an `IndirectTexture`, so the text becomes part of your palette
+and draws through the regular bellota pipeline — distinct from ImGui text,
+which is for tool UI. Multiple font variants are available via `FontType`
+(`Basic`, `ExtLatin`, `Greek`, `Box`, `Block`, `Hiragana`, ...).
+
+```cpp
+std::string text = "- Nothofagus -";
+Nothofagus::IndirectTexture banner({8 * text.size(), 8}, {0.5, 0.5, 0.5, 1.0});
+banner.setPallete({{0,0,0,0.8}, {1,1,1,1}});
+Nothofagus::writeText(banner, text);
+
+// Single hiragana glyph 0xD into an 8x8 texture:
+Nothofagus::IndirectTexture glyph({8, 8}, {0.5, 0.5, 0.5, 1.0});
+glyph.setPallete({{0,0,0,0}, {0,0,0,1}});
+Nothofagus::writeChar(glyph, 0xD, 0, 0, Nothofagus::FontType::Hiragana);
+
+canvas.addBellota({{{x, y}}, canvas.addTexture(banner)});
+```
+
+→ [examples/hello_text.cpp](examples/hello_text.cpp)
+
 ### Input: keyboard, mouse, gamepad
 
 The same `Controller` handles all three input devices. Mouse positions are
