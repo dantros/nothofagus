@@ -52,7 +52,7 @@ public:
     const ColorPallete& palette() const { return mCache.pallete(); }
 
     /// The underlying `IndirectTexture` cache (atlas + palette + full-world cell grid).
-    /// Used by `TilemapManager` to clone slot textures via the override-map constructor.
+    /// Used by `ExplorerManager<Tilemap>` to clone slot textures via the override-map constructor.
     const IndirectTexture& cacheTexture() const { return mCache; }
 
     /// Materialize one chunk's cell grid (row-major, `chunkSize.x * chunkSize.y` bytes).

@@ -158,7 +158,7 @@ TextureId Canvas::renderTargetTexture(RenderTargetId renderTargetId) const      
 void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor) { mImplPtr->assets.setRenderTargetClearColor(renderTargetId, clearColor); }
 
 // ---------------------------------------------------------------------------
-// Tilemaps — forward to FrameRunner (TilemapManager lives there)
+// Tilemaps — forward to FrameRunner (ExplorerManager<Tilemap> lives there)
 // ---------------------------------------------------------------------------
 
 TilemapId Canvas::addTilemap(Tilemap tilemap)                                              { return mImplPtr->frameRunner.addTilemap(std::move(tilemap)); }

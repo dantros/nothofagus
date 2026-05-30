@@ -36,7 +36,7 @@ Tilemap::Tilemap(glm::ivec2 mapSize,
     debugCheck(!tileGraphics.empty(), "Tilemap requires at least one tile graphic layer.");
 
     // One-time bound: with chunkSize * tileSize asserted to fit in int here, the
-    // per-frame chunk-pixel math in tilemap_manager.cpp can stay in plain int.
+    // per-frame chunk-pixel math in explorer_manager.cpp can stay in plain int.
     debugCheck(
         static_cast<std::int64_t>(chunkSize.x) * static_cast<std::int64_t>(tileSize.x) <= std::numeric_limits<int>::max()
      && static_cast<std::int64_t>(chunkSize.y) * static_cast<std::int64_t>(tileSize.y) <= std::numeric_limits<int>::max(),
