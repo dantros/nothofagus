@@ -33,7 +33,7 @@ using MeshUsageMonitor    = ResourceUsageMonitor<MeshId>;
 /// the caller can sequence it against the backend's own shutdown.
 ///
 /// Does NOT enforce tilemap-pool-ownership gates or tear down ImGui RTT
-/// secondary contexts — both are CanvasImpl-level concerns layered on top
+/// secondary contexts — both are FrameRunner-level concerns layered on top
 /// of this class.
 class AssetRegistry
 {
@@ -84,7 +84,7 @@ public:
     RenderTargetContainer& renderTargets() { return mRenderTargets; }
     const RenderTargetContainer& renderTargets() const { return mRenderTargets; }
 
-    /// Free every GPU handle held by any container. Call from CanvasImpl's
+    /// Free every GPU handle held by any container. Call from FrameRunner's
     /// destructor before mBackend.shutdown(). After this call the registry
     /// is logically empty.
     void freeAllGpuResources();

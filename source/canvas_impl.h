@@ -14,7 +14,7 @@
 namespace Nothofagus
 {
 
-// Forward decls — CanvasImpl only takes these by reference (in run/tick), so
+// Forward decls — FrameRunner only takes these by reference (in run/tick), so
 // the full headers don't need to be visible here. canvas_impl.h is an
 // internal header (never reached by the public canvas.h), so these names
 // at namespace scope stay out of the public-API surface.
@@ -22,22 +22,22 @@ class AssetRegistry;
 class ImguiRttManager;
 
 /**
- * @class CanvasImpl
+ * @class FrameRunner
  * @brief Internal owner of the GPU backend, window/input backend, and the
  * per-frame render loop. Asset CRUD (textures/meshes/bellotas/render targets)
  * and the canvas-wide ImGui font / RTT-context manager live on `Canvas`
- * itself; CanvasImpl exposes the GPU backend and the small predicates the
+ * itself; FrameRunner exposes the GPU backend and the small predicates the
  * cross-cutting gates need.
  *
- * Construction order in `Canvas`'s ctor is `mCanvasImpl` first (this builds
- * `mBackend`), then `mAssets(mCanvasImpl->backend())`, then
- * `mImguiRtt(mCanvasImpl->backend(), mAssets->renderTargets(), …)`.
+ * Construction order in `Canvas`'s ctor is `mFrameRunner` first (this builds
+ * `mBackend`), then `mAssets(mFrameRunner->backend())`, then
+ * `mImguiRtt(mFrameRunner->backend(), mAssets->renderTargets(), …)`.
  */
-class CanvasImpl
+class FrameRunner
 {
 public:
 
-    CanvasImpl(
+    FrameRunner(
         const ScreenSize& screenSize,
         const std::string& title,
         const glm::vec3 clearColor,
@@ -47,9 +47,9 @@ public:
 
     /// Destructor to clean up resources and terminate the window backend.
     /// Caller (Canvas) must drain `mImguiRtt` and `mAssets` GPU resources
-    /// BEFORE destroying CanvasImpl, because `~CanvasImpl` shuts the backend
+    /// BEFORE destroying FrameRunner, because `~FrameRunner` shuts the backend
     /// down.
-    ~CanvasImpl();
+    ~FrameRunner();
 
     // ----- Backend access (internal, never reaches the public canvas.h surface) -----
     ActiveBackend&       backend()       noexcept { return mBackend; }
@@ -81,7 +81,7 @@ public:
     void setAutoRemoveUnusedTextures(bool enabled)                                          { mAutoTextureGC = enabled; }
     void setAutoRemoveUnusedMeshes(bool enabled)                                            { mAutoMeshGC = enabled; }
 
-    // ----- Tilemaps (TilemapManager stays with CanvasImpl) -----
+    // ----- Tilemaps (TilemapManager stays with FrameRunner) -----
     TilemapId addTilemap(Tilemap tilemap)                                                   { return mTilemapManager.addTilemap(std::move(tilemap)); }
     void removeTilemap(TilemapId tilemapId)                                                 { mTilemapManager.removeTilemap(tilemapId); }
     Tilemap& tilemap(TilemapId tilemapId)                                                   { return mTilemapManager.tilemap(tilemapId); }

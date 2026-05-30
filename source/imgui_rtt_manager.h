@@ -70,7 +70,7 @@ public:
     /// Drain the font manager's queued ops + rebuild the atlas + refresh
     /// secondary contexts + drop the GPU font texture so the next NewFrame
     /// re-uploads it. No-op when the font manager has no pending ops.
-    /// Called by CanvasImpl::runOneFrame at the top of each frame.
+    /// Called by FrameRunner::runOneFrame at the top of each frame.
     void drainPendingFontOps(float contentScale);
 
     /// Access to the canvas-wide ImGui font manager (main HiDPI font + RTT
