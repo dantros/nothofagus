@@ -230,9 +230,8 @@ void OpenGLBackend::initImGuiRenderer()
 
 void OpenGLBackend::rebuildImguiFontTexture()
 {
-    // Drop the GPU font texture; ImGui_ImplOpenGL3_NewFrame() lazily re-creates
-    // it from the rebuilt atlas on the very next call.
-    ImGui_ImplOpenGL3_DestroyFontsTexture();
+    // No-op: ImGui 1.92+ manages atlas textures via ImTextureData and invokes
+    // ImGui_ImplOpenGL3_UpdateTexture automatically when the atlas is rebuilt.
 }
 
 void OpenGLBackend::shutdown()

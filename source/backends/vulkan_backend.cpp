@@ -715,10 +715,10 @@ void VulkanBackend::initImGuiRenderer()
     imguiInfo.QueueFamily     = mGraphicsQueueFamily;
     imguiInfo.Queue           = mGraphicsQueue;
     imguiInfo.DescriptorPool  = mImguiDescriptorPool;
-    imguiInfo.RenderPass      = mMainRenderPass;
+    imguiInfo.PipelineInfoMain.RenderPass   = mMainRenderPass;
     imguiInfo.MinImageCount   = 2;
     imguiInfo.ImageCount      = mPresentation.imageCount();
-    imguiInfo.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
+    imguiInfo.PipelineInfoMain.MSAASamples  = VK_SAMPLE_COUNT_1_BIT;
     ImGui_ImplVulkan_Init(&imguiInfo);
     // Font upload is deferred: ImGui_ImplVulkan_NewFrame() calls
     // ImGui_ImplVulkan_CreateFontsTexture() automatically on the first frame,
@@ -731,11 +731,8 @@ void VulkanBackend::initImGuiRenderer()
 
 void VulkanBackend::rebuildImguiFontTexture()
 {
-    // Drop the GPU font texture so ImGui_ImplVulkan_NewFrame() lazily re-uploads
-    // it from the rebuilt atlas. vkDeviceWaitIdle ensures no in-flight command
-    // buffer holds the old font descriptor before we destroy it.
-    vkDeviceWaitIdle(mDevice);
-    ImGui_ImplVulkan_DestroyFontsTexture();
+    // No-op: ImGui 1.92+ manages atlas textures via ImTextureData and invokes
+    // ImGui_ImplVulkan_UpdateTexture automatically when the atlas is rebuilt.
 }
 
 // ---------------------------------------------------------------------------
@@ -1984,10 +1981,10 @@ void VulkanBackend::initImguiForRenderTarget(DRenderTarget renderTarget)
     imguiInfo.QueueFamily     = mGraphicsQueueFamily;
     imguiInfo.Queue           = mGraphicsQueue;
     imguiInfo.DescriptorPool  = pool;
-    imguiInfo.RenderPass      = mRttRenderPass;  // KEY: pipeline is RTT-compatible
+    imguiInfo.PipelineInfoMain.RenderPass   = mRttRenderPass;  // KEY: pipeline is RTT-compatible
     imguiInfo.MinImageCount   = 2;
     imguiInfo.ImageCount      = 2;
-    imguiInfo.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
+    imguiInfo.PipelineInfoMain.MSAASamples  = VK_SAMPLE_COUNT_1_BIT;
     ImGui_ImplVulkan_Init(&imguiInfo);
     // Fonts upload is deferred to the first ImGui_ImplVulkan_NewFrame().
 }
