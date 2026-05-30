@@ -46,7 +46,7 @@ struct Canvas::Implementation
         imguiRtt.fonts().initialize(frameRunner.contentScale());
     }
 
-    FrameRunner       frameRunner;
+    FrameRunner      rameRunner;
     AssetRegistry    assets;
     ImguiRttManager  imguiRtt;
 };
