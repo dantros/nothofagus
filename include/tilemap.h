@@ -2,6 +2,8 @@
 
 #include "texture.h"
 #include "tilemap_id.h"
+#include "tilemap_explorer_id.h"
+#include "explorer.h"
 #include <glm/glm.hpp>
 #include <cstdint>
 #include <span>
@@ -74,6 +76,13 @@ private:
     glm::ivec2 mChunkSize;
     glm::ivec2 mChunkGridSize;
     std::vector<std::uint64_t> mChunkGenerations; ///< Length `chunkGridSize.x * chunkGridSize.y`.
+};
+
+template<>
+struct TilemapTraits<Tilemap>
+{
+    using DataId     = TilemapId;
+    using ExplorerId = TilemapExplorerId;
 };
 
 }

@@ -4,6 +4,8 @@
 #include "explorer_pack.h"
 #include "indexed_container.h"
 #include "screen_size.h"
+#include "tilemap.h"
+#include "sparsemap.h"
 #include <cstddef>
 #include <unordered_set>
 #include <glm/glm.hpp>

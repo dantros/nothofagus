@@ -2,7 +2,9 @@
 
 #include "texture.h"
 #include "sparsemap_id.h"
+#include "sparsemap_explorer_id.h"
 #include "ivec2_hash.h"
+#include "explorer.h"
 #include <glm/glm.hpp>
 #include <cstdint>
 #include <span>
@@ -90,6 +92,13 @@ private:
     IndirectTexture mCacheTemplate;          ///< Atlas + palette only; no `setMap`. Cloned for each pool slot.
     glm::ivec2      mChunkSize;
     std::unordered_map<glm::ivec2, ChunkEntry, IVec2Hash> mChunks;
+};
+
+template<>
+struct TilemapTraits<Sparsemap>
+{
+    using DataId     = SparsemapId;
+    using ExplorerId = SparsemapExplorerId;
 };
 
 }

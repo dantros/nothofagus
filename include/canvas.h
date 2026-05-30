@@ -26,6 +26,9 @@ struct ImFont;
 namespace Nothofagus
 {
 
+using TilemapExplorer   = Explorer<Tilemap>;
+using SparsemapExplorer = Explorer<Sparsemap>;
+
 // Default screen size for the canvas.
 constexpr static ScreenSize DEFAULT_SCREEN_SIZE{256, 240};
 

@@ -1,11 +1,5 @@
 #pragma once
 
-#include "tilemap.h"
-#include "tilemap_id.h"
-#include "tilemap_explorer_id.h"
-#include "sparsemap.h"
-#include "sparsemap_id.h"
-#include "sparsemap_explorer_id.h"
 #include "texture.h"
 #include <glm/glm.hpp>
 #include <concepts>
@@ -31,22 +25,9 @@ concept TilemapLike = requires(const T& t, glm::ivec2 coord, std::span<std::uint
 };
 
 /// Per-backend ID type binding: maps a `TilemapLike` type to its corresponding data ID
-/// and explorer ID. Specialized for each concrete backend.
+/// and explorer ID. Specialized for each concrete backend alongside its type definition
+/// (see `tilemap.h` and `sparsemap.h`).
 template<typename T> struct TilemapTraits;
-
-template<>
-struct TilemapTraits<Tilemap>
-{
-    using DataId     = TilemapId;
-    using ExplorerId = TilemapExplorerId;
-};
-
-template<>
-struct TilemapTraits<Sparsemap>
-{
-    using DataId     = SparsemapId;
-    using ExplorerId = SparsemapExplorerId;
-};
 
 /// Windowed renderer handle for any `TilemapLike` backend: holds the camera (world-pixel
 /// coordinate shown at the canvas center) and the depth offset for the pool's bellotas.
@@ -78,8 +59,5 @@ private:
     glm::vec2   mCamera;
     std::int8_t mDepthOffset;
 };
-
-using TilemapExplorer   = Explorer<Tilemap>;
-using SparsemapExplorer = Explorer<Sparsemap>;
 
 }
