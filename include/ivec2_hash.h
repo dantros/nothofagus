@@ -13,6 +13,7 @@ struct IVec2Hash
 {
     std::size_t operator()(const glm::ivec2& v) const noexcept
     {
+        // Boost hash_combine shape; 0x9e3779b97f4a7c15 = 2^64 / phi (golden-ratio mixing constant).
         const std::size_t hx = std::hash<int>{}(v.x);
         const std::size_t hy = std::hash<int>{}(v.y);
         return hx ^ (hy + 0x9e3779b97f4a7c15ULL + (hx << 6) + (hx >> 2));
