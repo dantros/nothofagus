@@ -491,7 +491,6 @@ public:
     DirectTexture takeScreenshot() const;
 
 private:
-    class CanvasImpl;
     struct Implementation;
     std::unique_ptr<Implementation> mImplementation;
 };

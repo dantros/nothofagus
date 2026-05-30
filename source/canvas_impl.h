@@ -22,7 +22,7 @@ class AssetRegistry;
 class ImguiRttManager;
 
 /**
- * @class Canvas::CanvasImpl
+ * @class CanvasImpl
  * @brief Internal owner of the GPU backend, window/input backend, and the
  * per-frame render loop. Asset CRUD (textures/meshes/bellotas/render targets)
  * and the canvas-wide ImGui font / RTT-context manager live on `Canvas`
@@ -33,7 +33,7 @@ class ImguiRttManager;
  * `mBackend`), then `mAssets(mCanvasImpl->backend())`, then
  * `mImguiRtt(mCanvasImpl->backend(), mAssets->renderTargets(), …)`.
  */
-class Canvas::CanvasImpl
+class CanvasImpl
 {
 public:
 

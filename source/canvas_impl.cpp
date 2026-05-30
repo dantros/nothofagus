@@ -27,7 +27,7 @@ namespace Nothofagus
 
 // Window is the selected backend type. Forward declared in canvas_impl.h;
 // defined here so the backend headers are only included from this translation unit.
-struct Canvas::CanvasImpl::Window : public SelectedWindowBackend
+struct CanvasImpl::Window : public SelectedWindowBackend
 {
     using SelectedWindowBackend::SelectedWindowBackend;
 };
@@ -54,7 +54,7 @@ static ViewportRect computeLetterboxViewport(int framebufferWidth, int framebuff
     return { viewportX, viewportY, viewportWidth, viewportHeight };
 }
 
-Canvas::CanvasImpl::CanvasImpl(
+CanvasImpl::CanvasImpl(
     const ScreenSize& screenSize,
     const std::string& title,
     const glm::vec3 clearColor,
@@ -92,7 +92,7 @@ Canvas::CanvasImpl::CanvasImpl(
     // and `mImguiRtt` exist, Canvas calls `mImguiRtt->fonts().initialize(...)`.
 }
 
-Canvas::CanvasImpl::~CanvasImpl()
+CanvasImpl::~CanvasImpl()
 {
     // Defined here (not =default) to keep the pimpl idiom for struct Window
     // working. Canvas's dtor is responsible for draining `mImguiRtt` and
@@ -101,51 +101,51 @@ Canvas::CanvasImpl::~CanvasImpl()
     mBackend.shutdown();
 }
 
-float Canvas::CanvasImpl::contentScale() const
+float CanvasImpl::contentScale() const
 {
     debugCheck(mWindow != nullptr, "CanvasImpl::contentScale called before window init");
     return mWindow->contentScale();
 }
 
-std::size_t Canvas::CanvasImpl::getCurrentMonitor() const
+std::size_t CanvasImpl::getCurrentMonitor() const
 {
     return mWindow->getCurrentMonitor();
 }
 
-bool Canvas::CanvasImpl::isFullscreen() const
+bool CanvasImpl::isFullscreen() const
 {
     return mWindow->isFullscreen();
 }
 
-void Canvas::CanvasImpl::setFullScreenOnMonitor(std::size_t monitorIndex)
+void CanvasImpl::setFullScreenOnMonitor(std::size_t monitorIndex)
 {
     mLastWindowedAABox = mWindow->getWindowAABox();
     mWindow->setFullscreenOnMonitor(monitorIndex);
 }
 
-AABox Canvas::CanvasImpl::getWindowAABox() const
+AABox CanvasImpl::getWindowAABox() const
 {
     return mWindow->getWindowAABox();
 }
 
-void Canvas::CanvasImpl::setWindowed()
+void CanvasImpl::setWindowed()
 {
     mWindow->setWindowed(mLastWindowedAABox);
 }
 
-void Canvas::CanvasImpl::setWindowTitle(const std::string& title)
+void CanvasImpl::setWindowTitle(const std::string& title)
 {
     mTitle = title;
     mWindow->setWindowTitle(title);
 }
 
-ScreenSize Canvas::CanvasImpl::windowSize() const
+ScreenSize CanvasImpl::windowSize() const
 {
     debugCheck(mWindow != nullptr, "Canvas window has not been initialized");
     return mWindow->getWindowSize();
 }
 
-DirectTexture Canvas::CanvasImpl::takeScreenshot() const
+DirectTexture CanvasImpl::takeScreenshot() const
 {
     const glm::ivec2 gameSize{static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)};
     ScreenshotPixels pixels = mBackend.takeScreenshot(mGameViewport, gameSize);
@@ -158,7 +158,7 @@ DirectTexture Canvas::CanvasImpl::takeScreenshot() const
 // Frame loop
 // ---------------------------------------------------------------------------
 
-void Canvas::CanvasImpl::ensureSessionStarted(Controller& controller)
+void CanvasImpl::ensureSessionStarted(Controller& controller)
 {
     if (mSessionStarted)
         return;
@@ -244,7 +244,7 @@ static void drawBellotaPacks(
     }
 }
 
-void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+void CanvasImpl::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
                                      float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ZoneScopedN("runOneFrame");
@@ -394,7 +394,7 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, AssetRegistry& assets, Imgu
     FrameMark;
 }
 
-void Canvas::CanvasImpl::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+void CanvasImpl::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
                              std::function<void(float deltaTime)> update, Controller& controller)
 {
     // Always call beginSession — it resets the window close flag and rebinds
@@ -416,14 +416,14 @@ void Canvas::CanvasImpl::run(Canvas& canvas, AssetRegistry& assets, ImguiRttMana
     }
 }
 
-void Canvas::CanvasImpl::tick(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+void CanvasImpl::tick(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
                               float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ensureSessionStarted(controller);
     runOneFrame(canvas, assets, imguiRtt, deltaTimeMS, update, controller);
 }
 
-void Canvas::CanvasImpl::close()
+void CanvasImpl::close()
 {
     mWindow->requestClose();
 }
