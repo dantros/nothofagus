@@ -136,8 +136,6 @@ public:
 
     /// Execute a single frame with a caller-supplied delta time (in milliseconds).
     void tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller);
-    void tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update);
-    void tick(Canvas& canvas, float deltaTimeMS);
 
     /// Captures the last rendered frame visible to the user as a DirectTexture (RGBA).
     DirectTexture takeScreenshot() const;

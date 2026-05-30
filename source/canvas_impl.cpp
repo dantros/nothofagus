@@ -495,17 +495,6 @@ void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS, std::function<v
     runOneFrame(canvas, deltaTimeMS, update, controller);
 }
 
-void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update)
-{
-    Controller controller;
-    tick(canvas, deltaTimeMS, update, controller);
-}
-
-void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS)
-{
-    tick(canvas, deltaTimeMS, [](float){});
-}
-
 void Canvas::CanvasImpl::close()
 {
     mWindow->requestClose();
