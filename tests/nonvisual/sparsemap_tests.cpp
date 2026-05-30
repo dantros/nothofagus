@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <nothofagus.h>
 #include <algorithm>
+#include <climits>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -257,4 +258,126 @@ TEST_CASE("Sparsemap::chunkDataInto accepts a correctly-sized span", "[sparsemap
     std::vector<std::uint8_t> buf(4 * 4);
     CHECK_NOTHROW(sm.chunkDataInto({0, 0}, std::span<std::uint8_t>(buf)));
     CHECK_NOTHROW(sm.chunkDataInto({1, 1}, std::span<std::uint8_t>(buf))); // missing chunk → zero-fill
+}
+
+// ---------------------------------------------------------------------------
+// Negative-coord coverage for `setCell` / `cell` / `chunkInBounds`. Exercises
+// the floor-division helper that maps world coords (potentially negative) onto
+// {chunk coord, intra-chunk index}. Without these, the negative branch of the
+// helper would be dark — the rest of the suite only crosses negatives through
+// `addChunk` (which takes chunk coords) and `cell` against missing chunks.
+// ---------------------------------------------------------------------------
+TEST_CASE("Sparsemap::setCell / cell round-trip across negative world coords", "[sparsemap]")
+{
+    auto atlas = makeTrivialAtlas({4, 4}, 4);
+    Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
+                             std::span<const std::vector<std::uint8_t>>(atlas));
+
+    // chunkSize = 4 → chunk -1 spans cells [-4..-1]; chunk -2 spans [-8..-5].
+    sm.setCell({-1, -1}, 1);   // chunk (-1, -1), local (3, 3)
+    sm.setCell({-4, -4}, 2);   // chunk (-1, -1), local (0, 0)
+    sm.setCell({-5, -5}, 3);   // chunk (-2, -2), local (3, 3)
+    sm.setCell({-8, 0},  1);   // chunk (-2,  0), local (0, 0)
+    sm.setCell({ 0, -8}, 2);   // chunk ( 0, -2), local (0, 0)
+
+    CHECK(sm.cell({-1, -1}) == 1);
+    CHECK(sm.cell({-4, -4}) == 2);
+    CHECK(sm.cell({-5, -5}) == 3);
+    CHECK(sm.cell({-8, 0})  == 1);
+    CHECK(sm.cell({ 0, -8}) == 2);
+
+    CHECK(sm.chunkInBounds({-1, -1}));
+    CHECK(sm.chunkInBounds({-2, -2}));
+    CHECK(sm.chunkInBounds({-2,  0}));
+    CHECK(sm.chunkInBounds({ 0, -2}));
+    CHECK_FALSE(sm.chunkInBounds({-3, -3})); // nothing wrote there
+
+    // Sibling cells inside an already-created negative chunk are zero-init.
+    CHECK(sm.cell({-2, -2}) == 0);
+    CHECK(sm.cell({-3, -3}) == 0);
+}
+
+TEST_CASE("Sparsemap::setCell straddles the 0 / -1 boundary cleanly", "[sparsemap]")
+{
+    auto atlas = makeTrivialAtlas({4, 4}, 4);
+    Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
+                             std::span<const std::vector<std::uint8_t>>(atlas));
+
+    // Cells immediately on either side of zero must land in distinct chunks
+    // (no off-by-one collapsing them into the same chunk).
+    sm.setCell({ 0,  0}, 1);
+    sm.setCell({-1,  0}, 2);
+    sm.setCell({ 0, -1}, 3);
+    sm.setCell({-1, -1}, 1);
+
+    CHECK(sm.chunkInBounds({ 0,  0}));
+    CHECK(sm.chunkInBounds({-1,  0}));
+    CHECK(sm.chunkInBounds({ 0, -1}));
+    CHECK(sm.chunkInBounds({-1, -1}));
+
+    CHECK(sm.cell({ 0,  0}) == 1);
+    CHECK(sm.cell({-1,  0}) == 2);
+    CHECK(sm.cell({ 0, -1}) == 3);
+    CHECK(sm.cell({-1, -1}) == 1);
+
+    // Each of the four quadrant chunks bumps its own generation independently.
+    CHECK(sm.chunkGeneration({ 0,  0}) == 1);
+    CHECK(sm.chunkGeneration({-1,  0}) == 1);
+    CHECK(sm.chunkGeneration({ 0, -1}) == 1);
+    CHECK(sm.chunkGeneration({-1, -1}) == 1);
+}
+
+TEST_CASE("Sparsemap::setCell handles INT_MIN-adjacent coords without overflow UB", "[sparsemap]")
+{
+    auto atlas = makeTrivialAtlas({4, 4}, 4);
+    Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
+                             std::span<const std::vector<std::uint8_t>>(atlas));
+
+    // The pre-helper implementation negated worldCell.x to compute the chunk
+    // coord, which is UB at INT_MIN. The current floorDivMod helper avoids the
+    // negation and stays defined for every representable int. These writes must
+    // round-trip even at the bottom of the int range.
+    sm.setCell({INT_MIN,     0}, 1);
+    sm.setCell({INT_MIN + 1, 0}, 2);
+    sm.setCell({INT_MIN + 3, 0}, 3);
+    sm.setCell({0, INT_MIN},     1);
+
+    CHECK(sm.cell({INT_MIN,     0}) == 1);
+    CHECK(sm.cell({INT_MIN + 1, 0}) == 2);
+    CHECK(sm.cell({INT_MIN + 3, 0}) == 3);
+    CHECK(sm.cell({0, INT_MIN})     == 1);
+
+    // INT_MIN is exactly a chunk boundary (INT_MIN % 4 == 0), so INT_MIN..INT_MIN+3
+    // share one chunk; INT_MIN/4 is the chunk coord, which fits comfortably in int.
+    CHECK(sm.chunkInBounds({INT_MIN / 4, 0}));
+    CHECK(sm.chunkInBounds({0,            INT_MIN / 4}));
+}
+
+// ---------------------------------------------------------------------------
+// Public-API surface coverage for methods the explorer doesn't consume. These
+// are part of the `TilemapLike` concept and the Sparsemap public surface, so
+// they're worth a light round-trip even though the chunk-sync hot path never
+// calls them. Without this coverage, dropping or renaming them would slip past
+// the existing test suite.
+// ---------------------------------------------------------------------------
+TEST_CASE("Sparsemap accessors echo construction parameters", "[sparsemap]")
+{
+    const glm::ivec2 chunkSize{5, 3};
+    const glm::ivec2 tileSize{8, 16};
+    const Nothofagus::ColorPallete palette = makeMinimalPalette();
+    auto atlas = makeTrivialAtlas(tileSize, 2);
+
+    Nothofagus::Sparsemap sm(chunkSize, tileSize, palette,
+                             std::span<const std::vector<std::uint8_t>>(atlas));
+
+    CHECK(sm.chunkSize()      == chunkSize);
+    CHECK(sm.tileSize()       == tileSize);
+    CHECK(sm.chunkPixelSize() == chunkSize * tileSize);   // 40 × 48
+    CHECK(sm.chunkCount()     == 0);
+
+    // Palette round-trip: each registered color comes back through the cache template.
+    const auto& storedPalette = sm.palette();
+    REQUIRE(storedPalette.colors.size() == palette.colors.size());
+    for (std::size_t i = 0; i < palette.colors.size(); ++i)
+        CHECK(storedPalette.colors[i] == palette.colors[i]);
 }
