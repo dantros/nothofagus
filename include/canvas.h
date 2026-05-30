@@ -6,7 +6,8 @@
 #include "texture.h"
 #include "render_target.h"
 #include "tilemap.h"
-#include "tilemap_explorer.h"
+#include "sparsemap.h"
+#include "explorer.h"
 #include "controller.h"
 #include "tint.h"
 #include "screen_size.h"
@@ -24,6 +25,9 @@ struct ImFont;
 
 namespace Nothofagus
 {
+
+using TilemapExplorer   = Explorer<Tilemap>;
+using SparsemapExplorer = Explorer<Sparsemap>;
 
 // Default screen size for the canvas.
 constexpr static ScreenSize DEFAULT_SCREEN_SIZE{256, 240};
@@ -209,6 +213,28 @@ public:
     /// Access a registered TilemapExplorer (mutable; use `setCamera` to scroll).
     TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId);
     const TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId) const;
+
+    /// Register a Sparsemap (sparse world data) with the canvas. Returns a stable id.
+    /// No GPU resources are allocated until a SparsemapExplorer is registered against this Sparsemap.
+    SparsemapId addSparsemap(Sparsemap sparsemap);
+
+    /// Remove a Sparsemap. debugChecks that no SparsemapExplorer still references it.
+    void removeSparsemap(SparsemapId sparsemapId);
+
+    /// Access a registered Sparsemap (mutable; use `addChunk` / `setCell` to edit world data).
+    Sparsemap& sparsemap(SparsemapId sparsemapId);
+    const Sparsemap& sparsemap(SparsemapId sparsemapId) const;
+
+    /// Register a SparsemapExplorer (renderer) against a previously-added Sparsemap.
+    /// Allocates the chunk pool (small IndirectTexture + Bellota slots tagged explorer-managed).
+    SparsemapExplorerId addSparsemapExplorer(SparsemapExplorer explorer);
+
+    /// Remove a SparsemapExplorer and tear down its pool slots.
+    void removeSparsemapExplorer(SparsemapExplorerId explorerId);
+
+    /// Access a registered SparsemapExplorer (mutable; use `setCamera` to scroll).
+    SparsemapExplorer& sparsemapExplorer(SparsemapExplorerId explorerId);
+    const SparsemapExplorer& sparsemapExplorer(SparsemapExplorerId explorerId) const;
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 

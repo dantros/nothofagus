@@ -2,6 +2,8 @@
 
 #include "texture.h"
 #include "tilemap_id.h"
+#include "tilemap_explorer_id.h"
+#include "explorer.h"
 #include <glm/glm.hpp>
 #include <cstdint>
 #include <span>
@@ -39,6 +41,7 @@ public:
     bool inBounds(glm::ivec2 worldCell) const;
 
     /// True iff `chunkPos` lies inside `[0, chunkGridSize.x) × [0, chunkGridSize.y)`.
+    /// Satisfies the `LandType` concept; for dense maps every in-grid chunk exists.
     bool chunkInBounds(glm::ivec2 chunkPos) const;
 
     glm::ivec2 mapSize()        const { return mCache.mapSize(); }
@@ -51,7 +54,7 @@ public:
     const ColorPallete& palette() const { return mCache.pallete(); }
 
     /// The underlying `IndirectTexture` cache (atlas + palette + full-world cell grid).
-    /// Used by `TilemapManager` to clone slot textures via the override-map constructor.
+    /// Used by `ExplorerManager<Tilemap>` to clone slot textures via the override-map constructor.
     const IndirectTexture& cacheTexture() const { return mCache; }
 
     /// Materialize one chunk's cell grid (row-major, `chunkSize.x * chunkSize.y` bytes).
@@ -73,6 +76,13 @@ private:
     glm::ivec2 mChunkSize;
     glm::ivec2 mChunkGridSize;
     std::vector<std::uint64_t> mChunkGenerations; ///< Length `chunkGridSize.x * chunkGridSize.y`.
+};
+
+template<>
+struct LandTraits<Tilemap>
+{
+    using LandId     = TilemapId;
+    using ExplorerId = TilemapExplorerId;
 };
 
 }

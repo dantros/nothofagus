@@ -100,7 +100,7 @@ BellotaId Canvas::addBellota(const Bellota& bellota)            { return mImplPt
 void Canvas::removeBellota(const BellotaId bellotaId)
 {
     debugCheck(!mImplPtr->frameRunner.isExplorerManagedBellota(bellotaId.id),
-        "Bellota is owned by a TilemapExplorer pool — use canvas.removeTilemapExplorer() instead of removing slot bellotas directly.");
+        "Bellota is owned by an explorer pool — use canvas.removeTilemapExplorer() / canvas.removeSparsemapExplorer() instead of removing slot bellotas directly.");
     mImplPtr->assets.removeBellota(bellotaId);
 }
 
@@ -118,7 +118,7 @@ TextureId Canvas::addTexture(const Texture& texture)            { return mImplPt
 void Canvas::removeTexture(const TextureId textureId)
 {
     debugCheck(!mImplPtr->frameRunner.isExplorerManagedTexture(textureId.id),
-        "Texture is owned by a TilemapExplorer pool — use canvas.removeTilemapExplorer() instead of removing slot textures directly.");
+        "Texture is owned by an explorer pool — use canvas.removeTilemapExplorer() / canvas.removeSparsemapExplorer() instead of removing slot textures directly.");
     mImplPtr->assets.removeTexture(textureId);
 }
 
@@ -158,7 +158,7 @@ TextureId Canvas::renderTargetTexture(RenderTargetId renderTargetId) const      
 void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor) { mImplPtr->assets.setRenderTargetClearColor(renderTargetId, clearColor); }
 
 // ---------------------------------------------------------------------------
-// Tilemaps — forward to FrameRunner (TilemapManager lives there)
+// Tilemaps — forward to FrameRunner (ExplorerManager<Tilemap> lives there)
 // ---------------------------------------------------------------------------
 
 TilemapId Canvas::addTilemap(Tilemap tilemap)                                              { return mImplPtr->frameRunner.addTilemap(std::move(tilemap)); }
@@ -169,6 +169,19 @@ TilemapExplorerId Canvas::addTilemapExplorer(TilemapExplorer explorer)          
 void Canvas::removeTilemapExplorer(TilemapExplorerId explorerId)                           { mImplPtr->frameRunner.removeTilemapExplorer(explorerId, *this); }
 TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId explorerId)                     { return mImplPtr->frameRunner.tilemapExplorer(explorerId); }
 const TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId explorerId) const         { return mImplPtr->frameRunner.tilemapExplorer(explorerId); }
+
+// ---------------------------------------------------------------------------
+// Sparsemaps — forward to FrameRunner (ExplorerManager<Sparsemap> lives there)
+// ---------------------------------------------------------------------------
+
+SparsemapId Canvas::addSparsemap(Sparsemap sparsemap)                                              { return mImplPtr->frameRunner.addSparsemap(std::move(sparsemap)); }
+void Canvas::removeSparsemap(SparsemapId sparsemapId)                                              { mImplPtr->frameRunner.removeSparsemap(sparsemapId); }
+Sparsemap& Canvas::sparsemap(SparsemapId sparsemapId)                                              { return mImplPtr->frameRunner.sparsemap(sparsemapId); }
+const Sparsemap& Canvas::sparsemap(SparsemapId sparsemapId) const                                  { return mImplPtr->frameRunner.sparsemap(sparsemapId); }
+SparsemapExplorerId Canvas::addSparsemapExplorer(SparsemapExplorer explorer)                       { return mImplPtr->frameRunner.addSparsemapExplorer(explorer, *this); }
+void Canvas::removeSparsemapExplorer(SparsemapExplorerId explorerId)                               { mImplPtr->frameRunner.removeSparsemapExplorer(explorerId, *this); }
+SparsemapExplorer& Canvas::sparsemapExplorer(SparsemapExplorerId explorerId)                       { return mImplPtr->frameRunner.sparsemapExplorer(explorerId); }
+const SparsemapExplorer& Canvas::sparsemapExplorer(SparsemapExplorerId explorerId) const           { return mImplPtr->frameRunner.sparsemapExplorer(explorerId); }
 
 // ---------------------------------------------------------------------------
 // RTT pass scheduling (the queue lives on FrameRunner; the ImGui-to-RTT

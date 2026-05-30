@@ -102,7 +102,8 @@ add_library(nothofagus
     "source/animation_state_machine.cpp"
     "source/animation_state.cpp"
     "source/tilemap.cpp"
-    "source/tilemap_manager.cpp"
+    "source/sparsemap.cpp"
+    "source/explorer_manager.cpp"
     "source/markdown_renderer.cpp"
 
     # This is only required to show header files in the Visual Studio IDE solution browser
@@ -316,6 +317,7 @@ if (${NOTHOFAGUS_INSTALL})
             hello_screenshot
             hello_headless
             hello_tilemap
+            hello_sparsemap
             test_gamepad
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT NothofagusExamples_Runtime

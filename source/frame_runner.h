@@ -2,8 +2,9 @@
 
 #include "canvas.h"
 #include "tilemap.h"
-#include "tilemap_explorer.h"
-#include "tilemap_manager.h"
+#include "sparsemap.h"
+#include "explorer.h"
+#include "explorer_manager.h"
 #include "bellota_container.h"   // for BellotaPack in mSortedBellotaPacks
 #include "aa_box.h"
 #include "backends/render_backend_select.h"
@@ -13,6 +14,17 @@
 
 namespace Nothofagus
 {
+
+using TilemapExplorerManager   = ExplorerManager<Tilemap>;
+using SparsemapExplorerManager = ExplorerManager<Sparsemap>;
+
+// Explicit instantiations live in explorer_manager.cpp. Declared here (next to
+// where Tilemap/Sparsemap are already in scope) instead of inside
+// explorer_manager.h so that header stays free of any concrete-backend
+// references. The aliases above can't be used in this form — explicit
+// instantiation requires a template-id, not a typedef-name.
+extern template class ExplorerManager<Tilemap>;
+extern template class ExplorerManager<Sparsemap>;
 
 // Forward decls — FrameRunner only takes these by reference (in run/tick), so
 // the full headers don't need to be visible here. frame_runner.h is an
@@ -58,8 +70,16 @@ public:
     float                contentScale() const;
 
     // ----- Cross-cutting predicates used by Canvas's remove-gates -----
-    bool isExplorerManagedBellota(std::size_t bellotaId) const { return mTilemapManager.isExplorerManagedBellota(bellotaId); }
-    bool isExplorerManagedTexture(std::size_t textureId) const { return mTilemapManager.isExplorerManagedTexture(textureId); }
+    bool isExplorerManagedBellota(std::size_t bellotaId) const
+    {
+        return mTilemapManager.isExplorerManagedBellota(bellotaId)
+            || mSparsemapManager.isExplorerManagedBellota(bellotaId);
+    }
+    bool isExplorerManagedTexture(std::size_t textureId) const
+    {
+        return mTilemapManager.isExplorerManagedTexture(textureId)
+            || mSparsemapManager.isExplorerManagedTexture(textureId);
+    }
 
     // ----- Window / display (depend on pimpl-hidden Window) -----
     std::size_t getCurrentMonitor() const;
@@ -81,15 +101,25 @@ public:
     void setAutoRemoveUnusedTextures(bool enabled)                                          { mAutoTextureGC = enabled; }
     void setAutoRemoveUnusedMeshes(bool enabled)                                            { mAutoMeshGC = enabled; }
 
-    // ----- Tilemaps (TilemapManager stays with FrameRunner) -----
-    TilemapId addTilemap(Tilemap tilemap)                                                   { return mTilemapManager.addTilemap(std::move(tilemap)); }
-    void removeTilemap(TilemapId tilemapId)                                                 { mTilemapManager.removeTilemap(tilemapId); }
-    Tilemap& tilemap(TilemapId tilemapId)                                                   { return mTilemapManager.tilemap(tilemapId); }
-    const Tilemap& tilemap(TilemapId tilemapId) const                                       { return mTilemapManager.tilemap(tilemapId); }
-    TilemapExplorerId addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas)          { return mTilemapManager.addTilemapExplorer(explorer, canvas); }
-    void removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas)                { mTilemapManager.removeTilemapExplorer(explorerId, canvas); }
-    TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId)                          { return mTilemapManager.tilemapExplorer(explorerId); }
-    const TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId) const              { return mTilemapManager.tilemapExplorer(explorerId); }
+    // ----- Tilemaps (TilemapExplorerManager stays with FrameRunner) -----
+    TilemapId addTilemap(Tilemap tilemap)                                                   { return mTilemapManager.add(std::move(tilemap)); }
+    void removeTilemap(TilemapId tilemapId)                                                 { mTilemapManager.remove(tilemapId); }
+    Tilemap& tilemap(TilemapId tilemapId)                                                   { return mTilemapManager.get(tilemapId); }
+    const Tilemap& tilemap(TilemapId tilemapId) const                                       { return mTilemapManager.get(tilemapId); }
+    TilemapExplorerId addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas)          { return mTilemapManager.addExplorer(explorer, canvas); }
+    void removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas)                { mTilemapManager.removeExplorer(explorerId, canvas); }
+    TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId)                          { return mTilemapManager.getExplorer(explorerId); }
+    const TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId) const              { return mTilemapManager.getExplorer(explorerId); }
+
+    // ----- Sparsemaps (SparsemapExplorerManager stays with FrameRunner) -----
+    SparsemapId addSparsemap(Sparsemap sparsemap)                                                   { return mSparsemapManager.add(std::move(sparsemap)); }
+    void removeSparsemap(SparsemapId sparsemapId)                                                   { mSparsemapManager.remove(sparsemapId); }
+    Sparsemap& sparsemap(SparsemapId sparsemapId)                                                   { return mSparsemapManager.get(sparsemapId); }
+    const Sparsemap& sparsemap(SparsemapId sparsemapId) const                                       { return mSparsemapManager.get(sparsemapId); }
+    SparsemapExplorerId addSparsemapExplorer(SparsemapExplorer explorer, Canvas& canvas)            { return mSparsemapManager.addExplorer(explorer, canvas); }
+    void removeSparsemapExplorer(SparsemapExplorerId explorerId, Canvas& canvas)                    { mSparsemapManager.removeExplorer(explorerId, canvas); }
+    SparsemapExplorer& sparsemapExplorer(SparsemapExplorerId explorerId)                            { return mSparsemapManager.getExplorer(explorerId); }
+    const SparsemapExplorer& sparsemapExplorer(SparsemapExplorerId explorerId) const                { return mSparsemapManager.getExplorer(explorerId); }
 
     // ----- RTT pass scheduling (the queue lives here; consumed in runOneFrame) -----
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)         { mPendingRttPasses.emplace_back(renderTargetId, std::move(bellotaIds)); }
@@ -119,7 +149,8 @@ private:
 
     ActiveBackend mBackend; ///< GPU rendering backend (compile-time selected).
 
-    TilemapManager mTilemapManager; ///< Huge-tilemap storage + per-frame explorer pool logic.
+    TilemapExplorerManager   mTilemapManager;   ///< Dense huge-tilemap storage + per-frame explorer pool logic.
+    SparsemapExplorerManager mSparsemapManager; ///< Sparse tilemap storage + per-frame explorer pool logic.
 
     /// RTT passes queued by renderTo() during the update callback, executed before the main render.
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;

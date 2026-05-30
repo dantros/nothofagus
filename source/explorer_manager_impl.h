@@ -1,4 +1,12 @@
-#include "tilemap_manager.h"
+#pragma once
+
+// Template implementation of ExplorerManager<T>. Internal header — only included
+// from the TU that owns the explicit instantiations (frame_runner.cpp) and the
+// thin explorer_manager.cpp stub. Pulling these bodies into a header lets the
+// explicit instantiations live in frame_runner.cpp next to the extern template
+// declarations in frame_runner.h.
+
+#include "explorer_manager.h"
 #include "canvas.h"
 #include "check.h"
 #include "profiling.h"
@@ -14,17 +22,18 @@
 namespace Nothofagus
 {
 
-namespace
+namespace detail
 {
 
 /// Per-explorer constants borrowed by `exploreCell` for the duration of one
 /// `updateExplorer` call. All members are read-only inputs except `canvas`
 /// (the mutable rendering surface) and `chunkScratch` (a reusable upload
-/// buffer that lives on the owning `TilemapExplorerPack`).
+/// buffer that lives on the owning `ExplorerPack<T>`).
+template<LandType T>
 struct ExplorerFrame
 {
     Canvas&                 canvas;
-    const Tilemap&          sourceTilemap;
+    const T&                sourceData;
     glm::vec2               chunkPixelSize;
     glm::vec2               camera;
     glm::vec2               canvasCenter;
@@ -35,26 +44,27 @@ struct ExplorerFrame
 /// Per-frame work for a single pool slot: assign the desired world chunk,
 /// memcpy its cells via `setMapBulk` if the chunk or its generation changed,
 /// and reposition / un-hide the slot bellota.
-void exploreCell(PoolSlot& slot, glm::ivec2 desired, const ExplorerFrame& frame)
+template<LandType T>
+void exploreCell(PoolSlot& slot, glm::ivec2 desired, const ExplorerFrame<T>& frame)
 {
     Bellota& slotBellota = frame.canvas.bellota(slot.bellotaId);
     if (slotBellota.depthOffset() != frame.depthOffset)
         slotBellota.depthOffset() = frame.depthOffset;
 
-    if (!frame.sourceTilemap.chunkInBounds(desired))
+    if (!frame.sourceData.chunkInBounds(desired))
     {
         slotBellota.visible() = false;
         slot.markUnassigned();
         return;
     }
 
-    const std::uint64_t currentGen = frame.sourceTilemap.chunkGeneration(desired);
+    const std::uint64_t currentGen = frame.sourceData.chunkGeneration(desired);
     if (desired != slot.currentWorldChunk || currentGen != slot.syncedGeneration)
     {
         ZoneScopedN("TilemapChunkSync");
         IndirectTexture& slotTex = std::get<IndirectTexture>(
             frame.canvas.texture(slot.textureId));
-        frame.sourceTilemap.chunkDataInto(desired, frame.chunkScratch);
+        frame.sourceData.chunkDataInto(desired, frame.chunkScratch);
         slotTex.setMapBulk(std::span<const std::uint8_t>(frame.chunkScratch));
         slot.currentWorldChunk = desired;
         slot.syncedGeneration  = currentGen;
@@ -68,56 +78,63 @@ void exploreCell(PoolSlot& slot, glm::ivec2 desired, const ExplorerFrame& frame)
     slotBellota.visible() = true;
 }
 
-}  // namespace
+}  // namespace detail
 
-TilemapId TilemapManager::addTilemap(Tilemap tilemap)
+template<LandType T>
+typename ExplorerManager<T>::LandId ExplorerManager<T>::add(T data)
 {
-    return TilemapId{ mTilemaps.add(std::move(tilemap)) };
+    return LandId{ mData.add(std::move(data)) };
 }
 
-void TilemapManager::removeTilemap(TilemapId tilemapId)
+template<LandType T>
+void ExplorerManager<T>::remove(LandId id)
 {
-    for (const auto& [explorerIdx, explorerPack] : mTilemapExplorers)
+    for (const auto& [explorerIdx, explorerPack] : mExplorers)
     {
-        debugCheck(explorerPack.explorer.tilemap().id != tilemapId.id,
-            "Cannot remove Tilemap while a TilemapExplorer still references it — remove the explorer first.");
+        debugCheck(explorerPack.explorer.land().id != id.id,
+            "Cannot remove the backing data while an Explorer still references it — remove the explorer first.");
     }
-    mTilemaps.remove(tilemapId.id);
+    mData.remove(id.id);
 }
 
-Tilemap& TilemapManager::tilemap(TilemapId tilemapId)
+template<LandType T>
+T& ExplorerManager<T>::get(LandId id)
 {
-    return mTilemaps.at(tilemapId.id);
+    return mData.at(id.id);
 }
 
-const Tilemap& TilemapManager::tilemap(TilemapId tilemapId) const
+template<LandType T>
+const T& ExplorerManager<T>::get(LandId id) const
 {
-    return mTilemaps.at(tilemapId.id);
+    return mData.at(id.id);
 }
 
-TilemapExplorerId TilemapManager::addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas)
+template<LandType T>
+typename ExplorerManager<T>::ExplorerId ExplorerManager<T>::addExplorer(Explorer<T> explorer, Canvas& canvas)
 {
-    debugCheck(mTilemaps.contains(explorer.tilemap().id),
-        "TilemapExplorer references a TilemapId not registered with this canvas.");
+    debugCheck(mData.contains(explorer.land().id),
+        "Explorer references a backing data id not registered with this canvas.");
 
-    TilemapExplorerPack pack(explorer);
+    ExplorerPack<T> pack(explorer);
     buildPoolSlots(pack, canvas);
-    return TilemapExplorerId{ mTilemapExplorers.add(std::move(pack)) };
+    return ExplorerId{ mExplorers.add(std::move(pack)) };
 }
 
-void TilemapManager::removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas)
+template<LandType T>
+void ExplorerManager<T>::removeExplorer(ExplorerId id, Canvas& canvas)
 {
-    TilemapExplorerPack& pack = mTilemapExplorers.at(explorerId.id);
+    ExplorerPack<T>& pack = mExplorers.at(id.id);
     teardownPoolSlots(pack, canvas);
-    mTilemapExplorers.remove(explorerId.id);
+    mExplorers.remove(id.id);
 }
 
-void TilemapManager::buildPoolSlots(TilemapExplorerPack& pack, Canvas& canvas)
+template<LandType T>
+void ExplorerManager<T>::buildPoolSlots(ExplorerPack<T>& pack, Canvas& canvas)
 {
-    const Tilemap& sourceTilemap = mTilemaps.at(pack.explorer.tilemap().id);
+    const T& sourceData = mData.at(pack.explorer.land().id);
 
-    const glm::ivec2 chunkSize      = sourceTilemap.chunkSize();
-    const glm::ivec2 chunkPixelSize = sourceTilemap.chunkPixelSize();
+    const glm::ivec2 chunkSize      = sourceData.chunkSize();
+    const glm::ivec2 chunkPixelSize = sourceData.chunkPixelSize();
     const ScreenSize& screen = canvas.screenSize();
     const glm::ivec2 screenSize{
         static_cast<int>(screen.width),
@@ -141,9 +158,9 @@ void TilemapManager::buildPoolSlots(TilemapExplorerPack& pack, Canvas& canvas)
 
     for (std::size_t slotIdx = 0; slotIdx < slotCount; ++slotIdx)
     {
-        // Clone the Tilemap's cache (atlas + palette + layers) and replace its
-        // world-sized map with a chunk-sized one — slot draws are over chunkSize.
-        IndirectTexture slotTexture(sourceTilemap.cacheTexture(), chunkSize);
+        // Clone the backing data's cache (atlas + palette + layers) and replace its
+        // map size with a chunk-sized one — slot draws are over chunkSize.
+        IndirectTexture slotTexture(sourceData.cacheTexture(), chunkSize);
 
         TextureId texId = canvas.addTexture(slotTexture);
         mExplorerManagedTextureIds.insert(texId.id);
@@ -157,7 +174,8 @@ void TilemapManager::buildPoolSlots(TilemapExplorerPack& pack, Canvas& canvas)
     }
 }
 
-void TilemapManager::teardownPoolSlots(TilemapExplorerPack& pack, Canvas& canvas)
+template<LandType T>
+void ExplorerManager<T>::teardownPoolSlots(ExplorerPack<T>& pack, Canvas& canvas)
 {
     // Untag first so the canvas's removeBellota / removeTexture debugCheck passes.
     // Tear down each slot's bellota before its texture so the usage monitor
@@ -172,19 +190,22 @@ void TilemapManager::teardownPoolSlots(TilemapExplorerPack& pack, Canvas& canvas
     pack.slots.clear();
 }
 
-TilemapExplorer& TilemapManager::tilemapExplorer(TilemapExplorerId explorerId)
+template<LandType T>
+Explorer<T>& ExplorerManager<T>::getExplorer(ExplorerId id)
 {
-    return mTilemapExplorers.at(explorerId.id).explorer;
+    return mExplorers.at(id.id).explorer;
 }
 
-const TilemapExplorer& TilemapManager::tilemapExplorer(TilemapExplorerId explorerId) const
+template<LandType T>
+const Explorer<T>& ExplorerManager<T>::getExplorer(ExplorerId id) const
 {
-    return mTilemapExplorers.at(explorerId.id).explorer;
+    return mExplorers.at(id.id).explorer;
 }
 
-void TilemapManager::updateExplorers(Canvas& canvas)
+template<LandType T>
+void ExplorerManager<T>::updateExplorers(Canvas& canvas)
 {
-    if (mTilemapExplorers.size() == 0) return;
+    if (mExplorers.size() == 0) return;
 
     const ScreenSize& screen = canvas.screenSize();
     const glm::vec2 canvasCenter{
@@ -192,20 +213,21 @@ void TilemapManager::updateExplorers(Canvas& canvas)
         static_cast<float>(screen.height) * 0.5f
     };
 
-    for (auto& [explorerIdx, explorerPack] : mTilemapExplorers)
+    for (auto& [explorerIdx, explorerPack] : mExplorers)
     {
         updateExplorer(explorerPack, canvas, screen, canvasCenter);
     }
 }
 
-void TilemapManager::updateExplorer(
-    TilemapExplorerPack& explorerPack,
+template<LandType T>
+void ExplorerManager<T>::updateExplorer(
+    ExplorerPack<T>& explorerPack,
     Canvas& canvas,
     const ScreenSize& screen,
     const glm::vec2& canvasCenter)
 {
-    const TilemapId tilemapId = explorerPack.explorer.tilemap();
-    if (!mTilemaps.contains(tilemapId.id)) return;
+    const LandId landId = explorerPack.explorer.land();
+    if (!mData.contains(landId.id)) return;
 
     // Canvas was resized since this pool was built — tear it down and
     // rebuild against the new screenSize. Fresh slots have currentWorldChunk
@@ -218,9 +240,9 @@ void TilemapManager::updateExplorer(
         buildPoolSlots(explorerPack, canvas);
     }
 
-    const Tilemap& sourceTilemap = mTilemaps.at(tilemapId.id);
+    const T& sourceData = mData.at(landId.id);
 
-    const glm::vec2 chunkPixelSize = glm::vec2(sourceTilemap.chunkPixelSize());
+    const glm::vec2 chunkPixelSize = glm::vec2(sourceData.chunkPixelSize());
 
     const glm::vec2 camera = explorerPack.explorer.camera();
     const glm::vec2 worldBottomLeft = camera - canvasCenter;
@@ -230,9 +252,9 @@ void TilemapManager::updateExplorer(
         static_cast<int>(std::floor(worldBottomLeft.y / chunkPixelSize.y)) - 1
     };
 
-    const ExplorerFrame frame{
+    const detail::ExplorerFrame<T> frame{
         .canvas         = canvas,
-        .sourceTilemap  = sourceTilemap,
+        .sourceData     = sourceData,
         .chunkPixelSize = chunkPixelSize,
         .camera         = camera,
         .canvasCenter   = canvasCenter,
@@ -248,7 +270,7 @@ void TilemapManager::updateExplorer(
                 slotOriginChunk.x + px,
                 slotOriginChunk.y + py
             };
-            exploreCell(explorerPack.slotAt(px, py), desired, frame);
+            detail::exploreCell(explorerPack.slotAt(px, py), desired, frame);
         }
     }
 }

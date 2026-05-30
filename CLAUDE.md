@@ -354,11 +354,60 @@ canvas.tilemapExplorer(explorerId).setCamera({scrollX, scrollY});
 - **Tear down explorers before their tilemaps.** `removeTilemap(tilemapId)` fires a `debugCheck` if any `TilemapExplorer` still references it; call `removeTilemapExplorer(explorerId)` on every owning explorer first. (See [examples/hello_tilemap_huge.cpp](examples/hello_tilemap_huge.cpp) `rebuild` lambda for the canonical pattern.)
 - `removeTilemapExplorer(explorerId)` removes all pool bellotas and textures it owns.
 - Multiple `TilemapExplorer` instances may reference the same `Tilemap` (e.g., main explorer + mini-map explorer); each polls per-chunk generation counters independently.
-- The `Tilemap` constructor `debugCheck`s that `chunkSize.x * tileSize.x` and `chunkSize.y * tileSize.y` fit in `int`. This one-time bound keeps the per-frame chunk-pixel math in `tilemap_manager.cpp` safe in plain `int` without runtime overflow guards.
+- The `Tilemap` constructor `debugCheck`s that `chunkSize.x * tileSize.x` and `chunkSize.y * tileSize.y` fit in `int`. This one-time bound keeps the per-frame chunk-pixel math in `explorer_manager.cpp` safe in plain `int` without runtime overflow guards.
 
 **Camera convention (v1):** `setCamera(offset)` sets the world-pixel coordinate that appears at the canvas center. `(0, 0)` = world origin centered. The `Tilemap`'s coordinate space is bottom-left = `(0, 0)` cell, top-right = `(mapSize.x - 1, mapSize.y - 1)`.
 
 **Deferred:** streaming (world cell grid eviction to disk); RTT-targeted tilemap rendering; shader-scrolled single-draw fast path; per-cell partial GPU upload inside a chunk's map texture; direct rendering of small tilemaps via `canvas.addTexture(tilemap.cacheTexture())`.
+
+### Sparse tilemaps via `Sparsemap` + `SparsemapExplorer`
+
+Sibling to `Tilemap` for **unbounded / sparse worlds**: same chunk-pool rendering, same shader path, same pool sizing math — but the world data lives in a hash-map of chunks keyed by chunk coordinate instead of a dense `mapSize`-shaped grid. Memory scales with **populated chunks**, not with how far the camera can travel. Ideal for procedural worlds, streaming, or hand-authored open worlds that don't fit in memory.
+
+Both `TilemapExplorer` and `SparsemapExplorer` are concrete typedefs of a shared `Explorer<T>` template constrained by the `TilemapLike` C++20 concept (see [include/explorer.h](include/explorer.h)); the per-frame chunk-sync pre-pass in [source/explorer_manager.cpp](source/explorer_manager.cpp) is written once and explicitly instantiated for both backends. The renderer's specialization point is the `chunkInBounds(chunkPos)` predicate — dense returns `chunkPos` ∈ `[0, chunkGridSize)`, sparse returns `mChunks.contains(chunkPos)`; `exploreCell` gates `chunkGeneration` and `chunkDataInto` behind it so those two methods are always called on present chunks. The user-facing surface diverges further — `Sparsemap::chunkGeneration(missing)` returns `0`, `Sparsemap::chunkDataInto(missing, out)` zero-fills, and `Sparsemap::cell(missing)` returns `0`, whereas the dense `Tilemap` counterparts `debugCheck` on out-of-bounds — but that's a user-API convenience for ad-hoc reads against unbounded worlds, not a load-bearing contract for the chunk-sync pass. Each backend asserts conformance via `static_assert(TilemapLike<T>);` in its `.cpp` so a missing/changed method shows up as a clear concept error instead of an opaque template instantiation failure.
+
+```cpp
+// Register an empty Sparsemap (no mapSize) and a SparsemapExplorer (pooled renderer)
+// against the canvas. The explorer takes the SparsemapId it draws from.
+Nothofagus::SparsemapId sparsemapId = canvas.addSparsemap(
+    Nothofagus::Sparsemap(chunkSize, tileSize, palette,
+        std::span<const std::vector<std::uint8_t>>(tileGraphics)));
+Nothofagus::SparsemapExplorerId explorerId =
+    canvas.addSparsemapExplorer(Nothofagus::SparsemapExplorer(sparsemapId));
+
+// Bulk path: insert (or overwrite) a chunk at chunk coords. Cells span must
+// equal chunkSize.x * chunkSize.y (or be empty for zero-init).
+canvas.sparsemap(sparsemapId).addChunk({chunkX, chunkY},
+    std::span<const std::uint8_t>(cells));
+
+// Ad-hoc edit path: lazy-creates the owning chunk (zero-init) if missing,
+// then writes the cell. Bumps the chunk's generation counter.
+canvas.sparsemap(sparsemapId).setCell({worldX, worldY}, layerIndex);
+
+// Streaming: drop a chunk once it leaves the camera's interest area. Pool
+// slots displaying it hide next frame via chunkInBounds.
+canvas.sparsemap(sparsemapId).removeChunk({chunkX, chunkY});
+
+// Same camera API as TilemapExplorer.
+canvas.sparsemapExplorer(explorerId).setCamera({scrollX, scrollY});
+```
+
+**Differences from `Tilemap`:**
+- No `mapSize`. World is unbounded; chunks exist only where `addChunk` / `setCell` put them.
+- `setCell` is **lazy-creating** — writing into an unloaded chunk creates it (zero-initialised) instead of asserting. Convenient for editor flows.
+- `cell({worldX, worldY})` returns `0` if the owning chunk is missing (consistent with chunk-not-yet-loaded semantics).
+- `chunkGeneration(chunkPos)` returns `0` for missing chunks. Combined with `PoolSlot::syncedGeneration` starting at `0` and the off-world slot reset (`currentWorldChunk = {-1,-1}`), the dirty-check handles "chunk removed under a displaying slot" correctly: slot hides next frame; if it ever scrolls back to that coord and the chunk is re-added, a fresh sync runs.
+- No `inBounds` — every world coord is valid; only `chunkInBounds(chunkPos)` is meaningful.
+- The internal cache is an `IndirectTexture mCacheTemplate` carrying atlas + palette only (no `setMap` call). Slot textures still clone via `IndirectTexture(other, chunkSize)`; that constructor only needs atlas + palette + tileSize from the source.
+
+**Lifecycle rules:**
+- `addSparsemap` registers the world data and returns a `SparsemapId`; `addSparsemapExplorer(SparsemapExplorer(sparsemapId))` registers the pooled renderer against that id.
+- **Tear down explorers before their sparsemaps.** `removeSparsemap` fires a `debugCheck` if any `SparsemapExplorer` still references it.
+- `removeSparsemapExplorer(explorerId)` removes all pool bellotas and textures it owns.
+- Multiple `SparsemapExplorer` instances may reference the same `Sparsemap`; each polls per-chunk generation counters independently.
+- The `Sparsemap` constructor `debugCheck`s the same `chunkSize * tileSize` int-range bound as `Tilemap`.
+
+**Deferred (sparse-specific):** streaming callback API (`onPatchNeeded(worldAabb)` / `onPatchEvictable`); explicit eviction policies; per-chunk metadata for tagging streamed-from-disk chunks; partial uploads inside a chunk.
 - **Custom meshes are forbidden on tile-map textures.** The tile-map shader treats incoming UVs as `[0, 1]` over the full tile-map extent and quantises to cell indices, so only the engine-generated auto-quad's UVs sample correctly. `addBellota`, `setMesh`, and `setTexture` enforce the restriction via `debugCheck`.
 
 ### Custom meshes
@@ -604,6 +653,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_headless.cpp` | Headless mode + `tick()` — no window, manual frame stepping, screenshot to terminal |
 | `hello_tilemap.cpp` | Tile-map mode of `IndirectTexture` — `setMap` + `setCell` over a layered atlas |
 | `hello_tilemap_huge.cpp` | Huge tilemaps via `Tilemap` + `TilemapExplorer` pool — WASD camera, teleport, recreate, live memory breakdown, stress controls (auto-pan + edits/frame) |
+| `hello_sparsemap.cpp` | Sparse tilemaps via `Sparsemap` + `SparsemapExplorer` pool — WASD camera, simulated streaming (load/unload chunks around the camera), manual `addChunk`/`removeChunk`, lazy-create `setCell` editor |
 | `hello_mesh.cpp` | Custom triangle meshes via `addMesh` + `Bellota(Transform, TextureId, MeshId)` — register geometry once, attach to bellotas, swap with `setMesh` |
 | `hello_render_to_texture.cpp` | `addRenderTarget` / `renderTo` — sprites drawn into an off-screen texture sampled by another bellota |
 | `hello_nested_render_targets.cpp` | Nested RTTs — one render target's output feeds another |
@@ -619,7 +669,7 @@ Enable with `-DNOTHOFAGUS_BUILD_TESTS=ON`. Two independent groups, each behind i
 | Visual (pixel-level golden-image comparison) | [tests/visual/](tests/visual/) | `NOTHOFAGUS_BUILD_TESTS_VISUAL` | Catch2 + render backend + golden-image infrastructure |
 | Nonvisual (CPU-only data/logic checks) | [tests/nonvisual/](tests/nonvisual/) | `NOTHOFAGUS_BUILD_TESTS_NONVISUAL` | Catch2 only |
 
-Run via CTest from the build directory. Both groups use Catch2 (`catch_discover_tests` registers each `TEST_CASE` as a separate CTest entry); Catch2 is added once at the `tests/CMakeLists.txt` orchestrator level when either sub-option is enabled. The visual group additionally requires a render backend and the golden-image helpers in [tests/visual/golden_image.h](tests/visual/golden_image.h); the nonvisual group builds without any render backend (use it from CI lanes that don't have a display server). The current nonvisual file is [tests/nonvisual/tilemap_tests.cpp](tests/nonvisual/tilemap_tests.cpp) — pure-data tests for `Tilemap`, `IndirectTexture::setMapBulk`, and the `TilemapExplorer` pool-grid-size formula (mirrored from source).
+Run via CTest from the build directory. Both groups use Catch2 (`catch_discover_tests` registers each `TEST_CASE` as a separate CTest entry); Catch2 is added once at the `tests/CMakeLists.txt` orchestrator level when either sub-option is enabled. The visual group additionally requires a render backend and the golden-image helpers in [tests/visual/golden_image.h](tests/visual/golden_image.h); the nonvisual group builds without any render backend (use it from CI lanes that don't have a display server). The nonvisual files are [tests/nonvisual/tilemap_tests.cpp](tests/nonvisual/tilemap_tests.cpp) — pure-data tests for `Tilemap`, `IndirectTexture::setMapBulk`, and the `TilemapExplorer` pool-grid-size formula (mirrored from source) — and [tests/nonvisual/sparsemap_tests.cpp](tests/nonvisual/sparsemap_tests.cpp) — pure-data tests for `Sparsemap` (chunk lifecycle, lazy `setCell`, `chunkDataInto` zero-fill for missing chunks, independent per-chunk generation bumps).
 
 ## Dependencies (third_party/ submodules)
 
