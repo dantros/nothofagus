@@ -1,5 +1,5 @@
 #include "canvas.h"
-#include "canvas_impl.h"
+#include "frame_runner.h"
 #include "asset_registry.h"
 #include "imgui_rtt_manager.h"
 #include "check.h"

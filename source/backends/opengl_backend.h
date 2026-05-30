@@ -56,7 +56,7 @@ public:
 
     ScreenshotPixels takeScreenshot(ViewportRect gameViewport, glm::ivec2 gameSize) const;
 
-    /// Allow canvas_impl to update a texture's filter parameters directly after upload.
+    /// Allow FrameRunner to update a texture's filter parameters directly after upload.
     void setTextureMinFilter(DTexture texture, TextureSampleMode mode);
     void setTextureMagFilter(DTexture texture, TextureSampleMode mode);
 

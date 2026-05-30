@@ -628,7 +628,7 @@ void OpenGLBackend::endFrame(ImDrawData* imguiData,
 // ImGui-to-render-target hooks
 // ---------------------------------------------------------------------------
 // The OpenGL ImGui backend stores its state in the currently-active ImGuiContext,
-// so these hooks are context-driven — the caller (canvas_impl) must SetCurrentContext
+// so these hooks are context-driven — the caller (FrameRunner) must SetCurrentContext
 // to the secondary context before invoking them. The render target argument is not
 // needed by the GL backend (the FBO is already bound by beginRttPass), but it is
 // part of the shared concept to keep Vulkan parity.

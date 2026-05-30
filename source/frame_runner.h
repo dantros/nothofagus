@@ -15,7 +15,7 @@ namespace Nothofagus
 {
 
 // Forward decls — FrameRunner only takes these by reference (in run/tick), so
-// the full headers don't need to be visible here. canvas_impl.h is an
+// the full headers don't need to be visible here. frame_runner.h is an
 // internal header (never reached by the public canvas.h), so these names
 // at namespace scope stay out of the public-API surface.
 class AssetRegistry;
