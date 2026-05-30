@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace Pal
@@ -60,18 +61,66 @@ static std::vector<std::uint8_t> makeBorderedTile(glm::ivec2 tileSize, std::uint
     return data;
 }
 
-// Layer index 1..4 based on chunk coordinate (color cycles deterministically).
+// White-on-black tile with a single 8x8 ASCII glyph centered in the cell.
+// Mirrors `makeDigitTile` from hello_tilemap_huge.cpp: rasterises the glyph with
+// `Nothofagus::writeChar` (font8x8 basic, colorIds 0=bg / 1=fg) then remaps to
+// palette indices so the glyph reads as white-on-black against the chunk color.
+static std::vector<std::uint8_t> makeAsciiTile(glm::ivec2 tileSize,
+                                                char asciiChar,
+                                                const Nothofagus::ColorPallete& palette)
+{
+    Nothofagus::IndirectTexture scratch(tileSize, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f), 1);
+    scratch.setPallete(palette);
+    Nothofagus::writeChar(scratch, static_cast<std::uint8_t>(asciiChar), 4, 4);
+
+    std::vector<std::uint8_t> data(static_cast<std::size_t>(tileSize.x * tileSize.y), Pal::Black);
+    for (int j = 0; j < tileSize.y; ++j)
+        for (int i = 0; i < tileSize.x; ++i)
+            if (scratch.pixel(static_cast<std::size_t>(i), static_cast<std::size_t>(j)).colorId == 1)
+                data[static_cast<std::size_t>(j * tileSize.x + i)] = Pal::White;
+    return data;
+}
+
+// Atlas layer layout (matches the tileGraphics vector built in main()):
+//   0..4    bordered color tiles (chunk background colors)
+//   5..14   digit glyphs '0'..'9'
+//   15      minus-sign glyph '-'  (sparsemap coords go negative)
+constexpr std::uint8_t digitLayer(int digit) { return static_cast<std::uint8_t>(5 + digit); }
+constexpr std::uint8_t minusLayer()           { return 15; }
+
+// Color layer index (1..4) for a chunk, cycling deterministically by chunk coord.
 static std::uint8_t patternForChunk(glm::ivec2 chunkPos)
 {
     const int sum = std::abs(chunkPos.x) + std::abs(chunkPos.y);
     return static_cast<std::uint8_t>(1 + (sum % 4));
 }
 
-// Pre-baked chunk data for a uniform solid layer (`chunkSize.x * chunkSize.y` bytes).
-static std::vector<std::uint8_t> uniformChunkData(glm::ivec2 chunkSize, std::uint8_t layerIdx)
+// Build the cell data for one chunk: fill with the chunk's color, then stamp the
+// chunk's coordinate as a two-line label at the top-left — x on row 0, y on row 1.
+// Each character occupies one cell, left-aligned; minus signs and digits map to
+// their atlas layers via `minusLayer()` / `digitLayer(N)`.
+static std::vector<std::uint8_t> buildChunkData(glm::ivec2 chunkSize, glm::ivec2 chunkPos)
 {
-    return std::vector<std::uint8_t>(
-        static_cast<std::size_t>(chunkSize.x * chunkSize.y), layerIdx);
+    std::vector<std::uint8_t> data(
+        static_cast<std::size_t>(chunkSize.x * chunkSize.y),
+        patternForChunk(chunkPos));
+
+    auto stampInt = [&](int value, int row)
+    {
+        if (row < 0 || row >= chunkSize.y) return;
+        const std::string s = std::to_string(value);
+        const int rowOffset = row * chunkSize.x;
+        for (std::size_t i = 0; i < s.size() && static_cast<int>(i) < chunkSize.x; ++i)
+        {
+            const char c = s[i];
+            const std::uint8_t layer = (c == '-') ? minusLayer()
+                                                  : digitLayer(c - '0');
+            data[static_cast<std::size_t>(rowOffset + static_cast<int>(i))] = layer;
+        }
+    };
+    stampInt(chunkPos.x, 0);  // top-left: x coord
+    stampInt(chunkPos.y, 1);  // one row below: y coord
+    return data;
 }
 
 // Deterministic per-coord hash → "does a chunk exist here?" decision. Drives the
@@ -123,6 +172,9 @@ int main()
         {0.20f, 0.75f, 0.35f, 1.0f},// 6 green
     };
 
+    // Layout: 5 color tiles (layers 0..4), then digit glyphs 0..9 (5..14), then minus (15).
+    // The buildChunkData helper picks color tiles via patternForChunk(...) and
+    // overlays the label cells with digitLayer(N) / minusLayer().
     std::vector<std::vector<std::uint8_t>> tileGraphics{
         makeBorderedTile(tileSize, Pal::White),   // layer 0
         makeBorderedTile(tileSize, Pal::Red),     // layer 1
@@ -130,6 +182,9 @@ int main()
         makeBorderedTile(tileSize, Pal::Blue),    // layer 3
         makeBorderedTile(tileSize, Pal::Green),   // layer 4
     };
+    for (char d = '0'; d <= '9'; ++d)
+        tileGraphics.push_back(makeAsciiTile(tileSize, d, palette));   // layers 5..14
+    tileGraphics.push_back(makeAsciiTile(tileSize, '-', palette));     // layer 15
 
     // Register the Sparsemap (world data) and a SparsemapExplorer (pooled renderer)
     // against the canvas. The explorer takes the SparsemapId it draws from. Nothing
@@ -213,7 +268,7 @@ int main()
                     const bool isResident  = world.chunkInBounds(cp);
                     if (shouldExist && !isResident)
                     {
-                        const auto data = uniformChunkData(chunkSize, patternForChunk(cp));
+                        const auto data = buildChunkData(chunkSize, cp);
                         world.addChunk(cp, std::span<const std::uint8_t>(data));
                     }
                     else if (!shouldExist && isResident)
@@ -258,8 +313,9 @@ int main()
         ImGui::InputInt("##addY", &manualAddY); ImGui::SameLine();
         if (ImGui::Button("Add"))
         {
-            const auto data = uniformChunkData(chunkSize, patternForChunk({manualAddX, manualAddY}));
-            world.addChunk({manualAddX, manualAddY}, std::span<const std::uint8_t>(data));
+            const glm::ivec2 cp{manualAddX, manualAddY};
+            const auto data = buildChunkData(chunkSize, cp);
+            world.addChunk(cp, std::span<const std::uint8_t>(data));
         }
 
         ImGui::Text("Manual removeChunk");
