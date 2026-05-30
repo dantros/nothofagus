@@ -127,6 +127,10 @@ static std::vector<std::uint8_t> buildChunkData(glm::ivec2 chunkSize, glm::ivec2
 // streaming loop so the world looks like scattered islands rather than a solid grid.
 // Same input always yields the same answer, so revisiting a region restores the same
 // chunk layout. `densityPercent` in [0, 100] sets the rough fraction of populated chunks.
+//
+// Intentionally NOT `IVec2Hash`: we want uniform `% 100` distribution for the density
+// gate, not the avalanche properties IVec2Hash provides for hash-map bucketing. Don't
+// "simplify" this by routing it through IVec2Hash — they're solving different problems.
 static bool chunkExistsAt(glm::ivec2 cp, int densityPercent)
 {
     std::uint32_t h = static_cast<std::uint32_t>(cp.x) * 0x9e3779b9u

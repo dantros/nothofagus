@@ -30,6 +30,18 @@ public:
 
     ExplorerManager() = default;
 
+    /// Defensive cleanup of host-side bookkeeping. Pool slot bellotas / textures
+    /// belong to the canvas's asset registry and are released by the registry's
+    /// own teardown; this dtor never calls `teardownPoolSlots` because it would
+    /// need a `Canvas&` it doesn't hold. Future destruction-order refactors that
+    /// destroy this manager before the asset registry can rely on these clears
+    /// keeping host state consistent up to the point GPU teardown finishes.
+    ~ExplorerManager()
+    {
+        mExplorerManagedBellotaIds.clear();
+        mExplorerManagedTextureIds.clear();
+    }
+
     // ── Data (pure storage) ───────────────────────────────────────────────
     DataId   add(T data);
     void     remove(DataId id);                ///< debugCheck: no explorer references it.

@@ -73,7 +73,11 @@ public:
     void chunkDataInto(glm::ivec2 chunkPos, std::span<std::uint8_t> out) const;
 
     /// Generation counter for one chunk — bumps on any `setCell` / `addChunk` for that chunk.
-    /// Returns 0 if the chunk is not present (sentinel matches `PoolSlot::syncedGeneration` initial value).
+    /// Returns 0 if the chunk is not present. `addChunk` and lazy `setCell` both pre-increment
+    /// on creation, so a present chunk is always at gen ≥ 1; the chunk-sync pass relies on this
+    /// to distinguish "present, freshly added" from "missing" purely by the generation value
+    /// (the sentinel matches `PoolSlot::syncedGeneration`'s initial 0). Keep this invariant if
+    /// refactoring — starting a fresh chunk at gen=0 would collapse the two states.
     std::uint64_t chunkGeneration(glm::ivec2 chunkPos) const;
 
 private:
