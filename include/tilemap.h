@@ -81,7 +81,7 @@ private:
 template<>
 struct TilemapTraits<Tilemap>
 {
-    using DataId     = TilemapId;
+    using LandId     = TilemapId;
     using ExplorerId = TilemapExplorerId;
 };
 

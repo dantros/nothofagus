@@ -25,7 +25,7 @@ template<TilemapLike T>
 class ExplorerManager
 {
 public:
-    using DataId     = typename TilemapTraits<T>::DataId;
+    using LandId     = typename TilemapTraits<T>::LandId;
     using ExplorerId = typename TilemapTraits<T>::ExplorerId;
 
     ExplorerManager() = default;
@@ -43,10 +43,10 @@ public:
     }
 
     // ── Data (pure storage) ───────────────────────────────────────────────
-    DataId   add(T data);
-    void     remove(DataId id);                ///< debugCheck: no explorer references it.
-    T&       get(DataId id);
-    const T& get(DataId id) const;
+    LandId   add(T data);
+    void     remove(LandId id);                ///< debugCheck: no explorer references it.
+    T&       get(LandId id);
+    const T& get(LandId id) const;
 
     // ── Explorer lifecycle (need canvas access for pool init/teardown) ─
     /// Allocates the pool: one `IndirectTexture` + one `Bellota` per slot,

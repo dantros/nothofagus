@@ -97,7 +97,7 @@ private:
 template<>
 struct TilemapTraits<Sparsemap>
 {
-    using DataId     = SparsemapId;
+    using LandId     = SparsemapId;
     using ExplorerId = SparsemapExplorerId;
 };
 

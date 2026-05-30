@@ -81,13 +81,13 @@ void exploreCell(PoolSlot& slot, glm::ivec2 desired, const ExplorerFrame<T>& fra
 }  // namespace detail
 
 template<TilemapLike T>
-typename ExplorerManager<T>::DataId ExplorerManager<T>::add(T data)
+typename ExplorerManager<T>::LandId ExplorerManager<T>::add(T data)
 {
-    return DataId{ mData.add(std::move(data)) };
+    return LandId{ mData.add(std::move(data)) };
 }
 
 template<TilemapLike T>
-void ExplorerManager<T>::remove(DataId id)
+void ExplorerManager<T>::remove(LandId id)
 {
     for (const auto& [explorerIdx, explorerPack] : mExplorers)
     {
@@ -98,13 +98,13 @@ void ExplorerManager<T>::remove(DataId id)
 }
 
 template<TilemapLike T>
-T& ExplorerManager<T>::get(DataId id)
+T& ExplorerManager<T>::get(LandId id)
 {
     return mData.at(id.id);
 }
 
 template<TilemapLike T>
-const T& ExplorerManager<T>::get(DataId id) const
+const T& ExplorerManager<T>::get(LandId id) const
 {
     return mData.at(id.id);
 }
@@ -226,8 +226,8 @@ void ExplorerManager<T>::updateExplorer(
     const ScreenSize& screen,
     const glm::vec2& canvasCenter)
 {
-    const DataId dataId = explorerPack.explorer.land();
-    if (!mData.contains(dataId.id)) return;
+    const LandId landId = explorerPack.explorer.land();
+    if (!mData.contains(landId.id)) return;
 
     // Canvas was resized since this pool was built — tear it down and
     // rebuild against the new screenSize. Fresh slots have currentWorldChunk
@@ -240,7 +240,7 @@ void ExplorerManager<T>::updateExplorer(
         buildPoolSlots(explorerPack, canvas);
     }
 
-    const T& sourceData = mData.at(dataId.id);
+    const T& sourceData = mData.at(landId.id);
 
     const glm::vec2 chunkPixelSize = glm::vec2(sourceData.chunkPixelSize());
 

@@ -24,9 +24,9 @@ concept TilemapLike = requires(const T& t, glm::ivec2 coord, std::span<std::uint
     t.chunkDataInto(coord, out);
 };
 
-/// Per-backend ID type binding: maps a `TilemapLike` type to its corresponding data ID
-/// and explorer ID. Specialized for each concrete backend alongside its type definition
-/// (see `tilemap.h` and `sparsemap.h`).
+/// Per-backend ID type binding: maps a `TilemapLike` type to its corresponding land ID
+/// (the world the explorer roams) and explorer ID. Specialized for each concrete backend
+/// alongside its type definition (see `tilemap.h` and `sparsemap.h`).
 template<typename T> struct TilemapTraits;
 
 /// Windowed renderer handle for any `TilemapLike` backend: holds the camera (world-pixel
@@ -38,15 +38,15 @@ template<TilemapLike T>
 class Explorer
 {
 public:
-    using DataId = typename TilemapTraits<T>::DataId;
+    using LandId = typename TilemapTraits<T>::LandId;
 
-    explicit Explorer(DataId landId):
+    explicit Explorer(LandId landId):
         mLandId(landId),
         mCamera(0.0f, 0.0f),
         mDepthOffset(0)
     {}
 
-    DataId land() const { return mLandId; }
+    LandId land() const { return mLandId; }
 
     void      setCamera(glm::vec2 worldOffset) { mCamera = worldOffset; }
     glm::vec2 camera() const { return mCamera; }
@@ -55,7 +55,7 @@ public:
     std::int8_t   depthOffset() const { return mDepthOffset; }
 
 private:
-    DataId      mLandId;
+    LandId      mLandId;
     glm::vec2   mCamera;
     std::int8_t mDepthOffset;
 };
