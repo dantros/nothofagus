@@ -6,11 +6,17 @@
 ///
 /// What this demo shows:
 ///   - An empty Sparsemap renders nothing (pool slots are hidden via `chunkInBounds`).
-///   - "Streaming" simulation: as the camera pans, chunks inside a load radius are
-///     `addChunk`'d (zero-init or with a stamped pattern); chunks outside an unload
-///     radius are `removeChunk`'d. Memory scales with `chunkCount`, not with how far
-///     you can travel.
-///   - Manual `addChunk` / `removeChunk` at specific coords from the UI.
+///   - **Visibly sparse world**: a deterministic per-coord hash decides whether each
+///     chunk exists. With density at 25%, ~3 of every 4 chunk slots are empty — you
+///     see colored "island" chunks scattered across mostly-empty space, with the
+///     gaps rendered by the slot-hide-on-missing-chunk path.
+///   - Streaming around the camera: as you pan, chunks that should exist (per the
+///     hash) get `addChunk`'d on entry; chunks outside the unload radius get
+///     `removeChunk`'d. Memory scales with `chunkCount`, not with how far you've
+///     travelled. The same hash is deterministic, so revisiting a region restores
+///     the same layout.
+///   - Manual `addChunk` / `removeChunk` at specific coords from the UI — bypasses
+///     the density gate, useful for placing or wiping individual chunks.
 ///   - `setCell` lazy-creates the owning chunk if absent — paint a single cell into
 ///     empty space and watch a fresh chunk appear next frame.
 
@@ -68,6 +74,20 @@ static std::vector<std::uint8_t> uniformChunkData(glm::ivec2 chunkSize, std::uin
         static_cast<std::size_t>(chunkSize.x * chunkSize.y), layerIdx);
 }
 
+// Deterministic per-coord hash → "does a chunk exist here?" decision. Drives the
+// streaming loop so the world looks like scattered islands rather than a solid grid.
+// Same input always yields the same answer, so revisiting a region restores the same
+// chunk layout. `densityPercent` in [0, 100] sets the rough fraction of populated chunks.
+static bool chunkExistsAt(glm::ivec2 cp, int densityPercent)
+{
+    std::uint32_t h = static_cast<std::uint32_t>(cp.x) * 0x9e3779b9u
+                    + static_cast<std::uint32_t>(cp.y) * 0x85ebca6bu;
+    h ^= h >> 16; h *= 0x85ebca6bu;
+    h ^= h >> 13; h *= 0xc2b2ae35u;
+    h ^= h >> 16;
+    return static_cast<int>(h % 100u) < densityPercent;
+}
+
 static void formatBytes(char* out, std::size_t outSize, std::size_t bytes)
 {
     if (bytes < 1024u)
@@ -120,22 +140,16 @@ int main()
     Nothofagus::SparsemapExplorerId explorerId =
         canvas.addSparsemapExplorer(Nothofagus::SparsemapExplorer(sparsemapId));
 
-    // Seed a few chunks near the origin so the camera starts on populated content.
-    {
-        Nothofagus::Sparsemap& world = canvas.sparsemap(sparsemapId);
-        for (int cy = -2; cy <= 2; ++cy)
-            for (int cx = -2; cx <= 2; ++cx)
-            {
-                const auto data = uniformChunkData(chunkSize, patternForChunk({cx, cy}));
-                world.addChunk({cx, cy}, std::span<const std::uint8_t>(data));
-            }
-    }
+    // No explicit initial seed — the first streaming pass below populates the visible
+    // region using the deterministic density hash. With streaming off, the world starts
+    // empty (nothing renders, all pool slots stay hidden via chunkInBounds).
 
     // ── UI state ─────────────────────────────────────────────────────────
     glm::vec2 camera{0.0f, 0.0f};
     bool      streamingOn      = true;
-    int       loadRadiusChunks = 4;       // chunks inside this radius (Chebyshev) get added
-    int       unloadRadiusChunks = 6;     // chunks outside this radius get removed
+    int       sparsityDensityPercent = 25;  // ~25% of chunks in range actually exist
+    int       loadRadiusChunks = 6;          // chunks inside this radius (Chebyshev) get evaluated
+    int       unloadRadiusChunks = 10;       // chunks outside this radius get evicted
     int       manualAddX = 5,  manualAddY = 0;
     int       manualRemoveX = -3, manualRemoveY = 0;
     int       editWorldX = 0, editWorldY = 24, editLayer = 4;  // setCell editor
@@ -175,7 +189,12 @@ int main()
 
         Nothofagus::Sparsemap& world = canvas.sparsemap(sparsemapId);
 
-        // ── Streaming around the camera (simulated load/unload) ─────────
+        // ── Streaming around the camera (density-gated) ─────────────────
+        // For each chunk slot inside the load radius, the deterministic density hash
+        // decides whether it should exist. We sync the resident set to match: missing
+        // chunks that should exist get added; resident chunks that no longer should
+        // (e.g. after the user lowered the density slider) get removed. Chunks outside
+        // the unload radius get evicted regardless — that's the streaming budget.
         if (streamingOn)
         {
             const glm::vec2 chunkPx{
@@ -190,13 +209,19 @@ int main()
                 for (int dx = -loadRadiusChunks; dx <= loadRadiusChunks; ++dx)
                 {
                     const glm::ivec2 cp{cameraChunk.x + dx, cameraChunk.y + dy};
-                    if (!world.chunkInBounds(cp))
+                    const bool shouldExist = chunkExistsAt(cp, sparsityDensityPercent);
+                    const bool isResident  = world.chunkInBounds(cp);
+                    if (shouldExist && !isResident)
                     {
                         const auto data = uniformChunkData(chunkSize, patternForChunk(cp));
                         world.addChunk(cp, std::span<const std::uint8_t>(data));
                     }
+                    else if (!shouldExist && isResident)
+                    {
+                        world.removeChunk(cp);
+                    }
                 }
-            // Cheap eviction: walk a wider square and remove anything outside the unload radius.
+            // Eviction sweep: walk a wider square and remove anything outside the unload radius.
             const int sweep = unloadRadiusChunks + 2;
             for (int dy = -sweep; dy <= sweep; ++dy)
                 for (int dx = -sweep; dx <= sweep; ++dx)
@@ -222,6 +247,7 @@ int main()
 
         ImGui::Separator();
         ImGui::Checkbox("Streaming around camera", &streamingOn);
+        ImGui::SliderInt("Density (%)",            &sparsityDensityPercent, 0, 100);
         ImGui::SliderInt("Load radius (chunks)",   &loadRadiusChunks,   1, 16);
         ImGui::SliderInt("Unload radius (chunks)", &unloadRadiusChunks, 1, 32);
         if (loadRadiusChunks > unloadRadiusChunks) unloadRadiusChunks = loadRadiusChunks;
@@ -252,9 +278,11 @@ int main()
 
         ImGui::Separator();
         ImGui::TextWrapped(
-            "Pan with WASD. Streaming loads chunks within Load radius of the camera and "
-            "evicts those outside Unload radius. With streaming off, scrolling beyond the "
-            "resident set shows empty space — slots covering missing chunks hide via chunkInBounds.");
+            "Pan with WASD. A deterministic per-coord hash decides which chunks exist "
+            "(see Density slider) — same coordinate, same answer, so revisiting a region "
+            "restores the same scattered layout. Lower the Density to see more gaps. "
+            "With streaming off, the world stops syncing; missing-chunk slots hide via "
+            "chunkInBounds.");
 
         ImGui::End();
     }, controller);
