@@ -141,7 +141,7 @@ public:
 
     ScreenshotPixels takeScreenshot(ViewportRect gameViewport, glm::ivec2 gameSize) const;
 
-    // Not part of the concept — called by canvas_impl to update filter after upload
+    // Not part of the concept — called by FrameRunner to update filter after upload
     void setTextureMinFilter(DTexture dtexture, TextureSampleMode mode);
     void setTextureMagFilter(DTexture dtexture, TextureSampleMode mode);
 

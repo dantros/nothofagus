@@ -722,7 +722,7 @@ void VulkanBackend::initImGuiRenderer()
     ImGui_ImplVulkan_Init(&imguiInfo);
     // Font upload is deferred: ImGui_ImplVulkan_NewFrame() calls
     // ImGui_ImplVulkan_CreateFontsTexture() automatically on the first frame,
-    // after canvas_impl has finished adding custom fonts (Roboto, etc.).
+    // after FrameRunner has finished adding custom fonts (Roboto, etc.).
 }
 
 // ---------------------------------------------------------------------------

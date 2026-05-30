@@ -80,7 +80,7 @@ file(GLOB_RECURSE NOTHOFAGUS_PUBLIC_HEADERS "include/*.h")
 
 add_library(nothofagus
     "source/canvas.cpp"
-    "source/canvas_impl.cpp"
+    "source/frame_runner.cpp"
     "source/asset_registry.cpp"
     "source/texture_container.cpp"
     "source/mesh_container.cpp"

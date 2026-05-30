@@ -1,5 +1,5 @@
 
-#include "canvas_impl.h"
+#include "frame_runner.h"
 #include "check.h"
 #include "performance_monitor.h"
 #include "keyboard.h"
@@ -25,7 +25,7 @@
 namespace Nothofagus
 {
 
-// Window is the selected backend type. Forward declared in canvas_impl.h;
+// Window is the selected backend type. Forward declared in frame_runner.h;
 // defined here so the backend headers are only included from this translation unit.
 struct FrameRunner::Window : public SelectedWindowBackend
 {
