@@ -3,6 +3,7 @@
 #include "mesh.h"
 #include "dmesh.h"
 #include "indexed_container.h"
+#include "backends/render_backend_select.h"
 #include <optional>
 
 namespace Nothofagus
@@ -28,10 +29,15 @@ struct MeshPack
 
     bool isDirty() const { return not dmeshOpt.has_value(); }
 
+    /// Reset the GPU-side optional to nullopt. Does NOT touch the backend.
+    /// Use `freeGpuResources(backend)` when you want both at once.
     void clear()
     {
         dmeshOpt = std::nullopt;
     }
+
+    /// Free the backend mesh handle (if uploaded) and reset the optional.
+    void freeGpuResources(ActiveBackend& backend);
 };
 
 using MeshContainer = IndexedContainer<MeshPack>;
