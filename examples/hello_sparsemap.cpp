@@ -213,6 +213,10 @@ int main()
     int       manualRemoveX = -3, manualRemoveY = 0;
     int       editWorldX = 0, editWorldY = 24, editLayer = 4;  // setCell editor
 
+    // ── Canvas resize controls (exercises pool resize against new screen size) ─
+    int newCanvasWidth  = canvasWidth;
+    int newCanvasHeight = canvasHeight;
+
     constexpr float panSpeed = 1000.0f;   // world px / s — fast enough to cross ~4 chunks/s at 256-px chunks
     bool wDown = false, sDown = false, aDown = false, dDown = false;
 
@@ -295,14 +299,73 @@ int main()
         ImGui::SetNextWindowSize(ImVec2(360, 0), ImGuiCond_FirstUseEver);
         ImGui::Begin("Sparsemap");
 
-        ImGui::Text("Camera: (%.0f, %.0f)", camera.x, camera.y);
-        ImGui::Text("Chunks resident: %zu", world.chunkCount());
+        // Status
+        const Nothofagus::ScreenSize liveCanvasSize = canvas.screenSize();
+        ImGui::Text("WASD to pan, ESC to quit");
+        ImGui::Text("camera = (%.1f, %.1f) px", camera.x, camera.y);
+        ImGui::Text("canvas = %u x %u px",     liveCanvasSize.width, liveCanvasSize.height);
+        ImGui::Text("chunk  = %d x %d cells (%d x %d px)",
+                    chunkSize.x, chunkSize.y,
+                    chunkSize.x * tileSize.x, chunkSize.y * tileSize.y);
+        ImGui::Text("chunks resident: %zu (unbounded world)", world.chunkCount());
 
-        const std::size_t bytesPerChunkCells = static_cast<std::size_t>(chunkSize.x * chunkSize.y);
-        const std::size_t worldCellBytes     = world.chunkCount() * bytesPerChunkCells;
-        char buf[64];
-        formatBytes(buf, sizeof(buf), worldCellBytes);
-        ImGui::Text("World cells: %s  (= %zu chunks × %zu bytes)", buf, world.chunkCount(), bytesPerChunkCells);
+        ImGui::Separator();
+
+        // Memory breakdown — sparse world: cost scales with chunkCount, not world extent.
+        {
+            const std::size_t layerCount  = tileGraphics.size();
+            const std::size_t paletteSize = palette.colors.size();
+            const std::size_t chunkCount  = world.chunkCount();
+
+            // Sparsemap world data — atlas+palette live once in the cache template
+            // (cloned into each pool slot); per-chunk cost is the cell grid + the
+            // generation counter + an approximate hash-map / vector node overhead.
+            const std::size_t cellsPerChunk      = static_cast<std::size_t>(chunkSize.x) * static_cast<std::size_t>(chunkSize.y);
+            const std::size_t chunkCellsBytes    = chunkCount * cellsPerChunk;
+            const std::size_t chunkGenBytes      = chunkCount * sizeof(std::uint64_t);
+            // Per-chunk container overhead (approximate, libstdc++ typical):
+            //   std::vector<uint8_t> header (~24 B) + unordered_map node link/hash (~16 B)
+            //   + key glm::ivec2 (8 B). Real cost varies by stdlib implementation.
+            constexpr std::size_t perChunkOverheadBytes = 48;
+            const std::size_t chunkOverheadBytes = chunkCount * perChunkOverheadBytes;
+            const std::size_t worldAtlasBytes    = layerCount * static_cast<std::size_t>(tileSize.x) * static_cast<std::size_t>(tileSize.y);
+            const std::size_t worldPaletteBytes  = paletteSize * sizeof(glm::vec4);
+            const std::size_t worldTotalBytes    = chunkCellsBytes + chunkGenBytes + chunkOverheadBytes + worldAtlasBytes + worldPaletteBytes;
+
+            // Pool — same formula as TilemapExplorer (see ExplorerManager::buildPoolSlots).
+            const glm::ivec2 chunkPixelSize{ chunkSize.x * tileSize.x, chunkSize.y * tileSize.y };
+            const glm::ivec2 poolGridSize{
+                (static_cast<int>(liveCanvasSize.width)  + chunkPixelSize.x - 1) / chunkPixelSize.x + 2,
+                (static_cast<int>(liveCanvasSize.height) + chunkPixelSize.y - 1) / chunkPixelSize.y + 2
+            };
+            const std::size_t slotCount        = static_cast<std::size_t>(poolGridSize.x) * static_cast<std::size_t>(poolGridSize.y);
+            const std::size_t slotAtlasBytes   = layerCount * static_cast<std::size_t>(tileSize.x) * static_cast<std::size_t>(tileSize.y);
+            const std::size_t slotMapBytes     = static_cast<std::size_t>(chunkSize.x) * static_cast<std::size_t>(chunkSize.y);
+            const std::size_t slotPaletteBytes = paletteSize * sizeof(glm::vec4);
+            const std::size_t perSlotBytes     = slotAtlasBytes + slotMapBytes + slotPaletteBytes;
+            const std::size_t poolTotalBytes   = slotCount * perSlotBytes;
+
+            const std::size_t grandTotalBytes = worldTotalBytes + poolTotalBytes;
+
+            char buf[64];
+            ImGui::Text("Sparsemap (world data, %zu chunks):", chunkCount);
+            formatBytes(buf, sizeof(buf), chunkCellsBytes);    ImGui::Text("  chunk cells:     %s", buf);
+            formatBytes(buf, sizeof(buf), chunkGenBytes);      ImGui::Text("  chunk gens:      %s", buf);
+            formatBytes(buf, sizeof(buf), chunkOverheadBytes); ImGui::Text("  chunk overhead:  %s (~%zu B/chunk)", buf, perChunkOverheadBytes);
+            formatBytes(buf, sizeof(buf), worldAtlasBytes);    ImGui::Text("  atlas:           %s", buf);
+            formatBytes(buf, sizeof(buf), worldPaletteBytes);  ImGui::Text("  palette:         %s", buf);
+            formatBytes(buf, sizeof(buf), worldTotalBytes);    ImGui::Text("  total:           %s", buf);
+
+            ImGui::Text("Pool (%zu slots = %d x %d):",
+                        slotCount, poolGridSize.x, poolGridSize.y);
+            formatBytes(buf, sizeof(buf), slotAtlasBytes);     ImGui::Text("  per-slot atlas:   %s", buf);
+            formatBytes(buf, sizeof(buf), slotMapBytes);       ImGui::Text("  per-slot map:     %s", buf);
+            formatBytes(buf, sizeof(buf), slotPaletteBytes);   ImGui::Text("  per-slot palette: %s", buf);
+            formatBytes(buf, sizeof(buf), poolTotalBytes);     ImGui::Text("  total:            %s", buf);
+
+            formatBytes(buf, sizeof(buf), grandTotalBytes);
+            ImGui::Text("GRAND TOTAL: %s", buf);
+        }
 
         ImGui::Separator();
         ImGui::Checkbox("Streaming around camera", &streamingOn);
@@ -337,12 +400,33 @@ int main()
             world.setCell({editWorldX, editWorldY}, static_cast<std::uint8_t>(editLayer));
 
         ImGui::Separator();
+        ImGui::Text("Diagnostics:");
+        ImGui::Checkbox("show frame stats", &canvas.stats());
+
+        ImGui::Separator();
+
+        // Resize canvas — exercises the dynamic pool resize against the new screen size.
+        ImGui::Text("Resize canvas:");
+        ImGui::InputInt("canvas w", &newCanvasWidth);
+        ImGui::InputInt("canvas h", &newCanvasHeight);
+        if (ImGui::Button("Resize"))
+        {
+            newCanvasWidth  = std::max(64, newCanvasWidth);
+            newCanvasHeight = std::max(64, newCanvasHeight);
+            canvas.setScreenSize({
+                static_cast<unsigned int>(newCanvasWidth),
+                static_cast<unsigned int>(newCanvasHeight)
+            });
+        }
+
+        ImGui::Separator();
         ImGui::TextWrapped(
             "Pan with WASD. A deterministic per-coord hash decides which chunks exist "
             "(see Density slider) — same coordinate, same answer, so revisiting a region "
             "restores the same scattered layout. Lower the Density to see more gaps. "
             "With streaming off, the world stops syncing; missing-chunk slots hide via "
-            "chunkInBounds.");
+            "chunkInBounds. Watch the Sparsemap chunk count scale with what's resident, "
+            "while the pool stays flat regardless of world extent.");
 
         ImGui::End();
     }, controller);
