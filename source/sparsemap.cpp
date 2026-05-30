@@ -12,6 +12,28 @@ namespace Nothofagus
 // the missing/changed method shows up clearly instead of as a generic template error.
 static_assert(TilemapLike<Sparsemap>);
 
+namespace
+{
+
+struct DivMod { int quotient; int remainder; };
+
+/// Floor-division with always-non-negative remainder in `[0, d)`. Used to map a
+/// world-cell coordinate (possibly negative) onto its owning chunk coord and
+/// intra-chunk index in one step. Overflow-safe at `INT_MIN`: there is no
+/// negation of `n`, and `d > 0` is guaranteed by the `Sparsemap` ctor's chunkSize
+/// assertion, so `n / d` is well-defined for every representable `n` (the only UB
+/// case for built-in `/` is `INT_MIN / -1`, which `d > 0` rules out). The product
+/// `q * d` cannot overflow either, since truncating division yields `|q * d| <= |n|`.
+constexpr DivMod floorDivMod(int n, int d)
+{
+    int q = n / d;
+    int r = n - q * d;
+    if (r < 0) { --q; r += d; }
+    return {q, r};
+}
+
+}  // namespace
+
 Sparsemap::Sparsemap(glm::ivec2 chunkSize,
                      glm::ivec2 tileSize,
                      const ColorPallete& palette,
@@ -75,15 +97,9 @@ void Sparsemap::setCell(glm::ivec2 worldCell, std::uint8_t layerIndex)
     debugCheck(static_cast<std::size_t>(layerIndex) < mCacheTemplate.layers(),
                "Sparsemap::setCell layer index out of range of registered tile graphics.");
 
-    const glm::ivec2 chunkPos{
-        // Floor-division for negative coords too.
-        worldCell.x >= 0 ? worldCell.x / mChunkSize.x : -((-worldCell.x + mChunkSize.x - 1) / mChunkSize.x),
-        worldCell.y >= 0 ? worldCell.y / mChunkSize.y : -((-worldCell.y + mChunkSize.y - 1) / mChunkSize.y)
-    };
-    const glm::ivec2 localCell{
-        worldCell.x - chunkPos.x * mChunkSize.x,
-        worldCell.y - chunkPos.y * mChunkSize.y
-    };
+    const auto [chunkX, localX] = floorDivMod(worldCell.x, mChunkSize.x);
+    const auto [chunkY, localY] = floorDivMod(worldCell.y, mChunkSize.y);
+    const glm::ivec2 chunkPos{chunkX, chunkY};
 
     auto [it, inserted] = mChunks.try_emplace(chunkPos);
     ChunkEntry& entry = it->second;
@@ -95,29 +111,24 @@ void Sparsemap::setCell(glm::ivec2 worldCell, std::uint8_t layerIndex)
     }
 
     const std::size_t localIdx =
-        static_cast<std::size_t>(localCell.y) * static_cast<std::size_t>(mChunkSize.x) +
-        static_cast<std::size_t>(localCell.x);
+        static_cast<std::size_t>(localY) * static_cast<std::size_t>(mChunkSize.x) +
+        static_cast<std::size_t>(localX);
     entry.cells[localIdx] = layerIndex;
     ++entry.generation;
 }
 
 std::uint8_t Sparsemap::cell(glm::ivec2 worldCell) const
 {
-    const glm::ivec2 chunkPos{
-        worldCell.x >= 0 ? worldCell.x / mChunkSize.x : -((-worldCell.x + mChunkSize.x - 1) / mChunkSize.x),
-        worldCell.y >= 0 ? worldCell.y / mChunkSize.y : -((-worldCell.y + mChunkSize.y - 1) / mChunkSize.y)
-    };
+    const auto [chunkX, localX] = floorDivMod(worldCell.x, mChunkSize.x);
+    const auto [chunkY, localY] = floorDivMod(worldCell.y, mChunkSize.y);
+    const glm::ivec2 chunkPos{chunkX, chunkY};
 
     auto it = mChunks.find(chunkPos);
     if (it == mChunks.end()) return 0;
 
-    const glm::ivec2 localCell{
-        worldCell.x - chunkPos.x * mChunkSize.x,
-        worldCell.y - chunkPos.y * mChunkSize.y
-    };
     const std::size_t localIdx =
-        static_cast<std::size_t>(localCell.y) * static_cast<std::size_t>(mChunkSize.x) +
-        static_cast<std::size_t>(localCell.x);
+        static_cast<std::size_t>(localY) * static_cast<std::size_t>(mChunkSize.x) +
+        static_cast<std::size_t>(localX);
     return it->second.cells[localIdx];
 }
 
