@@ -38,6 +38,8 @@ Sparsemap::Sparsemap(glm::ivec2 chunkSize,
                      glm::ivec2 tileSize,
                      const ColorPallete& palette,
                      std::span<const std::vector<std::uint8_t>> tileGraphics):
+    // Clear color is required by the IndirectTexture ctor but unused here —
+    // the template never renders directly; only pool-slot clones reach the GPU.
     mCacheTemplate(tileSize, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f), tileGraphics.size()),
     mChunkSize(chunkSize)
 {
