@@ -40,13 +40,13 @@ class Explorer
 public:
     using DataId = typename TilemapTraits<T>::DataId;
 
-    explicit Explorer(DataId tilemapId):
-        mTilemapId(tilemapId),
+    explicit Explorer(DataId landId):
+        mLandId(landId),
         mCamera(0.0f, 0.0f),
         mDepthOffset(0)
     {}
 
-    DataId tilemap() const { return mTilemapId; }
+    DataId land() const { return mLandId; }
 
     void      setCamera(glm::vec2 worldOffset) { mCamera = worldOffset; }
     glm::vec2 camera() const { return mCamera; }
@@ -55,7 +55,7 @@ public:
     std::int8_t   depthOffset() const { return mDepthOffset; }
 
 private:
-    DataId      mTilemapId;
+    DataId      mLandId;
     glm::vec2   mCamera;
     std::int8_t mDepthOffset;
 };

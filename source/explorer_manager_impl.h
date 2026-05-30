@@ -91,7 +91,7 @@ void ExplorerManager<T>::remove(DataId id)
 {
     for (const auto& [explorerIdx, explorerPack] : mExplorers)
     {
-        debugCheck(explorerPack.explorer.tilemap().id != id.id,
+        debugCheck(explorerPack.explorer.land().id != id.id,
             "Cannot remove the backing data while an Explorer still references it — remove the explorer first.");
     }
     mData.remove(id.id);
@@ -112,7 +112,7 @@ const T& ExplorerManager<T>::get(DataId id) const
 template<TilemapLike T>
 typename ExplorerManager<T>::ExplorerId ExplorerManager<T>::addExplorer(Explorer<T> explorer, Canvas& canvas)
 {
-    debugCheck(mData.contains(explorer.tilemap().id),
+    debugCheck(mData.contains(explorer.land().id),
         "Explorer references a backing data id not registered with this canvas.");
 
     ExplorerPack<T> pack(explorer);
@@ -131,7 +131,7 @@ void ExplorerManager<T>::removeExplorer(ExplorerId id, Canvas& canvas)
 template<TilemapLike T>
 void ExplorerManager<T>::buildPoolSlots(ExplorerPack<T>& pack, Canvas& canvas)
 {
-    const T& sourceData = mData.at(pack.explorer.tilemap().id);
+    const T& sourceData = mData.at(pack.explorer.land().id);
 
     const glm::ivec2 chunkSize      = sourceData.chunkSize();
     const glm::ivec2 chunkPixelSize = sourceData.chunkPixelSize();
@@ -226,7 +226,7 @@ void ExplorerManager<T>::updateExplorer(
     const ScreenSize& screen,
     const glm::vec2& canvasCenter)
 {
-    const DataId dataId = explorerPack.explorer.tilemap();
+    const DataId dataId = explorerPack.explorer.land();
     if (!mData.contains(dataId.id)) return;
 
     // Canvas was resized since this pool was built — tear it down and
