@@ -269,6 +269,8 @@ void ExplorerManager<T>::updateExplorer(
 
 // Explicit instantiations — one per backend. Any third backend added later only
 // needs a `static_assert(TilemapLike<X>);` in its source + a line here.
+// Spelled with the template-id (not the TilemapExplorerManager / SparsemapExplorerManager
+// aliases) because explicit instantiation does not accept typedef-names.
 template class ExplorerManager<Tilemap>;
 template class ExplorerManager<Sparsemap>;
 

@@ -15,10 +15,14 @@
 namespace Nothofagus
 {
 
+using TilemapExplorerManager   = ExplorerManager<Tilemap>;
+using SparsemapExplorerManager = ExplorerManager<Sparsemap>;
+
 // Explicit instantiations live in explorer_manager.cpp. Declared here (next to
 // where Tilemap/Sparsemap are already in scope) instead of inside
 // explorer_manager.h so that header stays free of any concrete-backend
-// references.
+// references. The aliases above can't be used in this form — explicit
+// instantiation requires a template-id, not a typedef-name.
 extern template class ExplorerManager<Tilemap>;
 extern template class ExplorerManager<Sparsemap>;
 
@@ -97,7 +101,7 @@ public:
     void setAutoRemoveUnusedTextures(bool enabled)                                          { mAutoTextureGC = enabled; }
     void setAutoRemoveUnusedMeshes(bool enabled)                                            { mAutoMeshGC = enabled; }
 
-    // ----- Tilemaps (ExplorerManager<Tilemap> stays with FrameRunner) -----
+    // ----- Tilemaps (TilemapExplorerManager stays with FrameRunner) -----
     TilemapId addTilemap(Tilemap tilemap)                                                   { return mTilemapManager.add(std::move(tilemap)); }
     void removeTilemap(TilemapId tilemapId)                                                 { mTilemapManager.remove(tilemapId); }
     Tilemap& tilemap(TilemapId tilemapId)                                                   { return mTilemapManager.get(tilemapId); }
@@ -107,7 +111,7 @@ public:
     TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId)                          { return mTilemapManager.getExplorer(explorerId); }
     const TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId) const              { return mTilemapManager.getExplorer(explorerId); }
 
-    // ----- Sparsemaps (ExplorerManager<Sparsemap> stays with FrameRunner) -----
+    // ----- Sparsemaps (SparsemapExplorerManager stays with FrameRunner) -----
     SparsemapId addSparsemap(Sparsemap sparsemap)                                                   { return mSparsemapManager.add(std::move(sparsemap)); }
     void removeSparsemap(SparsemapId sparsemapId)                                                   { mSparsemapManager.remove(sparsemapId); }
     Sparsemap& sparsemap(SparsemapId sparsemapId)                                                   { return mSparsemapManager.get(sparsemapId); }
@@ -145,8 +149,8 @@ private:
 
     ActiveBackend mBackend; ///< GPU rendering backend (compile-time selected).
 
-    ExplorerManager<Tilemap>   mTilemapManager;   ///< Dense huge-tilemap storage + per-frame explorer pool logic.
-    ExplorerManager<Sparsemap> mSparsemapManager; ///< Sparse tilemap storage + per-frame explorer pool logic.
+    TilemapExplorerManager   mTilemapManager;   ///< Dense huge-tilemap storage + per-frame explorer pool logic.
+    SparsemapExplorerManager mSparsemapManager; ///< Sparse tilemap storage + per-frame explorer pool logic.
 
     /// RTT passes queued by renderTo() during the update callback, executed before the main render.
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
