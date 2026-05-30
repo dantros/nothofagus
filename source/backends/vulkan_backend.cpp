@@ -841,7 +841,7 @@ void VulkanBackend::shutdown()
     vkDestroyDescriptorPool(mDevice, mImguiDescriptorPool, nullptr);
 
     // Per-RTT ImGui descriptor pools (secondary contexts were already shut down by
-    // CanvasImpl before freeing the render targets, so only the pool remains).
+    // FrameRunner before freeing the render targets, so only the pool remains).
     for (auto& [id, pool] : mRttImguiDescriptorPools)
         vkDestroyDescriptorPool(mDevice, pool, nullptr);
     mRttImguiDescriptorPools.clear();

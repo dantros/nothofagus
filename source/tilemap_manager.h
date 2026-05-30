@@ -43,7 +43,7 @@ public:
     const TilemapExplorer& tilemapExplorer(TilemapExplorerId id) const;
 
     // ── Per-frame pre-pass (needs canvas access to mutate slot bellotas + textures) ─
-    /// Runs in `Canvas::CanvasImpl::runOneFrame` between the user update and
+    /// Runs in `FrameRunner::runOneFrame` between the user update and
     /// the texture upload pass. For each explorer, assigns visible world chunks
     /// to pool slots, memcpys chunk data into the slot's IndirectTexture
     /// via `setMapBulk`, and repositions/un-hides the slot bellota.

@@ -215,7 +215,7 @@ public:
     void updateMousePosition(glm::vec2 position);
     void scrolled(glm::vec2 offset);
 
-    // Internal — gamepad (called by CanvasImpl each frame)
+    // Internal — gamepad (called by FrameRunner each frame)
     void activateGamepadButton(GamepadButtonTrigger trigger);
     void updateGamepadAxis(int gamepadId, GamepadAxis axis, float value);
     void gamepadConnected(int gamepadId);

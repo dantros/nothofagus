@@ -47,7 +47,7 @@ public:
     /// to the shared atlas at `imguiFontSize * contentScale * contentScale`,
     /// then bakes a font at the unscaled `imguiFontSize` from the default
     /// source and registers it as the secondary-context default. Call from
-    /// CanvasImpl's constructor body after backend initImGuiRenderer.
+    /// FrameRunner's constructor body after backend initImGuiRenderer.
     void initialize(float contentScale);
 
     /// True if there are queued ops awaiting drain.
