@@ -209,7 +209,7 @@ int main()
     int       manualRemoveX = -3, manualRemoveY = 0;
     int       editWorldX = 0, editWorldY = 24, editLayer = 4;  // setCell editor
 
-    constexpr float panSpeed = 200.0f;
+    constexpr float panSpeed = 1000.0f;   // world px / s — fast enough to cross ~4 chunks/s at 256-px chunks
     bool wDown = false, sDown = false, aDown = false, dDown = false;
 
     Nothofagus::Controller controller;
