@@ -492,7 +492,7 @@ public:
 
 private:
     struct Implementation;
-    std::unique_ptr<Implementation> mImplementation;
+    std::unique_ptr<Implementation> mImplPtr;
 };
 
 }
