@@ -117,7 +117,7 @@ for a complete consumer project.
 ## Quick start
 
 ```
-git clone --recursive https://github.com/dantros/nothofagus.git
+git clone https://github.com/dantros/nothofagus.git
 cd nothofagus
 cmake --preset linux-release-glfw-opengl-examples
 cmake --build build/linux-release-glfw-opengl-examples --parallel
@@ -128,11 +128,10 @@ Replace the preset with whatever combination you need — see the
 [build matrix](#build-matrix) below. On Windows, swap the prefix for
 `windows-` and you're done.
 
-If you forgot `--recursive`, fetch the submodules now:
-
-```
-git submodule update --init --recursive
-```
+Third-party dependencies are vendored via `git subtree` into
+[third_party/](third_party/), so a plain `git clone` is enough. See
+[third_party/SOURCES.md](third_party/SOURCES.md) for the per-dependency
+update commands.
 
 The static library and example binaries land in
 `install/<preset-name>/`.
@@ -295,6 +294,64 @@ canvas.renderImguiTo(renderTargetId, fontId, [&] {
 → [examples/hello_imgui_rtt.cpp](examples/hello_imgui_rtt.cpp),
 [examples/hello_custom_font.cpp](examples/hello_custom_font.cpp)
 
+### Markdown rendering
+
+`MarkdownRenderer` (built atop `imgui_md` + `md4c`) renders a CommonMark
+document into the current ImGui window — headings, paragraphs, **bold**,
+*italic*, `inline code`, fenced code blocks, lists, tables, blockquotes,
+strikethrough, horizontal rules, and clickable links. Style is driven by
+the same `ImguiFontId`s you bake with `bakeImguiFont`, so heading sizes and
+code-font choice are fully under your control.
+
+```cpp
+Nothofagus::MarkdownStyle style;
+style.regular     = canvas.bakeImguiFont(canvas.defaultImguiFontSourceId(), 16.0f);
+style.code        = canvas.bakeImguiFont(canvas.defaultImguiFontSourceId(), 14.0f);
+style.headings[0] = canvas.bakeImguiFont(canvas.defaultImguiFontSourceId(), 28.0f);
+style.headings[1] = canvas.bakeImguiFont(canvas.defaultImguiFontSourceId(), 22.0f);
+
+Nothofagus::MarkdownRenderer markdown(canvas);
+markdown.setStyle(style);
+markdown.setOpenUrlCallback([](std::string_view url){ /* open in browser */ });
+
+canvas.run([&](float) {
+    ImGui::Begin("docs");
+    markdown.print("# Hello\n\nSome **bold** text and a [link](https://...).\n");
+    ImGui::End();
+});
+```
+
+→ [examples/hello_markdown.cpp](examples/hello_markdown.cpp)
+
+### File browser
+
+`imgui-filebrowser` is bundled and ready to use — pull in the header and
+drive `ImGui::FileBrowser` directly from any ImGui callback (main canvas
+or a render target). Handy for asset pickers, save-game dialogs, or
+runtime resource swapping. No Nothofagus wrapper is needed; the addon
+ships as part of the engine's third-party tree.
+
+```cpp
+#include <imfilebrowser.h>
+
+ImGui::FileBrowser fileDialog;
+fileDialog.SetTitle("Pick a font");
+fileDialog.SetTypeFilters({".ttf", ".otf"});
+
+canvas.run([&](float) {
+    if (ImGui::Button("Open...")) fileDialog.Open();
+    fileDialog.Display();
+    if (fileDialog.HasSelected()) {
+        auto path = fileDialog.GetSelected();
+        fileDialog.ClearSelected();
+        // ... load the file ...
+    }
+});
+```
+
+→ [examples/hello_custom_font.cpp](examples/hello_custom_font.cpp) uses
+this pattern to let you pick a TTF at runtime.
+
 ### Screenshots
 
 `takeScreenshot()` returns the last rendered frame as a `DirectTexture` — you
@@ -404,10 +461,13 @@ and a C++20 compiler (clang-cl on Windows, clang++ on Linux are what the
 presets use; [Visual Studio Community](https://visualstudio.microsoft.com/vs/community/)
 works too). For the Vulkan backend, install the Vulkan SDK.
 
-Bundled as git submodules under [third_party/](third_party/): GLFW, SDL3,
-glad (OpenGL loader), glm (math), Dear ImGui, spdlog, font8x8 (bitmap font),
-imgui_md + md4c (markdown rendering), imgui-filebrowser, vk-bootstrap,
-VulkanMemoryAllocator, Catch2 (tests).
+Third-party code is vendored via `git subtree` into
+[third_party/](third_party/). Current set: GLFW, SDL3, glad (OpenGL loader), glm (math),
+Dear ImGui (v1.92.8), spdlog, font8x8 (bitmap font), imgui_md + md4c
+(markdown rendering), imgui-filebrowser, vk-bootstrap,
+VulkanMemoryAllocator, Catch2 (tests). See
+[third_party/SOURCES.md](third_party/SOURCES.md) for upstream URLs,
+pinned versions, and the `git subtree pull` command to update each one.
 
 ## License
 
