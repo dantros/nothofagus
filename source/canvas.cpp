@@ -336,12 +336,14 @@ void Canvas::tick(float deltaTime, std::function<void(float)> update, Controller
 
 void Canvas::tick(float deltaTime, std::function<void(float)> update)
 {
-    mCanvasImpl->tick(*this, deltaTime, update);
+    Controller controller;
+    mCanvasImpl->tick(*this, deltaTime, update, controller);
 }
 
 void Canvas::tick(float deltaTime)
 {
-    mCanvasImpl->tick(*this, deltaTime);
+    Controller controller;
+    mCanvasImpl->tick(*this, deltaTime, [](float){}, controller);
 }
 
 void Canvas::close()
