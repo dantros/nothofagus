@@ -1,5 +1,10 @@
 ## Sprite Animations
 
+> The Animations subsection in [CLAUDE.md](../CLAUDE.md) is the quick reference
+> for the API surface. **This page is the deep dive** — full extended examples,
+> methods tables, edge cases, and gotchas. Start here when you need more than
+> the cheat sheet.
+
 Nothofagus supports frame-by-frame sprite animation through multi-layer textures and an optional state machine. Each layer of an `IndirectTexture` holds one animation frame. The `AnimationStateMachine` advances the active frame over time and writes the result into `bellota.currentLayer()`.
 
 ---
@@ -52,6 +57,13 @@ The sequence loops: after the last layer the state resets to layer 0 automatical
 Nothofagus::AnimationState walkState({0, 1, 2}, {500.0f, 500.0f, 500.0f}, "walk");
 ```
 
+Per-frame durations are independent — the `times` vector is parallel to `layers`, not a single global frame rate. Mix-and-match for things like a slow wind-up + quick swing:
+
+```cpp
+// Hold layer 0 for 200 ms, flash layer 1 for 50 ms, settle on layer 2 for 400 ms.
+Nothofagus::AnimationState attack({0, 1, 2}, {200.0f, 50.0f, 400.0f}, "attack");
+```
+
 **Methods:**
 
 | Method | Description |
@@ -73,7 +85,11 @@ Nothofagus::AnimationState walkState({0, 1, 2}, {500.0f, 500.0f, 500.0f}, "walk"
 AnimationStateMachine(Nothofagus::Bellota& bellota);
 ```
 
-The machine holds a reference to the `Bellota` — its `currentLayer()` is updated automatically by `update()`. All `AnimationState` objects passed to `addState` must remain alive for the lifetime of the machine (store them as member variables or locals in the same scope).
+The machine holds a reference to the `Bellota` — its `currentLayer()` is updated automatically by `update()`.
+
+> **Tile-map textures opt out.** If the bellota's texture is in tile-map mode (`IndirectTexture::setMap(mapSize)`), per-cell layer choice is driven by the cell grid and `bellota.currentLayer()` is ignored at draw time. Wire state machines to plain or animation-mode `IndirectTexture`s only.
+
+**Lifetime of `AnimationState` objects.** The machine stores raw `AnimationState*` pointers passed to `addState` — it does **not** own them. They must remain alive *and at the same address* for the entire lifetime of the machine: do not move, reassign, destroy, or reallocate the vector that holds them. The safe pattern is to declare each state as a member variable on the owning object, or as locals in a scope that outlives the machine.
 
 **Methods:**
 
@@ -82,16 +98,20 @@ The machine holds a reference to the `Bellota` — its `currentLayer()` is updat
 | `addState(name, AnimationState*)` | Register a state |
 | `setState(name)` | Set the initial state — **must be called before the first `update()`** |
 | `newAnimationTransition(from, transitionName, to)` | Define a named edge in the transition graph |
-| `transition(transitionName)` | Fire a named edge from the current state (no-op if undefined for current state) |
-| `goToState(name)` | Jump directly to a state, bypassing the transition graph; resets the new state |
+| `transition(transitionName)` | Fire a named edge from the current state. **Caller must ensure an edge `(currentState, transitionName)` was previously registered via `newAnimationTransition`** — see safety note below |
+| `goToState(name)` | Jump directly to a state, bypassing the transition graph; asserts the target state exists and calls `reset()` on it |
 | `update(float dt)` | Advance the current state's timer and sync `bellota.currentLayer()` |
 | `int getCurrentLayer() const` | Returns the current texture layer |
+
+> **`transition()` safety contract.** The implementation asserts (debugCheck) only that the *current* state exists in the machine, then resolves the new state via `transitions[(currentState, name)]`. If the edge is not registered for the current state, `std::map::operator[]` returns a default-constructed empty string and the next dereference hits a null `AnimationState*` — **undefined behaviour, will crash in debug, likely segfault in release**. If you cannot guarantee the edge exists from the current state at call time, use `goToState(name)` for an unconditional jump that only requires the destination to be registered.
+
+> **Type note.** `Bellota::currentLayer()` is `std::size_t&`, but `AnimationState::getCurrentLayer()` and `AnimationStateMachine::getCurrentLayer()` return `int`. The state machine bridges the two via implicit conversion inside `update()` — user code that reads `getCurrentLayer()` gets an `int`, user code that mutates the bellota's layer directly should treat it as `std::size_t`.
 
 ---
 
 ### Example: single looping animation
 
-Mirrors `examples/hello_animation.cpp`.
+Pared-down version of [examples/hello_animation.cpp](../examples/hello_animation.cpp) — the working example also passes a `depthOffset` and tweaks the bellota scale, omitted here for clarity.
 
 ```cpp
 // 5-layer 4×4 texture
