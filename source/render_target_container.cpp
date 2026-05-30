@@ -17,4 +17,13 @@ void RenderTargetPack::freeGpuResources(ActiveBackend& backend, TexturePack& pro
     clear();
 }
 
+void RenderTargetPack::syncToGpu(ActiveBackend& backend, TexturePack& proxyPack)
+{
+    if (isDirty())
+    {
+        dRenderTargetOpt = backend.createRenderTarget(renderTarget.mSize);
+        proxyPack.dtextureOpt = backend.getRenderTargetTexture(*dRenderTargetOpt);
+    }
+}
+
 }

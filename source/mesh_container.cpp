@@ -10,4 +10,10 @@ void MeshPack::freeGpuResources(ActiveBackend& backend)
     clear();
 }
 
+void MeshPack::syncToGpu(ActiveBackend& backend)
+{
+    if (isDirty())
+        dmeshOpt = backend.uploadMesh(mesh);
+}
+
 }
