@@ -440,7 +440,7 @@ ScreenSize getPrimaryMonitorSize()
 
 // Explicit instantiations — co-located with the matching extern template
 // declarations in frame_runner.h. Any third backend added later only needs a
-// `static_assert(TilemapLike<X>);` in its source + a line here and a matching
+// `static_assert(LandType<X>);` in its source + a line here and a matching
 // extern decl in frame_runner.h. Spelled with the template-id (not the
 // TilemapExplorerManager / SparsemapExplorerManager aliases) because explicit
 // instantiation does not accept typedef-names.

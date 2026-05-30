@@ -63,7 +63,7 @@ public:
 
     /// True iff a chunk has been added at `chunkPos`. For sparse maps "in bounds" is
     /// equivalent to "resident in the hash map" — there is no fixed world extent.
-    /// Satisfies the `TilemapLike` concept; drives slot visibility in the explorer pool.
+    /// Satisfies the `LandType` concept; drives slot visibility in the explorer pool.
     bool chunkInBounds(glm::ivec2 chunkPos) const;
 
     /// Number of chunks currently resident in the hash-map. Useful for memory accounting / UIs.
@@ -95,7 +95,7 @@ private:
 };
 
 template<>
-struct TilemapTraits<Sparsemap>
+struct LandTraits<Sparsemap>
 {
     using LandId     = SparsemapId;
     using ExplorerId = SparsemapExplorerId;

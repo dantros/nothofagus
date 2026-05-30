@@ -13,7 +13,7 @@ namespace Nothofagus
 
 class Canvas;
 
-/// Storage and per-frame logic for a single `TilemapLike` backend: the data registry,
+/// Storage and per-frame logic for a single `LandType` backend: the data registry,
 /// the explorer pool packs, and the explorer-managed tag sets that police user-side
 /// bellota/texture removals. Three methods that need to touch canvas-owned
 /// bellotas/textures take a `Canvas&` and use only its public surface.
@@ -21,12 +21,12 @@ class Canvas;
 /// Instantiated once per backend in `CanvasImpl`: `ExplorerManager<Tilemap>` for the
 /// dense huge-tilemap path, `ExplorerManager<Sparsemap>` for the sparse / streaming
 /// path. The two managers are independent — their explorer-managed sets do not overlap.
-template<TilemapLike T>
+template<LandType T>
 class ExplorerManager
 {
 public:
-    using LandId     = typename TilemapTraits<T>::LandId;
-    using ExplorerId = typename TilemapTraits<T>::ExplorerId;
+    using LandId     = typename LandTraits<T>::LandId;
+    using ExplorerId = typename LandTraits<T>::ExplorerId;
 
     ExplorerManager() = default;
 

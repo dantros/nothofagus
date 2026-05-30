@@ -29,7 +29,7 @@ namespace detail
 /// `updateExplorer` call. All members are read-only inputs except `canvas`
 /// (the mutable rendering surface) and `chunkScratch` (a reusable upload
 /// buffer that lives on the owning `ExplorerPack<T>`).
-template<TilemapLike T>
+template<LandType T>
 struct ExplorerFrame
 {
     Canvas&                 canvas;
@@ -44,7 +44,7 @@ struct ExplorerFrame
 /// Per-frame work for a single pool slot: assign the desired world chunk,
 /// memcpy its cells via `setMapBulk` if the chunk or its generation changed,
 /// and reposition / un-hide the slot bellota.
-template<TilemapLike T>
+template<LandType T>
 void exploreCell(PoolSlot& slot, glm::ivec2 desired, const ExplorerFrame<T>& frame)
 {
     Bellota& slotBellota = frame.canvas.bellota(slot.bellotaId);
@@ -80,13 +80,13 @@ void exploreCell(PoolSlot& slot, glm::ivec2 desired, const ExplorerFrame<T>& fra
 
 }  // namespace detail
 
-template<TilemapLike T>
+template<LandType T>
 typename ExplorerManager<T>::LandId ExplorerManager<T>::add(T data)
 {
     return LandId{ mData.add(std::move(data)) };
 }
 
-template<TilemapLike T>
+template<LandType T>
 void ExplorerManager<T>::remove(LandId id)
 {
     for (const auto& [explorerIdx, explorerPack] : mExplorers)
@@ -97,19 +97,19 @@ void ExplorerManager<T>::remove(LandId id)
     mData.remove(id.id);
 }
 
-template<TilemapLike T>
+template<LandType T>
 T& ExplorerManager<T>::get(LandId id)
 {
     return mData.at(id.id);
 }
 
-template<TilemapLike T>
+template<LandType T>
 const T& ExplorerManager<T>::get(LandId id) const
 {
     return mData.at(id.id);
 }
 
-template<TilemapLike T>
+template<LandType T>
 typename ExplorerManager<T>::ExplorerId ExplorerManager<T>::addExplorer(Explorer<T> explorer, Canvas& canvas)
 {
     debugCheck(mData.contains(explorer.land().id),
@@ -120,7 +120,7 @@ typename ExplorerManager<T>::ExplorerId ExplorerManager<T>::addExplorer(Explorer
     return ExplorerId{ mExplorers.add(std::move(pack)) };
 }
 
-template<TilemapLike T>
+template<LandType T>
 void ExplorerManager<T>::removeExplorer(ExplorerId id, Canvas& canvas)
 {
     ExplorerPack<T>& pack = mExplorers.at(id.id);
@@ -128,7 +128,7 @@ void ExplorerManager<T>::removeExplorer(ExplorerId id, Canvas& canvas)
     mExplorers.remove(id.id);
 }
 
-template<TilemapLike T>
+template<LandType T>
 void ExplorerManager<T>::buildPoolSlots(ExplorerPack<T>& pack, Canvas& canvas)
 {
     const T& sourceData = mData.at(pack.explorer.land().id);
@@ -174,7 +174,7 @@ void ExplorerManager<T>::buildPoolSlots(ExplorerPack<T>& pack, Canvas& canvas)
     }
 }
 
-template<TilemapLike T>
+template<LandType T>
 void ExplorerManager<T>::teardownPoolSlots(ExplorerPack<T>& pack, Canvas& canvas)
 {
     // Untag first so the canvas's removeBellota / removeTexture debugCheck passes.
@@ -190,19 +190,19 @@ void ExplorerManager<T>::teardownPoolSlots(ExplorerPack<T>& pack, Canvas& canvas
     pack.slots.clear();
 }
 
-template<TilemapLike T>
+template<LandType T>
 Explorer<T>& ExplorerManager<T>::getExplorer(ExplorerId id)
 {
     return mExplorers.at(id.id).explorer;
 }
 
-template<TilemapLike T>
+template<LandType T>
 const Explorer<T>& ExplorerManager<T>::getExplorer(ExplorerId id) const
 {
     return mExplorers.at(id.id).explorer;
 }
 
-template<TilemapLike T>
+template<LandType T>
 void ExplorerManager<T>::updateExplorers(Canvas& canvas)
 {
     if (mExplorers.size() == 0) return;
@@ -219,7 +219,7 @@ void ExplorerManager<T>::updateExplorers(Canvas& canvas)
     }
 }
 
-template<TilemapLike T>
+template<LandType T>
 void ExplorerManager<T>::updateExplorer(
     ExplorerPack<T>& explorerPack,
     Canvas& canvas,

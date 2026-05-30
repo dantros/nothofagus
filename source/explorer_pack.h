@@ -32,7 +32,7 @@ struct PoolSlot
     }
 };
 
-template<TilemapLike T>
+template<LandType T>
 struct ExplorerPack
 {
     Explorer<T>               explorer;

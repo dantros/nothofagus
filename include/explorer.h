@@ -13,7 +13,7 @@ namespace Nothofagus
 /// `Explorer<T>` and the internal `ExplorerManager<T>` depend on this concept; satisfying
 /// it is what makes a backend pluggable into the chunk-pool renderer.
 template<typename T>
-concept TilemapLike = requires(const T& t, glm::ivec2 coord, std::span<std::uint8_t> out) {
+concept LandType = requires(const T& t, glm::ivec2 coord, std::span<std::uint8_t> out) {
     { t.chunkSize()            } -> std::same_as<glm::ivec2>;
     { t.tileSize()             } -> std::same_as<glm::ivec2>;
     { t.chunkPixelSize()       } -> std::same_as<glm::ivec2>;
@@ -24,21 +24,21 @@ concept TilemapLike = requires(const T& t, glm::ivec2 coord, std::span<std::uint
     t.chunkDataInto(coord, out);
 };
 
-/// Per-backend ID type binding: maps a `TilemapLike` type to its corresponding land ID
+/// Per-backend ID type binding: maps a `LandType` type to its corresponding land ID
 /// (the world the explorer roams) and explorer ID. Specialized for each concrete backend
 /// alongside its type definition (see `tilemap.h` and `sparsemap.h`).
-template<typename T> struct TilemapTraits;
+template<typename T> struct LandTraits;
 
-/// Windowed renderer handle for any `TilemapLike` backend: holds the camera (world-pixel
+/// Windowed renderer handle for any `LandType` backend: holds the camera (world-pixel
 /// coordinate shown at the canvas center) and the depth offset for the pool's bellotas.
 /// The actual pool of bellotas + `IndirectTexture` slots is owned by `ExplorerManager<T>`
 /// inside the canvas. See CLAUDE.md "Huge tilemaps" / "Sparse tilemaps" for pool semantics
 /// and explorer-managed lifecycle rules.
-template<TilemapLike T>
+template<LandType T>
 class Explorer
 {
 public:
-    using LandId = typename TilemapTraits<T>::LandId;
+    using LandId = typename LandTraits<T>::LandId;
 
     explicit Explorer(LandId landId):
         mLandId(landId),

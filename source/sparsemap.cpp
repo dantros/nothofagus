@@ -8,9 +8,9 @@
 namespace Nothofagus
 {
 
-// Concept conformance: if a `TilemapLike` requirement breaks the build at this line,
+// Concept conformance: if a `LandType` requirement breaks the build at this line,
 // the missing/changed method shows up clearly instead of as a generic template error.
-static_assert(TilemapLike<Sparsemap>);
+static_assert(LandType<Sparsemap>);
 
 namespace
 {

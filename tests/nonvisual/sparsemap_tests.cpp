@@ -355,7 +355,7 @@ TEST_CASE("Sparsemap::setCell handles INT_MIN-adjacent coords without overflow U
 
 // ---------------------------------------------------------------------------
 // Public-API surface coverage for methods the explorer doesn't consume. These
-// are part of the `TilemapLike` concept and the Sparsemap public surface, so
+// are part of the `LandType` concept and the Sparsemap public surface, so
 // they're worth a light round-trip even though the chunk-sync hot path never
 // calls them. Without this coverage, dropping or renaming them would slip past
 // the existing test suite.

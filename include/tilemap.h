@@ -41,7 +41,7 @@ public:
     bool inBounds(glm::ivec2 worldCell) const;
 
     /// True iff `chunkPos` lies inside `[0, chunkGridSize.x) × [0, chunkGridSize.y)`.
-    /// Satisfies the `TilemapLike` concept; for dense maps every in-grid chunk exists.
+    /// Satisfies the `LandType` concept; for dense maps every in-grid chunk exists.
     bool chunkInBounds(glm::ivec2 chunkPos) const;
 
     glm::ivec2 mapSize()        const { return mCache.mapSize(); }
@@ -79,7 +79,7 @@ private:
 };
 
 template<>
-struct TilemapTraits<Tilemap>
+struct LandTraits<Tilemap>
 {
     using LandId     = TilemapId;
     using ExplorerId = TilemapExplorerId;
