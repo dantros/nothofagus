@@ -15,6 +15,13 @@
 namespace Nothofagus
 {
 
+// Explicit instantiations live in explorer_manager.cpp. Declared here (next to
+// where Tilemap/Sparsemap are already in scope) instead of inside
+// explorer_manager.h so that header stays free of any concrete-backend
+// references.
+extern template class ExplorerManager<Tilemap>;
+extern template class ExplorerManager<Sparsemap>;
+
 // Forward decls — FrameRunner only takes these by reference (in run/tick), so
 // the full headers don't need to be visible here. frame_runner.h is an
 // internal header (never reached by the public canvas.h), so these names
