@@ -38,6 +38,9 @@ struct MeshPack
 
     /// Free the backend mesh handle (if uploaded) and reset the optional.
     void freeGpuResources(ActiveBackend& backend);
+
+    /// Per-frame GPU sync: upload the mesh on first use.
+    void syncToGpu(ActiveBackend& backend);
 };
 
 using MeshContainer = IndexedContainer<MeshPack>;
