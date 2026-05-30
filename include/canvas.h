@@ -492,7 +492,8 @@ public:
 
 private:
     class CanvasImpl;
-    std::unique_ptr<CanvasImpl> mCanvasImpl;
+    struct Private;
+    std::unique_ptr<Private> mPrivate;
 };
 
 }

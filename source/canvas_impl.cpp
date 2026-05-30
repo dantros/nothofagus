@@ -5,7 +5,8 @@
 #include "keyboard.h"
 #include "mouse.h"
 #include "controller.h"
-#include "roboto_font.h"
+#include "asset_registry.h"
+#include "imgui_rtt_manager.h"
 #include "backends/render_backend_select.h"
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_transform_2d.hpp>
@@ -16,6 +17,7 @@
 #include <cmath>
 #include <optional>
 #include <vector>
+#include <span>
 #include <format>
 #include <algorithm>
 #include "profiling.h"
@@ -57,18 +59,12 @@ Canvas::CanvasImpl::CanvasImpl(
     const std::string& title,
     const glm::vec3 clearColor,
     const unsigned int pixelSize,
-    const float imguiFontSize,
     bool headless)
     :
     mScreenSize(screenSize),
     mTitle(title),
     mClearColor(clearColor),
     mPixelSize(pixelSize),
-    mAssets(mBackend),
-    mImguiRtt(mBackend, mAssets.renderTargets(),
-              assets_Roboto_VariableFont_wdth_wght_ttf,
-              assets_Roboto_VariableFont_wdth_wght_ttf_len,
-              imguiFontSize),
     mStats(false),
     mHeadless(headless),
     mGameViewport{0, 0, 0, 0}
@@ -92,22 +88,23 @@ Canvas::CanvasImpl::CanvasImpl(
     mBackend.initialize(mWindow->nativeHandle(), {static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)});
     mBackend.initImGuiRenderer();
 
-    // Font setup — bake the main HiDPI font (imguiFontSize * contentScale²
-    // for crisp DPI-aware glyphs on the main UI) and seed the secondary-context
-    // default at the unscaled imguiFontSize for diegetic RTT panels.
-    mImguiRtt.fonts().initialize(mWindow->contentScale());
+    // Font setup happens after construction at the Canvas level — once `mAssets`
+    // and `mImguiRtt` exist, Canvas calls `mImguiRtt->fonts().initialize(...)`.
 }
 
 Canvas::CanvasImpl::~CanvasImpl()
 {
-    // Defined here (not =default) to keep the pimpl idiom for struct Window working.
-    // GPU resources must be freed while the GL/Vulkan context is still alive:
-    // - ImGui RTT secondary contexts own per-RTT pipeline/descriptor resources
-    // - mAssets owns texture/mesh/render-target GPU handles
-    // mBackend.shutdown() runs last; mBackend itself is destroyed only after this body.
-    mImguiRtt.releaseAll();
-    mAssets.freeAllGpuResources();
+    // Defined here (not =default) to keep the pimpl idiom for struct Window
+    // working. Canvas's dtor is responsible for draining `mImguiRtt` and
+    // `mAssets` GPU resources BEFORE destroying CanvasImpl — by the time this
+    // body runs they're already torn down, leaving us to shut the backend.
     mBackend.shutdown();
+}
+
+float Canvas::CanvasImpl::contentScale() const
+{
+    debugCheck(mWindow != nullptr, "CanvasImpl::contentScale called before window init");
+    return mWindow->contentScale();
 }
 
 std::size_t Canvas::CanvasImpl::getCurrentMonitor() const
@@ -148,77 +145,6 @@ ScreenSize Canvas::CanvasImpl::windowSize() const
     return mWindow->getWindowSize();
 }
 
-// ---------------------------------------------------------------------------
-// Asset/font remove paths with cross-cutting gates. Plain forwarders are
-// inlined in canvas_impl.h directly onto AssetRegistry / TilemapManager /
-// mImguiRtt.fonts(); only the methods that layer a check or need imgui.h
-// stay here.
-// ---------------------------------------------------------------------------
-
-void Canvas::CanvasImpl::removeBellota(const BellotaId bellotaId)
-{
-    debugCheck(!mTilemapManager.isExplorerManagedBellota(bellotaId.id),
-        "Bellota is owned by a TilemapExplorer pool — use canvas.removeTilemapExplorer() instead of removing slot bellotas directly.");
-    mAssets.removeBellota(bellotaId);
-}
-
-void Canvas::CanvasImpl::removeTexture(const TextureId textureId)
-{
-    debugCheck(!mTilemapManager.isExplorerManagedTexture(textureId.id),
-        "Texture is owned by a TilemapExplorer pool — use canvas.removeTilemapExplorer() instead of removing slot textures directly.");
-    mAssets.removeTexture(textureId);
-}
-
-void Canvas::CanvasImpl::removeRenderTarget(RenderTargetId renderTargetId)
-{
-    // Tear down the secondary ImGui context for this RTT first — its per-context
-    // backend owns GPU resources tied to the RTT's render pass / FBO, which the
-    // registry's removeRenderTarget call is about to free.
-    mImguiRtt.releaseContext(renderTargetId);
-    mAssets.removeRenderTarget(renderTargetId);
-}
-
-void Canvas::CanvasImpl::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback)
-{
-    // Wrap the user's callback with auto-push/pop of fontId. Graceful fallback:
-    // if the bake is still pending or the id was removed, the callback runs
-    // without an explicit push (the secondary-context default stays in effect).
-    mImguiRtt.enqueue(renderTargetId,
-        [this, fontId, cb = std::move(imguiDrawCallback)] {
-            if (isImguiFontReady(fontId))
-            {
-                pushImguiFont(fontId);
-                cb();
-                popImguiFont();
-            }
-            else
-            {
-                cb();
-            }
-        });
-}
-
-void Canvas::CanvasImpl::pushImguiFont(ImguiFontId id)
-{
-    ImFont* font = getImguiFontPtr(id);
-    debugCheck(font != nullptr,
-        "Canvas::pushImguiFont: id is not registered or its bake is still pending — guard with isImguiFontReady()");
-    ImGui::PushFont(font);
-}
-
-void Canvas::CanvasImpl::popImguiFont()
-{
-    ImGui::PopFont();
-}
-
-ImguiFontId Canvas::CanvasImpl::defaultImguiFontId() const
-{
-    auto idOpt = mImguiRtt.fonts().defaultFontId();
-    debugCheck(idOpt.has_value(),
-        "Canvas::defaultImguiFontId: no default font registered (CanvasImpl ctor seeds this — should never fire)");
-    return *idOpt;
-}
-
 DirectTexture Canvas::CanvasImpl::takeScreenshot() const
 {
     const glm::ivec2 gameSize{static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)};
@@ -237,7 +163,6 @@ void Canvas::CanvasImpl::ensureSessionStarted(Controller& controller)
     if (mSessionStarted)
         return;
     mWindow->beginSession(controller);
-    mSortedBellotaPacks.reserve(mAssets.bellotas().size() * 2);
     mSessionStarted = true;
 }
 
@@ -319,7 +244,8 @@ static void drawBellotaPacks(
     }
 }
 
-void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                                     float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ZoneScopedN("runOneFrame");
 
@@ -333,7 +259,7 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
     // the previous frame's ImGui::Render() and this frame's ImGui::NewFrame().
     // Must run BEFORE mBackend.imguiNewFrame() so ImGui_Impl*_NewFrame()'s
     // lazy font-texture re-upload picks up the rebuilt atlas.
-    mImguiRtt.drainPendingFontOps(mWindow->contentScale());
+    imguiRtt.drainPendingFontOps(mWindow->contentScale());
 
     // Get current framebuffer size and compute letterboxed viewport
     auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
@@ -359,32 +285,32 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
     const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
 
     if (mAutoTextureGC)
-        mAssets.clearUnusedTextures();
+        assets.clearUnusedTextures();
 
     if (mAutoMeshGC)
-        mAssets.clearUnusedMeshes();
+        assets.clearUnusedMeshes();
 
     {
         ZoneScopedN("TextureUpload");
-        for (auto& [textureIndex, texturePack] : mAssets.textures())
+        for (auto& [textureIndex, texturePack] : assets.textures())
             texturePack.syncToGpu(mBackend);
     }
 
-    for (auto& [renderTargetIndex, renderTargetPack] : mAssets.renderTargets())
+    for (auto& [renderTargetIndex, renderTargetPack] : assets.renderTargets())
     {
         const TextureId proxyTexId = renderTargetPack.renderTarget.mProxyTextureId;
-        renderTargetPack.syncToGpu(mBackend, mAssets.textures().at(proxyTexId.id));
+        renderTargetPack.syncToGpu(mBackend, assets.textures().at(proxyTexId.id));
     }
 
     {
         ZoneScopedN("MeshUpload");
-        for (auto& [meshIndex, meshPack] : mAssets.meshes())
+        for (auto& [meshIndex, meshPack] : assets.meshes())
             meshPack.syncToGpu(mBackend);
     }
 
     {
         ZoneScopedN("DepthSort");
-        sortByDepthOffset(mAssets.bellotas(), mSortedBellotaPacks);
+        sortByDepthOffset(assets.bellotas(), mSortedBellotaPacks);
     }
 
     {
@@ -393,10 +319,10 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
         // before drawing to the main framebuffer.
         for (auto& [renderTargetId, bellotaIds] : mPendingRttPasses)
         {
-            if (not mAssets.renderTargets().contains(renderTargetId.id))
+            if (not assets.renderTargets().contains(renderTargetId.id))
                 continue;
 
-            RenderTargetPack& renderTargetPack = mAssets.renderTargets().at(renderTargetId.id);
+            RenderTargetPack& renderTargetPack = assets.renderTargets().at(renderTargetId.id);
             if (not renderTargetPack.dRenderTargetOpt.has_value())
                 continue;
 
@@ -414,8 +340,8 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
             std::vector<const BellotaPack*> renderTargetSortedPacks;
             for (const BellotaId bellotaId : bellotaIds)
             {
-                if (mAssets.bellotas().contains(bellotaId.id))
-                    renderTargetSortedPacks.push_back(&mAssets.bellotas().at(bellotaId.id));
+                if (assets.bellotas().contains(bellotaId.id))
+                    renderTargetSortedPacks.push_back(&assets.bellotas().at(bellotaId.id));
             }
             std::sort(renderTargetSortedPacks.begin(), renderTargetSortedPacks.end(),
                 [](const BellotaPack* lhs, const BellotaPack* rhs)
@@ -424,7 +350,7 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
                 }
             );
 
-            drawBellotaPacks(renderTargetSortedPacks, mAssets.textures(), mAssets.meshes(), renderTargetWorldTransform, mBackend);
+            drawBellotaPacks(renderTargetSortedPacks, assets.textures(), assets.meshes(), renderTargetWorldTransform, mBackend);
 
             mBackend.endRttPass();
         }
@@ -434,14 +360,14 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
         // render target, rendered with a pipeline compiled against the RTT render
         // pass (Vulkan) or into the RTT FBO (OpenGL). Lazy context creation on
         // first use; destroyed in removeRenderTarget() and the destructor.
-        mImguiRtt.flushPending(deltaTimeMS, ImGui::GetIO().Fonts);
+        imguiRtt.flushPending(deltaTimeMS, ImGui::GetIO().Fonts);
     }
 
     mBackend.beginMainPass(mGameViewport);
 
     {
         ZoneScopedN("MainDraw");
-        drawBellotaPacks(mSortedBellotaPacks, mAssets.textures(), mAssets.meshes(), worldTransformMat, mBackend);
+        drawBellotaPacks(mSortedBellotaPacks, assets.textures(), assets.meshes(), worldTransformMat, mBackend);
     }
 
     if (mStats)
@@ -468,7 +394,8 @@ void Canvas::CanvasImpl::runOneFrame(Canvas& canvas, float deltaTimeMS, std::fun
     FrameMark;
 }
 
-void Canvas::CanvasImpl::run(Canvas& canvas, std::function<void(float deltaTime)> update, Controller& controller)
+void Canvas::CanvasImpl::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                             std::function<void(float deltaTime)> update, Controller& controller)
 {
     // Always call beginSession — it resets the window close flag and rebinds
     // input callbacks, which is required after a manifest switch (canvas.close()
@@ -476,7 +403,7 @@ void Canvas::CanvasImpl::run(Canvas& canvas, std::function<void(float deltaTime)
     mWindow->beginSession(controller);
     if (!mSessionStarted)
     {
-        mSortedBellotaPacks.reserve(mAssets.bellotas().size() * 2);
+        mSortedBellotaPacks.reserve(assets.bellotas().size() * 2);
         mSessionStarted = true;
     }
 
@@ -485,14 +412,15 @@ void Canvas::CanvasImpl::run(Canvas& canvas, std::function<void(float deltaTime)
     while (mWindow->isRunning())
     {
         performanceMonitor.update(mWindow->getTime());
-        runOneFrame(canvas, performanceMonitor.getMS(), update, controller);
+        runOneFrame(canvas, assets, imguiRtt, performanceMonitor.getMS(), update, controller);
     }
 }
 
-void Canvas::CanvasImpl::tick(Canvas& canvas, float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+void Canvas::CanvasImpl::tick(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                              float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ensureSessionStarted(controller);
-    runOneFrame(canvas, deltaTimeMS, update, controller);
+    runOneFrame(canvas, assets, imguiRtt, deltaTimeMS, update, controller);
 }
 
 void Canvas::CanvasImpl::close()
