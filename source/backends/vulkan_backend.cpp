@@ -451,13 +451,16 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
             throw std::runtime_error("Failed to create descriptor pool");
     }
     {
-        VkDescriptorPoolSize imguiPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100};
+        VkDescriptorPoolSize imguiPoolSizes[2]{
+            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 100},
+            {VK_DESCRIPTOR_TYPE_SAMPLER,       IMGUI_IMPL_VULKAN_MINIMUM_SAMPLER_POOL_SIZE},
+        };
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
         poolInfo.maxSets       = 100;
-        poolInfo.poolSizeCount = 1;
-        poolInfo.pPoolSizes    = &imguiPoolSize;
+        poolInfo.poolSizeCount = 2;
+        poolInfo.pPoolSizes    = imguiPoolSizes;
         if (vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &mImguiDescriptorPool) != VK_SUCCESS)
             throw std::runtime_error("Failed to create ImGui descriptor pool");
     }
@@ -1962,13 +1965,16 @@ void VulkanBackend::initImguiForRenderTarget(DRenderTarget renderTarget)
     // One descriptor pool per RTT context (same shape as mImguiDescriptorPool).
     VkDescriptorPool pool = VK_NULL_HANDLE;
     {
-        VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100};
+        VkDescriptorPoolSize poolSizes[2]{
+            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 100},
+            {VK_DESCRIPTOR_TYPE_SAMPLER,       IMGUI_IMPL_VULKAN_MINIMUM_SAMPLER_POOL_SIZE},
+        };
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
         poolInfo.maxSets       = 100;
-        poolInfo.poolSizeCount = 1;
-        poolInfo.pPoolSizes    = &poolSize;
+        poolInfo.poolSizeCount = 2;
+        poolInfo.pPoolSizes    = poolSizes;
         if (vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &pool) != VK_SUCCESS)
             throw std::runtime_error("Failed to create RTT ImGui descriptor pool");
     }
