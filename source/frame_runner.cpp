@@ -13,7 +13,6 @@
 #include <glm/ext.hpp>
 #include <imgui.h>
 #include "backends/window_backend.h"
-#include <ciso646>
 #include <cmath>
 #include <optional>
 #include <vector>
