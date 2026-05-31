@@ -18,8 +18,8 @@ int main()
         canvas.addBellota({{{96.0f, 80.0f}}, renderTargetTextureId});
 
     // Bake the 12 px diegetic font once at startup, from the canvas's built-in
-    // default source (embedded Roboto). The returned id is stable across atlas
-    // rebuilds — only removeImguiFont(diegeticId) invalidates it.
+    // default source (embedded Noto Sans Regular). The returned id is stable
+    // across atlas rebuilds — only removeImguiFont(diegeticId) invalidates it.
     Nothofagus::ImguiFontId diegeticId =
         canvas.bakeImguiFont(canvas.defaultImguiFontSourceId(), 12.0f);
 

@@ -60,10 +60,9 @@ std::size_t ImguiFontManager::DedupHash::operator()(const DedupKey& key) const n
     return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
 }
 
-ImguiFontManager::ImguiFontManager(const void* fontData,
-                                    std::size_t fontDataLen,
-                                    float       imguiFontSize) noexcept
-    : mFontData(fontData), mFontDataLen(fontDataLen), mImguiFontSize(imguiFontSize)
+ImguiFontManager::ImguiFontManager(const EmbeddedFontFamily& family,
+                                    float                     imguiFontSize) noexcept
+    : mFamily(family), mImguiFontSize(imguiFontSize)
 {}
 
 ImFont* ImguiFontManager::bakeOne(const FontSource& source, float sizePx) const
@@ -88,15 +87,27 @@ ImFont* ImguiFontManager::bakeOne(const FontSource& source, float sizePx) const
 
 void ImguiFontManager::initialize(float contentScale)
 {
-    // Register the bound TTF as the default font source. We use externalData
-    // / externalLen so the static binary blob is not memcpy'd into a vector.
-    FontSource defaultSource;
-    defaultSource.glyphRange  = GlyphRange::Default;
-    defaultSource.externalData = mFontData;
-    defaultSource.externalLen  = mFontDataLen;
-    mDefaultSourceId.id = mSources.add(defaultSource);
+    // Register each built-in face as a non-owning font source. externalData /
+    // externalLen point straight at the embedded binary blobs so nothing is
+    // memcpy'd into a vector.
+    auto addBuiltin = [this](const EmbeddedFace& face) -> ImguiFontSourceId
+    {
+        FontSource source;
+        source.glyphRange   = GlyphRange::Default;
+        source.externalData = face.data;
+        source.externalLen  = face.len;
+        return ImguiFontSourceId{ mSources.add(source) };
+    };
 
-    addMainHiDpiFont(mFontData, mFontDataLen, mImguiFontSize, contentScale);
+    mDefaultSourceId    = addBuiltin(mFamily.regular);
+    mBoldSourceId       = addBuiltin(mFamily.bold);
+    mItalicSourceId     = addBuiltin(mFamily.italic);
+    mBoldItalicSourceId = addBuiltin(mFamily.boldItalic);
+    mMonoSourceId       = addBuiltin(mFamily.mono);
+
+    // Main HiDPI font and the secondary-context default are both built from
+    // the regular face (unchanged behavior from the single-font setup).
+    addMainHiDpiFont(mFamily.regular.data, mFamily.regular.len, mImguiFontSize, contentScale);
     setDefaultSize(mImguiFontSize);
 }
 
@@ -114,8 +125,12 @@ void ImguiFontManager::drainPendingOpsAndRebuildAtlas(float contentScale)
     for (const auto& op : mPendingFontOps)
     {
         if (op.kind != PendingFontOp::Kind::RemoveSource) continue;
-        debugCheck(op.sourceId.id != mDefaultSourceId.id,
-            "ImguiFontManager: cannot remove the default font source");
+        debugCheck(op.sourceId.id != mDefaultSourceId.id
+                && op.sourceId.id != mBoldSourceId.id
+                && op.sourceId.id != mItalicSourceId.id
+                && op.sourceId.id != mBoldItalicSourceId.id
+                && op.sourceId.id != mMonoSourceId.id,
+            "ImguiFontManager: cannot remove a built-in font source");
         debugCheck(mSources.contains(op.sourceId.id),
             "ImguiFontManager::removeSource: unknown source id");
         dropEntriesForSource(op.sourceId);
@@ -134,7 +149,7 @@ void ImguiFontManager::drainPendingOpsAndRebuildAtlas(float contentScale)
     ImGui::GetIO().Fonts->Clear();
 
     // 3. Re-add the main HiDPI font using the same recipe as initialize().
-    addMainHiDpiFont(mFontData, mFontDataLen, mImguiFontSize, contentScale);
+    addMainHiDpiFont(mFamily.regular.data, mFamily.regular.len, mImguiFontSize, contentScale);
 
     // 4. Re-bake every surviving entry from its attributed source; ids and
     //    entry slots stay put, only each entry's currentImFont is patched

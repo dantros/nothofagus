@@ -644,9 +644,10 @@ canvas.renderImguiTo(renderTargetId, canvas.defaultImguiFontId(), [&] { ... });
 
 `ImguiFontManager` ([source/imgui_font_manager.h](source/imgui_font_manager.h), held by `ImguiRttManager`) owns the entire ImGui-font lifecycle for a Canvas: the main HiDPI font (used by main-canvas UI), the secondary-context default font, every registered TTF buffer, every baked `(source, size)` pair, and the deferred bake/remove queue + atlas-rebuild flow. Two `IndexedContainer`s back the manager — one of `FontSource` (each registered TTF buffer + its `GlyphRange`) keyed by `ImguiFontSourceId` ([include/imgui_font_source_id.h](include/imgui_font_source_id.h)), and one of `FontEntry` (each baked size, with a per-entry `sourceId`) keyed by `ImguiFontId` ([include/imgui_font_id.h](include/imgui_font_id.h)). Atlas glyphs are owned by the shared `ImFontAtlas`; the manager stores non-owning observer pointers and `rebakeAll()` patches them in place across rebuilds.
 
-- At canvas construction, `ImguiFontManager::initialize(contentScale)` registers the embedded TTF as the default source (id exposed via `Canvas::defaultImguiFontSourceId()`), adds the main HiDPI font at `imguiFontSize * contentScale * contentScale` for crisp DPI-aware glyphs on the main UI, then bakes the unscaled `imguiFontSize` from the default source and registers it as `io.FontDefault` for every secondary RTT context (id exposed via `Canvas::defaultImguiFontId()`). Result: ImGui text inside an RTT renders at its logical pixel height *in RTT pixels* — OS DPI scaling has no meaning in the game-canvas pixel grid, and the secondary-context default deliberately ignores it.
-- `Canvas::addImguiFontSource(span<const std::byte>, GlyphRange) -> ImguiFontSourceId` registers a user-supplied TTF. Bytes are copied internally; safe to call before `run()` or from inside an update / `renderImguiTo` callback. `GlyphRange` (also in `imgui_font_source_id.h`) is a tiny enum — `Default`, `Greek`, `Cyrillic`, `Korean`, `Japanese`, `ChineseFull`, `ChineseSimplifiedCommon`, `Thai`, `Vietnamese` — that maps to `ImFontAtlas::GetGlyphRangesXxx()` inside the implementation, keeping `imgui.h` out of the public surface. `Canvas::removeImguiFontSource(sourceId)` cascade-removes every `ImguiFontId` baked from that source via the same deferred path; removing the default source is forbidden (`debugCheck`).
-- `Canvas::bakeImguiFont(ImguiFontSourceId, float sizePx) -> ImguiFontId` bakes from a registered source at a logical size. Repeat calls with the same `(sourceId, sizePx)` return the same id (the manager dedups by `(sourceId, sizePx)` — ImGui itself does not dedupe `AddFontFromMemoryTTF` calls). Pass `defaultImguiFontSourceId()` to bake from the embedded TTF.
+- The embedded built-in font is the **Noto Sans** family — Regular, Bold, Italic, BoldItalic, plus Noto Sans Mono — generated into C byte arrays at build time by `cmake/embed_font.cmake` (portable `file(READ ... HEX)`, no `xxd`; outputs `generated/noto_sans_*.cpp` + `generated/embedded_fonts.h` under the build dir). The five faces are threaded into the canvas as an `EmbeddedFontFamily` struct ([source/imgui_font_manager.h](source/imgui_font_manager.h)).
+- At canvas construction, `ImguiFontManager::initialize(contentScale)` registers all five built-in faces as font sources (regular's id exposed via `Canvas::defaultImguiFontSourceId()`; the rest via `Canvas::boldImguiFontSourceId()` / `italicImguiFontSourceId()` / `boldItalicImguiFontSourceId()` / `monoImguiFontSourceId()`), adds the main HiDPI font at `imguiFontSize * contentScale * contentScale` from the regular face for crisp DPI-aware glyphs on the main UI, then bakes the unscaled `imguiFontSize` from the regular source and registers it as `io.FontDefault` for every secondary RTT context (id exposed via `Canvas::defaultImguiFontId()`). Result: ImGui text inside an RTT renders at its logical pixel height *in RTT pixels* — OS DPI scaling has no meaning in the game-canvas pixel grid, and the secondary-context default deliberately ignores it.
+- `Canvas::addImguiFontSource(span<const std::byte>, GlyphRange) -> ImguiFontSourceId` registers a user-supplied TTF. Bytes are copied internally; safe to call before `run()` or from inside an update / `renderImguiTo` callback. `GlyphRange` (also in `imgui_font_source_id.h`) is a tiny enum — `Default`, `Greek`, `Cyrillic`, `Korean`, `Japanese`, `ChineseFull`, `ChineseSimplifiedCommon`, `Thai`, `Vietnamese` — that maps to `ImFontAtlas::GetGlyphRangesXxx()` inside the implementation, keeping `imgui.h` out of the public surface. `Canvas::removeImguiFontSource(sourceId)` cascade-removes every `ImguiFontId` baked from that source via the same deferred path; removing any of the five built-in sources (regular / bold / italic / bold-italic / mono) is forbidden (`debugCheck`).
+- `Canvas::bakeImguiFont(ImguiFontSourceId, float sizePx) -> ImguiFontId` bakes from a registered source at a logical size. Repeat calls with the same `(sourceId, sizePx)` return the same id (the manager dedups by `(sourceId, sizePx)` — ImGui itself does not dedupe `AddFontFromMemoryTTF` calls). Pass `defaultImguiFontSourceId()` (or any of the bold/italic/bold-italic/mono accessors) to bake from the embedded Noto Sans family.
 - `Canvas::removeImguiFont(ImguiFontId)` schedules a full atlas rebuild at the start of the next frame: `ImFontAtlas::Clear()` + re-add main HiDPI font + `rebakeAll()` for surviving entries (each re-baked from its attributed source) + secondary-context `io.FontDefault` refresh + GPU font texture re-upload via `ActiveBackend::rebuildImguiFontTexture()`. Orchestration lives on `ImguiRttManager::drainPendingFontOps(contentScale)` (called once per frame from `runOneFrame`); the cache-side parts (Clear + re-add + rebake) live on `ImguiFontManager::drainPendingOpsAndRebuildAtlas(contentScale)`. The id passed to remove is invalidated; every other id survives the rebuild because each entry's `ImFont*` is patched in place — `Canvas::renderImguiTo(rtId, otherId, cb)` keeps working without intervention. The same drain handles `RemoveSource` ops before per-id removes, so cascade-cleanup of all entries baked from a removed source is automatic.
 - `Canvas::pushImguiFont(ImguiFontId) / popImguiFont()` mid-callback override the panel's font without touching `ImFont`. `Canvas::isImguiFontReady(id)` guards against the one-frame deferred-bake window after `bakeImguiFont` returns; `Canvas::getImguiFontPtr(id) -> ImFont*` is the escape hatch for ImGui APIs that take an `ImFont*` directly (`ImGui::CalcTextSizeA` etc.).
 - The ID-stable design: only `removeImguiFont(id)` (or a cascade from `removeImguiFontSource`) invalidates `id`. Atlas rebuilds (triggered by any other id's removal) leave every other id valid — the underlying pointer changes but `Canvas::renderImguiTo`, `pushImguiFont`, etc. resolve through the id automatically. See [imgui_font_removal_analysis.md](imgui_font_removal_analysis.md) for the rationale behind eager full rebuild vs alternatives.
@@ -657,27 +658,11 @@ canvas.renderImguiTo(renderTargetId, canvas.defaultImguiFontId(), [&] { ... });
 
 `MarkdownRenderer` ([include/markdown_renderer.h](include/markdown_renderer.h)) wraps `mekhontsev/imgui_md` (parser: `mity/md4c`) behind a Nothofagus-style API. Font selection uses `ImguiFontId` handles instead of raw `ImFont*`, so the same font baking system documented above drives heading sizes, code-font choice, and bold/italic variants.
 
+The simplest path is `Canvas::defaultMarkdownStyle(bodySizePx)`, which bakes the embedded Noto Sans family into a ready `MarkdownStyle` — true regular / bold / italic / bold-italic faces, a monospace code face (Noto Sans Mono), and descending heading sizes (h1 1.8×, h2 1.5×, h3 1.25×, h4 1.1×, h5/h6 1.0× of body, all from the Bold face). `bodySizePx` is logical; it is internally scaled by `contentScale²` to match the main HiDPI UI-font recipe, so markdown text is sized like the rest of the main-canvas UI (for RTT/diegetic markdown at 1:1 logical pixels, build a style by hand at unscaled sizes). `MarkdownRenderer::print(...)` pushes the style's `regular` face for the whole render, so **plain** paragraph text uses the markdown family too — `imgui_md` only pushes fonts for headings/bold/italic/code spans, and our `MarkdownRenderer` adds the missing `SPAN_CODE`/`BLOCK_CODE` mono pushes and a `soft_break()` that emits a space (CommonMark soft line breaks). Call `defaultMarkdownStyle` **before `run()`** so the bakes are synchronous:
+
 ```cpp
-// Bake font sizes; reuse a single source for all sizes, or register
-// dedicated bold/italic TTFs via Canvas::addImguiFontSource for true
-// distinct glyphs.
-Nothofagus::ImguiFontSourceId source = canvas.defaultImguiFontSourceId();
-Nothofagus::ImguiFontId bodyId = canvas.bakeImguiFont(source, 16.0f);
-Nothofagus::ImguiFontId codeId = canvas.bakeImguiFont(source, 14.0f);
-Nothofagus::ImguiFontId h1Id   = canvas.bakeImguiFont(source, 28.0f);
-Nothofagus::ImguiFontId h2Id   = canvas.bakeImguiFont(source, 22.0f);
-
-Nothofagus::MarkdownStyle style;
-style.regular     = bodyId;
-style.bold        = bodyId;          // share when distinct fonts aren't registered
-style.italic      = bodyId;
-style.code        = codeId;
-style.headings[0] = h1Id;            // h1
-style.headings[1] = h2Id;            // h2
-// style.headings[2..5] left empty -> falls back to current ImGui font
-
 Nothofagus::MarkdownRenderer markdown(canvas);  // canvas must outlive markdown
-markdown.setStyle(style);
+markdown.setStyle(canvas.defaultMarkdownStyle(16.0f));
 markdown.setOpenUrlCallback([](std::string_view url){ /* open in browser */ });
 
 canvas.run([&](float) {
@@ -693,7 +678,7 @@ canvas.run([&](float) {
 
 **Rules:**
 - `MarkdownRenderer(Canvas&)` binds for the renderer's lifetime; the canvas must outlive it.
-- Each `MarkdownStyle` slot is `std::optional<ImguiFontId>`; empty slots fall back to whatever ImGui font is current when `print(...)` is called.
+- Each `MarkdownStyle` slot is `std::optional<ImguiFontId>`; empty slots fall back to whatever ImGui font is current when `print(...)` is called. For full control, assemble a `MarkdownStyle` by hand, baking each slot from the built-in source accessors (`defaultImguiFontSourceId()` for regular, `boldImguiFontSourceId()`, `italicImguiFontSourceId()`, `boldItalicImguiFontSourceId()`, `monoImguiFontSourceId()`) or your own `addImguiFontSource(...)` TTFs.
 - `print(text)` must be called inside an active ImGui frame — typically inside `canvas.run(...)` or `renderImguiTo(...)`. It writes into the **current** ImGui window; bracket with `ImGui::Begin/End` (or any window-context-bearing scope) yourself.
 
 ### File browser
@@ -838,7 +823,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_nested_render_targets.cpp` | Nested RTTs — one render target's output feeds another |
 | `hello_imgui_rtt.cpp` | `renderImguiTo` — diegetic ImGui panel drawn into an RTT, sampled by a rotating bellota |
 | `hello_custom_font.cpp` | User-supplied TTF via `addImguiFontSource` — typeable path field, editable text, integer min/max + slider for size, default-vs-user side-by-side with `TextWrapped`; also demonstrates the `imgui-filebrowser` integration |
-| `hello_markdown.cpp` | `MarkdownRenderer` — headings, lists, code blocks, tables, blockquotes, strikethrough, link callback; font sizes driven by `bakeImguiFont` |
+| `hello_markdown.cpp` | `MarkdownRenderer` — headings, lists, code blocks, tables, blockquotes, strikethrough, link callback; true bold/italic/bold-italic/mono faces via `canvas.defaultMarkdownStyle(...)` |
 
 ## Tests
 

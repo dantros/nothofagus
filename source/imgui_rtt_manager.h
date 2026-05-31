@@ -36,8 +36,7 @@ class ImguiRttManager
 public:
     ImguiRttManager(ActiveBackend& backend,
                     RenderTargetContainer& renderTargets,
-                    const void* fontData,
-                    std::size_t fontDataLen,
+                    const EmbeddedFontFamily& family,
                     float imguiFontSize);
 
     /// Queue an ImGui draw callback to run against renderTargetId this frame.

@@ -14,6 +14,7 @@
 #include "imgui_draw_callback.h"
 #include "imgui_font_id.h"
 #include "imgui_font_source_id.h"
+#include "markdown_renderer.h"
 #include <memory>
 #include <functional>
 #include <string>
@@ -296,7 +297,7 @@ public:
 
     /**
      * @brief Id of the canvas's built-in default font source (the embedded
-     *        Roboto blob registered at construction).
+     *        Noto Sans Regular face registered at construction).
      *
      * Stable for the canvas lifetime. Pass this to `bakeImguiFont(...)` when
      * no custom TTF is required. Sibling accessor to `defaultImguiFontId()`,
@@ -304,6 +305,44 @@ public:
      * this source).
      */
     ImguiFontSourceId defaultImguiFontSourceId() const;
+
+    /**
+     * @brief Ids of the other embedded built-in faces — Noto Sans Bold,
+     *        Italic, BoldItalic, and Noto Sans Mono.
+     *
+     * Stable for the canvas lifetime and, like the default source, protected
+     * from `removeImguiFontSource()`. These back true bold / italic /
+     * bold-italic / monospace rendering; pass any of them to
+     * `bakeImguiFont(...)`. `defaultMarkdownStyle()` wires them up for you.
+     */
+    ImguiFontSourceId boldImguiFontSourceId() const;
+    ImguiFontSourceId italicImguiFontSourceId() const;
+    ImguiFontSourceId boldItalicImguiFontSourceId() const;
+    ImguiFontSourceId monoImguiFontSourceId() const;
+
+    /**
+     * @brief Build a ready-to-use MarkdownStyle from the embedded Noto Sans
+     *        family.
+     *
+     * Bakes the regular / bold / italic / bold-italic / mono faces at the body
+     * size, plus the six heading levels from the Bold face at descending sizes
+     * (h1 = 1.8×, h2 = 1.5×, h3 = 1.25×, h4 = 1.1×, h5 = h6 = 1.0× the body
+     * size). Hand the result straight to `MarkdownRenderer::setStyle(...)`.
+     *
+     * `bodySizePx` is a logical size: it is internally multiplied by
+     * `contentScale²` to match the main-canvas HiDPI UI-font recipe, so the
+     * result is sized correctly for **main-canvas** markdown (this is the
+     * common case). For markdown drawn into a render target (1:1 logical
+     * pixels) build a `MarkdownStyle` by hand from the source-id accessors at
+     * unscaled sizes instead.
+     *
+     * **Call before run()/tick()** so the bakes are synchronous and ready on
+     * the first frame. If called from inside a frame callback the underlying
+     * bakes are deferred one frame; `MarkdownRenderer` already falls back to
+     * the current font for not-yet-ready ids, so rendering self-heals on the
+     * next frame.
+     */
+    MarkdownStyle defaultMarkdownStyle(float bodySizePx = 16.0f);
 
     /**
      * @brief Bake an ImGui font from a previously-added source at the

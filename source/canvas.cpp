@@ -3,7 +3,7 @@
 #include "asset_registry.h"
 #include "imgui_rtt_manager.h"
 #include "check.h"
-#include "roboto_font.h"
+#include "embedded_fonts.h"
 #include <imgui.h>
 
 namespace Nothofagus
@@ -37,8 +37,13 @@ struct Canvas::Implementation
         : frameRunner(screenSize, title, clearColor, pixelSize, headless),
           assets(frameRunner.backend()),
           imguiRtt(frameRunner.backend(), assets.renderTargets(),
-                   assets_Roboto_VariableFont_wdth_wght_ttf,
-                   assets_Roboto_VariableFont_wdth_wght_ttf_len,
+                   EmbeddedFontFamily{
+                       { notoSansRegularTtf,    notoSansRegularTtfLen },
+                       { notoSansBoldTtf,       notoSansBoldTtfLen },
+                       { notoSansItalicTtf,     notoSansItalicTtfLen },
+                       { notoSansBoldItalicTtf, notoSansBoldItalicTtfLen },
+                       { notoSansMonoTtf,       notoSansMonoTtfLen },
+                   },
                    imguiFontSize)
     {
         // Main HiDPI font bake — needs the backend's ImGui renderer to be live,
@@ -220,6 +225,10 @@ void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, Im
 ImguiFontSourceId Canvas::addImguiFontSource(std::span<const std::byte> ttfBytes, GlyphRange glyphRange) { return mImplPtr->imguiRtt.fonts().addSource(ttfBytes, glyphRange); }
 void Canvas::removeImguiFontSource(ImguiFontSourceId sourceId)                                          { mImplPtr->imguiRtt.fonts().removeSource(sourceId); }
 ImguiFontSourceId Canvas::defaultImguiFontSourceId() const                                              { return mImplPtr->imguiRtt.fonts().defaultSourceId(); }
+ImguiFontSourceId Canvas::boldImguiFontSourceId() const                                                 { return mImplPtr->imguiRtt.fonts().boldSourceId(); }
+ImguiFontSourceId Canvas::italicImguiFontSourceId() const                                               { return mImplPtr->imguiRtt.fonts().italicSourceId(); }
+ImguiFontSourceId Canvas::boldItalicImguiFontSourceId() const                                           { return mImplPtr->imguiRtt.fonts().boldItalicSourceId(); }
+ImguiFontSourceId Canvas::monoImguiFontSourceId() const                                                 { return mImplPtr->imguiRtt.fonts().monoSourceId(); }
 ImguiFontId Canvas::bakeImguiFont(ImguiFontSourceId sourceId, float sizePx)                             { return mImplPtr->imguiRtt.fonts().bake(sourceId, sizePx); }
 void Canvas::removeImguiFont(ImguiFontId id)                                                            { mImplPtr->imguiRtt.fonts().remove(id); }
 bool Canvas::isImguiFontReady(ImguiFontId id) const                                                     { return mImplPtr->imguiRtt.fonts().get(id) != nullptr; }
@@ -244,6 +253,33 @@ ImguiFontId Canvas::defaultImguiFontId() const
     debugCheck(idOpt.has_value(),
         "Canvas::defaultImguiFontId: no default font registered (Canvas ctor seeds this — should never fire)");
     return *idOpt;
+}
+
+MarkdownStyle Canvas::defaultMarkdownStyle(float bodySizePx)
+{
+    // Match the main-canvas HiDPI font recipe (imguiFontSize * contentScale^2,
+    // see addMainHiDpiFont) so markdown text is sized like the rest of the
+    // main-canvas UI. Baking at the raw logical bodySizePx would render tiny on
+    // HiDPI displays, where the ambient UI font is DPI-scaled.
+    const float scale = mImplPtr->frameRunner.contentScale();
+    const float body  = bodySizePx * scale * scale;
+
+    MarkdownStyle style;
+    style.regular    = bakeImguiFont(defaultImguiFontSourceId(),    body);
+    style.bold       = bakeImguiFont(boldImguiFontSourceId(),       body);
+    style.italic     = bakeImguiFont(italicImguiFontSourceId(),     body);
+    style.boldItalic = bakeImguiFont(boldItalicImguiFontSourceId(), body);
+    style.code       = bakeImguiFont(monoImguiFontSourceId(),       body);
+
+    // Headings reuse the Bold face at descending sizes for visual hierarchy.
+    const ImguiFontSourceId bold = boldImguiFontSourceId();
+    style.headings[0] = bakeImguiFont(bold, body * 1.8f);
+    style.headings[1] = bakeImguiFont(bold, body * 1.5f);
+    style.headings[2] = bakeImguiFont(bold, body * 1.25f);
+    style.headings[3] = bakeImguiFont(bold, body * 1.1f);
+    style.headings[4] = bakeImguiFont(bold, body);
+    style.headings[5] = bakeImguiFont(bold, body);
+    return style;
 }
 
 // ---------------------------------------------------------------------------
