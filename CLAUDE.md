@@ -4,38 +4,6 @@
 
 Pixel art real-time renderer with OpenGL 3.3 and Vulkan backends, written in C++20. Outputs a static library (`nothofagus`) consumed by user projects.
 
-## Key Terminology
-
-- **Bellota** ("acorn") — a drawable sprite/element on screen
-- **IndirectTexture** — paletted texture: pixels hold color indices into a `ColorPallete`. Optional multi-layer atlas for sprite animation; optional cell grid (`setMap`) opts the texture into tile-map rendering, where each cell selects a layer to draw.
-- **DirectTexture** — raw RGBA texture
-- **Transform** — position (`mLocation`), scale (`mScale`), rotation (`mAngle` in degrees)
-- **Controller** — keyboard, mouse, and gamepad input handler; maps `KeyboardTrigger`/`MouseButtonTrigger`/`GamepadButtonTrigger` → `Action` callbacks and tracks mouse position as `glm::vec2`
-- **MouseButton** — enum with values `Left`, `Middle`, `Right`
-- **GamepadButton** — enum with values `A`, `B`, `X`, `Y`, `LeftBumper`, `RightBumper`, `Back`, `Start`, `Guide`, `LeftThumb`, `RightThumb`, `DpadUp`, `DpadRight`, `DpadDown`, `DpadLeft`
-- **GamepadAxis** — enum with values `LeftX`, `LeftY`, `RightX`, `RightY`, `LeftTrigger`, `RightTrigger`
-- **AnimationState** — frame sequence with per-frame durations, loops automatically
-- **AnimationStateMachine** — manages multiple states with named event-based transitions
-
-## Architecture
-
-```
-Canvas (public API)
-└── CanvasImpl (Pimpl, hidden windowing/rendering details)
-    ├── Window : SelectedWindowBackend   → GlfwBackend, Sdl3Backend, or HeadlessBackend (compile-time)
-    ├── ActiveBackend (RenderBackend)    → OpenGLBackend or VulkanBackend (compile-time)
-    │   └── VulkanBackend
-    │       └── ActiveVulkanPresentation → WindowedVulkanPresentation or HeadlessVulkanPresentation (compile-time)
-    ├── IndexedContainer<BellotaPack>    → Bellota + Mesh + DMesh + Tint
-    └── IndexedContainer<TexturePack>   → Texture + DTexture
-```
-
-- `include/` — public API headers
-- `source/` — implementation + internal headers (never expose to users)
-- `source/backends/` — window/input backend implementations (`glfw_backend`, `sdl3_backend`, `headless_backend`, per-backend keyboard/mouse/gamepad mappers), render backends (`opengl_backend`, `vulkan_backend`), and Vulkan presentation policies (`vulkan_presentation`)
-- `examples/` — standalone demo executables
-- `third_party/` — git submodules (glfw, glad, glm, imgui, spdlog, font8x8, SDL, vk-bootstrap, VulkanMemoryAllocator)
-
 ## Build System
 
 **Presets (CMakePresets.json):**
@@ -58,7 +26,7 @@ Preset naming: `{platform}-{buildtype}-{window}-{graphics}[-examples]`. All use 
 **Build and install (examples):**
 ```bash
 cmake --preset windows-debug-glfw-opengl-examples
-cmake --build build/windows-debug-glfw-opengl-examples
+cmake --build build/windows-debug-glfw-opengl-examples --parallel
 cmake --install build/windows-debug-glfw-opengl-examples
 # Artifacts land in install/windows-debug-glfw-opengl-examples/
 ```
@@ -73,8 +41,28 @@ cmake --install build/windows-debug-glfw-opengl-examples
 - `NOTHOFAGUS_WINDOW_BACKEND` — `"GLFW"` (default) or `"SDL3"`; selects the window/input backend at configure time
 - `NOTHOFAGUS_BACKEND_VULKAN` — use the Vulkan render backend instead of OpenGL (default OFF)
 - `NOTHOFAGUS_HEADLESS_VULKAN` — pure offscreen Vulkan rendering with no window or display server (default OFF; requires `NOTHOFAGUS_BACKEND_VULKAN=ON`). Replaces the window backend with `HeadlessBackend` and the Vulkan presentation policy with `HeadlessVulkanPresentation`. Intended for CI/CD rendering tests.
+- `NOTHOFAGUS_ENABLE_TRACY` — wire in the Tracy profiler (default OFF).
 
-## Window Backend Abstraction
+## Architecture
+
+```
+Canvas (public API)
+└── CanvasImpl (Pimpl, hidden windowing/rendering details)
+    ├── Window : SelectedWindowBackend   → GlfwBackend, Sdl3Backend, or HeadlessBackend (compile-time)
+    ├── ActiveBackend (RenderBackend)    → OpenGLBackend or VulkanBackend (compile-time)
+    │   └── VulkanBackend
+    │       └── ActiveVulkanPresentation → WindowedVulkanPresentation or HeadlessVulkanPresentation (compile-time)
+    ├── IndexedContainer<BellotaPack>    → Bellota + Mesh + DMesh + Tint
+    └── IndexedContainer<TexturePack>   → Texture + DTexture
+```
+
+- `include/` — public API headers
+- `source/` — implementation + internal headers (never expose to users)
+- `source/backends/` — window/input backend implementations (`glfw_backend`, `sdl3_backend`, `headless_backend`, per-backend keyboard/mouse/gamepad mappers), render backends (`opengl_backend`, `vulkan_backend`), and Vulkan presentation policies (`vulkan_presentation`)
+- `examples/` — standalone demo executables
+- `third_party/` — third-party libraries vendored via `git subtree` (see [Dependencies](#dependencies))
+
+### Window backend abstraction
 
 The windowing and input layer is abstracted behind a **C++20 concept** (`WindowBackend`) so the rest of the engine is completely decoupled from both GLFW and SDL3.
 
@@ -99,12 +87,12 @@ source/backends/
 **`WindowBackend` concept — required interface:**
 - Session: `beginSession(Controller&)`, `isRunning()`
 - Per-frame: `newImGuiFrame()`, `endFrame(Controller&, ViewportRect, ScreenSize)`, `getFramebufferSize()`, `getTime()`
-- ImGui/DPI: `initImGui(fontSize, fontData, fontDataLen)`, `contentScale()`
-- Window management: `getCurrentMonitor()`, `isFullscreen()`, `setFullscreenOnMonitor(index)`, `getWindowAABox()`, `setWindowed(AABox)`, `getWindowSize()`, `requestClose()`
+- ImGui/DPI: `initImGuiPlatform()` (platform-init only — fonts and renderer init are handled separately), `contentScale()`, `nativeHandle()` (returns the OS window handle as `void*`)
+- Window management: `getCurrentMonitor()`, `isFullscreen()`, `setFullscreenOnMonitor(index)`, `getWindowAABox()`, `setWindowed(AABox)`, `getWindowSize()`, `requestClose()`, `setWindowTitle(title)`
 
 Both windowed backends route all keyboard, mouse, scroll, and gamepad events into `Controller` using the same public API (`activate`, `activateMouseButton`, `updateMousePosition`, `scrolled`, `activateGamepadButton`, `updateGamepadAxis`). The `HeadlessBackend` provides no input — it returns no-op/defaults for all input and window management methods, sets `ImGuiIO::DisplaySize` manually, and uses `std::chrono::steady_clock` for timing.
 
-## Vulkan Presentation Policy
+### Vulkan presentation policy
 
 When the Vulkan render backend is active, `VulkanBackend` delegates all surface/swapchain/present operations to a **presentation policy** — a compile-time selected struct that encapsulates the differences between windowed and headless rendering.
 
@@ -132,7 +120,8 @@ source/backends/
 | `retrieveQueues()` | `initialize()` | Get graphics + present queues, or graphics only |
 | `createPresentationTarget()` | `initialize()` | Create swapchain (determines format/extent) or offscreen VkImage |
 | `createPresentationFramebuffers()` | `initialize()` | Create framebuffers using the main render pass (called after render pass creation) |
-| `colorFormat()` / `mainPassFinalLayout()` | `initialize()` | Provide format and final layout for main render pass creation |
+| `createSyncObjects()` | `initialize()` | Allocate per-frame fences/semaphores appropriate to the policy |
+| `colorFormat()` / `mainPassFinalLayout()` / `imageCount()` | `initialize()` | Provide format, final layout, and image count for main render pass + framebuffer creation |
 | `acquireImage()` | `beginFrame()` | vkAcquireNextImageKHR or no-op (always succeeds) |
 | `mainFramebuffer()` / `extent()` | `beginMainPass()` | Return the active framebuffer and render area |
 | `submitAndPresent()` | `endFrame()` | Submit + present with semaphores, or submit with fence only |
@@ -149,35 +138,42 @@ The `#ifdef NOTHOFAGUS_HEADLESS_VULKAN` appears only in two places: the `ActiveV
 
 **Headless offscreen image:** created with `VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT` in `VK_FORMAT_R8G8B8A8_UNORM`. The main render pass uses `VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL` as the final layout (not `PRESENT_SRC_KHR`). Screenshots transition to `TRANSFER_SRC_OPTIMAL`, copy via `vkCmdCopyImageToBuffer`, then restore to `COLOR_ATTACHMENT_OPTIMAL`.
 
-## Public API Patterns
+## Public API
 
-### Creating textures and bellotas
+### Glossary
+
+- **Bellota** ("acorn") — a drawable sprite/element on screen
+- **IndirectTexture** — paletted texture: pixels hold color indices into a `ColorPallete`. Optional multi-layer atlas for sprite animation; optional cell grid (`setMap`) opts the texture into tile-map rendering, where each cell selects a layer to draw.
+- **DirectTexture** — raw RGBA texture
+- **Transform** — position (`mLocation`), scale (`mScale`), rotation (`mAngle` in degrees)
+- **Controller** — keyboard, mouse, and gamepad input handler; maps `KeyboardTrigger`/`MouseButtonTrigger`/`GamepadButtonTrigger` → `Action` callbacks and tracks mouse position as `glm::vec2`
+- **MouseButton** — enum with values `Left`, `Middle`, `Right`
+- **GamepadButton** — enum with values `A`, `B`, `X`, `Y`, `LeftBumper`, `RightBumper`, `Back`, `Start`, `Guide`, `LeftThumb`, `RightThumb`, `DpadUp`, `DpadRight`, `DpadDown`, `DpadLeft`
+- **GamepadAxis** — enum with values `LeftX`, `LeftY`, `RightX`, `RightY`, `LeftTrigger`, `RightTrigger`
+- **AnimationState** — frame sequence with per-frame durations, loops automatically
+- **AnimationStateMachine** — manages multiple states with named event-based transitions
+- **MarkdownRenderer** — renders CommonMark/GFM markdown into the current ImGui window, with `ImguiFontId` font selection
+
+### Canvas lifecycle
+
 ```cpp
-// Paletted texture
-Nothofagus::IndirectTexture tex({8, 8}, {0,0,0,0}); // size, background color
-tex.setPallete(pallete).setPixels({ /* indices */ });
-TextureId texId = canvas.addTexture(tex);
-BellotaId id = canvas.addBellota({{{x, y}}, texId});
+// Construct: screen size, title, clear color, pixel scale, ImGui font size, headless flag.
+Nothofagus::Canvas canvas(
+    {256, 240},          // screenSize (logical canvas, default 256×240)
+    "My App",            // title
+    {0.0f, 0.0f, 0.0f},  // clearColor (default black)
+    4,                   // pixelSize (window scale, default 4)
+    14.0f,               // imguiFontSize (default 14)
+    /*headless=*/false); // hide the window if true
 
-// Raw RGBA texture
-Nothofagus::DirectTexture tex({w, h});
-TextureId texId = canvas.addTexture(tex);
-
-// Rebind a bellota to a different texture (old texture is auto-GC'd next frame)
-canvas.setTexture(bellotaId, newTexId);
-```
-
-### Main loop
-```cpp
+// Main loop — drives ticks at the backend's native cadence.
 canvas.run([&](float dt) {
     // ImGui calls go here
     canvas.bellota(id).transform().location() += ...;
 });
 ```
 
-### Headless mode and manual tick
-
-Pass `headless = true` as the last constructor argument to create a canvas with a hidden window (no visible UI). Works with all backend combinations (GLFW/SDL3 + OpenGL/Vulkan). Use `tick()` to drive rendering one frame at a time with a caller-supplied delta time (in milliseconds) instead of the engine's internal loop.
+**Headless mode and manual tick.** Pass `headless = true` as the last constructor argument to create a canvas with a hidden window (no visible UI). Works with all backend combinations (GLFW/SDL3 + OpenGL/Vulkan). Use `tick()` to drive rendering one frame at a time with a caller-supplied delta time (in milliseconds) instead of the engine's internal loop.
 
 `run()` and `tick()` are mutually exclusive on a given Canvas — do not mix them.
 
@@ -201,7 +197,7 @@ canvas.tick(16.0f, [&](float dt) { /* update logic */ });
 Nothofagus::DirectTexture screenshot = canvas.takeScreenshot();
 ```
 
-GPU resources are cleaned up automatically in the `Canvas` destructor — no need to call `run()` or any explicit shutdown.
+GPU resources are cleaned up automatically in the `Canvas` destructor — no need to call `run()` or any explicit shutdown. Call `canvas.close()` from inside an update callback to break out of `run()` early.
 
 **Two headless modes exist:**
 
@@ -212,7 +208,518 @@ GPU resources are cleaned up automatically in the `Canvas` destructor — no nee
 
 Both modes use the same `Canvas` API — the difference is entirely at the build/link level. Code that works with `headless=true` works unchanged when built with `NOTHOFAGUS_HEADLESS_VULKAN=ON`.
 
+### Window management
+
+The public Canvas API surfaces a small set of window/screen mutators alongside the backend abstraction:
+
+```cpp
+// Logical canvas (game pixel grid) — independent of window size.
+const Nothofagus::ScreenSize& size = canvas.screenSize();
+canvas.setScreenSize({320, 240});       // re-letterboxes; active TilemapExplorer pools rebuild
+
+// Window-space size (in physical pixels) and the framebuffer game viewport.
+Nothofagus::ScreenSize winSize  = canvas.windowSize();
+Nothofagus::ViewportRect game   = canvas.gameViewport();
+// game.x, game.y           — bottom-left offset in framebuffer pixels (OpenGL convention: y from bottom)
+// game.width, game.height  — game area dimensions in framebuffer pixels
+
+// Per-frame mutables.
+canvas.setClearColor({0.1f, 0.0f, 0.0f});
+canvas.setWindowTitle("New Title");
+
+// Fullscreen toggle (note the camel-S in the Canvas method name — the
+// concept method on the backend is `setFullscreenOnMonitor`).
+std::size_t mon = canvas.getCurrentMonitor();
+bool fs         = canvas.isFullscreen();
+canvas.setFullScreenOnMonitor(mon);     // 0 = primary monitor
+canvas.setWindowed();                   // back to windowed at last-known size
+
+// Built-in stats overlay (FPS, draw counts) — bool ref, flip from anywhere.
+canvas.stats() = true;
+
+// Programmatic close from inside a run() callback (or before tick()).
+canvas.close();
+```
+
+**Resizing rules:**
+- Manual window resize and fullscreen always letterbox/pillarbox to preserve the logical canvas aspect ratio — black bands fill unused screen area. The game viewport is recomputed every frame from `mWindow->getFramebufferSize()` so it adapts automatically.
+- `setScreenSize(...)` changes the logical canvas itself; tilemap/sparsemap explorer pools rebuild themselves on the next pre-pass to match the new size.
+- `getPrimaryMonitorSize()` is a free function that safely initialises GLFW internally (idempotent) and can be called before constructing a Canvas.
+
+### Textures and bellotas
+
+```cpp
+// Paletted texture
+Nothofagus::IndirectTexture tex({8, 8}, {0,0,0,0}); // size, background color
+tex.setPallete(pallete).setPixels({ /* indices */ });
+TextureId texId = canvas.addTexture(tex);
+BellotaId id = canvas.addBellota({{{x, y}}, texId});
+
+// Raw RGBA texture
+Nothofagus::DirectTexture tex({w, h});
+TextureId texId = canvas.addTexture(tex);
+
+// Rebind a bellota to a different texture (old texture is auto-GC'd next frame)
+canvas.setTexture(bellotaId, newTexId);
+```
+
+**Automatic texture GC.** `TextureUsageMonitor` tracks which textures are referenced by bellotas. After each `update()` callback, `clearUnusedTextures()` automatically removes any texture not referenced by at least one bellota. Calling `canvas.removeTexture()` on a texture still in use triggers a `debugCheck` assert. Use `canvas.setTexture(bellotaId, newTexId)` to swap textures — the old one is marked unused and removed automatically next frame. Disable per-frame GC during bulk loading with `canvas.setAutoRemoveUnusedTextures(false)` (re-enable when done).
+
+**Texture filtering.** Each texture has independent min/mag filter settings. The default is `TextureSampleMode::Nearest` (pixel-art crispness); switch to `Linear` for smoothing.
+
+```cpp
+enum class TextureSampleMode : std::uint8_t {
+    Nearest = 0,  // GL_NEAREST — sharp, pixel-art style
+    Linear  = 1,  // GL_LINEAR  — bilinear interpolation
+};
+
+canvas.setTextureMinFilter(texId, Nothofagus::TextureSampleMode::Linear);
+canvas.setTextureMagFilter(texId, Nothofagus::TextureSampleMode::Nearest);
+
+// Mark a texture's CPU side as dirty so the next frame re-uploads it (use
+// when you mutate texture pixels via a raw reference rather than through
+// the canvas helpers — the canvas can't observe the change otherwise).
+canvas.markTextureAsDirty(texId);
+```
+
+### Bellotas
+
+A bellota wraps a transform and references a texture (optionally a custom mesh and a tint):
+
+- **Depth/Z-ordering**: `bellota.mDepthOffset` (`-128` to `127`) — higher draws on top.
+- **Opacity**: `bellota.mOpacity` (0.0 – 1.0).
+- **Layers**: multi-layer textures use `bellota.currentLayer()` — managed automatically by `AnimationStateMachine::update()`, or set manually.
+- **Angles**: degrees, not radians.
+- **Tint**: per-bellota color modulation:
+  ```cpp
+  canvas.setTint(bellotaId, Nothofagus::Tint{glm::vec4{1.0f, 0.6f, 0.6f, 1.0f}});
+  canvas.removeTint(bellotaId);
+  ```
+
+### Custom meshes
+
+Bellotas draw the implicit centered quad sized to their texture by default. Pass a `MeshId` as the third constructor argument to draw arbitrary triangle geometry instead. The texture is still required — it supplies the pixels the existing shader samples.
+
+```cpp
+// Build a triangle mesh in (x, y) pixels with UVs in [0, 1].
+Nothofagus::Mesh mesh;
+mesh.vertices = {
+    {{-10.0f, -10.0f}, {0.0f, 1.0f}},
+    {{ 10.0f, -10.0f}, {1.0f, 1.0f}},
+    {{  0.0f,  14.0f}, {0.5f, 0.0f}},
+};
+mesh.indices = {0, 1, 2};
+
+Nothofagus::MeshId meshId = canvas.addMesh(mesh);
+// Move-overload also available for callers that can hand off ownership:
+//   auto meshId = canvas.addMesh(std::move(mesh));
+
+// Attach the custom mesh; the texture supplies pixels via the same shader.
+Nothofagus::BellotaId id = canvas.addBellota({{{x, y}}, texId, meshId});
+
+// Swap geometry mid-frame; the previous mesh becomes eligible for GC.
+canvas.setMesh(id, otherMeshId);
+
+// Read-only mesh access (auto-quad or user mesh, transparent).
+const Nothofagus::Mesh& currentByBellota = canvas.mesh(id);      // resolves via bellota.meshId()
+const Nothofagus::Mesh& currentByMeshId  = canvas.mesh(meshId);  // direct handle lookup
+
+// Explicit removal of a user mesh — must be unreferenced (debugCheck enforces this).
+canvas.removeMesh(meshId);
+
+// Disable per-frame auto-GC during bulk loading (re-enable when done).
+canvas.setAutoRemoveUnusedMeshes(false);
+```
+
+**Storage model:**
+- `Vertex { glm::vec2 position; glm::vec2 uv; }` ([include/mesh.h](include/mesh.h)) is the fixed vertex layout — matches the shader binding for both OpenGL and Vulkan backends. No custom attributes.
+- Every bellota carries a `MeshId`. If the user does not supply one (`Bellota(Transform, TextureId)`), the canvas materialises an **auto-quad** sized to the texture at `addBellota` time and stamps the id onto the stored bellota. There is no second mesh storage path — both flow through `MeshContainer` / `MeshPack`.
+- All bellotas referencing the same `MeshId` share **one GPU upload**. Lazy upload happens once on the next frame; subsequent registrations are zero-cost.
+- `MeshUsageMonitor` tracks references analogously to `TextureUsageMonitor`. When the last bellota referencing a `MeshId` goes away, the mesh is freed by `clearUnusedMeshes()` on the following frame (auto-GC is on by default; `setAutoRemoveUnusedMeshes(false)` pauses it for bulk loading, same pattern as `setAutoRemoveUnusedTextures`).
+- `setTexture(bellotaId, newTexId)` regenerates the auto-quad sized to the new texture **only when the bellota uses an engine-allocated auto-quad**. User-supplied meshes are left untouched on texture change — that's the user's choice.
+- `removeMesh(meshId)` is for user-registered meshes only. Removing an auto-quad fires `debugCheck`; auto-quads are managed exclusively by the canvas.
+- **Custom meshes cannot be combined with tile-map textures.** `addBellota` (with a user MeshId), `setMesh`, and `setTexture` all `debugCheck`-reject the combination because the tile-map shader requires the auto-quad's exact UV invariant. See [the tile-map constraints](#tile-maps) for details.
+
+### In-game text rendering
+
+`writeText` / `writeChar` paint glyphs from the bundled `font8x8` bitmap font directly into an `IndirectTexture`, so the rendered text becomes part of your palette and draws through the regular bellota pipeline. This is **distinct from ImGui text** — ImGui handles tool-UI text (with `MarkdownRenderer` layered on top for prose); these helpers are for text that lives *inside the game*.
+
+```cpp
+// Banner: text characters wide × 8 high, palette index 0 = transparent,
+// palette index 1 = the glyph color. writeText assumes 8-pixel-wide cells.
+std::string text = "- Nothofagus -";
+Nothofagus::IndirectTexture banner({8 * text.size(), 8}, {0.5, 0.5, 0.5, 1.0});
+banner.setPallete({{0,0,0,0.8}, {1,1,1,1}});
+Nothofagus::writeText(banner, text);
+
+// Single glyph from a non-default font. Glyph index 0xD from the Hiragana
+// page, written at offset (i0=0, j0=0) into an 8×8 texture.
+Nothofagus::IndirectTexture glyph({8, 8}, {0.5, 0.5, 0.5, 1.0});
+glyph.setPallete({{0,0,0,0}, {0,0,0,1}});
+Nothofagus::writeChar(glyph, 0xD, 0, 0, Nothofagus::FontType::Hiragana);
+
+canvas.addBellota({{{x, y}}, canvas.addTexture(banner)});
+```
+
+**Signatures** ([include/text.h](include/text.h)):
+
+```cpp
+void writeChar(IndirectTexture& texture, std::uint8_t a,
+               std::size_t i0 = 0, std::size_t j0 = 0,
+               FontType fontType = FontType::Basic);
+
+void writeText(IndirectTexture& texture, std::string text,
+               std::size_t i0 = 0, std::size_t j0 = 0,
+               FontType fontType = FontType::Basic);
+```
+
+**`FontType` enum:** `Basic` (default Latin), `Control`, `ExtLatin`, `Greek`, `Misc`, `Box`, `Block`, `Hiragana`, `Sga` (Standard Galactic Alphabet).
+
+**Constraints / behavior:**
+- The destination `IndirectTexture` must have a palette with at least two entries — index `0` is the background (transparent or otherwise), any non-zero index is the glyph foreground. `writeText` and `writeChar` toggle pixels between indices `0` and `1` of the bound palette.
+- Cells are 8×8; the `i0`, `j0` offsets are in palette-index coordinates and let you compose multi-line layouts by writing several calls into the same texture.
+- The text helpers do not allocate — they mutate an existing `IndirectTexture`. Add the texture to the canvas after writing.
+
+### Animations
+
+Multi-layer `IndirectTexture` stores frames as layers. `AnimationStateMachine` drives `bellota.currentLayer()` automatically each frame.
+
+```cpp
+// 1. Build a multi-layer texture (3rd arg = layer count)
+Nothofagus::IndirectTexture tex({w, h}, glm::vec4(0,0,0,1), numLayers);
+tex.setPallete(palette).setPixels({/* frame 0 */}, 0).setPixels({/* frame 1 */}, 1); // ...
+Nothofagus::TextureId texId = canvas.addTexture(tex);
+Nothofagus::BellotaId id    = canvas.addBellota({{{x, y}}, texId});
+
+// 2. Define AnimationState objects (layers, times_ms, name) — must outlive the machine
+AnimationState idleState({0, 1, 2}, {100.0f, 100.0f, 100.0f}, "idle");
+AnimationState runState ({3, 4},    {80.0f,  80.0f},           "run");
+
+// 3. Build state machine bound to the bellota reference
+AnimationStateMachine machine(canvas.bellota(id));
+machine.addState("idle", &idleState);
+machine.addState("run",  &runState);
+
+// 4. Define named transition edges: (fromState, transitionName, toState)
+machine.newAnimationTransition("idle", "start_running", "run");
+machine.newAnimationTransition("run",  "stop",          "idle");
+
+// 5. Set initial state — required before first update()
+machine.setState("idle");
+
+// 6. Per frame:
+machine.update(dt);
+
+// 7. Trigger transitions:
+machine.transition("start_running");   // fire named edge from current state
+machine.goToState("idle");             // direct jump + reset (bypasses transition graph)
+```
+
+`AnimationState` loops automatically (after the last frame it restarts from index 0). `goToState` calls `reset()` on the target state before switching; `transition` does the same.
+
+### Tile maps
+
+`IndirectTexture` doubles as a tile-map source: store the unique tile graphics as layers, then call `setMap(mapSize)` to allocate a `mapSize.x * mapSize.y` cell grid where each cell holds a `uint8_t` layer index. The bellota's mesh expands to `mapSize * size()` (per-tile pixel size × grid). Rendering goes through a separate 3-binding GPU pipeline (`atlas` + `map` + `palette`) so a tilemap with N unique tiles uses an N-layer atlas regardless of cell count — tile graphics are reused across cells.
+
+```cpp
+constexpr glm::ivec2 tileSize{8, 8};
+constexpr glm::ivec2 mapSize {4, 3};
+constexpr std::size_t tileCount = 2;          // unique tile graphics
+
+Nothofagus::IndirectTexture tileMap(tileSize, glm::vec4(0.0f), tileCount);
+tileMap.setPallete(Nothofagus::ColorPallete{ /* ... */ });
+
+// Populate each tile slot from a contiguous span of palette indices
+auto circlePx = makeCircleTile(tileSize);    // std::vector<std::uint8_t>, tileSize.x * tileSize.y bytes
+tileMap.setPixels(std::span<const std::uint8_t>(circlePx), 0);
+auto ditherPx = makeDitherGradientTile(tileSize);
+tileMap.setPixels(std::span<const std::uint8_t>(ditherPx), 1);
+
+tileMap.setMap(mapSize);                      // opt into tile-map mode
+for (int row = 0; row < mapSize.y; ++row)
+    for (int col = 0; col < mapSize.x; ++col)
+        tileMap.setCell(col, row, static_cast<std::uint8_t>((col + row) % 2));
+
+Nothofagus::TextureId tileMapTexId = canvas.addTexture(tileMap);
+```
+
+**Constraints / behavior:**
+- Pass `mapSize == {0, 0}` to `setMap` to revert back to plain indirect/animation mode.
+- `bellota.currentLayer()` is unused for tilemap textures — per-cell layer choice is driven by the cell grid, not by a global layer index. Animation state machines should target non-tilemap `IndirectTexture` instances.
+- `setCell` triggers `mMapDirty` and is hot-uploadable per-frame; per-pixel `setPixels` triggers `mAtlasDirty` for tile-graphic mutations.
+- The palette is shared between the tile-map and indirect rendering paths — `setPallete` works the same way.
+- `setMapBulk(span)` overwrites the entire cell grid in one shot from a row-major byte buffer of `mapSize.x * mapSize.y` layer indices. Faster than per-cell `setCell` when replacing a large region — one memcpy + one dirty-flag set, no per-cell bookkeeping.
+
+#### Huge tilemaps via `Tilemap` + `TilemapExplorer`
+
+Single-`IndirectTexture` tilemaps scale poorly: any `setCell` re-uploads the entire world's map texture, and the bellota's mesh covers the whole world even when only a small window is visible. For huge maps (open worlds, side-scrolling levels), use the **`Tilemap` + `TilemapExplorer` pair** instead. The world data lives once in a `Tilemap`; a `TilemapExplorer` owns a small pool of `IndirectTexture` + `Bellota` slots sized to the canvas viewport + a 1-chunk margin. Slots are anchored to pool indices; world chunks rotate through them as the camera scrolls. Only border slots crossing into/out of explorer get their cell data rewritten — smooth scrolling within a chunk is a zero-rebind frame.
+
+```cpp
+// Build the tile graphics (palette indices, one std::vector per atlas layer).
+std::vector<std::vector<std::uint8_t>> tileGraphics{ /* layer 0, layer 1, ... */ };
+
+// Register the Tilemap (world data) and a TilemapExplorer (pooled renderer)
+// against the canvas. The explorer takes the TilemapId it draws from.
+Nothofagus::TilemapId tilemapId = canvas.addTilemap(
+    Nothofagus::Tilemap(
+        /*mapSize  */ glm::ivec2{256, 256},   // world cells
+        /*chunkSize*/ glm::ivec2{32, 32},     // cells per pool slot
+        /*tileSize */ glm::ivec2{16, 16},     // pixels per cell
+        palette,
+        std::span<const std::vector<std::uint8_t>>(tileGraphics)));
+Nothofagus::TilemapExplorerId explorerId =
+    canvas.addTilemapExplorer(Nothofagus::TilemapExplorer(tilemapId));
+
+// Edit the world at world-cell coordinates — the owning chunk's generation
+// bumps, the pool slot displaying it (if any) re-syncs next frame.
+canvas.tilemap(tilemapId).setCell({worldCol, worldRow}, layerIndex);
+
+// Guard arbitrary coordinates against the world extent before editing.
+if (canvas.tilemap(tilemapId).inBounds({worldCol, worldRow}))
+    canvas.tilemap(tilemapId).setCell({worldCol, worldRow}, layerIndex);
+
+// Pan the explorer via the camera (world pixels; (0,0) = world origin centered).
+canvas.tilemapExplorer(explorerId).setCamera({scrollX, scrollY});
+```
+
+**How it works:**
+- `Tilemap` is internally a single `IndirectTexture` shaped to the full world (atlas + palette + `setMap(mapSize)` cell grid) plus per-chunk generation counters. The cache texture is never registered with the canvas, so no GPU resources are allocated — `IndirectTexture` is reused purely for its storage layout and tested mutation methods (`setCell` / `cell` / `setMapBulk`). Use `tilemap.cacheTexture()` to inspect or clone the underlying texture.
+- `TilemapExplorer` is registered against a `TilemapId`; on registration the canvas allocates a `ceil(screenSize / chunkPixelSize) + 2` grid of pool slots. Each slot is an `IndirectTexture` (with its own copy of the atlas + palette, chunk-sized map storage) plus a `Bellota`. Both are **explorer-managed**: calling `canvas.removeBellota`/`canvas.removeTexture` on those ids fires a `debugCheck`. Use `canvas.removeTilemapExplorer(explorerId)` to tear the pool down.
+- Per-frame pre-pass (runs between the user update callback and the texture-upload pass): for each explorer, compute which world chunk each slot should display based on the camera; for any slot whose desired chunk changed (or whose chunk's generation advanced), memcpy the chunk's cells into the slot's IndirectTexture via `setMapBulk` and reposition the slot's bellota. The existing dirty-upload path then re-uploads only those small chunk map textures.
+- Renderer learns nothing new — pool slots flow through the existing 3-binding tilemap path. No shader, backend, or render-loop changes.
+- **Pool resize on `setScreenSize`:** the pre-pass also compares the canvas's current `screenSize()` against the size the pool was built for. If they differ, the pool is torn down and rebuilt against the new size in one frame, then chunk-synced — `canvas.setScreenSize(...)` "just works" with active views. Window resize / fullscreen don't trigger this because the letterbox preserves the logical canvas; only explicit `setScreenSize` does.
+
+**Memory cost:**
+- Atlas: 1 copy in `Tilemap` + 1 copy per pool slot (~50 copies for typical viewports).
+- Palette: same — 1 + ~pool.
+- World cell grid: 1 byte per world cell, held once in `Tilemap`.
+- Independent of world size beyond the cell grid itself: a 1000×1000-cell world (~1 MB cell grid) uses ~50 IndirectTextures and ~50 bellotas, regardless of how big the world is.
+
+**Lifecycle rules:**
+- `addTilemap` registers the world data and returns a `TilemapId`; `addTilemapExplorer(TilemapExplorer(tilemapId))` registers the pooled renderer against that id.
+- **Tear down explorers before their tilemaps.** `removeTilemap(tilemapId)` fires a `debugCheck` if any `TilemapExplorer` still references it; call `removeTilemapExplorer(explorerId)` on every owning explorer first. (See [examples/hello_tilemap_huge.cpp](examples/hello_tilemap_huge.cpp) `rebuild` lambda for the canonical pattern.)
+- `removeTilemapExplorer(explorerId)` removes all pool bellotas and textures it owns.
+- Multiple `TilemapExplorer` instances may reference the same `Tilemap` (e.g., main explorer + mini-map explorer); each polls per-chunk generation counters independently.
+- The `Tilemap` constructor `debugCheck`s that `chunkSize.x * tileSize.x` and `chunkSize.y * tileSize.y` fit in `int`. This one-time bound keeps the per-frame chunk-pixel math in `explorer_manager.cpp` safe in plain `int` without runtime overflow guards.
+
+**Camera convention (v1):** `setCamera(offset)` sets the world-pixel coordinate that appears at the canvas center. `(0, 0)` = world origin centered. The `Tilemap`'s coordinate space is bottom-left = `(0, 0)` cell, top-right = `(mapSize.x - 1, mapSize.y - 1)`.
+
+**Deferred:** streaming (world cell grid eviction to disk); RTT-targeted tilemap rendering; shader-scrolled single-draw fast path; per-cell partial GPU upload inside a chunk's map texture; direct rendering of small tilemaps via `canvas.addTexture(tilemap.cacheTexture())`.
+
+#### Sparse tilemaps via `Sparsemap` + `SparsemapExplorer`
+
+Sibling to `Tilemap` for **unbounded / sparse worlds**: same chunk-pool rendering, same shader path, same pool sizing math — but the world data lives in a hash-map of chunks keyed by chunk coordinate instead of a dense `mapSize`-shaped grid. Memory scales with **populated chunks**, not with how far the camera can travel. Ideal for procedural worlds, streaming, or hand-authored open worlds that don't fit in memory.
+
+Both `TilemapExplorer` and `SparsemapExplorer` are concrete typedefs of a shared `Explorer<T>` template constrained by the `TilemapLike` C++20 concept (see [include/explorer.h](include/explorer.h)); the per-frame chunk-sync pre-pass in [source/explorer_manager.cpp](source/explorer_manager.cpp) is written once and explicitly instantiated for both backends. The renderer's specialization point is the `chunkInBounds(chunkPos)` predicate — dense returns `chunkPos` ∈ `[0, chunkGridSize)`, sparse returns `mChunks.contains(chunkPos)`; `exploreCell` gates `chunkGeneration` and `chunkDataInto` behind it so those two methods are always called on present chunks. The user-facing surface diverges further — `Sparsemap::chunkGeneration(missing)` returns `0`, `Sparsemap::chunkDataInto(missing, out)` zero-fills, and `Sparsemap::cell(missing)` returns `0`, whereas the dense `Tilemap` counterparts `debugCheck` on out-of-bounds — but that's a user-API convenience for ad-hoc reads against unbounded worlds, not a load-bearing contract for the chunk-sync pass. Each backend asserts conformance via `static_assert(TilemapLike<T>);` in its `.cpp` so a missing/changed method shows up as a clear concept error instead of an opaque template instantiation failure.
+
+```cpp
+// Register an empty Sparsemap (no mapSize) and a SparsemapExplorer (pooled renderer)
+// against the canvas. The explorer takes the SparsemapId it draws from.
+Nothofagus::SparsemapId sparsemapId = canvas.addSparsemap(
+    Nothofagus::Sparsemap(chunkSize, tileSize, palette,
+        std::span<const std::vector<std::uint8_t>>(tileGraphics)));
+Nothofagus::SparsemapExplorerId explorerId =
+    canvas.addSparsemapExplorer(Nothofagus::SparsemapExplorer(sparsemapId));
+
+// Bulk path: insert (or overwrite) a chunk at chunk coords. Cells span must
+// equal chunkSize.x * chunkSize.y (or be empty for zero-init).
+canvas.sparsemap(sparsemapId).addChunk({chunkX, chunkY},
+    std::span<const std::uint8_t>(cells));
+
+// Ad-hoc edit path: lazy-creates the owning chunk (zero-init) if missing,
+// then writes the cell. Bumps the chunk's generation counter.
+canvas.sparsemap(sparsemapId).setCell({worldX, worldY}, layerIndex);
+
+// Streaming: drop a chunk once it leaves the camera's interest area. Pool
+// slots displaying it hide next frame via chunkInBounds.
+canvas.sparsemap(sparsemapId).removeChunk({chunkX, chunkY});
+
+// Same camera API as TilemapExplorer.
+canvas.sparsemapExplorer(explorerId).setCamera({scrollX, scrollY});
+```
+
+**Differences from `Tilemap`:**
+- No `mapSize`. World is unbounded; chunks exist only where `addChunk` / `setCell` put them.
+- `setCell` is **lazy-creating** — writing into an unloaded chunk creates it (zero-initialised) instead of asserting. Convenient for editor flows.
+- `cell({worldX, worldY})` returns `0` if the owning chunk is missing (consistent with chunk-not-yet-loaded semantics).
+- `chunkGeneration(chunkPos)` returns `0` for missing chunks. Combined with `PoolSlot::syncedGeneration` starting at `0` and the off-world slot reset (`currentWorldChunk = {-1,-1}`), the dirty-check handles "chunk removed under a displaying slot" correctly: slot hides next frame; if it ever scrolls back to that coord and the chunk is re-added, a fresh sync runs.
+- No `inBounds` — every world coord is valid; only `chunkInBounds(chunkPos)` is meaningful.
+- The internal cache is an `IndirectTexture mCacheTemplate` carrying atlas + palette only (no `setMap` call). Slot textures still clone via `IndirectTexture(other, chunkSize)`; that constructor only needs atlas + palette + tileSize from the source.
+
+**Lifecycle rules:**
+- `addSparsemap` registers the world data and returns a `SparsemapId`; `addSparsemapExplorer(SparsemapExplorer(sparsemapId))` registers the pooled renderer against that id.
+- **Tear down explorers before their sparsemaps.** `removeSparsemap` fires a `debugCheck` if any `SparsemapExplorer` still references it.
+- `removeSparsemapExplorer(explorerId)` removes all pool bellotas and textures it owns.
+- Multiple `SparsemapExplorer` instances may reference the same `Sparsemap`; each polls per-chunk generation counters independently.
+- The `Sparsemap` constructor `debugCheck`s the same `chunkSize * tileSize` int-range bound as `Tilemap`.
+
+**Deferred (sparse-specific):** streaming callback API (`onPatchNeeded(worldAabb)` / `onPatchEvictable`); explicit eviction policies; per-chunk metadata for tagging streamed-from-disk chunks; partial uploads inside a chunk.
+- **Custom meshes are forbidden on tile-map textures.** The tile-map shader treats incoming UVs as `[0, 1]` over the full tile-map extent and quantises to cell indices, so only the engine-generated auto-quad's UVs sample correctly. `addBellota`, `setMesh`, and `setTexture` enforce the restriction via `debugCheck`.
+
+### Render targets
+
+Render sprites into an off-screen texture (a **render target**) and then sample that texture from another bellota — the basis for diegetic UI, mirrors, mini-maps, post-processing, etc.
+
+```cpp
+// Create a 64×64 RTT with a semi-transparent dark-blue clear color.
+Nothofagus::RenderTargetId renderTargetId = canvas.addRenderTarget({64, 64});
+canvas.setRenderTargetClearColor(renderTargetId, {0.0f, 0.0f, 0.0f, 0.5f});
+Nothofagus::TextureId renderTargetTextureId = canvas.renderTargetTexture(renderTargetId);
+
+// Display bellota — samples the RTT and shows it on the main canvas.
+Nothofagus::BellotaId displayId = canvas.addBellota({{{64.0f, 64.0f}}, renderTargetTextureId});
+
+canvas.run([&](float dt) {
+    // Schedule these bellotas to be drawn into the RTT this frame.
+    // They are rendered in the RTT's coordinate space (origin bottom-left, size 64×64)
+    // and also appear on the main canvas at their own positions (dual rendering).
+    canvas.renderTo(renderTargetId, {redBellotaId, blueBellotaId});
+});
+```
+
+**Rules:**
+- Call `renderTo(...)` from inside the `run()` / `tick()` update callback. It enqueues the pass; execution happens before the main draw each frame.
+- The bellotas passed to `renderTo` render **both** into the RTT and onto the main canvas — they don't disappear from the main explorer.
+- The RTT uses its own coordinate space: bottom-left = (0, 0), top-right = (width, height), in RTT pixels. The bellotas' own `x, y` are interpreted in that space when rendered into the RTT.
+- `renderTargetTexture(renderTargetId)` returns a `TextureId` proxy valid for the lifetime of the RTT. Do **not** call `removeTexture()` on it — the RTT owns the underlying GPU texture.
+- `removeRenderTarget(renderTargetId)` frees the FBO / VkImage + framebuffer and the proxy texture in one call.
+
+**Nested render targets.** RTTs are valid sources for other RTTs — when a bellota that samples RTT-A is included in a `renderTo(RTT-B, ...)` call, RTT-A's output feeds RTT-B that same frame. The engine orders RTT passes by dependency so the source is always rendered before its dependent. See [examples/hello_nested_render_targets.cpp](examples/hello_nested_render_targets.cpp).
+
+#### Render ImGui into a render target
+
+Draw an interactive ImGui panel into an RTT that a bellota samples — enabling *diegetic* UI (ImGui text and widgets living inside the game world).
+
+```cpp
+auto renderTargetId = canvas.addRenderTarget({160, 120});
+canvas.setRenderTargetClearColor(renderTargetId, {0.02f, 0.04f, 0.12f, 1.0f});
+auto displayId = canvas.addBellota({{{96.0f, 80.0f}}, canvas.renderTargetTexture(renderTargetId)});
+
+// Bake a font from the canvas's built-in default source at a specific
+// *logical* (game-canvas) pixel size for crisp glyphs inside the RTT.
+// Returns a stable ImguiFontId; dedups by (sourceId, sizePx) — repeat
+// calls with the same args return the same id.
+Nothofagus::ImguiFontId diegeticId =
+    canvas.bakeImguiFont(canvas.defaultImguiFontSourceId(), 12.0f);
+
+float sliderValue = 0.42f;
+int   clickCount  = 0;
+
+canvas.run([&](float dt) {
+    // Queue ImGui draws for the RTT. The callback runs on a secondary
+    // ImGuiContext owned by this render target — state is isolated from
+    // the main UI. The diegeticId is auto-pushed before the callback and
+    // popped after, so the body never has to mention ImFont.
+    canvas.renderImguiTo(renderTargetId, diegeticId, [&] {
+        ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(160, 120), ImGuiCond_Always);
+        ImGui::Begin("In-World Panel", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+        ImGui::SliderFloat("value", &sliderValue, 0.0f, 1.0f);
+        if (ImGui::Button("click")) clickCount++;
+        ImGui::End();
+    });
+
+    // Main-canvas ImGui draws normally on the main context.
+    ImGui::Begin("stats"); ImGui::Text("clicks=%d", clickCount); ImGui::End();
+});
+```
+
+If the panel doesn't have a specific font of its own, pass `canvas.defaultImguiFontId()` to render with the secondary-context default that the manager already sets up at construction:
+
+```cpp
+canvas.renderImguiTo(renderTargetId, canvas.defaultImguiFontId(), [&] { ... });
+```
+
+**How it works (multi-context design):**
+- The ImGui-RTT flow is encapsulated in `ImguiRttManager` ([source/imgui_rtt_manager.h](source/imgui_rtt_manager.h)). It owns the per-frame queue of pending RTT passes and the per-RTT secondary `ImGuiContext` cache (`std::unordered_map<RenderTargetId, std::unique_ptr<ImGuiContext, ImGuiContextDeleter>>`). Lazy-create on first use; tear-down on `removeRenderTarget()` and in the `Canvas` destructor (before `mBackend.shutdown()`).
+- The callback runs during the pre-main RTT pass phase on the secondary context — `ImGui::Begin/End/Text/...` calls inside it target that context's draw list only.
+- The OpenGL ImGui backend is FBO-agnostic; the Vulkan backend's per-context pipeline is built against `mRttRenderPass`, so it is render-pass-compatible with `beginRttPass`. **No changes to `imgui_impl_opengl3.*` / `imgui_impl_vulkan.*` are required.**
+- The platform backend (GLFW/SDL3) is skipped for secondary contexts — they run headless-style with `IO.DisplaySize` / `IO.DeltaTime` set manually. This means the feature works identically across GLFW+OpenGL, GLFW+Vulkan, SDL3+OpenGL, SDL3+Vulkan, and headless Vulkan.
+
+**Limitations (v1):**
+- **Input is not forwarded** to the secondary context — widgets render correctly but mouse/keyboard events only reach the main context. Forwarding canvas-space mouse coords into the RTT's `IO.MousePos` is a natural follow-up.
+- Each secondary context has its own ID stack, window state, and widget values — widgets with the same name in different RTTs do not collide, and neither inherits state from the main UI.
+
+### ImGui fonts — `ImguiFontManager`, `ImguiFontSourceId`, `ImguiFontId`
+
+`ImguiFontManager` ([source/imgui_font_manager.h](source/imgui_font_manager.h), held by `ImguiRttManager`) owns the entire ImGui-font lifecycle for a Canvas: the main HiDPI font (used by main-canvas UI), the secondary-context default font, every registered TTF buffer, every baked `(source, size)` pair, and the deferred bake/remove queue + atlas-rebuild flow. Two `IndexedContainer`s back the manager — one of `FontSource` (each registered TTF buffer + its `GlyphRange`) keyed by `ImguiFontSourceId` ([include/imgui_font_source_id.h](include/imgui_font_source_id.h)), and one of `FontEntry` (each baked size, with a per-entry `sourceId`) keyed by `ImguiFontId` ([include/imgui_font_id.h](include/imgui_font_id.h)). Atlas glyphs are owned by the shared `ImFontAtlas`; the manager stores non-owning observer pointers and `rebakeAll()` patches them in place across rebuilds.
+
+- At canvas construction, `ImguiFontManager::initialize(contentScale)` registers the embedded TTF as the default source (id exposed via `Canvas::defaultImguiFontSourceId()`), adds the main HiDPI font at `imguiFontSize * contentScale * contentScale` for crisp DPI-aware glyphs on the main UI, then bakes the unscaled `imguiFontSize` from the default source and registers it as `io.FontDefault` for every secondary RTT context (id exposed via `Canvas::defaultImguiFontId()`). Result: ImGui text inside an RTT renders at its logical pixel height *in RTT pixels* — OS DPI scaling has no meaning in the game-canvas pixel grid, and the secondary-context default deliberately ignores it.
+- `Canvas::addImguiFontSource(span<const std::byte>, GlyphRange) -> ImguiFontSourceId` registers a user-supplied TTF. Bytes are copied internally; safe to call before `run()` or from inside an update / `renderImguiTo` callback. `GlyphRange` (also in `imgui_font_source_id.h`) is a tiny enum — `Default`, `Greek`, `Cyrillic`, `Korean`, `Japanese`, `ChineseFull`, `ChineseSimplifiedCommon`, `Thai`, `Vietnamese` — that maps to `ImFontAtlas::GetGlyphRangesXxx()` inside the implementation, keeping `imgui.h` out of the public surface. `Canvas::removeImguiFontSource(sourceId)` cascade-removes every `ImguiFontId` baked from that source via the same deferred path; removing the default source is forbidden (`debugCheck`).
+- `Canvas::bakeImguiFont(ImguiFontSourceId, float sizePx) -> ImguiFontId` bakes from a registered source at a logical size. Repeat calls with the same `(sourceId, sizePx)` return the same id (the manager dedups by `(sourceId, sizePx)` — ImGui itself does not dedupe `AddFontFromMemoryTTF` calls). Pass `defaultImguiFontSourceId()` to bake from the embedded TTF.
+- `Canvas::removeImguiFont(ImguiFontId)` schedules a full atlas rebuild at the start of the next frame: `ImFontAtlas::Clear()` + re-add main HiDPI font + `rebakeAll()` for surviving entries (each re-baked from its attributed source) + secondary-context `io.FontDefault` refresh + GPU font texture re-upload via `ActiveBackend::rebuildImguiFontTexture()`. Orchestration lives on `ImguiRttManager::drainPendingFontOps(contentScale)` (called once per frame from `runOneFrame`); the cache-side parts (Clear + re-add + rebake) live on `ImguiFontManager::drainPendingOpsAndRebuildAtlas(contentScale)`. The id passed to remove is invalidated; every other id survives the rebuild because each entry's `ImFont*` is patched in place — `Canvas::renderImguiTo(rtId, otherId, cb)` keeps working without intervention. The same drain handles `RemoveSource` ops before per-id removes, so cascade-cleanup of all entries baked from a removed source is automatic.
+- `Canvas::pushImguiFont(ImguiFontId) / popImguiFont()` mid-callback override the panel's font without touching `ImFont`. `Canvas::isImguiFontReady(id)` guards against the one-frame deferred-bake window after `bakeImguiFont` returns; `Canvas::getImguiFontPtr(id) -> ImFont*` is the escape hatch for ImGui APIs that take an `ImFont*` directly (`ImGui::CalcTextSizeA` etc.).
+- The ID-stable design: only `removeImguiFont(id)` (or a cascade from `removeImguiFontSource`) invalidates `id`. Atlas rebuilds (triggered by any other id's removal) leave every other id valid — the underlying pointer changes but `Canvas::renderImguiTo`, `pushImguiFont`, etc. resolve through the id automatically. See [imgui_font_removal_analysis.md](imgui_font_removal_analysis.md) for the rationale behind eager full rebuild vs alternatives.
+
+**Limitation:** atlas rebuild on remove rasterises every surviving glyph again. `removeImguiFont` is meant to be a user-driven, infrequent op; cycling it once per frame would be wasteful (ImGui has no incremental remove and no way to retain glyph data across `Clear()`). For long-running apps that don't actually need to free atlas memory, leaving baked fonts alive is the cheaper path.
+
+### Markdown rendering
+
+`MarkdownRenderer` ([include/markdown_renderer.h](include/markdown_renderer.h)) wraps `mekhontsev/imgui_md` (parser: `mity/md4c`) behind a Nothofagus-style API. Font selection uses `ImguiFontId` handles instead of raw `ImFont*`, so the same font baking system documented above drives heading sizes, code-font choice, and bold/italic variants.
+
+```cpp
+// Bake font sizes; reuse a single source for all sizes, or register
+// dedicated bold/italic TTFs via Canvas::addImguiFontSource for true
+// distinct glyphs.
+Nothofagus::ImguiFontSourceId source = canvas.defaultImguiFontSourceId();
+Nothofagus::ImguiFontId bodyId = canvas.bakeImguiFont(source, 16.0f);
+Nothofagus::ImguiFontId codeId = canvas.bakeImguiFont(source, 14.0f);
+Nothofagus::ImguiFontId h1Id   = canvas.bakeImguiFont(source, 28.0f);
+Nothofagus::ImguiFontId h2Id   = canvas.bakeImguiFont(source, 22.0f);
+
+Nothofagus::MarkdownStyle style;
+style.regular     = bodyId;
+style.bold        = bodyId;          // share when distinct fonts aren't registered
+style.italic      = bodyId;
+style.code        = codeId;
+style.headings[0] = h1Id;            // h1
+style.headings[1] = h2Id;            // h2
+// style.headings[2..5] left empty -> falls back to current ImGui font
+
+Nothofagus::MarkdownRenderer markdown(canvas);  // canvas must outlive markdown
+markdown.setStyle(style);
+markdown.setOpenUrlCallback([](std::string_view url){ /* open in browser */ });
+
+canvas.run([&](float) {
+    ImGui::Begin("docs");
+    markdown.print("# Hello\n\nSome **bold** text and a [link](https://...).\n");
+    ImGui::End();
+});
+```
+
+**Supported subset (v1):** headings (h1–h6), emphasis (bold, italic, bold-italic), inline code, fenced code blocks, unordered and ordered lists with nesting, blockquotes, horizontal rules, tables (`tableBorder` / `tableHeaderHighlight` toggles on `MarkdownStyle`), links with optional click callback, strikethrough.
+
+**Not supported (v1):** inline images (`![alt](url)`) — the parser consumes them and silently skips. Image support requires a `TextureId → ImTextureID` bridge that handles the engine's layered (2D-array) texture format.
+
+**Rules:**
+- `MarkdownRenderer(Canvas&)` binds for the renderer's lifetime; the canvas must outlive it.
+- Each `MarkdownStyle` slot is `std::optional<ImguiFontId>`; empty slots fall back to whatever ImGui font is current when `print(...)` is called.
+- `print(text)` must be called inside an active ImGui frame — typically inside `canvas.run(...)` or `renderImguiTo(...)`. It writes into the **current** ImGui window; bracket with `ImGui::Begin/End` (or any window-context-bearing scope) yourself.
+
+### File browser
+
+`imgui-filebrowser` (`AirGuanZ/imgui-filebrowser`) is vendored under `third_party/` so consumer code can `#include <imfilebrowser.h>` and drive `ImGui::FileBrowser` directly — there is no Nothofagus wrapper. Useful for asset pickers, save dialogs, and runtime TTF/asset swapping. See [examples/hello_custom_font.cpp](examples/hello_custom_font.cpp) for the canonical pattern (a TTF picker driving `Canvas::addImguiFontSource`).
+
+```cpp
+#include <imfilebrowser.h>
+
+ImGui::FileBrowser fileDialog;
+fileDialog.SetTitle("Pick a font");
+fileDialog.SetTypeFilters({".ttf", ".otf"});
+
+canvas.run([&](float) {
+    if (ImGui::Button("Open...")) fileDialog.Open();
+    fileDialog.Display();
+    if (fileDialog.HasSelected()) {
+        auto path = fileDialog.GetSelected();
+        fileDialog.ClearSelected();
+        // ... load the file ...
+    }
+});
+```
+
 ### Keyboard input
+
 ```cpp
 controller.registerAction({Key::W, DiscreteTrigger::Press}, [&]() { ... });
 controller.deleteAction({Key::W, DiscreteTrigger::Press});
@@ -271,329 +778,6 @@ std::vector<int> ids = controller.getConnectedGamepadIds();   // sorted
 
 Gamepad button events are dispatched in `processInputs()` (same frame-deferred pattern as keyboard/mouse). Axis callbacks fire immediately when polled (same pattern as scroll).
 
-### Tile maps
-
-`IndirectTexture` doubles as a tile-map source: store the unique tile graphics as layers, then call `setMap(mapSize)` to allocate a `mapSize.x * mapSize.y` cell grid where each cell holds a `uint8_t` layer index. The bellota's mesh expands to `mapSize * size()` (per-tile pixel size × grid). Rendering goes through a separate 3-binding GPU pipeline (`atlas` + `map` + `palette`) so a tilemap with N unique tiles uses an N-layer atlas regardless of cell count — tile graphics are reused across cells.
-
-```cpp
-constexpr glm::ivec2 tileSize{8, 8};
-constexpr glm::ivec2 mapSize {4, 3};
-constexpr std::size_t tileCount = 2;          // unique tile graphics
-
-Nothofagus::IndirectTexture tileMap(tileSize, glm::vec4(0.0f), tileCount);
-tileMap.setPallete(Nothofagus::ColorPallete{ /* ... */ });
-
-// Populate each tile slot from a contiguous span of palette indices
-auto circlePx = makeCircleTile(tileSize);    // std::vector<std::uint8_t>, tileSize.x * tileSize.y bytes
-tileMap.setPixels(std::span<const std::uint8_t>(circlePx), 0);
-auto ditherPx = makeDitherGradientTile(tileSize);
-tileMap.setPixels(std::span<const std::uint8_t>(ditherPx), 1);
-
-tileMap.setMap(mapSize);                      // opt into tile-map mode
-for (int row = 0; row < mapSize.y; ++row)
-    for (int col = 0; col < mapSize.x; ++col)
-        tileMap.setCell(col, row, static_cast<std::uint8_t>((col + row) % 2));
-
-Nothofagus::TextureId tileMapTexId = canvas.addTexture(tileMap);
-```
-
-**Constraints / behavior:**
-- Pass `mapSize == {0, 0}` to `setMap` to revert back to plain indirect/animation mode.
-- `bellota.currentLayer()` is unused for tilemap textures — per-cell layer choice is driven by the cell grid, not by a global layer index. Animation state machines should target non-tilemap `IndirectTexture` instances.
-- `setCell` triggers `mMapDirty` and is hot-uploadable per-frame; per-pixel `setPixels` triggers `mAtlasDirty` for tile-graphic mutations.
-- The palette is shared between the tile-map and indirect rendering paths — `setPallete` works the same way.
-- `setMapBulk(span)` overwrites the entire cell grid in one shot from a row-major byte buffer of `mapSize.x * mapSize.y` layer indices. Faster than per-cell `setCell` when replacing a large region — one memcpy + one dirty-flag set, no per-cell bookkeeping.
-
-### Huge tilemaps via `Tilemap` + `TilemapExplorer`
-
-Single-`IndirectTexture` tilemaps scale poorly: any `setCell` re-uploads the entire world's map texture, and the bellota's mesh covers the whole world even when only a small window is visible. For huge maps (open worlds, side-scrolling levels), use the **`Tilemap` + `TilemapExplorer` pair** instead. The world data lives once in a `Tilemap`; a `TilemapExplorer` owns a small pool of `IndirectTexture` + `Bellota` slots sized to the canvas viewport + a 1-chunk margin. Slots are anchored to pool indices; world chunks rotate through them as the camera scrolls. Only border slots crossing into/out of explorer get their cell data rewritten — smooth scrolling within a chunk is a zero-rebind frame.
-
-```cpp
-// Build the tile graphics (palette indices, one std::vector per atlas layer).
-std::vector<std::vector<std::uint8_t>> tileGraphics{ /* layer 0, layer 1, ... */ };
-
-// Register the Tilemap (world data) and a TilemapExplorer (pooled renderer)
-// against the canvas. The explorer takes the TilemapId it draws from.
-Nothofagus::TilemapId tilemapId = canvas.addTilemap(
-    Nothofagus::Tilemap(
-        /*mapSize  */ glm::ivec2{256, 256},   // world cells
-        /*chunkSize*/ glm::ivec2{32, 32},     // cells per pool slot
-        /*tileSize */ glm::ivec2{16, 16},     // pixels per cell
-        palette,
-        std::span<const std::vector<std::uint8_t>>(tileGraphics)));
-Nothofagus::TilemapExplorerId explorerId =
-    canvas.addTilemapExplorer(Nothofagus::TilemapExplorer(tilemapId));
-
-// Edit the world at world-cell coordinates — the owning chunk's generation
-// bumps, the pool slot displaying it (if any) re-syncs next frame.
-canvas.tilemap(tilemapId).setCell({worldCol, worldRow}, layerIndex);
-
-// Guard arbitrary coordinates against the world extent before editing.
-if (canvas.tilemap(tilemapId).inBounds({worldCol, worldRow}))
-    canvas.tilemap(tilemapId).setCell({worldCol, worldRow}, layerIndex);
-
-// Pan the explorer via the camera (world pixels; (0,0) = world origin centered).
-canvas.tilemapExplorer(explorerId).setCamera({scrollX, scrollY});
-```
-
-**How it works:**
-- `Tilemap` is internally a single `IndirectTexture` shaped to the full world (atlas + palette + `setMap(mapSize)` cell grid) plus per-chunk generation counters. The cache texture is never registered with the canvas, so no GPU resources are allocated — `IndirectTexture` is reused purely for its storage layout and tested mutation methods (`setCell` / `cell` / `setMapBulk`). Use `tilemap.cacheTexture()` to inspect or clone the underlying texture.
-- `TilemapExplorer` is registered against a `TilemapId`; on registration the canvas allocates a `ceil(screenSize / chunkPixelSize) + 2` grid of pool slots. Each slot is an `IndirectTexture` (with its own copy of the atlas + palette, chunk-sized map storage) plus a `Bellota`. Both are **explorer-managed**: calling `canvas.removeBellota`/`canvas.removeTexture` on those ids fires a `debugCheck`. Use `canvas.removeTilemapExplorer(explorerId)` to tear the pool down.
-- Per-frame pre-pass (runs between the user update callback and the texture-upload pass): for each explorer, compute which world chunk each slot should display based on the camera; for any slot whose desired chunk changed (or whose chunk's generation advanced), memcpy the chunk's cells into the slot's IndirectTexture via `setMapBulk` and reposition the slot's bellota. The existing dirty-upload path then re-uploads only those small chunk map textures.
-- Renderer learns nothing new — pool slots flow through the existing 3-binding tilemap path. No shader, backend, or render-loop changes.
-- **Pool resize on `setScreenSize`:** the pre-pass also compares the canvas's current `screenSize()` against the size the pool was built for. If they differ, the pool is torn down and rebuilt against the new size in one frame, then chunk-synced — `canvas.setScreenSize(...)` "just works" with active views. Window resize / fullscreen don't trigger this because the letterbox preserves the logical canvas; only explicit `setScreenSize` does.
-
-**Memory cost:**
-- Atlas: 1 copy in `Tilemap` + 1 copy per pool slot (~50 copies for typical viewports).
-- Palette: same — 1 + ~pool.
-- World cell grid: 1 byte per world cell, held once in `Tilemap`.
-- Independent of world size beyond the cell grid itself: a 1000×1000-cell world (~1 MB cell grid) uses ~50 IndirectTextures and ~50 bellotas, regardless of how big the world is.
-
-**Lifecycle rules:**
-- `addTilemap` registers the world data and returns a `TilemapId`; `addTilemapExplorer(TilemapExplorer(tilemapId))` registers the pooled renderer against that id.
-- **Tear down explorers before their tilemaps.** `removeTilemap(tilemapId)` fires a `debugCheck` if any `TilemapExplorer` still references it; call `removeTilemapExplorer(explorerId)` on every owning explorer first. (See [examples/hello_tilemap_huge.cpp](examples/hello_tilemap_huge.cpp) `rebuild` lambda for the canonical pattern.)
-- `removeTilemapExplorer(explorerId)` removes all pool bellotas and textures it owns.
-- Multiple `TilemapExplorer` instances may reference the same `Tilemap` (e.g., main explorer + mini-map explorer); each polls per-chunk generation counters independently.
-- The `Tilemap` constructor `debugCheck`s that `chunkSize.x * tileSize.x` and `chunkSize.y * tileSize.y` fit in `int`. This one-time bound keeps the per-frame chunk-pixel math in `explorer_manager.cpp` safe in plain `int` without runtime overflow guards.
-
-**Camera convention (v1):** `setCamera(offset)` sets the world-pixel coordinate that appears at the canvas center. `(0, 0)` = world origin centered. The `Tilemap`'s coordinate space is bottom-left = `(0, 0)` cell, top-right = `(mapSize.x - 1, mapSize.y - 1)`.
-
-**Deferred:** streaming (world cell grid eviction to disk); RTT-targeted tilemap rendering; shader-scrolled single-draw fast path; per-cell partial GPU upload inside a chunk's map texture; direct rendering of small tilemaps via `canvas.addTexture(tilemap.cacheTexture())`.
-
-### Sparse tilemaps via `Sparsemap` + `SparsemapExplorer`
-
-Sibling to `Tilemap` for **unbounded / sparse worlds**: same chunk-pool rendering, same shader path, same pool sizing math — but the world data lives in a hash-map of chunks keyed by chunk coordinate instead of a dense `mapSize`-shaped grid. Memory scales with **populated chunks**, not with how far the camera can travel. Ideal for procedural worlds, streaming, or hand-authored open worlds that don't fit in memory.
-
-Both `TilemapExplorer` and `SparsemapExplorer` are concrete typedefs of a shared `Explorer<T>` template constrained by the `TilemapLike` C++20 concept (see [include/explorer.h](include/explorer.h)); the per-frame chunk-sync pre-pass in [source/explorer_manager.cpp](source/explorer_manager.cpp) is written once and explicitly instantiated for both backends. The renderer's specialization point is the `chunkInBounds(chunkPos)` predicate — dense returns `chunkPos` ∈ `[0, chunkGridSize)`, sparse returns `mChunks.contains(chunkPos)`; `exploreCell` gates `chunkGeneration` and `chunkDataInto` behind it so those two methods are always called on present chunks. The user-facing surface diverges further — `Sparsemap::chunkGeneration(missing)` returns `0`, `Sparsemap::chunkDataInto(missing, out)` zero-fills, and `Sparsemap::cell(missing)` returns `0`, whereas the dense `Tilemap` counterparts `debugCheck` on out-of-bounds — but that's a user-API convenience for ad-hoc reads against unbounded worlds, not a load-bearing contract for the chunk-sync pass. Each backend asserts conformance via `static_assert(TilemapLike<T>);` in its `.cpp` so a missing/changed method shows up as a clear concept error instead of an opaque template instantiation failure.
-
-```cpp
-// Register an empty Sparsemap (no mapSize) and a SparsemapExplorer (pooled renderer)
-// against the canvas. The explorer takes the SparsemapId it draws from.
-Nothofagus::SparsemapId sparsemapId = canvas.addSparsemap(
-    Nothofagus::Sparsemap(chunkSize, tileSize, palette,
-        std::span<const std::vector<std::uint8_t>>(tileGraphics)));
-Nothofagus::SparsemapExplorerId explorerId =
-    canvas.addSparsemapExplorer(Nothofagus::SparsemapExplorer(sparsemapId));
-
-// Bulk path: insert (or overwrite) a chunk at chunk coords. Cells span must
-// equal chunkSize.x * chunkSize.y (or be empty for zero-init).
-canvas.sparsemap(sparsemapId).addChunk({chunkX, chunkY},
-    std::span<const std::uint8_t>(cells));
-
-// Ad-hoc edit path: lazy-creates the owning chunk (zero-init) if missing,
-// then writes the cell. Bumps the chunk's generation counter.
-canvas.sparsemap(sparsemapId).setCell({worldX, worldY}, layerIndex);
-
-// Streaming: drop a chunk once it leaves the camera's interest area. Pool
-// slots displaying it hide next frame via chunkInBounds.
-canvas.sparsemap(sparsemapId).removeChunk({chunkX, chunkY});
-
-// Same camera API as TilemapExplorer.
-canvas.sparsemapExplorer(explorerId).setCamera({scrollX, scrollY});
-```
-
-**Differences from `Tilemap`:**
-- No `mapSize`. World is unbounded; chunks exist only where `addChunk` / `setCell` put them.
-- `setCell` is **lazy-creating** — writing into an unloaded chunk creates it (zero-initialised) instead of asserting. Convenient for editor flows.
-- `cell({worldX, worldY})` returns `0` if the owning chunk is missing (consistent with chunk-not-yet-loaded semantics).
-- `chunkGeneration(chunkPos)` returns `0` for missing chunks. Combined with `PoolSlot::syncedGeneration` starting at `0` and the off-world slot reset (`currentWorldChunk = {-1,-1}`), the dirty-check handles "chunk removed under a displaying slot" correctly: slot hides next frame; if it ever scrolls back to that coord and the chunk is re-added, a fresh sync runs.
-- No `inBounds` — every world coord is valid; only `chunkInBounds(chunkPos)` is meaningful.
-- The internal cache is an `IndirectTexture mCacheTemplate` carrying atlas + palette only (no `setMap` call). Slot textures still clone via `IndirectTexture(other, chunkSize)`; that constructor only needs atlas + palette + tileSize from the source.
-
-**Lifecycle rules:**
-- `addSparsemap` registers the world data and returns a `SparsemapId`; `addSparsemapExplorer(SparsemapExplorer(sparsemapId))` registers the pooled renderer against that id.
-- **Tear down explorers before their sparsemaps.** `removeSparsemap` fires a `debugCheck` if any `SparsemapExplorer` still references it.
-- `removeSparsemapExplorer(explorerId)` removes all pool bellotas and textures it owns.
-- Multiple `SparsemapExplorer` instances may reference the same `Sparsemap`; each polls per-chunk generation counters independently.
-- The `Sparsemap` constructor `debugCheck`s the same `chunkSize * tileSize` int-range bound as `Tilemap`.
-
-**Deferred (sparse-specific):** streaming callback API (`onPatchNeeded(worldAabb)` / `onPatchEvictable`); explicit eviction policies; per-chunk metadata for tagging streamed-from-disk chunks; partial uploads inside a chunk.
-- **Custom meshes are forbidden on tile-map textures.** The tile-map shader treats incoming UVs as `[0, 1]` over the full tile-map extent and quantises to cell indices, so only the engine-generated auto-quad's UVs sample correctly. `addBellota`, `setMesh`, and `setTexture` enforce the restriction via `debugCheck`.
-
-### Custom meshes
-
-Bellotas draw the implicit centered quad sized to their texture by default. Pass a `MeshId` as the third constructor argument to draw arbitrary triangle geometry instead. The texture is still required — it supplies the pixels the existing shader samples.
-
-```cpp
-// Build a triangle mesh in (x, y) pixels with UVs in [0, 1].
-Nothofagus::Mesh mesh;
-mesh.vertices = {
-    {{-10.0f, -10.0f}, {0.0f, 1.0f}},
-    {{ 10.0f, -10.0f}, {1.0f, 1.0f}},
-    {{  0.0f,  14.0f}, {0.5f, 0.0f}},
-};
-mesh.indices = {0, 1, 2};
-
-Nothofagus::MeshId meshId = canvas.addMesh(mesh);
-// Move-overload also available for callers that can hand off ownership:
-//   auto meshId = canvas.addMesh(std::move(mesh));
-
-// Attach the custom mesh; the texture supplies pixels via the same shader.
-Nothofagus::BellotaId id = canvas.addBellota({{{x, y}}, texId, meshId});
-
-// Swap geometry mid-frame; the previous mesh becomes eligible for GC.
-canvas.setMesh(id, otherMeshId);
-
-// Read-only mesh access (auto-quad or user mesh, transparent).
-const Nothofagus::Mesh& currentByBellota = canvas.mesh(id);      // resolves via bellota.meshId()
-const Nothofagus::Mesh& currentByMeshId  = canvas.mesh(meshId);  // direct handle lookup
-
-// Explicit removal of a user mesh — must be unreferenced (debugCheck enforces this).
-canvas.removeMesh(meshId);
-
-// Disable per-frame auto-GC during bulk loading (re-enable when done).
-canvas.setAutoRemoveUnusedMeshes(false);
-```
-
-**Storage model:**
-- `Vertex { glm::vec2 position; glm::vec2 uv; }` ([include/mesh.h](include/mesh.h)) is the fixed vertex layout — matches the shader binding for both OpenGL and Vulkan backends. No custom attributes.
-- Every bellota carries a `MeshId`. If the user does not supply one (`Bellota(Transform, TextureId)`), the canvas materialises an **auto-quad** sized to the texture at `addBellota` time and stamps the id onto the stored bellota. There is no second mesh storage path — both flow through `MeshContainer` / `MeshPack`.
-- All bellotas referencing the same `MeshId` share **one GPU upload**. Lazy upload happens once on the next frame; subsequent registrations are zero-cost.
-- `MeshUsageMonitor` tracks references analogously to `TextureUsageMonitor`. When the last bellota referencing a `MeshId` goes away, the mesh is freed by `clearUnusedMeshes()` on the following frame (auto-GC is on by default; `setAutoRemoveUnusedMeshes(false)` pauses it for bulk loading, same pattern as `setAutoRemoveUnusedTextures`).
-- `setTexture(bellotaId, newTexId)` regenerates the auto-quad sized to the new texture **only when the bellota uses an engine-allocated auto-quad**. User-supplied meshes are left untouched on texture change — that's the user's choice.
-- `removeMesh(meshId)` is for user-registered meshes only. Removing an auto-quad fires `debugCheck`; auto-quads are managed exclusively by the canvas.
-- **Custom meshes cannot be combined with tile-map textures.** `addBellota` (with a user MeshId), `setMesh`, and `setTexture` all `debugCheck`-reject the combination because the tile-map shader requires the auto-quad's exact UV invariant. See [the tile-map constraints](#tile-maps) for details.
-
-### Animations
-
-Multi-layer `IndirectTexture` stores frames as layers. `AnimationStateMachine` drives `bellota.currentLayer()` automatically each frame.
-
-```cpp
-// 1. Build a multi-layer texture (3rd arg = layer count)
-Nothofagus::IndirectTexture tex({w, h}, glm::vec4(0,0,0,1), numLayers);
-tex.setPallete(palette).setPixels({/* frame 0 */}, 0).setPixels({/* frame 1 */}, 1); // ...
-Nothofagus::TextureId texId = canvas.addTexture(tex);
-Nothofagus::BellotaId id    = canvas.addBellota({{{x, y}}, texId});
-
-// 2. Define AnimationState objects (layers, times_ms, name) — must outlive the machine
-AnimationState idleState({0, 1, 2}, {100.0f, 100.0f, 100.0f}, "idle");
-AnimationState runState ({3, 4},    {80.0f,  80.0f},           "run");
-
-// 3. Build state machine bound to the bellota reference
-AnimationStateMachine machine(canvas.bellota(id));
-machine.addState("idle", &idleState);
-machine.addState("run",  &runState);
-
-// 4. Define named transition edges: (fromState, transitionName, toState)
-machine.newAnimationTransition("idle", "start_running", "run");
-machine.newAnimationTransition("run",  "stop",          "idle");
-
-// 5. Set initial state — required before first update()
-machine.setState("idle");
-
-// 6. Per frame:
-machine.update(dt);
-
-// 7. Trigger transitions:
-machine.transition("start_running");   // fire named edge from current state
-machine.goToState("idle");             // direct jump + reset (bypasses transition graph)
-```
-
-`AnimationState` loops automatically (after the last frame it restarts from index 0). `goToState` calls `reset()` on the target state before switching; `transition` does the same.
-
-### Display and viewport
-
-```cpp
-// Query current game viewport (updated each frame — valid inside canvas.run() callback)
-Nothofagus::ViewportRect viewport = canvas.gameViewport();
-// viewport.x, viewport.y           — bottom-left offset in framebuffer pixels (OpenGL convention: y from bottom)
-// viewport.width, viewport.height  — game area dimensions in framebuffer pixels
-```
-
-### Render to texture
-
-Render sprites into an off-screen texture (a **render target**) and then sample that texture from another bellota — the basis for diegetic UI, mirrors, mini-maps, post-processing, etc.
-
-```cpp
-// Create a 64×64 RTT with a semi-transparent dark-blue clear color.
-Nothofagus::RenderTargetId renderTargetId = canvas.addRenderTarget({64, 64});
-canvas.setRenderTargetClearColor(renderTargetId, {0.0f, 0.0f, 0.0f, 0.5f});
-Nothofagus::TextureId renderTargetTextureId = canvas.renderTargetTexture(renderTargetId);
-
-// Display bellota — samples the RTT and shows it on the main canvas.
-Nothofagus::BellotaId displayId = canvas.addBellota({{{64.0f, 64.0f}}, renderTargetTextureId});
-
-canvas.run([&](float dt) {
-    // Schedule these bellotas to be drawn into the RTT this frame.
-    // They are rendered in the RTT's coordinate space (origin bottom-left, size 64×64)
-    // and also appear on the main canvas at their own positions (dual rendering).
-    canvas.renderTo(renderTargetId, {redBellotaId, blueBellotaId});
-});
-```
-
-**Rules:**
-- Call `renderTo(...)` from inside the `run()` / `tick()` update callback. It enqueues the pass; execution happens before the main draw each frame.
-- The bellotas passed to `renderTo` render **both** into the RTT and onto the main canvas — they don't disappear from the main explorer.
-- The RTT uses its own coordinate space: bottom-left = (0, 0), top-right = (width, height), in RTT pixels. The bellotas' own `x, y` are interpreted in that space when rendered into the RTT.
-- `renderTargetTexture(renderTargetId)` returns a `TextureId` proxy valid for the lifetime of the RTT. Do **not** call `removeTexture()` on it — the RTT owns the underlying GPU texture.
-- `removeRenderTarget(renderTargetId)` frees the FBO / VkImage + framebuffer and the proxy texture in one call.
-
-### Render ImGui into a render target
-
-Draw an interactive ImGui panel into an RTT that a bellota samples — enabling *diegetic* UI (ImGui text and widgets living inside the game world).
-
-```cpp
-auto renderTargetId = canvas.addRenderTarget({160, 120});
-canvas.setRenderTargetClearColor(renderTargetId, {0.02f, 0.04f, 0.12f, 1.0f});
-auto displayId = canvas.addBellota({{{96.0f, 80.0f}}, canvas.renderTargetTexture(renderTargetId)});
-
-// Bake a font from the canvas's built-in default source at a specific
-// *logical* (game-canvas) pixel size for crisp glyphs inside the RTT.
-// Returns a stable ImguiFontId; dedups by (sourceId, sizePx) — repeat
-// calls with the same args return the same id.
-Nothofagus::ImguiFontId diegeticId =
-    canvas.bakeImguiFont(canvas.defaultImguiFontSourceId(), 12.0f);
-
-float sliderValue = 0.42f;
-int   clickCount  = 0;
-
-canvas.run([&](float dt) {
-    // Queue ImGui draws for the RTT. The callback runs on a secondary
-    // ImGuiContext owned by this render target — state is isolated from
-    // the main UI. The diegeticId is auto-pushed before the callback and
-    // popped after, so the body never has to mention ImFont.
-    canvas.renderImguiTo(renderTargetId, diegeticId, [&] {
-        ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(160, 120), ImGuiCond_Always);
-        ImGui::Begin("In-World Panel", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
-        ImGui::SliderFloat("value", &sliderValue, 0.0f, 1.0f);
-        if (ImGui::Button("click")) clickCount++;
-        ImGui::End();
-    });
-
-    // Main-canvas ImGui draws normally on the main context.
-    ImGui::Begin("stats"); ImGui::Text("clicks=%d", clickCount); ImGui::End();
-});
-```
-
-If the panel doesn't have a specific font of its own, pass `canvas.defaultImguiFontId()` to render with the secondary-context default that the manager already sets up at construction:
-
-```cpp
-canvas.renderImguiTo(renderTargetId, canvas.defaultImguiFontId(), [&] { ... });
-```
-
-**How it works (multi-context design):**
-- The ImGui-RTT flow is encapsulated in `ImguiRttManager` ([source/imgui_rtt_manager.h](source/imgui_rtt_manager.h)). It owns the per-frame queue of pending RTT passes and the per-RTT secondary `ImGuiContext` cache (`std::unordered_map<RenderTargetId, std::unique_ptr<ImGuiContext, ImGuiContextDeleter>>`). Lazy-create on first use; tear-down on `removeRenderTarget()` and in the `Canvas` destructor (before `mBackend.shutdown()`).
-- The callback runs during the pre-main RTT pass phase on the secondary context — `ImGui::Begin/End/Text/...` calls inside it target that context's draw list only.
-- The OpenGL ImGui backend is FBO-agnostic; the Vulkan backend's per-context pipeline is built against `mRttRenderPass`, so it is render-pass-compatible with `beginRttPass`. **No changes to `imgui_impl_opengl3.*` / `imgui_impl_vulkan.*` are required.**
-- The platform backend (GLFW/SDL3) is skipped for secondary contexts — they run headless-style with `IO.DisplaySize` / `IO.DeltaTime` set manually. This means the feature works identically across GLFW+OpenGL, GLFW+Vulkan, SDL3+OpenGL, SDL3+Vulkan, and headless Vulkan.
-
-**Font handling — `ImguiFontManager`, `ImguiFontSourceId`, `ImguiFontId`:**
-
-`ImguiFontManager` ([source/imgui_font_manager.h](source/imgui_font_manager.h), held by `ImguiRttManager`) owns the entire ImGui-font lifecycle for a Canvas: the main HiDPI font (used by main-canvas UI), the secondary-context default font, every registered TTF buffer, every baked `(source, size)` pair, and the deferred bake/remove queue + atlas-rebuild flow. Two `IndexedContainer`s back the manager — one of `FontSource` (each registered TTF buffer + its `GlyphRange`) keyed by `ImguiFontSourceId` ([include/imgui_font_source_id.h](include/imgui_font_source_id.h)), and one of `FontEntry` (each baked size, with a per-entry `sourceId`) keyed by `ImguiFontId` ([include/imgui_font_id.h](include/imgui_font_id.h)). Atlas glyphs are owned by the shared `ImFontAtlas`; the manager stores non-owning observer pointers and `rebakeAll()` patches them in place across rebuilds.
-
-- At canvas construction, `ImguiFontManager::initialize(contentScale)` registers the embedded TTF as the default source (id exposed via `Canvas::defaultImguiFontSourceId()`), adds the main HiDPI font at `imguiFontSize * contentScale * contentScale` for crisp DPI-aware glyphs on the main UI, then bakes the unscaled `imguiFontSize` from the default source and registers it as `io.FontDefault` for every secondary RTT context (id exposed via `Canvas::defaultImguiFontId()`). Result: ImGui text inside an RTT renders at its logical pixel height *in RTT pixels* — OS DPI scaling has no meaning in the game-canvas pixel grid, and the secondary-context default deliberately ignores it.
-- `Canvas::addImguiFontSource(span<const std::byte>, GlyphRange) -> ImguiFontSourceId` registers a user-supplied TTF. Bytes are copied internally; safe to call before `run()` or from inside an update / `renderImguiTo` callback. `GlyphRange` (also in `imgui_font_source_id.h`) is a tiny enum — `Default`, `Greek`, `Cyrillic`, `Korean`, `Japanese`, `ChineseFull`, `ChineseSimplifiedCommon`, `Thai`, `Vietnamese` — that maps to `ImFontAtlas::GetGlyphRangesXxx()` inside the implementation, keeping `imgui.h` out of the public surface. `Canvas::removeImguiFontSource(sourceId)` cascade-removes every `ImguiFontId` baked from that source via the same deferred path; removing the default source is forbidden (`debugCheck`).
-- `Canvas::bakeImguiFont(ImguiFontSourceId, float sizePx) -> ImguiFontId` bakes from a registered source at a logical size. Repeat calls with the same `(sourceId, sizePx)` return the same id (the manager dedups by `(sourceId, sizePx)` — ImGui itself does not dedupe `AddFontFromMemoryTTF` calls). Pass `defaultImguiFontSourceId()` to bake from the embedded TTF.
-- `Canvas::removeImguiFont(ImguiFontId)` schedules a full atlas rebuild at the start of the next frame: `ImFontAtlas::Clear()` + re-add main HiDPI font + `rebakeAll()` for surviving entries (each re-baked from its attributed source) + secondary-context `io.FontDefault` refresh + GPU font texture re-upload via `ActiveBackend::rebuildImguiFontTexture()`. Orchestration lives on `ImguiRttManager::drainPendingFontOps(contentScale)` (called once per frame from `runOneFrame`); the cache-side parts (Clear + re-add + rebake) live on `ImguiFontManager::drainPendingOpsAndRebuildAtlas(contentScale)`. The id passed to remove is invalidated; every other id survives the rebuild because each entry's `ImFont*` is patched in place — `Canvas::renderImguiTo(rtId, otherId, cb)` keeps working without intervention. The same drain handles `RemoveSource` ops before per-id removes, so cascade-cleanup of all entries baked from a removed source is automatic.
-- `Canvas::pushImguiFont(ImguiFontId) / popImguiFont()` mid-callback override the panel's font without touching `ImFont`. `Canvas::isImguiFontReady(id)` guards against the one-frame deferred-bake window after `bakeImguiFont` returns; `Canvas::getImguiFontPtr(id) -> ImFont*` is the escape hatch for ImGui APIs that take an `ImFont*` directly (`ImGui::CalcTextSizeA` etc.).
-- The ID-stable design: only `removeImguiFont(id)` (or a cascade from `removeImguiFontSource`) invalidates `id`. Atlas rebuilds (triggered by any other id's removal) leave every other id valid — the underlying pointer changes but `Canvas::renderImguiTo`, `pushImguiFont`, etc. resolve through the id automatically. See [imgui_font_removal_analysis.md](imgui_font_removal_analysis.md) for the rationale behind eager full rebuild vs alternatives.
-
-**Limitations (v1):**
-- **Input is not forwarded** to the secondary context — widgets render correctly but mouse/keyboard events only reach the main context. Forwarding canvas-space mouse coords into the RTT's `IO.MousePos` is a natural follow-up.
-- Each secondary context has its own ID stack, window state, and widget values — widgets with the same name in different RTTs do not collide, and neither inherits state from the main UI.
-- **Atlas rebuild on remove rasterises every surviving glyph again.** `removeImguiFont` is meant to be a user-driven, infrequent op; cycling it once per frame would be wasteful (ImGui has no incremental remove and no way to retain glyph data across `Clear()`). For long-running apps that don't actually need to free atlas memory, leaving baked fonts alive is the cheaper path.
-
 ### Screenshot
 
 `takeScreenshot()` reads the front buffer (the last fully rendered and swapped frame) and returns a `DirectTexture` with the game viewport's RGBA pixels, flipped to top-to-bottom row order.
@@ -626,14 +810,9 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 ## Important Details
 
 - **Default canvas size**: 256×240 pixels, 4px scale → 1024×960 window
-- **Depth/Z-ordering**: `bellota.mDepthOffset` (-128 to 127)
-- **Opacity**: `bellota.mOpacity` (0.0–1.0)
-- **Layers**: multi-layer textures use `bellota.currentLayer()` (managed automatically by `AnimationStateMachine::update()`, or set manually)
-- **Angles**: degrees, not radians
 - **MSVC/clang-cl workaround**: `FMT_UNICODE=0` in CMake for spdlog on Windows
 - **C++ standard**: C++20 required
 - **Aspect ratio**: in fullscreen and on manual window resize, game content is letterboxed/pillarboxed to preserve the canvas aspect ratio — black bands fill unused screen area. Viewport is recomputed every frame from `mWindow->getFramebufferSize()`, so it adapts automatically.
-- **Automatic texture GC**: `TextureUsageMonitor` tracks which textures are referenced by bellotas. After each `update()` callback, `clearUnusedTextures()` automatically removes any texture not referenced by at least one bellota. Calling `canvas.removeTexture()` on a texture still in use triggers a `debugCheck` assert. Use `canvas.setTexture(bellotaId, newTexId)` to swap textures — the old one is marked unused and removed automatically next frame.
 
 ## Examples Reference
 
@@ -644,7 +823,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_animation_state_machine.cpp` | Full FSM with WASD transitions |
 | `hello_direct_texture.cpp` | DirectTexture (raw RGBA) |
 | `hello_layers.cpp` | Depth-based layering |
-| `hello_text.cpp` | Text rendering |
+| `hello_text.cpp` | In-game text rendering via `writeText` / `writeChar` |
 | `hello_tint.cpp` | Color tinting |
 | `test_keyboard.cpp` | Keyboard input handling |
 | `test_gamepad.cpp` | Gamepad input: stick movement, D-pad, buttons, ImGui status |
@@ -658,7 +837,8 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_render_to_texture.cpp` | `addRenderTarget` / `renderTo` — sprites drawn into an off-screen texture sampled by another bellota |
 | `hello_nested_render_targets.cpp` | Nested RTTs — one render target's output feeds another |
 | `hello_imgui_rtt.cpp` | `renderImguiTo` — diegetic ImGui panel drawn into an RTT, sampled by a rotating bellota |
-| `hello_custom_font.cpp` | User-supplied TTF via `addImguiFontSource` — typeable path field, editable text, integer min/max + slider for size, default-vs-user side-by-side with `TextWrapped` |
+| `hello_custom_font.cpp` | User-supplied TTF via `addImguiFontSource` — typeable path field, editable text, integer min/max + slider for size, default-vs-user side-by-side with `TextWrapped`; also demonstrates the `imgui-filebrowser` integration |
+| `hello_markdown.cpp` | `MarkdownRenderer` — headings, lists, code blocks, tables, blockquotes, strikethrough, link callback; font sizes driven by `bakeImguiFont` |
 
 ## Tests
 
@@ -669,15 +849,23 @@ Enable with `-DNOTHOFAGUS_BUILD_TESTS=ON`. Two independent groups, each behind i
 | Visual (pixel-level golden-image comparison) | [tests/visual/](tests/visual/) | `NOTHOFAGUS_BUILD_TESTS_VISUAL` | Catch2 + render backend + golden-image infrastructure |
 | Nonvisual (CPU-only data/logic checks) | [tests/nonvisual/](tests/nonvisual/) | `NOTHOFAGUS_BUILD_TESTS_NONVISUAL` | Catch2 only |
 
-Run via CTest from the build directory. Both groups use Catch2 (`catch_discover_tests` registers each `TEST_CASE` as a separate CTest entry); Catch2 is added once at the `tests/CMakeLists.txt` orchestrator level when either sub-option is enabled. The visual group additionally requires a render backend and the golden-image helpers in [tests/visual/golden_image.h](tests/visual/golden_image.h); the nonvisual group builds without any render backend (use it from CI lanes that don't have a display server). The nonvisual files are [tests/nonvisual/tilemap_tests.cpp](tests/nonvisual/tilemap_tests.cpp) — pure-data tests for `Tilemap`, `IndirectTexture::setMapBulk`, and the `TilemapExplorer` pool-grid-size formula (mirrored from source) — and [tests/nonvisual/sparsemap_tests.cpp](tests/nonvisual/sparsemap_tests.cpp) — pure-data tests for `Sparsemap` (chunk lifecycle, lazy `setCell`, `chunkDataInto` zero-fill for missing chunks, independent per-chunk generation bumps).
+Run via CTest from the build directory. Both groups use Catch2 (`catch_discover_tests` registers each `TEST_CASE` as a separate CTest entry); Catch2 is added once at the `tests/CMakeLists.txt` orchestrator level when either sub-option is enabled. The visual group additionally requires a render backend and the golden-image helpers in [tests/visual/golden_image.h](tests/visual/golden_image.h); the test cases themselves live in [tests/visual/rendering_tests.cpp](tests/visual/rendering_tests.cpp). The nonvisual group builds without any render backend (use it from CI lanes that don't have a display server). The nonvisual files are [tests/nonvisual/tilemap_tests.cpp](tests/nonvisual/tilemap_tests.cpp) — pure-data tests for `Tilemap`, `IndirectTexture::setMapBulk`, and the `TilemapExplorer` pool-grid-size formula (mirrored from source) — and [tests/nonvisual/sparsemap_tests.cpp](tests/nonvisual/sparsemap_tests.cpp) — pure-data tests for `Sparsemap` (chunk lifecycle, lazy `setCell`, `chunkDataInto` zero-fill for missing chunks, independent per-chunk generation bumps).
 
-## Dependencies (third_party/ submodules)
+## Dependencies
+
+Third-party libraries are vendored via `git subtree` directly under [third_party/](third_party/). See [third_party/SOURCES.md](third_party/SOURCES.md) for upstream URLs, pinned versions, and the `git subtree pull` command to update each dependency.
 
 - **glfw** — window + input (default backend)
 - **SDL** — window + input (SDL3 backend, used when `NOTHOFAGUS_WINDOW_BACKEND=SDL3`)
-- **glad** — OpenGL loader (3.3 core)
+- **glad** — OpenGL loader (3.3 core) — *custom local code, not subtree-managed*
 - **glm** — math (vec2, vec3, mat3, etc.)
 - **imgui** — immediate-mode GUI
+- **imgui_md** — markdown rendering for ImGui (wraps md4c)
+- **md4c** — CommonMark parser used by `imgui_md`
+- **imgui-filebrowser** — `ImGui::FileBrowser` widget
 - **spdlog** — logging
-- **font8x8** — embedded bitmap font
-- **imgui_cmake** — CMake wrapper for imgui
+- **font8x8** — embedded bitmap font (used by `writeText` / `writeChar`)
+- **vk-bootstrap** — Vulkan device + instance bootstrap
+- **VulkanMemoryAllocator** — GPU memory allocator for Vulkan
+- **Catch2** — test framework (only pulled in when `NOTHOFAGUS_BUILD_TESTS=ON`)
+- **imgui_cmake** — CMake wrapper for imgui — *custom local code, not subtree-managed*
