@@ -172,8 +172,25 @@ uint32_t WindowedVulkanPresentation::imageCount() const
 
 // --- Per-frame ---
 
-AcquireResult WindowedVulkanPresentation::acquireImage(VkDevice device)
+AcquireResult WindowedVulkanPresentation::acquireImage(
+    VkDevice device, uint32_t framebufferWidth, uint32_t framebufferHeight)
 {
+    // Proactive swapchain recreate when the window has resized but the driver has not
+    // yet reported VK_ERROR_OUT_OF_DATE_KHR. Without this, FrameRunner's letterbox
+    // (computed from the new window framebuffer size) and the viewport / scissor Y-flip
+    // in beginMainPass (using the same new size) disagree with the swapchain's still-old
+    // renderArea — placing the viewport outside the framebuffer and offsetting the draw
+    // until the driver finally signals out-of-date.
+    //
+    // Fall through to the acquire on the freshly-built swapchain so we render this
+    // frame at the new size rather than dropping it.
+    if (framebufferWidth > 0 && framebufferHeight > 0 &&
+        (framebufferWidth != mSwapchainExtent.width ||
+         framebufferHeight != mSwapchainExtent.height))
+    {
+        recreateSwapchain();
+    }
+
     VkSemaphore acquireSemaphore = mImageAvailableSemaphores[mAcquireSemaphoreIndex];
     VkResult acquireResult = vkAcquireNextImageKHR(
         device, mSwapchain, UINT64_MAX, acquireSemaphore, VK_NULL_HANDLE,
@@ -695,7 +712,8 @@ uint32_t HeadlessVulkanPresentation::imageCount() const
 
 // --- Per-frame ---
 
-AcquireResult HeadlessVulkanPresentation::acquireImage(VkDevice /*device*/)
+AcquireResult HeadlessVulkanPresentation::acquireImage(
+    VkDevice /*device*/, uint32_t /*framebufferWidth*/, uint32_t /*framebufferHeight*/)
 {
     return AcquireResult::Success;
 }
