@@ -1,7 +1,6 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <ciso646>
 #include <cmath>
 #include <random>
 #include <format>
@@ -79,7 +78,7 @@ int main()
     {
         ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
         ImGui::Begin("Use W to create and S to destroy");
-        ImGui::Text("Handling %d bellotas", bellotaIds.size());
+        ImGui::Text("Handling %zu bellotas", bellotaIds.size());
         ImGui::End();
     };
 
