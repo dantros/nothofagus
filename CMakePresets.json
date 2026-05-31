@@ -1,0 +1,48 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 20,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "ninja-clang-release",
+            "description": "Default setting",
+            "hidden": false,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/../build/${presetName}",
+            "installDir": "${sourceDir}/../install/${presetName}",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "Yes",
+                "CMAKE_CXX_COMPILER": "clang",
+                "STB_IMAGE_PLUS_BUILD_DEMO": "ON"
+            }
+        },
+        {
+            "name": "ninja-clang-debug",
+            "description": "Default setting",
+            "hidden": false,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/../build/${presetName}",
+            "installDir": "${sourceDir}/../install/${presetName}",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "Yes",
+                "CMAKE_CXX_COMPILER": "clang",
+                "STB_IMAGE_PLUS_BUILD_DEMO": "ON"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "ninja-clang-release",
+            "configurePreset": "ninja-clang-release"
+        },
+        {
+            "name": "ninja-clang-debug",
+            "configurePreset": "ninja-clang-debug"
+        }
+    ]
+}
