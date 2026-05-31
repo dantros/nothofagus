@@ -13,12 +13,11 @@ void ImGuiContextDeleter::operator()(ImGuiContext* ctx) const noexcept
 
 ImguiRttManager::ImguiRttManager(ActiveBackend& backend,
                                   RenderTargetContainer& renderTargets,
-                                  const void* fontData,
-                                  std::size_t fontDataLen,
+                                  const EmbeddedFontFamily& family,
                                   float imguiFontSize)
     : mBackend(backend),
       mRenderTargets(renderTargets),
-      mFonts(fontData, fontDataLen, imguiFontSize)
+      mFonts(family, imguiFontSize)
 {}
 
 void ImguiRttManager::enqueue(RenderTargetId renderTargetId, ImguiDrawCallback imguiDrawCallback)

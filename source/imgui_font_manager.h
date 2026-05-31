@@ -15,6 +15,26 @@ struct ImFont;
 namespace Nothofagus
 {
 
+/// One non-owning view of an embedded TTF blob (a pointer into a static byte
+/// array baked into the binary) plus its length.
+struct EmbeddedFace
+{
+    const void* data{nullptr};
+    std::size_t len{0};
+};
+
+/// The five embedded built-in faces that ship with every Canvas. `regular`
+/// is also the default UI / secondary-context font; the others back true
+/// bold / italic / bold-italic / monospace markdown rendering.
+struct EmbeddedFontFamily
+{
+    EmbeddedFace regular;
+    EmbeddedFace bold;
+    EmbeddedFace italic;
+    EmbeddedFace boldItalic;
+    EmbeddedFace mono;
+};
+
 /// Owns the entire ImGui-font lifecycle for a Canvas:
 /// - the IndexedContainer of FontSource (one entry per registered TTF buffer,
 ///   keyed by ImguiFontSourceId; the embedded default font is registered as
@@ -33,21 +53,22 @@ namespace Nothofagus
 class ImguiFontManager
 {
 public:
-    /// Bind the embedded default TTF buffer + the logical font size at
-    /// construction. The buffer must outlive the manager (typically a static
-    /// byte array embedded in the binary). `imguiFontSize` is retained for
-    /// the main HiDPI font's recipe used by initialize() and the atlas
+    /// Bind the embedded built-in font family + the logical font size at
+    /// construction. Every face's buffer must outlive the manager (typically
+    /// static byte arrays embedded in the binary). `imguiFontSize` is retained
+    /// for the main HiDPI font's recipe used by initialize() and the atlas
     /// rebuild.
-    ImguiFontManager(const void* fontData,
-                     std::size_t fontDataLen,
-                     float       imguiFontSize) noexcept;
+    ImguiFontManager(const EmbeddedFontFamily& family,
+                     float                     imguiFontSize) noexcept;
 
-    /// One-time setup. Registers the bound TTF as the default font source
-    /// (its id is exposed via defaultSourceId()), adds the main HiDPI font
-    /// to the shared atlas at `imguiFontSize * contentScale * contentScale`,
-    /// then bakes a font at the unscaled `imguiFontSize` from the default
-    /// source and registers it as the secondary-context default. Call from
-    /// FrameRunner's constructor body after backend initImGuiRenderer.
+    /// One-time setup. Registers all five built-in faces as font sources
+    /// (regular's id is exposed via defaultSourceId(); the rest via
+    /// boldSourceId()/italicSourceId()/boldItalicSourceId()/monoSourceId()),
+    /// adds the main HiDPI font to the shared atlas at `imguiFontSize *
+    /// contentScale * contentScale` from the regular face, then bakes a font
+    /// at the unscaled `imguiFontSize` from the regular source and registers
+    /// it as the secondary-context default. Call from FrameRunner's
+    /// constructor body after backend initImGuiRenderer.
     void initialize(float contentScale);
 
     /// True if there are queued ops awaiting drain.
@@ -127,16 +148,25 @@ public:
     /// Idempotent. Returns the id.
     ImguiFontId setDefaultSize(float sizePx);
 
-    /// Id of the default source - the embedded TTF registered in
-    /// initialize(). Stable for the manager's lifetime.
+    /// Id of the default source - the embedded Noto Sans Regular face
+    /// registered in initialize(). Stable for the manager's lifetime.
     ImguiFontSourceId defaultSourceId() const noexcept { return mDefaultSourceId; }
+
+    /// Ids of the other built-in faces (Noto Sans Bold / Italic / BoldItalic
+    /// and Noto Sans Mono), registered in initialize() and stable for the
+    /// manager's lifetime. Like the default source, these are protected from
+    /// removeSource().
+    ImguiFontSourceId boldSourceId() const noexcept { return mBoldSourceId; }
+    ImguiFontSourceId italicSourceId() const noexcept { return mItalicSourceId; }
+    ImguiFontSourceId boldItalicSourceId() const noexcept { return mBoldItalicSourceId; }
+    ImguiFontSourceId monoSourceId() const noexcept { return mMonoSourceId; }
 
 private:
     struct FontSource
     {
         std::vector<std::byte> ttfData;          // owned bytes (user-added)
         GlyphRange             glyphRange{GlyphRange::Default};
-        const void*            externalData{nullptr};   // non-null only for the default Roboto blob
+        const void*            externalData{nullptr};   // non-null only for the embedded built-in faces
         std::size_t            externalLen{0};
 
         const void* dataPtr() const noexcept { return externalData ? externalData : ttfData.data(); }
@@ -180,15 +210,18 @@ private:
     /// then dropEntry each one. Used by the drain when applying RemoveSource.
     void dropEntriesForSource(ImguiFontSourceId sourceId);
 
-    const void* const mFontData;
-    const std::size_t mFontDataLen;
-    const float       mImguiFontSize;
+    const EmbeddedFontFamily mFamily;
+    const float              mImguiFontSize;
 
     IndexedContainer<FontSource>                          mSources;
     IndexedContainer<FontEntry>                           mFonts;
     std::unordered_map<DedupKey, ImguiFontId, DedupHash>  mDedup;
     std::optional<ImguiFontId>                            mDefaultFontId;
     ImguiFontSourceId                                     mDefaultSourceId{};
+    ImguiFontSourceId                                     mBoldSourceId{};
+    ImguiFontSourceId                                     mItalicSourceId{};
+    ImguiFontSourceId                                     mBoldItalicSourceId{};
+    ImguiFontSourceId                                     mMonoSourceId{};
     std::vector<PendingFontOp>                            mPendingFontOps;
 };
 

@@ -32,6 +32,15 @@ struct MarkdownRenderer::Impl : public imgui_md
         mOpenUrlCallback = std::move(callback);
     }
 
+    // The regular body font, resolved (or nullptr if unset / not yet baked).
+    // print() pushes this so PLAIN paragraph text uses the markdown family
+    // rather than whatever ImGui font happens to be current (the main HiDPI
+    // font) — otherwise styled spans and plain text render at different sizes.
+    ImFont* bodyFont() const
+    {
+        return mStyle.regular ? resolve(*mStyle.regular) : nullptr;
+    }
+
 protected:
     ImFont* get_font() const override
     {
@@ -68,6 +77,33 @@ protected:
         if (auto id = mStyle.regular)        return resolve(*id);
 
         return nullptr;  // imgui_md interprets nullptr as "use current font"
+    }
+
+    // A markdown soft line break (a single '\n' inside a paragraph) renders as
+    // a space in CommonMark. imgui_md's base soft_break() is a no-op, which
+    // jams the two words together ("shows*emphasis*"). Emit a single space in
+    // the current font and stay on the line.
+    void soft_break() override
+    {
+        ImGui::TextUnformatted(" ");
+        ImGui::SameLine(0.0f, 0.0f);
+    }
+
+    // imgui_md's SPAN_CODE / BLOCK_CODE only toggle state — they never push a
+    // font — so inline code and fenced blocks would render in the proportional
+    // body font. Push the monospace face ourselves (mirrors the base class's
+    // private set_font()) so `code` and ``` blocks are actually monospaced.
+    // get_font() reads m_is_code, so set the flag before resolving the font.
+    void SPAN_CODE(bool enter) override
+    {
+        if (enter) { m_is_code = true;  ImGui::PushFont(get_font()); }
+        else       { ImGui::PopFont();  m_is_code = false; }
+    }
+
+    void BLOCK_CODE(const MD_BLOCK_CODE_DETAIL*, bool enter) override
+    {
+        if (enter) { m_is_code = true;  ImGui::PushFont(get_font()); }
+        else       { ImGui::PopFont();  m_is_code = false; }
     }
 
     // v1 deliberately does not render inline images. The base class's default
@@ -143,7 +179,14 @@ void MarkdownRenderer::print(std::string_view markdownText)
 {
     const char* begin = markdownText.data();
     const char* end   = begin + markdownText.size();
+
+    // Push the regular body font so plain paragraph text matches the styled
+    // spans (imgui_md only pushes fonts for headings/bold/italic/code; without
+    // this, plain text falls back to the ambient main-canvas font).
+    ImFont* body = mImpl->bodyFont();
+    if (body) ImGui::PushFont(body);
     mImpl->print(begin, end);
+    if (body) ImGui::PopFont();
 }
 
 } // namespace Nothofagus
