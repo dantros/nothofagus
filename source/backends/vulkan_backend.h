@@ -123,6 +123,10 @@ public:
     DTexture      getRenderTargetTexture(DRenderTarget renderTarget);
     void          freeRenderTarget(DRenderTarget renderTarget, DTexture proxyTexture);
 
+    std::uint64_t createImguiImage2D(std::span<const std::uint8_t> rgba, int width, int height,
+                                     TextureSampleMode minFilter, TextureSampleMode magFilter);
+    void          destroyImguiImage2D(std::uint64_t imguiImageHandle);
+
     void beginFrame(glm::vec3 clearColor, ViewportRect gameViewport, int framebufferWidth, int framebufferHeight);
     void imguiNewFrame();
     void beginRttPass(DRenderTarget renderTarget, glm::vec4 clearColor);
@@ -204,6 +208,19 @@ private:
     std::unordered_map<std::size_t, VulkanTexture>      mTextures;
     std::unordered_map<std::size_t, VulkanRenderTarget> mRenderTargets;
     std::size_t mNextId = 0;
+
+    // Plain 2D textures created for ImGui::Image (markdown inline images, etc.),
+    // keyed by their ImGui descriptor-set handle. Distinct from mTextures —
+    // these are single-layer 2D images whose descriptor set comes from
+    // ImGui_ImplVulkan_AddTexture so ImGui can sample them directly.
+    struct VulkanImguiImage
+    {
+        VkImage         image;
+        VmaAllocation   allocation;
+        VkImageView     imageView;
+        VkDescriptorSet descriptorSet;
+    };
+    std::unordered_map<std::uint64_t, VulkanImguiImage> mImguiImages;
 
     // --- Per-frame state (set in beginFrame/beginRttPass, consumed by draw calls and endFrame) ---
     glm::vec3       mClearColor              = {};

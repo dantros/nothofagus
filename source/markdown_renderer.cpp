@@ -32,6 +32,11 @@ struct MarkdownRenderer::Impl : public imgui_md
         mOpenUrlCallback = std::move(callback);
     }
 
+    void setImageResolver(MarkdownImageResolver resolver)
+    {
+        mImageResolver = std::move(resolver);
+    }
+
     // The regular body font, resolved (or nullptr if unset / not yet baked).
     // print() pushes this so PLAIN paragraph text uses the markdown family
     // rather than whatever ImGui font happens to be current (the main HiDPI
@@ -106,12 +111,34 @@ protected:
         else       { ImGui::PopFont();  m_is_code = false; }
     }
 
-    // v1 deliberately does not render inline images. The base class's default
-    // would draw the ImGui font atlas as a stand-in, which is worse than just
-    // skipping. Returning false leaves the image out entirely.
-    bool get_image(image_info&) const override
+    // Resolve a markdown image `src` to an engine texture and hand ImGui a 2D
+    // handle for it. Returns false (image skipped) when no resolver is set, the
+    // resolver declines the src, or the canvas can't bridge the texture.
+    bool get_image(image_info& nfo) const override
     {
-        return false;
+        if (!mImageResolver || mCanvas == nullptr)
+            return false;
+
+        std::optional<TextureId> textureIdOpt =
+            mImageResolver(std::string_view(m_href.data(), m_href.size()));
+        if (!textureIdOpt)
+            return false;
+
+        const std::uint64_t handle = mCanvas->imguiImageHandle(*textureIdOpt);
+        if (handle == 0)
+            return false;
+
+        // Read the size from the bridge cache rather than the live texture — a
+        // markdown-only image is referenced by no bellota, so the source may be
+        // released by the per-frame texture GC after the first frame.
+        const glm::ivec2 size = mCanvas->imguiImageSize(*textureIdOpt);
+        nfo.texture_id = static_cast<ImTextureID>(handle);
+        nfo.size       = ImVec2(static_cast<float>(size.x), static_cast<float>(size.y));
+        nfo.uv0        = ImVec2(0.0f, 0.0f);
+        nfo.uv1        = ImVec2(1.0f, 1.0f);
+        nfo.col_tint   = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+        nfo.col_border = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        return true;
     }
 
     void open_url() const override
@@ -137,6 +164,7 @@ private:
     Canvas* mCanvas;
     MarkdownStyle mStyle{};
     std::function<void(std::string_view)> mOpenUrlCallback;
+    MarkdownImageResolver mImageResolver;
 };
 
 MarkdownRenderer::MarkdownRenderer(Canvas& canvas)
@@ -173,6 +201,11 @@ const MarkdownStyle& MarkdownRenderer::style() const noexcept
 void MarkdownRenderer::setOpenUrlCallback(std::function<void(std::string_view)> callback)
 {
     mImpl->setOpenUrlCallback(std::move(callback));
+}
+
+void MarkdownRenderer::setImageResolver(MarkdownImageResolver resolver)
+{
+    mImpl->setImageResolver(std::move(resolver));
 }
 
 void MarkdownRenderer::print(std::string_view markdownText)

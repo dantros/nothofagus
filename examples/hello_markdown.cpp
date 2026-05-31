@@ -1,6 +1,7 @@
 #include <nothofagus.h>
 #include <imgui.h>
 #include <spdlog/spdlog.h>
+#include <optional>
 
 int main()
 {
@@ -17,10 +18,43 @@ int main()
         spdlog::info("Markdown link clicked: {}", url);
     });
 
+    // Build a small RGBA logo texture procedurally and expose it to markdown as
+    // an inline image. The resolver maps an image `src` string to a TextureId;
+    // here `![logo](tex:logo)` resolves to this texture. Note the texture is
+    // referenced by no bellota — the markdown image bridge takes an independent
+    // RGBA snapshot, so the per-frame texture GC reclaiming the source is fine.
+    constexpr int kLogoSize = 32;
+    Nothofagus::DirectTexture logo(glm::ivec2{kLogoSize, kLogoSize});
+    for (int j = 0; j < kLogoSize; ++j)
+        for (int i = 0; i < kLogoSize; ++i)
+        {
+            const float u = static_cast<float>(i) / (kLogoSize - 1);
+            const float v = static_cast<float>(j) / (kLogoSize - 1);
+            const bool border = (i < 2 || j < 2 || i >= kLogoSize - 2 || j >= kLogoSize - 2);
+            const glm::vec4 color = border ? glm::vec4{0.95f, 0.85f, 0.20f, 1.0f}
+                                           : glm::vec4{u, 0.55f, v, 1.0f};
+            logo.setColor(i, j, color);
+        }
+    const Nothofagus::TextureId logoTextureId = canvas.addTexture(logo);
+
+    markdown.setImageResolver([logoTextureId](std::string_view src)
+        -> std::optional<Nothofagus::TextureId>
+    {
+        if (src == "tex:logo")
+            return logoTextureId;
+        return std::nullopt;
+    });
+
     static constexpr const char* kSample = R"md(# Hello Markdown
 
 Welcome to **Nothofagus** markdown rendering. This panel shows
 *emphasis*, **strong**, ***both***, and `inline code`.
+
+## Inline image
+
+A procedurally-generated engine texture, drawn inline:
+
+![logo](tex:logo)
 
 ## Lists
 
@@ -49,7 +83,7 @@ canvas.run([&](float dt) {
 | headings      | yes       |
 | code blocks   | yes       |
 | tables        | yes       |
-| inline images | no (v2)   |
+| inline images | yes       |
 
 > Blockquotes work too. See [the repo](https://github.com/dantros/nothofagus)
 > for the project source. Strikethrough: ~~deprecated~~.

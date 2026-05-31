@@ -506,6 +506,26 @@ public:
     const Texture& texture(TextureId textureId) const;
 
     /**
+     * @brief Resolve a Texture to an ImGui-bindable image handle (`ImTextureID`).
+     *
+     * Returns an opaque 64-bit value (an `ImTextureID`) for use with
+     * `ImGui::Image(...)` — the bridge behind inline markdown images. The
+     * texture is flattened to RGBA8 (palettes resolved) and uploaded once into a
+     * plain 2D GPU texture; the result is cached per `TextureId` and reclaimed
+     * automatically when the canvas is destroyed. Returns 0 for an unknown id or
+     * a render-target proxy texture (no CPU pixels to flatten).
+     *
+     * The snapshot is taken on first call; later edits to the source texture do
+     * not refresh the handle (static images only in this revision).
+     */
+    std::uint64_t imguiImageHandle(TextureId textureId);
+
+    /// Pixel size of the cached ImGui image for `textureId`, or {0, 0} if it has
+    /// not been resolved via `imguiImageHandle(...)` yet. Reads the cache only,
+    /// so it stays valid even after the source texture has been removed.
+    glm::ivec2 imguiImageSize(TextureId textureId) const;
+
+    /**
      * @brief Access or modify the stats of the canvas.
      * @return A reference to the stats flag (true = show stats).
      */

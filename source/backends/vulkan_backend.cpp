@@ -786,6 +786,17 @@ void VulkanBackend::shutdown()
 {
     vkDeviceWaitIdle(mDevice);
 
+    // Free ImGui-bindable images BEFORE ImGui_ImplVulkan_Shutdown — their
+    // descriptor sets are freed via ImGui_ImplVulkan_RemoveTexture, which needs
+    // the ImGui Vulkan backend still alive.
+    for (auto& [handle, img] : mImguiImages)
+    {
+        ImGui_ImplVulkan_RemoveTexture(img.descriptorSet);
+        vkDestroyImageView(mDevice, img.imageView, nullptr);
+        vmaDestroyImage(mAllocator, img.image, img.allocation);
+    }
+    mImguiImages.clear();
+
     ImGui_ImplVulkan_Shutdown();
 
     // Flush deferred deletions from all frame slots — these were queued by
@@ -1039,6 +1050,113 @@ void VulkanBackend::freeTexture(DTexture dtexture)
     }
     mFrames[lastSubmittedSlot].pendingTextureDeletions.push_back(pending);
     mTextures.erase(it);
+}
+
+// ---------------------------------------------------------------------------
+// ImGui-bindable 2D image bridge
+// ---------------------------------------------------------------------------
+
+std::uint64_t VulkanBackend::createImguiImage2D(std::span<const std::uint8_t> rgba, int width, int height,
+                                                TextureSampleMode /*minFilter*/, TextureSampleMode /*magFilter*/)
+{
+    // ImGui's Vulkan backend samples a single 2D image through a shared sampler,
+    // so this is a single-layer 2D image (VK_IMAGE_VIEW_TYPE_2D), unlike the
+    // engine's 2D-array textures. The descriptor set comes from
+    // ImGui_ImplVulkan_AddTexture so it is compatible with ImGui's pipeline.
+    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(rgba.size());
+
+    VkBufferCreateInfo stagingBufferInfo{};
+    stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    stagingBufferInfo.size  = imageSize;
+    stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+    VmaAllocationCreateInfo stagingAllocInfo{};
+    stagingAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                             VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VkBuffer      stagingBuffer;
+    VmaAllocation stagingAlloc;
+    VmaAllocationInfo stagingInfo;
+    vmaCreateBuffer(mAllocator, &stagingBufferInfo, &stagingAllocInfo,
+                    &stagingBuffer, &stagingAlloc, &stagingInfo);
+    std::memcpy(stagingInfo.pMappedData, rgba.data(), imageSize);
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType     = VK_IMAGE_TYPE_2D;
+    imageInfo.format        = VK_FORMAT_R8G8B8A8_UNORM;
+    imageInfo.extent        = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+    imageInfo.mipLevels     = 1;
+    imageInfo.arrayLayers   = 1;
+    imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage         = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VmaAllocationCreateInfo imageAllocInfo{};
+    imageAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    VkImage       image;
+    VmaAllocation imageAlloc;
+    vmaCreateImage(mAllocator, &imageInfo, &imageAllocInfo, &image, &imageAlloc, nullptr);
+
+    VkCommandBuffer commandBuffer = beginOneTimeCommandBuffer();
+    transitionImageLayout(commandBuffer, image,
+        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, VK_ACCESS_TRANSFER_WRITE_BIT);
+
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent      = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    transitionImageLayout(commandBuffer, image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+
+    endOneTimeCommandBuffer(commandBuffer);
+    vmaDestroyBuffer(mAllocator, stagingBuffer, stagingAlloc);
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image                           = image;
+    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format                          = VK_FORMAT_R8G8B8A8_UNORM;
+    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.levelCount     = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount     = 1;
+
+    VkImageView imageView;
+    if (vkCreateImageView(mDevice, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create ImGui image view");
+
+    VkDescriptorSet descriptorSet =
+        ImGui_ImplVulkan_AddTexture(imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    // ImGui's Vulkan backend treats the ImTextureID as the VkDescriptorSet bits;
+    // round-trip through uintptr_t to match how it reconstructs the handle.
+    const std::uint64_t handle = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(descriptorSet));
+    mImguiImages[handle] = VulkanImguiImage{image, imageAlloc, imageView, descriptorSet};
+    return handle;
+}
+
+void VulkanBackend::destroyImguiImage2D(std::uint64_t imguiImageHandle)
+{
+    auto it = mImguiImages.find(imguiImageHandle);
+    if (it == mImguiImages.end()) return;
+
+    // Callers (shutdown / explicit release) guarantee the GPU is idle, so free
+    // immediately rather than through the per-frame deferred-deletion queue.
+    const VulkanImguiImage& img = it->second;
+    ImGui_ImplVulkan_RemoveTexture(img.descriptorSet);
+    vkDestroyImageView(mDevice, img.imageView, nullptr);
+    vmaDestroyImage(mAllocator, img.image, img.allocation);
+    mImguiImages.erase(it);
 }
 
 // ---------------------------------------------------------------------------

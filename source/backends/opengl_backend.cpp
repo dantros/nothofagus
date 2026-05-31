@@ -237,6 +237,9 @@ void OpenGLBackend::rebuildImguiFontTexture()
 void OpenGLBackend::shutdown()
 {
     ImGui_ImplOpenGL3_Shutdown();
+    for (GLuint imguiImage : mImguiImages)
+        glDeleteTextures(1, &imguiImage);
+    mImguiImages.clear();
     glDeleteProgram(mShaderProgram);
     mShaderProgram = 0;
     glDeleteProgram(mIndirectShaderProgram);
@@ -312,6 +315,42 @@ void OpenGLBackend::freeTexture(DTexture texture)
         it->second.clear();
         mTextures.erase(it);
     }
+}
+
+std::uint64_t OpenGLBackend::createImguiImage2D(std::span<const std::uint8_t> rgba, int width, int height,
+                                                TextureSampleMode minFilter, TextureSampleMode magFilter)
+{
+    // ImGui's OpenGL backend binds the handle to GL_TEXTURE_2D and samples it
+    // with a plain sampler2D — so this must be a single-layer 2D texture, NOT
+    // the GL_TEXTURE_2D_ARRAY the engine uses everywhere else.
+    GLuint gpuTexture;
+    glGenTextures(1, &gpuTexture);
+    glBindTexture(GL_TEXTURE_2D, gpuTexture);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    // Default min filter is GL_NEAREST_MIPMAP_LINEAR — with no mip levels the
+    // texture would be incomplete (sampled as black). Force a non-mipped filter.
+    const GLint glMinFilter = (minFilter == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
+    const GLint glMagFilter = (magFilter == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, glMinFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glMagFilter);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    mImguiImages.insert(gpuTexture);
+    return static_cast<std::uint64_t>(gpuTexture);
+}
+
+void OpenGLBackend::destroyImguiImage2D(std::uint64_t imguiImageHandle)
+{
+    const GLuint gpuTexture = static_cast<GLuint>(imguiImageHandle);
+    auto it = mImguiImages.find(gpuTexture);
+    if (it == mImguiImages.end()) return;
+    glDeleteTextures(1, &gpuTexture);
+    mImguiImages.erase(it);
 }
 
 DTexture OpenGLBackend::uploadPaletteTexture(const std::vector<glm::vec4>& paletteColors)

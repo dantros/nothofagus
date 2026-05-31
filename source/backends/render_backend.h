@@ -56,7 +56,8 @@ concept RenderBackend = requires(
     const SpriteDrawParams& params,
     ImDrawData* imguiData,
     const std::vector<glm::vec4>& paletteColors,
-    std::span<const std::uint8_t> mapData)
+    std::span<const std::uint8_t> mapData,
+    std::uint64_t imguiImageHandle)
 {
     // Lifecycle
     { backend.initialize(nativeWindowHandle, canvasSize) } -> std::same_as<void>;
@@ -82,6 +83,15 @@ concept RenderBackend = requires(
     // remove it from its internal texture map without calling glDeleteTextures on it
     // (the GL handle is owned by the render target's color attachment and freed by freeRenderTarget).
     { backend.freeRenderTarget(renderTarget, dtexture)         } -> std::same_as<void>;
+
+    // ImGui-bindable image bridge — uploads RGBA8 bytes into a plain 2D GPU
+    // texture (GL_TEXTURE_2D / Vulkan 2D image + descriptor set) and returns an
+    // opaque handle usable as an ImTextureID. Unlike the engine's normal
+    // textures (2D arrays sampled with a per-draw layer index), this produces a
+    // single-layer 2D texture that ImGui's own shaders can sample directly.
+    // The bytes are row-major, top-to-bottom, 4 bytes per pixel.
+    { backend.createImguiImage2D(mapData, framebufferWidth, framebufferHeight, samplerMode, samplerMode) } -> std::same_as<std::uint64_t>;
+    { backend.destroyImguiImage2D(imguiImageHandle)            } -> std::same_as<void>;
 
     // Per-frame rendering
     { backend.beginFrame(clearColor3, viewport, framebufferWidth, framebufferHeight) } -> std::same_as<void>;

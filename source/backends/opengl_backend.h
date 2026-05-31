@@ -5,8 +5,10 @@
 #include "opengl_texture.h"
 #include "opengl_render_target.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <span>
 #include <string>
+#include <cstdint>
 
 namespace Nothofagus
 {
@@ -36,6 +38,10 @@ public:
     DRenderTarget createRenderTarget(glm::ivec2 size);
     DTexture      getRenderTargetTexture(DRenderTarget renderTarget);
     void          freeRenderTarget(DRenderTarget renderTarget, DTexture proxyTexture);
+
+    std::uint64_t createImguiImage2D(std::span<const std::uint8_t> rgba, int width, int height,
+                                     TextureSampleMode minFilter, TextureSampleMode magFilter);
+    void          destroyImguiImage2D(std::uint64_t imguiImageHandle);
 
     void beginFrame(glm::vec3 clearColor, ViewportRect gameViewport,
                     int framebufferWidth, int framebufferHeight);
@@ -101,6 +107,10 @@ private:
     std::unordered_map<std::size_t, OpenGLTexture>      mTextures;
     std::unordered_map<std::size_t, OpenGLRenderTarget> mRenderTargets;
     std::size_t mNextId = 0;
+
+    // Plain 2D textures created for ImGui::Image (markdown inline images, etc.).
+    // The handle IS the GLuint, so this set just tracks them for shutdown cleanup.
+    std::unordered_set<GLuint> mImguiImages;
 
     unsigned int compileShader(unsigned int type, const std::string& source);
     unsigned int createShaderProgram(unsigned int vertexShader, unsigned int fragmentShader);

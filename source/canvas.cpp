@@ -2,6 +2,7 @@
 #include "frame_runner.h"
 #include "asset_registry.h"
 #include "imgui_rtt_manager.h"
+#include "imgui_image_manager.h"
 #include "check.h"
 #include "embedded_fonts.h"
 #include <imgui.h>
@@ -44,16 +45,18 @@ struct Canvas::Implementation
                        { notoSansBoldItalicTtf, notoSansBoldItalicTtfLen },
                        { notoSansMonoTtf,       notoSansMonoTtfLen },
                    },
-                   imguiFontSize)
+                   imguiFontSize),
+          imguiImages(frameRunner.backend(), assets.textures())
     {
         // Main HiDPI font bake — needs the backend's ImGui renderer to be live,
         // which it is once FrameRunner's ctor has returned.
         imguiRtt.fonts().initialize(frameRunner.contentScale());
     }
 
-    FrameRunner      frameRunner;
-    AssetRegistry    assets;
-    ImguiRttManager  imguiRtt;
+    FrameRunner       frameRunner;
+    AssetRegistry     assets;
+    ImguiRttManager   imguiRtt;
+    ImguiImageManager imguiImages;
 };
 
 Canvas::Canvas(
@@ -133,6 +136,8 @@ void Canvas::setTextureMinFilter(const TextureId textureId, TextureSampleMode mo
 void Canvas::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)       { mImplPtr->assets.setTextureMagFilter(textureId, mode); }
 Texture& Canvas::texture(TextureId textureId)                                             { return mImplPtr->assets.texture(textureId); }
 const Texture& Canvas::texture(TextureId textureId) const                                 { return mImplPtr->assets.texture(textureId); }
+std::uint64_t Canvas::imguiImageHandle(TextureId textureId)                               { return mImplPtr->imguiImages.handle(textureId); }
+glm::ivec2 Canvas::imguiImageSize(TextureId textureId) const                              { return mImplPtr->imguiImages.size(textureId); }
 
 // ---------------------------------------------------------------------------
 // Meshes — forward to AssetRegistry
