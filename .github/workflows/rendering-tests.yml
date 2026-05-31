@@ -66,10 +66,6 @@ jobs:
       run: cmake --build build --config Release --target rendering_tests tilemap_tests sparsemap_tests
 
     - name: Run nonvisual tests
-      # Pure-data CPU tests (Tilemap / Sparsemap / IndirectTexture logic). They never
-      # create a Canvas or render, so they need no Vulkan device or display server —
-      # they just link the already-built headless-Vulkan nothofagus library. Run first:
-      # fast CPU checks fail fast before the heavier visual golden comparison.
       run: |
         ./build/tests/nonvisual/tilemap_tests
         ./build/tests/nonvisual/sparsemap_tests
