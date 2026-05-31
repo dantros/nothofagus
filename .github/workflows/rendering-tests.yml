@@ -25,34 +25,28 @@ jobs:
         vulkan-components: Vulkan-Headers, Vulkan-Loader, SPIRV-Tools, Glslang
         vulkan-use-cache: true
 
-    - name: Cache SwiftShader
-      id: cache-swiftshader
-      uses: actions/cache@v4
-      with:
-        path: ${{ runner.temp }}/swiftshader
-        key: swiftshader-89556131bf9d
-
-    - name: Build SwiftShader (software Vulkan ICD)
-      if: steps.cache-swiftshader.outputs.cache-hit != 'true'
+    - name: Download and register prebuilt SwiftShader ICD
+      # Fetches a SwiftShader Vulkan ICD built from a pinned upstream commit
+      # (https://github.com/dantros/swiftshader_prebuilts), verifies its SHA256,
+      # and registers it as the system's Vulkan ICD so rendering_tests runs
+      # against deterministic CPU-rasterizer pixels (no GPU-driver rounding noise).
+      #
+      # To bump the SwiftShader version: publish a new prebuilt release with the
+      # new commit SHA in its filename + tag, then update the URL and HASH below
+      # (and re-run any golden regen needed on the consumer side).
+      env:
+        SWIFTSHADER_URL:    "https://github.com/dantros/swiftshader_prebuilts/releases/download/swiftshader-d26a3e66-linux-x86_64/libvk_swiftshader-d26a3e66-linux-x86_64.so"
+        SWIFTSHADER_SHA256: "fbf976da70759946eaf3cd97cbff52b8aece93b8bd80c9f05112082040d85d92"
       run: |
-        git clone https://swiftshader.googlesource.com/SwiftShader /tmp/swiftshader-src
-        git -C /tmp/swiftshader-src checkout 89556131bf9d48af3c5c9fbb9a3322e706da89a3
-        cmake -S /tmp/swiftshader-src -B /tmp/swiftshader-src/build \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DSWIFTSHADER_BUILD_TESTS=OFF \
-          -DSWIFTSHADER_BUILD_BENCHMARKS=OFF
-        cmake --build /tmp/swiftshader-src/build --config Release -j$(nproc)
         mkdir -p ${{ runner.temp }}/swiftshader
-        cp /tmp/swiftshader-src/build/Linux/libvk_swiftshader.so ${{ runner.temp }}/swiftshader/
-
-    - name: Register SwiftShader ICD
-      run: |
+        curl -fsSL -o ${{ runner.temp }}/swiftshader/libvk_swiftshader.so "$SWIFTSHADER_URL"
+        echo "$SWIFTSHADER_SHA256  ${{ runner.temp }}/swiftshader/libvk_swiftshader.so" | sha256sum -c -
         sudo mkdir -p /etc/vulkan/icd.d
         echo '{
           "file_format_version": "1.0.0",
           "ICD": {
             "library_path": "${{ runner.temp }}/swiftshader/libvk_swiftshader.so",
-            "api_version": "1.1.0"
+            "api_version": "1.3.0"
           }
         }' | sudo tee /etc/vulkan/icd.d/swiftshader.json
 
