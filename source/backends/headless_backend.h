@@ -29,7 +29,7 @@ public:
 
     void newImGuiFrame();
 
-    void endFrame(Controller& controller, const ViewportRect& viewport, const ScreenSize& screenSize);
+    void endFrame(Controller& controller, const ScreenSize& screenSize);
 
     std::pair<int, int> getFramebufferSize() const;
 

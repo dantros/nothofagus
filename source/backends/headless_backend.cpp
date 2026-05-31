@@ -34,7 +34,7 @@ void HeadlessBackend::newImGuiFrame()
     io.DeltaTime   = 1.0f / 60.0f;
 }
 
-void HeadlessBackend::endFrame(Controller& /*controller*/, const ViewportRect& /*viewport*/, const ScreenSize& /*screenSize*/)
+void HeadlessBackend::endFrame(Controller& /*controller*/, const ScreenSize& /*screenSize*/)
 {
     // No buffer swap or event polling in headless mode.
 }

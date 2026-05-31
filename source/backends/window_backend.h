@@ -22,7 +22,6 @@ template<typename T>
 concept WindowBackend = requires(
     T& backend,
     Controller& controller,
-    const ViewportRect& viewport,
     const ScreenSize& screenSize,
     std::size_t monitorIndex,
     const AABox& windowedBox,
@@ -34,7 +33,7 @@ concept WindowBackend = requires(
 
     // Per-frame
     { backend.newImGuiFrame()                               } -> std::same_as<void>;
-    { backend.endFrame(controller, viewport, screenSize)    } -> std::same_as<void>;
+    { backend.endFrame(controller, screenSize)              } -> std::same_as<void>;
     { backend.getFramebufferSize()                          } -> std::same_as<std::pair<int, int>>;
     { backend.getTime()                                     } -> std::convertible_to<float>;
 

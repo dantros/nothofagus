@@ -13,11 +13,12 @@ namespace Nothofagus
 {
 
 // Input context stored as GLFW window user pointer so static callbacks can
-// access the controller and the current letterboxed viewport.
+// access the controller and the current canvas screen size. Framebuffer and
+// window dimensions are queried fresh inside each callback so resize events
+// arriving mid-poll-cycle do not leave the cursor anchored to stale sizes.
 struct GlfwInputContext
 {
     Controller* controller = nullptr;
-    ViewportRect viewport  = {};
     ScreenSize screenSize  = {};
 };
 
@@ -42,7 +43,7 @@ public:
 
     void newImGuiFrame();
 
-    void endFrame(Controller& controller, const ViewportRect& viewport, const ScreenSize& screenSize);
+    void endFrame(Controller& controller, const ScreenSize& screenSize);
 
     std::pair<int, int> getFramebufferSize() const;
 

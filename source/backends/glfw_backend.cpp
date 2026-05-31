@@ -3,6 +3,7 @@
 #include "keyboard.h"
 #include "mouse.h"
 #include "gamepad.h"
+#include "../cursor_mapping.h"
 #include <imgui.h>
 #include <backends/imgui_impl_glfw.h>
 #include <spdlog/spdlog.h>
@@ -56,24 +57,19 @@ static void glfwCursorPosCallback(GLFWwindow* window, double cursorX, double cur
     auto* ctx = static_cast<GlfwInputContext*>(glfwGetWindowUserPointer(window));
     debugCheck(ctx != nullptr, "GLFW cursor pos callback: window user pointer is null");
 
-    // cursorX/Y are in top-left window coords. Scale to framebuffer pixels (HiDPI).
+    // Query window + framebuffer sizes fresh per event. mapWindowCursorToCanvas
+    // recomputes the letterbox viewport against the same fresh framebuffer size,
+    // so a resize event arriving earlier in this poll cycle cannot leave the
+    // cursor mapped through stale dimensions.
     int windowWidth, windowHeight, framebufferWidth, framebufferHeight;
     glfwGetWindowSize(window, &windowWidth, &windowHeight);
     glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
 
-    const float scaleX = (windowWidth  > 0) ? static_cast<float>(framebufferWidth)  / static_cast<float>(windowWidth)  : 1.0f;
-    const float scaleY = (windowHeight > 0) ? static_cast<float>(framebufferHeight) / static_cast<float>(windowHeight) : 1.0f;
-
-    // Convert to framebuffer coords with bottom-left origin.
-    const float fbCursorX = static_cast<float>(cursorX) * scaleX;
-    const float fbCursorY = static_cast<float>(framebufferHeight) - static_cast<float>(cursorY) * scaleY;
-
-    // Map through the letterboxed viewport to game canvas coords.
-    const ViewportRect& vp = ctx->viewport;
-    const glm::vec2 gamePosition = {
-        (fbCursorX - static_cast<float>(vp.x)) / static_cast<float>(vp.width)  * static_cast<float>(ctx->screenSize.width),
-        (fbCursorY - static_cast<float>(vp.y)) / static_cast<float>(vp.height) * static_cast<float>(ctx->screenSize.height)
-    };
+    const glm::vec2 gamePosition = mapWindowCursorToCanvas(
+        static_cast<float>(cursorX), static_cast<float>(cursorY),
+        windowWidth, windowHeight,
+        framebufferWidth, framebufferHeight,
+        ctx->screenSize);
     ctx->controller->updateMousePosition(gamePosition);
 }
 
@@ -170,9 +166,8 @@ void GlfwBackend::newImGuiFrame()
     ImGui_ImplGlfw_NewFrame();
 }
 
-void GlfwBackend::endFrame(Controller& controller, const ViewportRect& viewport, const ScreenSize& screenSize)
+void GlfwBackend::endFrame(Controller& controller, const ScreenSize& screenSize)
 {
-    mInputContext.viewport   = viewport;
     mInputContext.screenSize = screenSize;
 
 #if !defined(NOTHOFAGUS_BACKEND_VULKAN)
