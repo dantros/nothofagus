@@ -17,9 +17,13 @@ namespace Nothofagus
  * Engine textures live as 2D-array images sampled with a per-draw layer index
  * and (for indirect textures) a separate palette, which ImGui's own shaders
  * cannot sample. This manager flattens a texture to plain RGBA8 on the CPU
- * (via `Texture::generateTextureData`, which resolves palettes) and uploads
- * its first layer into a plain 2D GPU texture through
- * `ActiveBackend::createImguiImage2D`.
+ * (via `Texture::generateTextureData`, which resolves palettes) and uploads it
+ * into a plain 2D GPU texture through `ActiveBackend::createImguiImage2D`.
+ *
+ * Only static single-frame sources are flattened: a `DirectTexture` or a plain
+ * single-layer, non-tile-map `IndirectTexture`. Animated (multi-layer) and
+ * tile-map textures are dynamic / cell-composed and need the render-target path
+ * (a later phase); `handle(...)` declines them (returns 0).
  *
  * A handle + its pixel size are cached per `TextureId` on first request and
  * kept for the canvas lifetime — `IndexedContainer` ids are never recycled, so

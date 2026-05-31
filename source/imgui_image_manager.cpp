@@ -1,11 +1,31 @@
 #include "imgui_image_manager.h"
 
-#include "texture.h"  // GenerateTextureDataVisitor, TextureData
+#include "texture.h"  // GenerateTextureDataVisitor, GetTextureSizeVisitor, TextureData
+#include <spdlog/spdlog.h>
 #include <algorithm>
 #include <variant>
 
 namespace Nothofagus
 {
+
+namespace
+{
+
+// CPU-flattenable sources (phases 1 + 2): a DirectTexture, or a plain
+// single-layer IndirectTexture (no animation layers, no tile-map cell grid).
+// These resolve to a single RGBA frame via generateTextureData(). Animated
+// (multi-layer) and tile-map indirect textures are dynamic / cell-composed and
+// need the render-target path (phase 3); flattening their layer 0 would show a
+// single tile graphic rather than the intended image, so they are declined here.
+bool isCpuFlattenable(const Texture& texture)
+{
+    if (std::holds_alternative<DirectTexture>(texture))
+        return true;
+    const IndirectTexture& indirect = std::get<IndirectTexture>(texture);
+    return indirect.layers() == 1 && not indirect.hasMap();
+}
+
+}  // namespace
 
 std::uint64_t ImguiImageManager::handle(TextureId textureId)
 {
@@ -19,10 +39,23 @@ std::uint64_t ImguiImageManager::handle(TextureId textureId)
     if (not pack.texture.has_value())
         return 0;  // render-target proxy / GPU-only texture has no CPU pixels to flatten
 
+    const Texture& cpuTexture = pack.texture.value();
+
+    if (not isCpuFlattenable(cpuTexture))
+    {
+        // Cache the decision (handle 0) so we classify + warn once, not per frame.
+        const glm::ivec2 fullSize = std::visit(GetTextureSizeVisitor{}, cpuTexture);
+        spdlog::warn("ImguiImageManager: animated / tile-map texture {} cannot be "
+                     "drawn as an inline image yet (render-target path is a later phase) — skipped.",
+                     textureId.id);
+        mCache[textureId.id] = CachedImage{0, fullSize};
+        return 0;
+    }
+
     // Flatten to RGBA8 on the CPU. For an IndirectTexture this resolves the
-    // palette; for a DirectTexture it returns the bytes verbatim. Multi-layer
-    // sources collapse to layer 0 (first animation frame) for now.
-    TextureData data = std::visit(GenerateTextureDataVisitor{}, pack.texture.value());
+    // palette (the "conversion" cost); for a DirectTexture it returns the bytes
+    // verbatim. Single-layer sources produce exactly one width*height frame.
+    TextureData data = std::visit(GenerateTextureDataVisitor{}, cpuTexture);
     const int width  = static_cast<int>(data.width());
     const int height = static_cast<int>(data.height());
 

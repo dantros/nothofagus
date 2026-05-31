@@ -2,6 +2,7 @@
 #include <imgui.h>
 #include <spdlog/spdlog.h>
 #include <optional>
+#include <cstdlib>
 
 int main()
 {
@@ -37,11 +38,30 @@ int main()
         }
     const Nothofagus::TextureId logoTextureId = canvas.addTexture(logo);
 
-    markdown.setImageResolver([logoTextureId](std::string_view src)
+    // A paletted (indirect) texture: pixels are palette indices, resolved to
+    // RGBA on the CPU when bridged to an inline image. Single layer + no
+    // tile-map grid, so it flattens through the same path as the direct logo.
+    constexpr int kBadgeSize = 16;
+    Nothofagus::IndirectTexture badge(glm::ivec2{kBadgeSize, kBadgeSize}, glm::vec4{0.0f, 0.0f, 0.0f, 0.0f});
+    badge.setPallete(Nothofagus::ColorPallete{
+        {0.00f, 0.00f, 0.00f, 0.00f},  // 0: transparent
+        {0.15f, 0.80f, 0.90f, 1.00f},  // 1: cyan ring
+        {0.90f, 0.20f, 0.60f, 1.00f},  // 2: magenta core
+    });
+    for (int j = 0; j < kBadgeSize; ++j)
+        for (int i = 0; i < kBadgeSize; ++i)
+        {
+            const int distance = std::abs(i - kBadgeSize / 2) + std::abs(j - kBadgeSize / 2);
+            const Nothofagus::Pixel::ColorId id = (distance < 4) ? 2 : (distance < 7 ? 1 : 0);
+            badge.setPixel(i, j, Nothofagus::Pixel{id});
+        }
+    const Nothofagus::TextureId badgeTextureId = canvas.addTexture(badge);
+
+    markdown.setImageResolver([logoTextureId, badgeTextureId](std::string_view src)
         -> std::optional<Nothofagus::TextureId>
     {
-        if (src == "tex:logo")
-            return logoTextureId;
+        if (src == "tex:logo")  return logoTextureId;
+        if (src == "tex:badge") return badgeTextureId;
         return std::nullopt;
     });
 
@@ -50,11 +70,11 @@ int main()
 Welcome to **Nothofagus** markdown rendering. This panel shows
 *emphasis*, **strong**, ***both***, and `inline code`.
 
-## Inline image
+## Inline images
 
-A procedurally-generated engine texture, drawn inline:
+A direct (RGBA) texture and a paletted (indirect) texture, drawn inline:
 
-![logo](tex:logo)
+![logo](tex:logo) ![badge](tex:badge)
 
 ## Lists
 
