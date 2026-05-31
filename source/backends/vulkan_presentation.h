@@ -62,7 +62,12 @@ struct WindowedVulkanPresentation
     uint32_t      imageCount()         const;
 
     // --- Per-frame ---
-    AcquireResult acquireImage(VkDevice device);
+    /// Acquire the next swapchain image. If the supplied framebuffer size differs
+    /// from the current swapchain extent (window was resized), the swapchain is
+    /// recreated up-front so all downstream viewport / scissor math stays consistent
+    /// with the surface actually being rendered to.
+    AcquireResult acquireImage(VkDevice device,
+                               uint32_t framebufferWidth, uint32_t framebufferHeight);
     VkFramebuffer mainFramebuffer()    const;
     VkExtent2D    extent()             const;
     void          submitAndPresent(VkDevice device, VkQueue graphicsQueue,
@@ -147,7 +152,10 @@ struct HeadlessVulkanPresentation
     uint32_t      imageCount()         const;
 
     // --- Per-frame ---
-    AcquireResult acquireImage(VkDevice device);
+    /// Acquire the next image. Headless has no swapchain, so framebuffer-size
+    /// parameters are accepted (to satisfy the policy interface) and ignored.
+    AcquireResult acquireImage(VkDevice device,
+                               uint32_t framebufferWidth, uint32_t framebufferHeight);
     VkFramebuffer mainFramebuffer()    const;
     VkExtent2D    extent()             const;
     void          submitAndPresent(VkDevice device, VkQueue graphicsQueue,

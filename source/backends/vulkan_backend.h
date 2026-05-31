@@ -209,8 +209,6 @@ private:
     glm::vec3       mClearColor              = {};
     VkCommandBuffer mActiveCommandBuffer     = VK_NULL_HANDLE;
     ViewportRect    mCurrentGameViewport     = {};
-    int             mCurrentFramebufferWidth  = 0;
-    int             mCurrentFramebufferHeight = 0;
 
     // Active RTT render target id (0 = none), stored by beginRttPass, cleared by endRttPass
     std::size_t mActiveRttRenderTargetId = 0;

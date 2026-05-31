@@ -1683,10 +1683,8 @@ void VulkanBackend::freeRenderTarget(DRenderTarget renderTarget, DTexture proxyT
 void VulkanBackend::beginFrame(
     glm::vec3 clearColor, ViewportRect gameViewport, int framebufferWidth, int framebufferHeight)
 {
-    mClearColor               = clearColor;
-    mCurrentGameViewport      = gameViewport;
-    mCurrentFramebufferWidth  = framebufferWidth;
-    mCurrentFramebufferHeight = framebufferHeight;
+    mClearColor          = clearColor;
+    mCurrentGameViewport = gameViewport;
 
     FrameData& frame = mFrames[mCurrentFrame];
 
@@ -1696,7 +1694,10 @@ void VulkanBackend::beginFrame(
     // the fence above guarantees the GPU has finished executing that submission.
     flushPendingDeletions(frame);
 
-    AcquireResult acquireResult = mPresentation.acquireImage(mDevice);
+    AcquireResult acquireResult = mPresentation.acquireImage(
+        mDevice,
+        static_cast<uint32_t>(framebufferWidth),
+        static_cast<uint32_t>(framebufferHeight));
     if (acquireResult == AcquireResult::Recreated)
     {
         mActiveCommandBuffer = VK_NULL_HANDLE;
@@ -1823,16 +1824,18 @@ void VulkanBackend::beginMainPass(ViewportRect gameViewport)
         clearAttachment.clearValue.color = {{mClearColor.r, mClearColor.g, mClearColor.b, 1.0f}};
 
         VkClearRect clearRect{};
-        // y from bottom (OpenGL) → y from top (Vulkan)
+        // y from bottom (OpenGL) → y from top (Vulkan). Use the presentation target's
+        // actual extent as the Y-flip basis (same rationale as the viewport / scissor
+        // math below) — keeps the clear rect aligned with the surface being rendered.
+        const VkExtent2D presentExtent = mPresentation.extent();
+        const int32_t renderW = static_cast<int32_t>(presentExtent.width);
+        const int32_t renderH = static_cast<int32_t>(presentExtent.height);
         int32_t clearX = gameViewport.x;
-        int32_t clearY = mCurrentFramebufferHeight - gameViewport.y - gameViewport.height;
+        int32_t clearY = renderH - gameViewport.y - gameViewport.height;
         int32_t clearW = gameViewport.width;
         int32_t clearH = gameViewport.height;
 
         // Clamp to render area to avoid validation errors during resize.
-        const VkExtent2D presentExtent = mPresentation.extent();
-        const int32_t renderW = static_cast<int32_t>(presentExtent.width);
-        const int32_t renderH = static_cast<int32_t>(presentExtent.height);
         if (clearX < 0) { clearW += clearX; clearX = 0; }
         if (clearY < 0) { clearH += clearY; clearY = 0; }
         if (clearX + clearW > renderW) clearW = renderW - clearX;
@@ -1850,19 +1853,43 @@ void VulkanBackend::beginMainPass(ViewportRect gameViewport)
 
     // Negative-height viewport: maps NDC y=-1 → bottom, y=+1 → top, matching
     // OpenGL convention. ViewportRect.y is the bottom edge in framebuffer pixels
-    // (OpenGL convention); converting to Vulkan top-of-viewport = framebufferHeight - y.
+    // (OpenGL convention); converting to Vulkan top-of-viewport = renderHeight - y.
+    //
+    // Use the presentation target's actual extent (swapchain or offscreen image) as the
+    // Y-flip basis rather than the window-queried framebuffer height. The proactive
+    // recreate in WindowedVulkanPresentation::acquireImage keeps these in lockstep, but
+    // compositor rounding can still produce a small mismatch — sourcing the height from
+    // the same surface we are about to render into keeps viewport / scissor self-consistent.
+    const VkExtent2D renderExtent = mPresentation.extent();
+    const int32_t renderWidth     = static_cast<int32_t>(renderExtent.width);
+    const int32_t renderHeight    = static_cast<int32_t>(renderExtent.height);
+
     VkViewport vp{};
     vp.x        = static_cast<float>(gameViewport.x);
-    vp.y        = static_cast<float>(mCurrentFramebufferHeight - gameViewport.y);
+    vp.y        = static_cast<float>(renderHeight - gameViewport.y);
     vp.width    = static_cast<float>(gameViewport.width);
     vp.height   = -static_cast<float>(gameViewport.height);
     vp.minDepth = 0.0f;
     vp.maxDepth = 1.0f;
     vkCmdSetViewport(mActiveCommandBuffer, 0, 1, &vp);
 
+    // Clamp scissor to the render extent (defense-in-depth — same rationale as the
+    // vkCmdClearAttachments clamp above). Avoids validation errors and out-of-bounds
+    // clipping if the FrameRunner-supplied gameViewport overflows the actual surface.
+    int32_t scissorX = gameViewport.x;
+    int32_t scissorY = renderHeight - gameViewport.y - gameViewport.height;
+    int32_t scissorW = gameViewport.width;
+    int32_t scissorH = gameViewport.height;
+    if (scissorX < 0) { scissorW += scissorX; scissorX = 0; }
+    if (scissorY < 0) { scissorH += scissorY; scissorY = 0; }
+    if (scissorX + scissorW > renderWidth)  scissorW = renderWidth  - scissorX;
+    if (scissorY + scissorH > renderHeight) scissorH = renderHeight - scissorY;
+    if (scissorW < 0) scissorW = 0;
+    if (scissorH < 0) scissorH = 0;
+
     VkRect2D scissor{};
-    scissor.offset = {gameViewport.x, static_cast<int32_t>(mCurrentFramebufferHeight - gameViewport.y - gameViewport.height)};
-    scissor.extent = {static_cast<uint32_t>(gameViewport.width), static_cast<uint32_t>(gameViewport.height)};
+    scissor.offset = {scissorX, scissorY};
+    scissor.extent = {static_cast<uint32_t>(scissorW), static_cast<uint32_t>(scissorH)};
     vkCmdSetScissor(mActiveCommandBuffer, 0, 1, &scissor);
 
     vkCmdBindPipeline(mActiveCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mSpritePipeline);
