@@ -3,6 +3,7 @@
 #include "keyboard.h"
 #include "mouse.h"
 #include "gamepad.h"
+#include "../cursor_mapping.h"
 #if !defined(NOTHOFAGUS_BACKEND_VULKAN)
 #include <glad/glad.h>
 #endif
@@ -109,17 +110,13 @@ void Sdl3Backend::newImGuiFrame()
     ImGui_ImplSDL3_NewFrame();
 }
 
-void Sdl3Backend::endFrame(Controller& controller, const ViewportRect& viewport, const ScreenSize& screenSize)
+void Sdl3Backend::endFrame(Controller& controller, const ScreenSize& screenSize)
 {
 #if !defined(NOTHOFAGUS_BACKEND_VULKAN)
     SDL_GL_SwapWindow(mSdlWindow);
 #endif
 
     constexpr float GAMEPAD_AXIS_DEADZONE = 0.1f;
-
-    // Capture framebuffer size once for mouse coordinate mapping
-    int framebufferWidth, framebufferHeight;
-    SDL_GetWindowSizeInPixels(mSdlWindow, &framebufferWidth, &framebufferHeight);
 
     SDL_Event event;
     while (SDL_PollEvent(&event))
@@ -158,21 +155,20 @@ void Sdl3Backend::endFrame(Controller& controller, const ViewportRect& viewport,
 
         case SDL_EVENT_MOUSE_MOTION:
         {
-            // SDL3 gives window-space floats (top-left origin). Scale to framebuffer pixels (HiDPI).
+            // Query window + framebuffer sizes fresh per event so a resize event
+            // arriving earlier in this poll cycle cannot leave the cursor mapped
+            // through stale dimensions. mapWindowCursorToCanvas recomputes the
+            // letterbox locally against the same fresh framebuffer size.
             int windowWidth, windowHeight;
+            int framebufferWidth, framebufferHeight;
             SDL_GetWindowSize(mSdlWindow, &windowWidth, &windowHeight);
-            const float scaleX = (windowWidth  > 0) ? static_cast<float>(framebufferWidth)  / windowWidth  : 1.0f;
-            const float scaleY = (windowHeight > 0) ? static_cast<float>(framebufferHeight) / windowHeight : 1.0f;
+            SDL_GetWindowSizeInPixels(mSdlWindow, &framebufferWidth, &framebufferHeight);
 
-            // Convert to framebuffer coords with bottom-left origin.
-            const float fbCursorX = event.motion.x * scaleX;
-            const float fbCursorY = static_cast<float>(framebufferHeight) - event.motion.y * scaleY;
-
-            // Map through the letterboxed viewport to game canvas coords.
-            const glm::vec2 gamePosition = {
-                (fbCursorX - static_cast<float>(viewport.x)) / static_cast<float>(viewport.width)  * static_cast<float>(screenSize.width),
-                (fbCursorY - static_cast<float>(viewport.y)) / static_cast<float>(viewport.height) * static_cast<float>(screenSize.height)
-            };
+            const glm::vec2 gamePosition = mapWindowCursorToCanvas(
+                event.motion.x, event.motion.y,
+                windowWidth, windowHeight,
+                framebufferWidth, framebufferHeight,
+                screenSize);
             controller.updateMousePosition(gamePosition);
             break;
         }

@@ -8,6 +8,7 @@
 #include "controller.h"
 #include "asset_registry.h"
 #include "imgui_rtt_manager.h"
+#include "cursor_mapping.h"
 #include "backends/render_backend_select.h"
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_transform_2d.hpp>
@@ -31,28 +32,6 @@ struct FrameRunner::Window : public SelectedWindowBackend
 {
     using SelectedWindowBackend::SelectedWindowBackend;
 };
-
-static ViewportRect computeLetterboxViewport(int framebufferWidth, int framebufferHeight, unsigned int canvasWidth, unsigned int canvasHeight)
-{
-    const float canvasAspectRatio      = static_cast<float>(canvasWidth)      / static_cast<float>(canvasHeight);
-    const float framebufferAspectRatio = static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight);
-    int viewportWidth, viewportHeight, viewportX, viewportY;
-    if (framebufferAspectRatio > canvasAspectRatio)
-    {   // Pillarbox: framebuffer is wider than canvas — black bands left and right
-        viewportHeight = framebufferHeight;
-        viewportWidth  = static_cast<int>(framebufferHeight * canvasAspectRatio);
-        viewportX      = (framebufferWidth - viewportWidth) / 2;
-        viewportY      = 0;
-    }
-    else
-    {   // Letterbox: framebuffer is taller than canvas — black bands top and bottom
-        viewportWidth  = framebufferWidth;
-        viewportHeight = static_cast<int>(framebufferWidth / canvasAspectRatio);
-        viewportX      = 0;
-        viewportY      = (framebufferHeight - viewportHeight) / 2;
-    }
-    return { viewportX, viewportY, viewportWidth, viewportHeight };
-}
 
 FrameRunner::FrameRunner(
     const ScreenSize& screenSize,
@@ -393,7 +372,7 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
 
     {
         ZoneScopedN("SwapBuffers");
-        mWindow->endFrame(controller, mGameViewport, mScreenSize);
+        mWindow->endFrame(controller, mScreenSize);
     }
 
     FrameMark;
