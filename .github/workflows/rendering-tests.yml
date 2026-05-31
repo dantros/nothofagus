@@ -58,11 +58,21 @@ jobs:
         -DNOTHOFAGUS_HEADLESS_VULKAN=ON
         -DNOTHOFAGUS_BUILD_TESTS=ON
         -DNOTHOFAGUS_BUILD_TESTS_VISUAL=ON
+        -DNOTHOFAGUS_BUILD_TESTS_NONVISUAL=ON
         -DNOTHOFAGUS_USE_GLSLANG=ON
         -S ${{ github.workspace }}
 
     - name: Build
-      run: cmake --build build --config Release --target rendering_tests
+      run: cmake --build build --config Release --target rendering_tests tilemap_tests sparsemap_tests
+
+    - name: Run nonvisual tests
+      # Pure-data CPU tests (Tilemap / Sparsemap / IndirectTexture logic). They never
+      # create a Canvas or render, so they need no Vulkan device or display server —
+      # they just link the already-built headless-Vulkan nothofagus library. Run first:
+      # fast CPU checks fail fast before the heavier visual golden comparison.
+      run: |
+        ./build/tests/nonvisual/tilemap_tests
+        ./build/tests/nonvisual/sparsemap_tests
 
     - name: Run tests against Vulkan golden files
       run: ./build/tests/visual/rendering_tests
