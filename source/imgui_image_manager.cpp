@@ -44,9 +44,11 @@ std::uint64_t ImguiImageManager::handle(TextureId textureId)
     }
 
     // Pin the source so the per-frame texture GC doesn't drop it (and its flat
-    // rep) while it's shown. Phase 1 pins permanently; Phase 2 adds the unpin.
-    if (mPinned.insert(textureId.id).second)
+    // rep) while it's shown; stamp this frame so endFrame() keeps it. The unpin
+    // happens in endFrame() once it stops being requested.
+    if (mPinned.find(textureId.id) == mPinned.end())
         mAssets.pinTexture(textureId);
+    mPinned[textureId.id] = mFrameCounter;
 
     return pack.ensureFlatRep(mBackend);
 }
@@ -57,6 +59,25 @@ glm::ivec2 ImguiImageManager::size(TextureId textureId) const
     if (not textures.contains(textureId.id))
         return glm::ivec2(0, 0);
     return textures.at(textureId.id).mTextureSize;
+}
+
+void ImguiImageManager::endFrame()
+{
+    // Unpin sources not requested this frame; once unpinned (and unreferenced by
+    // any real bellota) the next clearUnusedTextures frees the source + flat rep.
+    for (auto it = mPinned.begin(); it != mPinned.end();)
+    {
+        if (it->second != mFrameCounter)
+        {
+            mAssets.unpinTexture(TextureId{it->first});
+            it = mPinned.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+    ++mFrameCounter;
 }
 
 }

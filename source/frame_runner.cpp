@@ -8,6 +8,7 @@
 #include "controller.h"
 #include "asset_registry.h"
 #include "imgui_rtt_manager.h"
+#include "imgui_image_manager.h"
 #include "cursor_mapping.h"
 #include "backends/render_backend_select.h"
 #define GLM_ENABLE_EXPERIMENTAL
@@ -223,7 +224,7 @@ static void drawBellotaPacks(
     }
 }
 
-void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt, ImguiImageManager& imguiImages,
                                      float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ZoneScopedN("runOneFrame");
@@ -375,10 +376,15 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
         mWindow->endFrame(controller, mScreenSize);
     }
 
+    // Auto-free inline images no longer shown: unpin sources not requested this
+    // frame (the next clearUnusedTextures frees them + their flat rep). Runs after
+    // all draws so it can't disturb this frame's rendering.
+    imguiImages.endFrame();
+
     FrameMark;
 }
 
-void FrameRunner::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+void FrameRunner::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt, ImguiImageManager& imguiImages,
                              std::function<void(float deltaTime)> update, Controller& controller)
 {
     // Always call beginSession — it resets the window close flag and rebinds
@@ -396,15 +402,15 @@ void FrameRunner::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& im
     while (mWindow->isRunning())
     {
         performanceMonitor.update(mWindow->getTime());
-        runOneFrame(canvas, assets, imguiRtt, performanceMonitor.getMS(), update, controller);
+        runOneFrame(canvas, assets, imguiRtt, imguiImages, performanceMonitor.getMS(), update, controller);
     }
 }
 
-void FrameRunner::tick(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+void FrameRunner::tick(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt, ImguiImageManager& imguiImages,
                               float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ensureSessionStarted(controller);
-    runOneFrame(canvas, assets, imguiRtt, deltaTimeMS, update, controller);
+    runOneFrame(canvas, assets, imguiRtt, imguiImages, deltaTimeMS, update, controller);
 }
 
 void FrameRunner::close()

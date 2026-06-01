@@ -302,35 +302,35 @@ void Canvas::run()
 {
     auto update = [](float){};
     Controller controller;
-    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, update, controller);
+    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, update, controller);
 }
 
 void Canvas::run(std::function<void(float deltaTime)> update)
 {
     Controller controller;
-    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, update, controller);
+    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, update, controller);
 }
 
 void Canvas::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
-    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, update, controller);
+    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, update, controller);
 }
 
 void Canvas::tick(float deltaTime, std::function<void(float)> update, Controller& controller)
 {
-    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, deltaTime, update, controller);
+    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, deltaTime, update, controller);
 }
 
 void Canvas::tick(float deltaTime, std::function<void(float)> update)
 {
     Controller controller;
-    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, deltaTime, update, controller);
+    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, deltaTime, update, controller);
 }
 
 void Canvas::tick(float deltaTime)
 {
     Controller controller;
-    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, deltaTime, [](float){}, controller);
+    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, deltaTime, [](float){}, controller);
 }
 
 void Canvas::close()

@@ -4,6 +4,7 @@
 #include "backends/render_backend_select.h"  // ActiveBackend
 #include <glm/glm.hpp>
 #include <cstdint>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace Nothofagus
@@ -23,8 +24,10 @@ class AssetRegistry;
  *
  * Lifetime: a texture shown only as an ImGui image has no bellota, so the
  * per-frame texture GC would drop it (and its flat rep). The manager **pins**
- * such sources so they stay alive while shown. (Phase 1 pins permanently on
- * first sight; touch-GC / unpin-on-hide arrives in Phase 2.)
+ * such sources while shown and **unpins** them when they stop being requested
+ * (touch-GC): `handle()` stamps the current frame; `endFrame()` unpins any
+ * source not requested this frame, so it (and its flat rep) auto-free once the
+ * window closes / markdown drops it — unless a real bellota still references it.
  *
  * Only static single-frame sources (Direct, single-layer non-tilemap Indirect)
  * are supported here; animated / tile-map textures are declined (Phase 3 adds a
@@ -46,12 +49,17 @@ public:
     /// Full pixel extent of the texture, or {0, 0} if unknown.
     glm::ivec2 size(TextureId textureId) const;
 
+    /// Unpin any pinned source not requested this frame (auto-free on hide), then
+    /// advance the frame counter. Call once per frame from the frame loop.
+    void endFrame();
+
 private:
     ActiveBackend& mBackend;
     AssetRegistry& mAssets;
 
-    std::unordered_set<std::size_t> mPinned;          ///< sources pinned (so we pin each once).
-    std::unordered_set<std::size_t> mDeclinedWarned;  ///< dynamic sources warned about (once each).
+    std::unordered_map<std::size_t, std::uint64_t> mPinned;  ///< pinned source -> last frame requested.
+    std::unordered_set<std::size_t> mDeclinedWarned;         ///< dynamic sources warned about (once each).
+    std::uint64_t mFrameCounter = 0;
 };
 
 }

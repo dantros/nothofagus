@@ -32,6 +32,7 @@ extern template class ExplorerManager<Sparsemap>;
 // at namespace scope stay out of the public-API surface.
 class AssetRegistry;
 class ImguiRttManager;
+class ImguiImageManager;
 
 /**
  * @class FrameRunner
@@ -127,11 +128,11 @@ public:
     // ----- Lifecycle -----
     /// Runs the main loop. Threads through the Canvas-owned asset registry and
     /// ImGui RTT manager so runOneFrame doesn't need direct member access.
-    void run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+    void run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt, ImguiImageManager& imguiImages,
              std::function<void(float deltaTime)> update, Controller& controller);
 
     /// Execute a single frame with a caller-supplied delta time (in milliseconds).
-    void tick(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+    void tick(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt, ImguiImageManager& imguiImages,
               float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
     /// Captures the last rendered frame visible to the user as a DirectTexture (RGBA).
@@ -139,7 +140,7 @@ public:
 
 private:
     void ensureSessionStarted(Controller& controller);
-    void runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+    void runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt, ImguiImageManager& imguiImages,
                      float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
     ScreenSize mScreenSize; ///< The screen size of the canvas.
