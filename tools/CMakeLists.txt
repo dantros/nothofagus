@@ -4,7 +4,7 @@
 # The test-helpers lib provides DirectTexture PNG I/O + comparison; pull it in if
 # the test tree didn't already (the viewer can be built without NOTHOFAGUS_BUILD_TESTS).
 if(NOT TARGET nothofagus_test_helpers)
-    add_subdirectory("${CMAKE_SOURCE_DIR}/tests/golden" "${CMAKE_BINARY_DIR}/tests/golden")
+    add_subdirectory("${CMAKE_SOURCE_DIR}/tests/nothofagus_test_helpers" "${CMAKE_BINARY_DIR}/tests/nothofagus_test_helpers")
 endif()
 
 add_subdirectory(golden_viewer)

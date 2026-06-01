@@ -15,7 +15,7 @@ if(NOTHOFAGUS_BUILD_TESTS_VISUAL)
     # Shared test helpers (DirectTexture PNG I/O + comparison). Guarded so the
     # viewer tool can also pull it in independently.
     if(NOT TARGET nothofagus_test_helpers)
-        add_subdirectory(golden)
+        add_subdirectory(nothofagus_test_helpers)
     endif()
     add_subdirectory(visual)
 endif()
