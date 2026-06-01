@@ -14,6 +14,7 @@ Dependencies are vendored via `git subtree`. Use the commands below to update a 
 | `imgui-filebrowser` | https://github.com/AirGuanZ/imgui-filebrowser.git | — |
 | `md4c`       | https://github.com/mity/md4c.git              | fb4d03d |
 | `imgui_md`   | https://github.com/dantros/imgui_md.git       | 645f10d4 |
+| `stb_image_plus` | https://github.com/dantros/stb_image_plus.git | ece190ee |
 
 `glad` and `imgui_cmake` are custom local code — not managed by subtree.
 
