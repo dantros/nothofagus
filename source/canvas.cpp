@@ -46,7 +46,7 @@ struct Canvas::Implementation
                        { notoSansMonoTtf,       notoSansMonoTtfLen },
                    },
                    imguiFontSize),
-          imguiImages(frameRunner.backend(), assets.textures())
+          imguiImages(frameRunner.backend(), assets)
     {
         // Main HiDPI font bake — needs the backend's ImGui renderer to be live,
         // which it is once FrameRunner's ctor has returned.

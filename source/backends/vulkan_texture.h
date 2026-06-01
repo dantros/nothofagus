@@ -18,6 +18,7 @@ struct VulkanTexture
     VkSampler       sampler       = VK_NULL_HANDLE;
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     bool            isProxy       = false;  // owned by VulkanRenderTarget — skip vmaDestroyImage on free
+    bool            isImguiFlat   = false;  // descriptorSet came from ImGui_ImplVulkan_AddTexture — free via RemoveTexture
     TextureMode     mode          = TextureMode::Direct;
 
     // Palette texture resources (only populated when mode == TextureMode::Indirect).

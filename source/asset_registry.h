@@ -59,6 +59,14 @@ public:
     const Texture& texture(TextureId textureId) const;
     void clearUnusedTextures();
 
+    /// Keep a texture alive across the per-frame GC without a real bellota (e.g.
+    /// a texture shown only as an ImGui image). Implemented as a phantom bellota
+    /// reference, so it composes with real bellota references and with unpin.
+    /// Idempotent. unpinTexture lets the texture become GC-eligible again (unless
+    /// a real bellota still references it).
+    void pinTexture(TextureId textureId);
+    void unpinTexture(TextureId textureId);
+
     // ---------- Meshes ----------
     MeshId addMesh(const Mesh& mesh);
     MeshId addMesh(Mesh&& mesh);

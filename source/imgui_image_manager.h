@@ -1,69 +1,57 @@
 #pragma once
 
 #include "bellota.h"            // TextureId
-#include "texture_container.h"  // TextureContainer
 #include "backends/render_backend_select.h"  // ActiveBackend
+#include <glm/glm.hpp>
 #include <cstdint>
-#include <unordered_map>
+#include <unordered_set>
 
 namespace Nothofagus
 {
 
+class AssetRegistry;
+
 /**
- * @brief Bridges engine `TextureId`s to ImGui-bindable image handles
- *        (`ImTextureID`) for `ImGui::Image` — the basis of inline markdown
- *        images.
+ * @brief Bridges engine textures to ImGui-bindable images (`ImTextureID`) for
+ *        `ImGui::Image` — the basis of inline markdown images.
  *
- * Engine textures live as 2D-array images sampled with a per-draw layer index
- * and (for indirect textures) a separate palette, which ImGui's own shaders
- * cannot sample. This manager flattens a texture to plain RGBA8 on the CPU
- * (via `Texture::generateTextureData`, which resolves palettes) and uploads it
- * into a plain 2D GPU texture through `ActiveBackend::createImguiImage2D`.
+ * The ImGui-bindable artifact is the texture's **flat representation**: a plain
+ * 2D RGBA GPU texture that lives inside the source `TexturePack`
+ * (`ensureFlatRep`), uploaded via the native texture path — not a bespoke
+ * parallel resource. `handle(texId)` resolves it; `imguiImageHandle` on the
+ * canvas delegates here.
  *
- * Only static single-frame sources are flattened: a `DirectTexture` or a plain
- * single-layer, non-tile-map `IndirectTexture`. Animated (multi-layer) and
- * tile-map textures are dynamic / cell-composed and need the render-target path
- * (a later phase); `handle(...)` declines them (returns 0).
+ * Lifetime: a texture shown only as an ImGui image has no bellota, so the
+ * per-frame texture GC would drop it (and its flat rep). The manager **pins**
+ * such sources so they stay alive while shown. (Phase 1 pins permanently on
+ * first sight; touch-GC / unpin-on-hide arrives in Phase 2.)
  *
- * A handle + its pixel size are cached per `TextureId` on first request and
- * kept for the canvas lifetime — `IndexedContainer` ids are never recycled, so
- * a cached handle never aliases a different texture. Because the upload is a
- * self-contained RGBA snapshot, the source `TextureId` may be released (e.g. by
- * the per-frame texture GC, since a markdown-only image is referenced by no
- * bellota) without affecting the inline image — the cache keeps both the GPU
- * handle and the size. Mutating the source afterwards does not refresh the
- * image (animated / dynamic sources are a later phase). The GPU images are
- * reclaimed by the backend's `shutdown()`.
+ * Only static single-frame sources (Direct, single-layer non-tilemap Indirect)
+ * are supported here; animated / tile-map textures are declined (Phase 3 adds a
+ * render-target-backed flat rep for them).
  */
 class ImguiImageManager
 {
 public:
-    ImguiImageManager(ActiveBackend& backend, TextureContainer& textures)
-        : mBackend(backend), mTextures(textures)
+    ImguiImageManager(ActiveBackend& backend, AssetRegistry& assets)
+        : mBackend(backend), mAssets(assets)
     {
     }
 
     /// Resolve a `TextureId` to an ImGui-bindable handle (an `ImTextureID`
-    /// value). Returns 0 if the id is unknown or refers to a GPU-only proxy
-    /// (render-target) texture with no CPU pixels to flatten.
+    /// value), lazily creating its flat rep + pinning the source. Returns 0 for
+    /// an unknown id, a render-target proxy, or an unsupported (dynamic) source.
     std::uint64_t handle(TextureId textureId);
 
-    /// Pixel size of the cached image for `textureId`, or {0, 0} if it has not
-    /// been resolved via `handle(...)` yet. Reads only the cache — safe after
-    /// the source texture has been released.
+    /// Full pixel extent of the texture, or {0, 0} if unknown.
     glm::ivec2 size(TextureId textureId) const;
 
 private:
-    struct CachedImage
-    {
-        std::uint64_t handle;
-        glm::ivec2    size;
-    };
+    ActiveBackend& mBackend;
+    AssetRegistry& mAssets;
 
-    ActiveBackend&    mBackend;
-    TextureContainer& mTextures;
-
-    std::unordered_map<std::size_t, CachedImage> mCache; ///< TextureId.id -> cached image.
+    std::unordered_set<std::size_t> mPinned;          ///< sources pinned (so we pin each once).
+    std::unordered_set<std::size_t> mDeclinedWarned;  ///< dynamic sources warned about (once each).
 };
 
 }

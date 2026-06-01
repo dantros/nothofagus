@@ -2,6 +2,8 @@
 
 #include <span>
 #include <cstdint>
+#include <algorithm>
+#include <variant>
 
 namespace Nothofagus
 {
@@ -16,7 +18,31 @@ void TexturePack::freeGpuResources(ActiveBackend& backend)
     // backend.freeRenderTarget; skip them here to avoid a double-free.
     if (dtextureOpt.has_value() && !isProxy())
         backend.freeTexture(*dtextureOpt);
+    // Flat (ImGui) rep is a normal texture in the backend's map.
+    if (dflatTextureOpt.has_value())
+        backend.freeTexture(*dflatTextureOpt);
     clear();
+}
+
+std::uint64_t TexturePack::ensureFlatRep(ActiveBackend& backend)
+{
+    if (not dflatTextureOpt.has_value())
+    {
+        if (not texture.has_value())
+            return 0;  // proxy / GPU-only texture has no CPU pixels to flatten
+
+        // Static path: CPU-flatten (palette resolved for indirect) and take layer 0.
+        // Dynamic (animated/tile-map) sources are routed elsewhere by the caller.
+        TextureData data = std::visit(GenerateTextureDataVisitor{}, texture.value());
+        const int width  = static_cast<int>(data.width());
+        const int height = static_cast<int>(data.height());
+        std::span<std::uint8_t> full = data.getDataSpan();
+        const std::size_t layerBytes = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u;
+        std::span<const std::uint8_t> layer0(full.data(), std::min(layerBytes, full.size()));
+
+        dflatTextureOpt = backend.uploadFlatTexture(layer0, width, height, minFilter, magFilter);
+    }
+    return backend.imguiHandleOf(*dflatTextureOpt);
 }
 
 void TexturePack::syncToGpu(ActiveBackend& backend)

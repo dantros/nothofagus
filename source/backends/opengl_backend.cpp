@@ -237,9 +237,6 @@ void OpenGLBackend::rebuildImguiFontTexture()
 void OpenGLBackend::shutdown()
 {
     ImGui_ImplOpenGL3_Shutdown();
-    for (GLuint imguiImage : mImguiImages)
-        glDeleteTextures(1, &imguiImage);
-    mImguiImages.clear();
     glDeleteProgram(mShaderProgram);
     mShaderProgram = 0;
     glDeleteProgram(mIndirectShaderProgram);
@@ -317,12 +314,12 @@ void OpenGLBackend::freeTexture(DTexture texture)
     }
 }
 
-std::uint64_t OpenGLBackend::createImguiImage2D(std::span<const std::uint8_t> rgba, int width, int height,
-                                                TextureSampleMode minFilter, TextureSampleMode magFilter)
+DTexture OpenGLBackend::uploadFlatTexture(std::span<const std::uint8_t> rgba, int width, int height,
+                                          TextureSampleMode minFilter, TextureSampleMode magFilter)
 {
-    // ImGui's OpenGL backend binds the handle to GL_TEXTURE_2D and samples it
-    // with a plain sampler2D — so this must be a single-layer 2D texture, NOT
-    // the GL_TEXTURE_2D_ARRAY the engine uses everywhere else.
+    // Flat (ImGui-bindable) representation: GL_TEXTURE_2D so ImGui's plain
+    // sampler2D samples it directly, unlike the engine's GL_TEXTURE_2D_ARRAY
+    // sprite textures. Stored in the normal texture map so freeTexture reclaims it.
     GLuint gpuTexture;
     glGenTextures(1, &gpuTexture);
     glBindTexture(GL_TEXTURE_2D, gpuTexture);
@@ -340,17 +337,17 @@ std::uint64_t OpenGLBackend::createImguiImage2D(std::span<const std::uint8_t> rg
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    mImguiImages.insert(gpuTexture);
-    return static_cast<std::uint64_t>(gpuTexture);
+    std::size_t newId = mNextId++;
+    mTextures[newId] = OpenGLTexture{gpuTexture};
+    return DTexture{newId};
 }
 
-void OpenGLBackend::destroyImguiImage2D(std::uint64_t imguiImageHandle)
+std::uint64_t OpenGLBackend::imguiHandleOf(DTexture flatTexture) const
 {
-    const GLuint gpuTexture = static_cast<GLuint>(imguiImageHandle);
-    auto it = mImguiImages.find(gpuTexture);
-    if (it == mImguiImages.end()) return;
-    glDeleteTextures(1, &gpuTexture);
-    mImguiImages.erase(it);
+    auto it = mTextures.find(flatTexture.id);
+    debugCheck(it != mTextures.end(), "imguiHandleOf: flat texture not found");
+    // ImGui's GL backend binds the value straight to GL_TEXTURE_2D.
+    return static_cast<std::uint64_t>(it->second.texture);
 }
 
 DTexture OpenGLBackend::uploadPaletteTexture(const std::vector<glm::vec4>& paletteColors)

@@ -750,7 +750,12 @@ void VulkanBackend::flushPendingDeletions(FrameData& frame)
 
     for (auto& pending : frame.pendingTextureDeletions)
     {
-        vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &pending.descriptorSet);
+        // Flat (ImGui) textures' descriptors come from ImGui_ImplVulkan_AddTexture,
+        // so they must be released via RemoveTexture, not the engine pool.
+        if (pending.isImguiFlat)
+            ImGui_ImplVulkan_RemoveTexture(pending.descriptorSet);
+        else
+            vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &pending.descriptorSet);
         vkDestroySampler(mDevice, pending.sampler, nullptr);
         vkDestroyImageView(mDevice, pending.imageView, nullptr);
         if (pending.image != VK_NULL_HANDLE)
@@ -786,24 +791,33 @@ void VulkanBackend::shutdown()
 {
     vkDeviceWaitIdle(mDevice);
 
-    // Free ImGui-bindable images BEFORE ImGui_ImplVulkan_Shutdown — their
-    // descriptor sets are freed via ImGui_ImplVulkan_RemoveTexture, which needs
-    // the ImGui Vulkan backend still alive.
-    for (auto& [handle, img] : mImguiImages)
+    // Free flat (ImGui) textures' descriptors BEFORE ImGui_ImplVulkan_Shutdown —
+    // ImGui_ImplVulkan_RemoveTexture needs the ImGui Vulkan backend still alive.
+    // Erase them so the main mTextures loop below (which uses vkFreeDescriptorSets)
+    // doesn't touch their already-freed descriptors.
+    for (auto it = mTextures.begin(); it != mTextures.end();)
     {
-        ImGui_ImplVulkan_RemoveTexture(img.descriptorSet);
-        vkDestroyImageView(mDevice, img.imageView, nullptr);
-        vmaDestroyImage(mAllocator, img.image, img.allocation);
+        if (it->second.isImguiFlat)
+        {
+            ImGui_ImplVulkan_RemoveTexture(it->second.descriptorSet);
+            vkDestroyImageView(mDevice, it->second.imageView, nullptr);
+            vmaDestroyImage(mAllocator, it->second.image, it->second.allocation);
+            it = mTextures.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
     }
-    mImguiImages.clear();
 
-    ImGui_ImplVulkan_Shutdown();
-
-    // Flush deferred deletions from all frame slots — these were queued by
-    // freeTexture/freeMesh/freeRenderTarget during the last frames and never
-    // flushed because beginFrame() wasn't called again before shutdown.
+    // Flush deferred deletions BEFORE ImGui_ImplVulkan_Shutdown — deferred flat
+    // textures call ImGui_ImplVulkan_RemoveTexture, which needs the backend alive.
+    // (These were queued by freeTexture/freeMesh/freeRenderTarget and never flushed
+    // because beginFrame() wasn't called again before shutdown.)
     for (auto& frame : mFrames)
         flushPendingDeletions(frame);
+
+    ImGui_ImplVulkan_Shutdown();
 
     // Free all GPU resources
     for (auto& [id, mesh] : mMeshes)
@@ -1041,6 +1055,7 @@ void VulkanBackend::freeTexture(DTexture dtexture)
     pending.imageView     = tex.imageView;
     pending.image         = tex.isProxy ? VK_NULL_HANDLE : tex.image;
     pending.allocation    = tex.isProxy ? nullptr         : tex.allocation;
+    pending.isImguiFlat   = tex.isImguiFlat;
     if (tex.mode == TextureMode::Indirect || tex.mode == TextureMode::TileMap)
     {
         pending.paletteSampler    = tex.paletteSampler;
@@ -1053,16 +1068,17 @@ void VulkanBackend::freeTexture(DTexture dtexture)
 }
 
 // ---------------------------------------------------------------------------
-// ImGui-bindable 2D image bridge
+// Flat (ImGui-bindable) texture representation
 // ---------------------------------------------------------------------------
 
-std::uint64_t VulkanBackend::createImguiImage2D(std::span<const std::uint8_t> rgba, int width, int height,
-                                                TextureSampleMode /*minFilter*/, TextureSampleMode /*magFilter*/)
+DTexture VulkanBackend::uploadFlatTexture(std::span<const std::uint8_t> rgba, int width, int height,
+                                          TextureSampleMode /*minFilter*/, TextureSampleMode /*magFilter*/)
 {
     // ImGui's Vulkan backend samples a single 2D image through a shared sampler,
     // so this is a single-layer 2D image (VK_IMAGE_VIEW_TYPE_2D), unlike the
     // engine's 2D-array textures. The descriptor set comes from
     // ImGui_ImplVulkan_AddTexture so it is compatible with ImGui's pipeline.
+    // Stored in the normal mTextures map (isImguiFlat) so freeTexture reclaims it.
     const VkDeviceSize imageSize = static_cast<VkDeviceSize>(rgba.size());
 
     VkBufferCreateInfo stagingBufferInfo{};
@@ -1138,25 +1154,26 @@ std::uint64_t VulkanBackend::createImguiImage2D(std::span<const std::uint8_t> rg
     VkDescriptorSet descriptorSet =
         ImGui_ImplVulkan_AddTexture(imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    // ImGui's Vulkan backend treats the ImTextureID as the VkDescriptorSet bits;
-    // round-trip through uintptr_t to match how it reconstructs the handle.
-    const std::uint64_t handle = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(descriptorSet));
-    mImguiImages[handle] = VulkanImguiImage{image, imageAlloc, imageView, descriptorSet};
-    return handle;
+    VulkanTexture flatTexture{};
+    flatTexture.image         = image;
+    flatTexture.allocation    = imageAlloc;
+    flatTexture.imageView     = imageView;
+    flatTexture.sampler       = VK_NULL_HANDLE;   // AddTexture(view, layout) uses ImGui's shared sampler
+    flatTexture.descriptorSet = descriptorSet;
+    flatTexture.isImguiFlat   = true;
+    flatTexture.mode          = TextureMode::Direct;
+
+    const std::size_t newId = mNextId++;
+    mTextures[newId] = flatTexture;
+    return DTexture{newId};
 }
 
-void VulkanBackend::destroyImguiImage2D(std::uint64_t imguiImageHandle)
+std::uint64_t VulkanBackend::imguiHandleOf(DTexture flatTexture) const
 {
-    auto it = mImguiImages.find(imguiImageHandle);
-    if (it == mImguiImages.end()) return;
-
-    // Callers (shutdown / explicit release) guarantee the GPU is idle, so free
-    // immediately rather than through the per-frame deferred-deletion queue.
-    const VulkanImguiImage& img = it->second;
-    ImGui_ImplVulkan_RemoveTexture(img.descriptorSet);
-    vkDestroyImageView(mDevice, img.imageView, nullptr);
-    vmaDestroyImage(mAllocator, img.image, img.allocation);
-    mImguiImages.erase(it);
+    const VulkanTexture& tex = mTextures.at(flatTexture.id);
+    // ImGui's Vulkan backend treats the ImTextureID as the VkDescriptorSet bits;
+    // round-trip through uintptr_t to match how it reconstructs the handle.
+    return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(tex.descriptorSet));
 }
 
 // ---------------------------------------------------------------------------

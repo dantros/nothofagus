@@ -6,6 +6,7 @@
 #include "dtexture.h"
 #include "backends/render_backend_select.h"
 #include <optional>
+#include <cstdint>
 #include <glm/glm.hpp>
 
 namespace Nothofagus
@@ -19,6 +20,7 @@ struct TexturePack
     std::optional<DTexture> dtextureOpt;
     std::optional<DTexture> dpaletteTextureOpt; ///< GPU palette texture (only for indirect textures).
     std::optional<DTexture> dmapTextureOpt;     ///< GPU map texture (only for tile-map textures).
+    std::optional<DTexture> dflatTextureOpt;    ///< GPU flat 2D (ImGui-bindable) rep — lazy, created by ensureFlatRep().
     glm::ivec2 mTextureSize{0, 0}; ///< Cached size — set at creation for both CPU and proxy entries.
     TextureSampleMode minFilter = TextureSampleMode::Nearest;
     TextureSampleMode magFilter = TextureSampleMode::Nearest;
@@ -35,7 +37,15 @@ struct TexturePack
         dtextureOpt        = std::nullopt;
         dpaletteTextureOpt = std::nullopt;
         dmapTextureOpt     = std::nullopt;
+        dflatTextureOpt    = std::nullopt;
     }
+
+    /// Lazily create the flat (ImGui-bindable) GPU representation of this texture
+    /// and return its bindable handle (an `ImTextureID` value), or 0 for a proxy
+    /// texture (no CPU pixels). Static path only (Phase 1): CPU-flattens via
+    /// `generateTextureData` and uploads a 2D `uploadFlatTexture`. Cached in
+    /// `dflatTextureOpt`; freed by `freeGpuResources`.
+    std::uint64_t ensureFlatRep(ActiveBackend& backend);
 
     /// Free every backend handle this pack owns (palette + map + main texture),
     /// then reset the optionals. The main texture is only freed for non-proxy

@@ -56,8 +56,7 @@ concept RenderBackend = requires(
     const SpriteDrawParams& params,
     ImDrawData* imguiData,
     const std::vector<glm::vec4>& paletteColors,
-    std::span<const std::uint8_t> mapData,
-    std::uint64_t imguiImageHandle)
+    std::span<const std::uint8_t> mapData)
 {
     // Lifecycle
     { backend.initialize(nativeWindowHandle, canvasSize) } -> std::same_as<void>;
@@ -84,14 +83,15 @@ concept RenderBackend = requires(
     // (the GL handle is owned by the render target's color attachment and freed by freeRenderTarget).
     { backend.freeRenderTarget(renderTarget, dtexture)         } -> std::same_as<void>;
 
-    // ImGui-bindable image bridge — uploads RGBA8 bytes into a plain 2D GPU
-    // texture (GL_TEXTURE_2D / Vulkan 2D image + descriptor set) and returns an
-    // opaque handle usable as an ImTextureID. Unlike the engine's normal
-    // textures (2D arrays sampled with a per-draw layer index), this produces a
-    // single-layer 2D texture that ImGui's own shaders can sample directly.
-    // The bytes are row-major, top-to-bottom, 4 bytes per pixel.
-    { backend.createImguiImage2D(mapData, framebufferWidth, framebufferHeight, samplerMode, samplerMode) } -> std::same_as<std::uint64_t>;
-    { backend.destroyImguiImage2D(imguiImageHandle)            } -> std::same_as<void>;
+    // Flat (ImGui-bindable) representation of a texture — uploads RGBA8 bytes
+    // into a plain 2D GPU texture (GL_TEXTURE_2D / Vulkan 2D image + ImGui
+    // descriptor) stored in the normal texture map, so freeTexture reclaims it.
+    // Unlike the engine's array textures (sampled with a per-draw layer index),
+    // this single-layer 2D texture is sampled directly by ImGui. imguiHandleOf
+    // returns the bindable handle (GL name / descriptor bits) for such a DTexture.
+    // Bytes are row-major, top-to-bottom, 4 bytes per pixel.
+    { backend.uploadFlatTexture(mapData, framebufferWidth, framebufferHeight, samplerMode, samplerMode) } -> std::same_as<DTexture>;
+    { backend.imguiHandleOf(dtexture)                          } -> std::same_as<std::uint64_t>;
 
     // Per-frame rendering
     { backend.beginFrame(clearColor3, viewport, framebufferWidth, framebufferHeight) } -> std::same_as<void>;

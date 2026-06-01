@@ -5,6 +5,7 @@
 
 #include <utility>
 #include <unordered_set>
+#include <limits>
 
 namespace Nothofagus
 {
@@ -89,7 +90,7 @@ void AssetRegistry::removeTint(const BellotaId bellotaId)
 TextureId AssetRegistry::addTexture(const Texture& texture)
 {
     glm::ivec2 textureSize = std::visit(GetTextureSizeVisitor(), texture);
-    TexturePack texturePack{texture, std::nullopt, std::nullopt, std::nullopt, textureSize};
+    TexturePack texturePack{texture, std::nullopt, std::nullopt, std::nullopt, std::nullopt, textureSize};
     texturePack.mode = textureModeOf(texture);
     TextureId newTextureId{mTextures.add(std::move(texturePack))};
     const bool textureWasAdded = mTextureUsageMonitor.addUnused(newTextureId);
@@ -165,6 +166,25 @@ Texture& AssetRegistry::texture(TextureId textureId)
 const Texture& AssetRegistry::texture(TextureId textureId) const
 {
     return mTextures.at(textureId.id).texture.value();
+}
+
+namespace
+{
+// Phantom bellota id used to pin a texture against the GC without a real
+// bellota. BellotaIds come from IndexFactory monotonically from 0, so the max
+// value never collides with a real one.
+constexpr BellotaId kPinBellotaId{std::numeric_limits<std::size_t>::max()};
+}
+
+void AssetRegistry::pinTexture(TextureId textureId)
+{
+    // addEntry is a no-op if the phantom reference is already present.
+    mTextureUsageMonitor.addEntry(kPinBellotaId, textureId);
+}
+
+void AssetRegistry::unpinTexture(TextureId textureId)
+{
+    mTextureUsageMonitor.removeEntry(kPinBellotaId, textureId);
 }
 
 void AssetRegistry::clearUnusedTextures()
