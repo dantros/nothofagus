@@ -3,15 +3,27 @@
 #include <texture.h>
 #include <bellota.h>
 #include <mesh.h>
-#include "golden_image.h"
+#include "direct_texture_io.h"
+#include "direct_texture_compare.h"
 #include <string>
 #include <cstdlib>
+#include <filesystem>
 
 // Default golden directory is set by CMake. Override at runtime with GOLDEN_DIR env var
 // to target a different set (e.g. golden_mesa/ for software rendering).
 #ifndef NOTHOFAGUS_GOLDEN_DIR
     #define NOTHOFAGUS_GOLDEN_DIR "."
 #endif
+// Directory the "actual" renders are dumped into (for the Visual Tests Explorer tool).
+#ifndef NOTHOFAGUS_ACTUAL_DIR
+    #define NOTHOFAGUS_ACTUAL_DIR "."
+#endif
+
+// Comparison thresholds. Goldens are produced by deterministic CPU rendering
+// (SwiftShader in CI), so these defaults are tight; loosen via env vars to
+// tolerate minor rasterizer rounding on other backends.
+static constexpr std::uint8_t kDefaultPerChannelTolerance = 2;
+static constexpr std::size_t  kDefaultMaxDifferingPixels   = 0;
 
 static std::string goldenDir()
 {
@@ -19,9 +31,20 @@ static std::string goldenDir()
     return (env != nullptr && env[0] != '\0') ? env : NOTHOFAGUS_GOLDEN_DIR;
 }
 
+static std::string actualDir()
+{
+    const char* env = std::getenv("ACTUAL_DIR");
+    return (env != nullptr && env[0] != '\0') ? env : NOTHOFAGUS_ACTUAL_DIR;
+}
+
 static std::string goldenPath(const std::string& name)
 {
-    return goldenDir() + "/" + name + ".bin";
+    return goldenDir() + "/" + name + ".png";
+}
+
+static std::string actualPath(const std::string& name)
+{
+    return actualDir() + "/" + name + ".png";
 }
 
 static bool shouldUpdateGolden()
@@ -30,20 +53,74 @@ static bool shouldUpdateGolden()
     return env != nullptr && std::string(env) != "0";
 }
 
+static bool shouldDumpActual()
+{
+    const char* env = std::getenv("DUMP_ACTUAL");
+    return env != nullptr && std::string(env) != "0";
+}
+
+static std::uint8_t perChannelTolerance()
+{
+    const char* env = std::getenv("GOLDEN_TOLERANCE");
+    return (env != nullptr && env[0] != '\0')
+        ? static_cast<std::uint8_t>(std::strtoul(env, nullptr, 10))
+        : kDefaultPerChannelTolerance;
+}
+
+static std::size_t maxDifferingPixels()
+{
+    const char* env = std::getenv("GOLDEN_MAX_DIFF_PIXELS");
+    return (env != nullptr && env[0] != '\0')
+        ? static_cast<std::size_t>(std::strtoull(env, nullptr, 10))
+        : kDefaultMaxDifferingPixels;
+}
+
+// Writes the actual render next to the goldens so the visual_tests_explorer tool can
+// show golden / actual / diff. Best-effort: never fails the test.
+static void dumpActual(const std::string& name, const Nothofagus::DirectTexture& screenshot)
+{
+    try
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(actualDir(), ec);
+        Nothofagus::TestHelpers::save(actualPath(name), screenshot);
+    }
+    catch (const std::exception&)
+    {
+        // Diagnostic output only; not a test failure.
+    }
+}
+
 static void checkAgainstGolden(const std::string& name, const Nothofagus::DirectTexture& screenshot)
 {
     const std::string path = goldenPath(name);
 
-    if (shouldUpdateGolden() || !GoldenImage::exists(path))
+    if (shouldUpdateGolden() || !std::filesystem::exists(path))
     {
-        GoldenImage::save(path, screenshot);
+        std::error_code ec;
+        std::filesystem::create_directories(goldenDir(), ec);
+        Nothofagus::TestHelpers::save(path, screenshot);
         WARN("Golden file written: " + path);
         return;
     }
 
-    Nothofagus::DirectTexture expected = GoldenImage::load(path);
-    REQUIRE(screenshot.size() == expected.size());
-    REQUIRE(GoldenImage::compare(screenshot, expected));
+    Nothofagus::DirectTexture expected = Nothofagus::TestHelpers::load(path);
+
+    const Nothofagus::TestHelpers::ComparisonResult result =
+        Nothofagus::TestHelpers::compare(screenshot, expected, perChannelTolerance(), maxDifferingPixels());
+
+    if (!result.withinTolerance || shouldDumpActual())
+        dumpActual(name, screenshot);
+
+    INFO("golden:           " << path);
+    INFO("sizeMismatch:     " << (result.sizeMismatch ? "yes" : "no"));
+    INFO("differingPixels:  " << result.differingPixels << " (max " << maxDifferingPixels() << ")");
+    INFO("maxChannelDelta:  " << static_cast<int>(result.maxChannelDelta)
+                              << " (tolerance " << static_cast<int>(perChannelTolerance()) << ")");
+    INFO("meanChannelDelta: " << result.meanChannelDelta);
+
+    REQUIRE_FALSE(result.sizeMismatch);
+    REQUIRE(result.withinTolerance);
 }
 
 
