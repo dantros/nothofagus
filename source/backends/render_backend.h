@@ -84,11 +84,13 @@ concept RenderBackend = requires(
     // (the GL handle is owned by the render target's color attachment and freed by freeRenderTarget).
     { backend.freeRenderTarget(renderTarget, dtexture)         } -> std::same_as<void>;
 
-    // A texture uploaded with TextureUploadMode::Flat is a plain 2D RGBA texture
-    // (stored in the normal texture map, reclaimed by freeTexture) that ImGui can
-    // sample directly. imguiHandleOf returns the bindable handle (GL name /
-    // descriptor bits) for such a DTexture.
-    { backend.imguiHandleOf(dtexture)                          } -> std::same_as<std::uint64_t>;
+    // flatTextureHandle returns the externally-bindable handle of a flat texture
+    // (one uploaded with TextureUploadMode::Flat), packed as a uint64 — the GL
+    // texture name (OpenGL) or the descriptor-set bits (Vulkan). It's the handle
+    // an external renderer binds to sample the texture; today that consumer is
+    // ImGui. Only meaningful for flat textures (an array texture's native handle
+    // is engine-internal and not bindable by an outside renderer).
+    { backend.flatTextureHandle(dtexture)                      } -> std::same_as<std::uint64_t>;
 
     // Per-frame rendering
     { backend.beginFrame(clearColor3, viewport, framebufferWidth, framebufferHeight) } -> std::same_as<void>;

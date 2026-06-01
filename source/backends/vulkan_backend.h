@@ -124,7 +124,7 @@ public:
     DTexture      getRenderTargetTexture(DRenderTarget renderTarget);
     void          freeRenderTarget(DRenderTarget renderTarget, DTexture proxyTexture);
 
-    std::uint64_t imguiHandleOf(DTexture flatTexture) const;
+    std::uint64_t flatTextureHandle(DTexture flatTexture) const;
 
     void beginFrame(glm::vec3 clearColor, ViewportRect gameViewport, int framebufferWidth, int framebufferHeight);
     void imguiNewFrame();

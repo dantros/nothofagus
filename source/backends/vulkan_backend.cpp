@@ -1169,7 +1169,7 @@ void VulkanBackend::freeTexture(DTexture dtexture)
 // Flat (ImGui-bindable) texture handle
 // ---------------------------------------------------------------------------
 
-std::uint64_t VulkanBackend::imguiHandleOf(DTexture flatTexture) const
+std::uint64_t VulkanBackend::flatTextureHandle(DTexture flatTexture) const
 {
     const VulkanTexture& tex = mTextures.at(flatTexture.id);
     // ImGui's Vulkan backend treats the ImTextureID as the VkDescriptorSet bits;

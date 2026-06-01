@@ -341,11 +341,11 @@ void OpenGLBackend::freeTexture(DTexture texture)
     }
 }
 
-std::uint64_t OpenGLBackend::imguiHandleOf(DTexture flatTexture) const
+std::uint64_t OpenGLBackend::flatTextureHandle(DTexture flatTexture) const
 {
     auto it = mTextures.find(flatTexture.id);
-    debugCheck(it != mTextures.end(), "imguiHandleOf: flat texture not found");
-    // ImGui's GL backend binds the value straight to GL_TEXTURE_2D.
+    debugCheck(it != mTextures.end(), "flatTextureHandle: texture not found");
+    // A flat texture's native handle is its GL_TEXTURE_2D name, which ImGui binds directly.
     return static_cast<std::uint64_t>(it->second.texture);
 }
 

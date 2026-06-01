@@ -61,7 +61,7 @@ std::uint64_t ImguiImageManager::handle(TextureId textureId)
     // is ready on the next frame's call (one-frame deferral). Return 0 until then.
     pack.mFlatRequested = true;
     if (pack.dflatTextureOpt.has_value())
-        return mBackend.imguiHandleOf(*pack.dflatTextureOpt);
+        return mBackend.flatTextureHandle(*pack.dflatTextureOpt);
     return 0;
 }
 
