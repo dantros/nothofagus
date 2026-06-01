@@ -324,7 +324,7 @@ endif()
 # (interactive tool, not part of the headless CI lane).
 option(NOTHOFAGUS_BUILD_GOLDEN_VIEWER "Build the golden-image viewer tool?" OFF)
 if (${NOTHOFAGUS_BUILD_GOLDEN_VIEWER})
-    add_subdirectory("tools")
+    add_subdirectory("tests/visual_tests_explorer")
 endif()
 
 option(NOTHOFAGUS_BUILD_DOCS "Build Nothofagus documentation? [WIP]" OFF)

@@ -42,7 +42,7 @@ cmake --install build/windows-debug-glfw-opengl-examples
 - `NOTHOFAGUS_BACKEND_VULKAN` — use the Vulkan render backend instead of OpenGL (default OFF)
 - `NOTHOFAGUS_HEADLESS_VULKAN` — pure offscreen Vulkan rendering with no window or display server (default OFF; requires `NOTHOFAGUS_BACKEND_VULKAN=ON`). Replaces the window backend with `HeadlessBackend` and the Vulkan presentation policy with `HeadlessVulkanPresentation`. Intended for CI/CD rendering tests.
 - `NOTHOFAGUS_ENABLE_TRACY` — wire in the Tracy profiler (default OFF).
-- `NOTHOFAGUS_BUILD_GOLDEN_VIEWER` — build the windowed golden-image viewer tool under `tools/golden_viewer/` (default OFF; pulls in `stb_image_plus` + the `nothofagus_test_helpers` lib).
+- `NOTHOFAGUS_BUILD_GOLDEN_VIEWER` — build the windowed golden-image viewer tool under `tests/visual_tests_explorer/` (default OFF; pulls in `stb_image_plus` + the `nothofagus_test_helpers` lib).
 
 ## Architecture
 
@@ -847,7 +847,7 @@ Goldens are **PNG files** (lossless RGBA), read/written by the shared `nothofagu
 - `GOLDEN_TOLERANCE` / `GOLDEN_MAX_DIFF_PIXELS` — override the default per-channel tolerance (2) and max differing-pixel count (0).
 - `DUMP_ACTUAL=1` — also dump each render to `tests/visual/actual/` (always dumped on failure) for the viewer. `tests/visual/actual/` is git-ignored.
 
-The **golden viewer** ([tools/golden_viewer/](tools/golden_viewer/)) is a windowed Nothofagus app, built with `-DNOTHOFAGUS_BUILD_GOLDEN_VIEWER=ON`. It shows golden / actual / diff side by side per test case, with live tolerance sliders and an "Update golden from actual" button (and "update all failing"). It is file-driven and generic: run `rendering_tests` with `DUMP_ACTUAL=1`, then launch `golden_viewer [goldenDir] [actualDir]` (dirs also come from `GOLDEN_DIR`/`ACTUAL_DIR` env or the in-app picker). It is OFF by default and not built in CI (it needs a window).
+The **golden viewer** ([tests/visual_tests_explorer/](tests/visual_tests_explorer/)) is a windowed Nothofagus app, built with `-DNOTHOFAGUS_BUILD_GOLDEN_VIEWER=ON`. It shows golden / actual / diff side by side per test case, with live tolerance sliders and an "Update golden from actual" button (and "update all failing"). It is file-driven and generic: run `rendering_tests` with `DUMP_ACTUAL=1`, then launch `golden_viewer [goldenDir] [actualDir]` (dirs also come from `GOLDEN_DIR`/`ACTUAL_DIR` env or the in-app picker). It is OFF by default and not built in CI (it needs a window).
 
 ## Dependencies
 
