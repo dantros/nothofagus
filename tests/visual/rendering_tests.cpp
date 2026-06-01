@@ -14,7 +14,7 @@
 #ifndef NOTHOFAGUS_GOLDEN_DIR
     #define NOTHOFAGUS_GOLDEN_DIR "."
 #endif
-// Directory the "actual" renders are dumped into (for the golden viewer tool).
+// Directory the "actual" renders are dumped into (for the Visual Tests Explorer tool).
 #ifndef NOTHOFAGUS_ACTUAL_DIR
     #define NOTHOFAGUS_ACTUAL_DIR "."
 #endif
@@ -75,7 +75,7 @@ static std::size_t maxDifferingPixels()
         : kDefaultMaxDifferingPixels;
 }
 
-// Writes the actual render next to the goldens so the golden_viewer tool can
+// Writes the actual render next to the goldens so the visual_tests_explorer tool can
 // show golden / actual / diff. Best-effort: never fails the test.
 static void dumpActual(const std::string& name, const Nothofagus::DirectTexture& screenshot)
 {

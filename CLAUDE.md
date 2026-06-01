@@ -42,7 +42,7 @@ cmake --install build/windows-debug-glfw-opengl-examples
 - `NOTHOFAGUS_BACKEND_VULKAN` — use the Vulkan render backend instead of OpenGL (default OFF)
 - `NOTHOFAGUS_HEADLESS_VULKAN` — pure offscreen Vulkan rendering with no window or display server (default OFF; requires `NOTHOFAGUS_BACKEND_VULKAN=ON`). Replaces the window backend with `HeadlessBackend` and the Vulkan presentation policy with `HeadlessVulkanPresentation`. Intended for CI/CD rendering tests.
 - `NOTHOFAGUS_ENABLE_TRACY` — wire in the Tracy profiler (default OFF).
-- `NOTHOFAGUS_BUILD_GOLDEN_VIEWER` — build the windowed golden-image viewer tool under `tests/visual_tests_explorer/` (default OFF; pulls in `stb_image_plus` + the `nothofagus_test_helpers` lib).
+- `NOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER` — build the windowed Visual Tests Explorer tool under `tests/visual_tests_explorer/` (default OFF; pulls in `stb_image_plus` + the `nothofagus_test_helpers` lib).
 
 ## Architecture
 
@@ -837,7 +837,7 @@ Enable with `-DNOTHOFAGUS_BUILD_TESTS=ON`. Two independent groups, each behind i
 
 Run via CTest from the build directory. Both groups use Catch2 (`catch_discover_tests` registers each `TEST_CASE` as a separate CTest entry); Catch2 is added once at the `tests/CMakeLists.txt` orchestrator level when either sub-option is enabled. The visual group additionally requires a render backend and the shared test-helpers lib in [tests/nothofagus_test_helpers/](tests/nothofagus_test_helpers/) (target `nothofagus_test_helpers`); the test cases themselves live in [tests/visual/rendering_tests.cpp](tests/visual/rendering_tests.cpp). The nonvisual group builds without any render backend (use it from CI lanes that don't have a display server). The nonvisual files are [tests/nonvisual/tilemap_tests.cpp](tests/nonvisual/tilemap_tests.cpp) — pure-data tests for `Tilemap`, `IndirectTexture::setMapBulk`, and the `TilemapExplorer` pool-grid-size formula (mirrored from source) — and [tests/nonvisual/sparsemap_tests.cpp](tests/nonvisual/sparsemap_tests.cpp) — pure-data tests for `Sparsemap` (chunk lifecycle, lazy `setCell`, `chunkDataInto` zero-fill for missing chunks, independent per-chunk generation bumps).
 
-### Golden images (PNG) and the golden viewer
+### Golden images (PNG) and the Visual Tests Explorer
 
 Goldens are **PNG files** (lossless RGBA), read/written by the shared `nothofagus_test_helpers` lib, which wraps `stb_image_plus` — Nothofagus itself does no file I/O, so all the loading/saving/comparison lives here. The lib splits into [tests/nothofagus_test_helpers/direct_texture_io.h](tests/nothofagus_test_helpers/direct_texture_io.h) (`Nothofagus::TestHelpers::save` / `load` for a `DirectTexture`) and [tests/nothofagus_test_helpers/direct_texture_compare.h](tests/nothofagus_test_helpers/direct_texture_compare.h) (`compare` / `makeDiff`). Comparison is **tolerance-based**: `Nothofagus::TestHelpers::compare(...)` returns a `ComparisonResult` (differing-pixel count, max/mean channel delta) and passes when sizes match and the count of pixels differing by more than the per-channel tolerance stays within a cap.
 
@@ -847,7 +847,7 @@ Goldens are **PNG files** (lossless RGBA), read/written by the shared `nothofagu
 - `GOLDEN_TOLERANCE` / `GOLDEN_MAX_DIFF_PIXELS` — override the default per-channel tolerance (2) and max differing-pixel count (0).
 - `DUMP_ACTUAL=1` — also dump each render to `tests/visual/actual/` (always dumped on failure) for the viewer. `tests/visual/actual/` is git-ignored.
 
-The **golden viewer** ([tests/visual_tests_explorer/](tests/visual_tests_explorer/)) is a windowed Nothofagus app, built with `-DNOTHOFAGUS_BUILD_GOLDEN_VIEWER=ON`. It shows golden / actual / diff side by side per test case, with live tolerance sliders and an "Update golden from actual" button (and "update all failing"). It is file-driven and generic: run `rendering_tests` with `DUMP_ACTUAL=1`, then launch `golden_viewer [goldenDir] [actualDir]` (dirs also come from `GOLDEN_DIR`/`ACTUAL_DIR` env or the in-app picker). It is OFF by default and not built in CI (it needs a window).
+The **Visual Tests Explorer** ([tests/visual_tests_explorer/](tests/visual_tests_explorer/)) is a windowed Nothofagus app, built with `-DNOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER=ON`. It shows golden / actual / diff side by side per test case, with live tolerance sliders and an "Update golden from actual" button (and "update all failing"). It is file-driven and generic: run `rendering_tests` with `DUMP_ACTUAL=1`, then launch `visual_tests_explorer [goldenDir] [actualDir]` (dirs also come from `GOLDEN_DIR`/`ACTUAL_DIR` env or the in-app picker). It is OFF by default and not built in CI (it needs a window).
 
 ## Dependencies
 
@@ -866,5 +866,5 @@ Third-party libraries are vendored via `git subtree` directly under [third_party
 - **vk-bootstrap** — Vulkan device + instance bootstrap
 - **VulkanMemoryAllocator** — GPU memory allocator for Vulkan
 - **Catch2** — test framework (only pulled in when `NOTHOFAGUS_BUILD_TESTS=ON`)
-- **stb_image_plus** — image file I/O (PNG/BMP/TGA/JPG) wrapping `nothings/stb`; used only by the golden-image test helper and the golden viewer, never by the core library
+- **stb_image_plus** — image file I/O (PNG/BMP/TGA/JPG) wrapping `nothings/stb`; used only by the golden-image test helper and the Visual Tests Explorer, never by the core library
 - **imgui_cmake** — CMake wrapper for imgui — *custom local code, not subtree-managed*

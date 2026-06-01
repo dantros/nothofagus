@@ -1,4 +1,4 @@
-// golden_viewer — an interactive Nothofagus tool for inspecting golden-image
+// visual_tests_explorer — an interactive Nothofagus tool for inspecting golden-image
 // regression results. It renders the selected test's golden / actual / diff
 // images side by side and lets you update a golden from the current actual.
 //
@@ -7,7 +7,7 @@
 // saving and comparison. Run rendering_tests with DUMP_ACTUAL=1 first to
 // populate the "actual" directory.
 //
-//   golden_viewer [goldenDir] [actualDir]
+//   visual_tests_explorer [goldenDir] [actualDir]
 //
 // Directories also come from the GOLDEN_DIR / ACTUAL_DIR env vars, or the
 // in-app pickers; argv wins, then env, then the compiled-in defaults.
@@ -28,11 +28,11 @@
 #include <string>
 #include <vector>
 
-#ifndef GOLDEN_VIEWER_DEFAULT_GOLDEN_DIR
-    #define GOLDEN_VIEWER_DEFAULT_GOLDEN_DIR "."
+#ifndef VISUAL_TESTS_EXPLORER_DEFAULT_GOLDEN_DIR
+    #define VISUAL_TESTS_EXPLORER_DEFAULT_GOLDEN_DIR "."
 #endif
-#ifndef GOLDEN_VIEWER_DEFAULT_ACTUAL_DIR
-    #define GOLDEN_VIEWER_DEFAULT_ACTUAL_DIR "."
+#ifndef VISUAL_TESTS_EXPLORER_DEFAULT_ACTUAL_DIR
+    #define VISUAL_TESTS_EXPLORER_DEFAULT_ACTUAL_DIR "."
 #endif
 
 namespace fs = std::filesystem;
@@ -63,11 +63,11 @@ int fitScale(glm::ivec2 size, int box)
     return std::max(1, std::min(byWidth, byHeight));
 }
 
-class Viewer
+class VisualTestsExplorer
 {
 public:
-    Viewer(std::string goldenDir, std::string actualDir) :
-        mCanvas({420, 280}, "Nothofagus Golden Viewer", {0.12f, 0.12f, 0.14f}, 3),
+    VisualTestsExplorer(std::string goldenDir, std::string actualDir) :
+        mCanvas({420, 280}, "Nothofagus Visual Tests Explorer", {0.12f, 0.12f, 0.14f}, 3),
         mGoldenDir(std::move(goldenDir)),
         mActualDir(std::move(actualDir))
     {
@@ -211,7 +211,7 @@ private:
     {
         ImGui::SetNextWindowPos({8, 8}, ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize({360, 540}, ImGuiCond_FirstUseEver);
-        ImGui::Begin("Golden Viewer");
+        ImGui::Begin("Visual Tests Explorer");
 
         ImGui::TextWrapped("Layout: golden | actual | diff (left to right). "
                            "Diff is red where the images differ.");
@@ -375,12 +375,12 @@ private:
 
 int main(int argc, char** argv)
 {
-    std::string goldenDir = envOr("GOLDEN_DIR", GOLDEN_VIEWER_DEFAULT_GOLDEN_DIR);
-    std::string actualDir = envOr("ACTUAL_DIR", GOLDEN_VIEWER_DEFAULT_ACTUAL_DIR);
+    std::string goldenDir = envOr("GOLDEN_DIR", VISUAL_TESTS_EXPLORER_DEFAULT_GOLDEN_DIR);
+    std::string actualDir = envOr("ACTUAL_DIR", VISUAL_TESTS_EXPLORER_DEFAULT_ACTUAL_DIR);
     if (argc > 1) goldenDir = argv[1];
     if (argc > 2) actualDir = argv[2];
 
-    Viewer viewer(std::move(goldenDir), std::move(actualDir));
+    VisualTestsExplorer viewer(std::move(goldenDir), std::move(actualDir));
     viewer.run();
     return 0;
 }

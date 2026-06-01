@@ -1,6 +1,6 @@
 # Shared test helpers: DirectTexture image I/O (direct_texture_io, via
 # stb_image_plus) and tolerance-based comparison (direct_texture_compare).
-# Linked by both the visual test executable and the golden-image viewer tool, so
+# Linked by both the visual test executable and the Visual Tests Explorer tool, so
 # the file I/O that Nothofagus itself deliberately avoids lives here, in one place.
 
 # Bring in stb_image_plus once (it may also be pulled in by the viewer tool).
