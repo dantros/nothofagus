@@ -12,6 +12,11 @@ if(NOTHOFAGUS_BUILD_TESTS_VISUAL OR NOTHOFAGUS_BUILD_TESTS_NONVISUAL)
 endif()
 
 if(NOTHOFAGUS_BUILD_TESTS_VISUAL)
+    # Shared golden-image helper (PNG I/O + comparison). Guarded so the viewer
+    # tool can also pull it in independently.
+    if(NOT TARGET nothofagus_golden)
+        add_subdirectory(golden)
+    endif()
     add_subdirectory(visual)
 endif()
 

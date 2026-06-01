@@ -76,10 +76,13 @@ jobs:
     - name: Update Vulkan golden files if missing
       if: failure()
       run: |
-        echo "Tests failed — regenerating Vulkan golden files."
-        echo "If this is expected (rendering change), run locally:"
+        echo "Tests failed — regenerating Vulkan golden PNGs."
+        echo "Goldens are PNG images (via stb_image_plus); comparison is tolerance-based."
+        echo "To inspect golden/actual/diff visually, build the golden_viewer tool"
+        echo "(-DNOTHOFAGUS_BUILD_GOLDEN_VIEWER=ON) after running the tests with DUMP_ACTUAL=1."
+        echo "If a rendering change is expected, regenerate locally:"
         echo "  GOLDEN_DIR=tests/visual/golden_headless_vulkan UPDATE_GOLDEN=1 ./build/tests/visual/rendering_tests"
-        echo "Then commit the updated golden_headless_vulkan/ files."
+        echo "Then commit the updated golden_headless_vulkan/*.png files."
         UPDATE_GOLDEN=1 ./build/tests/visual/rendering_tests
         echo "--- Updated golden files ---"
         ls -la tests/visual/golden_headless_vulkan/

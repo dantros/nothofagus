@@ -319,6 +319,14 @@ if (${NOTHOFAGUS_BUILD_TESTS})
     add_subdirectory("tests")
 endif()
 
+# Golden-image viewer: a windowed Nothofagus tool to inspect golden/actual/diff
+# images and update goldens. Pulls in stb_image_plus for file I/O. OFF by default
+# (interactive tool, not part of the headless CI lane).
+option(NOTHOFAGUS_BUILD_GOLDEN_VIEWER "Build the golden-image viewer tool?" OFF)
+if (${NOTHOFAGUS_BUILD_GOLDEN_VIEWER})
+    add_subdirectory("tools")
+endif()
+
 option(NOTHOFAGUS_BUILD_DOCS "Build Nothofagus documentation? [WIP]" OFF)
 if (${NOTHOFAGUS_BUILD_DOCS})
     find_package(Doxygen QUIET)
