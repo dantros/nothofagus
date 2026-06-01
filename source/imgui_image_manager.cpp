@@ -44,11 +44,18 @@ std::uint64_t ImguiImageManager::handle(TextureId textureId)
     }
 
     // Pin the source so the per-frame texture GC doesn't drop it (and its flat
-    // rep) while it's shown; stamp this frame so endFrame() keeps it. The unpin
-    // happens in endFrame() once it stops being requested.
-    if (mPinned.find(textureId.id) == mPinned.end())
-        mAssets.pinTexture(textureId);
-    mPinned[textureId.id] = mFrameCounter;
+    // rep) while it's shown: an invisible bellota referencing it. Stamp this
+    // frame so endFrame() keeps it; the bellota is removed once it stops being
+    // requested. (This pays the standard bellota cost — an auto-quad mesh that's
+    // never drawn — which a later step can make cheaper.)
+    auto pinned = mPinned.find(textureId.id);
+    if (pinned == mPinned.end())
+    {
+        const BellotaId pinBellota = mAssets.addBellota(Bellota(Transform(), textureId));
+        mAssets.bellota(pinBellota).visible() = false;
+        pinned = mPinned.emplace(textureId.id, PinnedImage{pinBellota, mFrameCounter}).first;
+    }
+    pinned->second.lastTouchedFrame = mFrameCounter;
 
     return pack.ensureFlatRep(mBackend);
 }
@@ -63,13 +70,14 @@ glm::ivec2 ImguiImageManager::size(TextureId textureId) const
 
 void ImguiImageManager::endFrame()
 {
-    // Unpin sources not requested this frame; once unpinned (and unreferenced by
-    // any real bellota) the next clearUnusedTextures frees the source + flat rep.
+    // Remove the pin bellota of any source not requested this frame; once it (and
+    // any real bellota) is gone the next clearUnusedTextures frees the source +
+    // flat rep.
     for (auto it = mPinned.begin(); it != mPinned.end();)
     {
-        if (it->second != mFrameCounter)
+        if (it->second.lastTouchedFrame != mFrameCounter)
         {
-            mAssets.unpinTexture(TextureId{it->first});
+            mAssets.removeBellota(it->second.bellota);
             it = mPinned.erase(it);
         }
         else

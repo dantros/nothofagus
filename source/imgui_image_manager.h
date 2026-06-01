@@ -54,11 +54,19 @@ public:
     void endFrame();
 
 private:
+    /// A source kept alive while shown: an invisible bellota referencing it
+    /// (pins it against the per-frame texture GC), plus the last frame requested.
+    struct PinnedImage
+    {
+        BellotaId     bellota;
+        std::uint64_t lastTouchedFrame;
+    };
+
     ActiveBackend& mBackend;
     AssetRegistry& mAssets;
 
-    std::unordered_map<std::size_t, std::uint64_t> mPinned;  ///< pinned source -> last frame requested.
-    std::unordered_set<std::size_t> mDeclinedWarned;         ///< dynamic sources warned about (once each).
+    std::unordered_map<std::size_t, PinnedImage> mPinned;  ///< source id -> pin bellota + last frame requested.
+    std::unordered_set<std::size_t> mDeclinedWarned;       ///< dynamic sources warned about (once each).
     std::uint64_t mFrameCounter = 0;
 };
 
