@@ -17,10 +17,14 @@ class AssetRegistry;
  *        `ImGui::Image` — the basis of inline markdown images.
  *
  * The ImGui-bindable artifact is the texture's **flat representation**: a plain
- * 2D RGBA GPU texture that lives inside the source `TexturePack`
- * (`ensureFlatRep`), uploaded via the native texture path — not a bespoke
- * parallel resource. `handle(texId)` resolves it; `imguiImageHandle` on the
- * canvas delegates here.
+ * 2D RGBA GPU texture that lives inside the source `TexturePack`, uploaded via
+ * the native texture path (`syncToGpu` brings it online once requested) — not a
+ * bespoke parallel resource. `handle(texId)` flags the request and returns the
+ * handle once ready; `imguiImageHandle` on the canvas delegates here.
+ *
+ * Because `syncToGpu` runs after the user update, the flat rep is created the
+ * frame it is first requested and the handle is ready the next frame (a
+ * one-frame deferral; `handle()` returns 0 until then).
  *
  * Lifetime: a texture shown only as an ImGui image has no bellota, so the
  * per-frame texture GC would drop it (and its flat rep). The manager **pins**

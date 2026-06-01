@@ -57,7 +57,12 @@ std::uint64_t ImguiImageManager::handle(TextureId textureId)
     }
     pinned->second.lastTouchedFrame = mFrameCounter;
 
-    return pack.ensureFlatRep(mBackend);
+    // Request the flat rep; syncToGpu creates it later this frame, so the handle
+    // is ready on the next frame's call (one-frame deferral). Return 0 until then.
+    pack.mFlatRequested = true;
+    if (pack.dflatTextureOpt.has_value())
+        return mBackend.imguiHandleOf(*pack.dflatTextureOpt);
+    return 0;
 }
 
 glm::ivec2 ImguiImageManager::size(TextureId textureId) const

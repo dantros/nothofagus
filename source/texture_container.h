@@ -20,11 +20,12 @@ struct TexturePack
     std::optional<DTexture> dtextureOpt;
     std::optional<DTexture> dpaletteTextureOpt; ///< GPU palette texture (only for indirect textures).
     std::optional<DTexture> dmapTextureOpt;     ///< GPU map texture (only for tile-map textures).
-    std::optional<DTexture> dflatTextureOpt;    ///< GPU flat 2D (ImGui-bindable) rep — lazy, created by ensureFlatRep().
+    std::optional<DTexture> dflatTextureOpt;    ///< GPU flat 2D (ImGui-bindable) rep — lazy, brought online by syncToGpu when mFlatRequested.
     glm::ivec2 mTextureSize{0, 0}; ///< Cached size — set at creation for both CPU and proxy entries.
     TextureSampleMode minFilter = TextureSampleMode::Nearest;
     TextureSampleMode magFilter = TextureSampleMode::Nearest;
     TextureMode mode = TextureMode::Direct; ///< CPU-side texture kind. Proxy entries (no CPU texture) keep Direct since they are RGBA color attachments.
+    bool mFlatRequested = false; ///< An ImGui consumer asked for the flat rep; syncToGpu lazily creates it.
 
     bool isProxy() const { return not texture.has_value(); }
     bool isDirty() const { return not dtextureOpt.has_value(); }
@@ -39,13 +40,6 @@ struct TexturePack
         dmapTextureOpt     = std::nullopt;
         dflatTextureOpt    = std::nullopt;
     }
-
-    /// Lazily create the flat (ImGui-bindable) GPU representation of this texture
-    /// and return its bindable handle (an `ImTextureID` value), or 0 for a proxy
-    /// texture (no CPU pixels). Static path only: uploads via
-    /// `uploadTexture(..., TextureUploadMode::Flat, ...)` (palette-resolved RGBA,
-    /// layer 0). Cached in `dflatTextureOpt`; freed by `freeGpuResources`.
-    std::uint64_t ensureFlatRep(ActiveBackend& backend);
 
     /// Free every backend handle this pack owns (palette + map + main texture),
     /// then reset the optionals. The main texture is only freed for non-proxy

@@ -24,20 +24,6 @@ void TexturePack::freeGpuResources(ActiveBackend& backend)
     clear();
 }
 
-std::uint64_t TexturePack::ensureFlatRep(ActiveBackend& backend)
-{
-    if (not dflatTextureOpt.has_value())
-    {
-        if (not texture.has_value())
-            return 0;  // proxy / GPU-only texture has no CPU pixels to flatten
-
-        // Flat upload palette-resolves (for indirect) and takes layer 0 internally.
-        // Dynamic (animated/tile-map) sources are routed elsewhere by the caller.
-        dflatTextureOpt = backend.uploadTexture(texture.value(), TextureUploadMode::Flat, minFilter, magFilter);
-    }
-    return backend.imguiHandleOf(*dflatTextureOpt);
-}
-
 void TexturePack::syncToGpu(ActiveBackend& backend)
 {
     const bool isIndirectOrTileMap =
@@ -104,6 +90,13 @@ void TexturePack::syncToGpu(ActiveBackend& backend)
             indirectTexture.clearPaletteDirty();
         }
     }
+
+    // Flat (ImGui-bindable) rep — lazily brought online once an ImGui consumer
+    // requested it (imguiImageHandle). The Flat upload palette-resolves and takes
+    // layer 0 internally. Created the frame after the request, so the handle is
+    // ready on the next imguiImageHandle() call (one-frame deferral).
+    if (mFlatRequested && not dflatTextureOpt.has_value() && not isProxy() && texture.has_value())
+        dflatTextureOpt = backend.uploadTexture(texture.value(), TextureUploadMode::Flat, minFilter, magFilter);
 }
 
 }

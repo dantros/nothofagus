@@ -125,13 +125,32 @@ protected:
             return false;
 
         const std::uint64_t handle = mCanvas->imguiImageHandle(*textureIdOpt);
-        if (handle == 0)
-            return false;
-
-        // Read the size from the bridge cache rather than the live texture — a
-        // markdown-only image is referenced by no bellota, so the source may be
-        // released by the per-frame texture GC after the first frame.
         const glm::ivec2 size = mCanvas->imguiImageSize(*textureIdOpt);
+
+        if (handle == 0)
+        {
+            // The flat rep is created in syncToGpu this frame and ready next frame
+            // (one-frame deferral). Reserve the image's space now — sized exactly
+            // as imgui_md will draw it (FontGlobalScale + fit-to-width) — so the
+            // layout doesn't reflow when the image appears.
+            if (size.x > 0 && size.y > 0)
+            {
+                ImVec2 reserved(static_cast<float>(size.x), static_cast<float>(size.y));
+                const float scale = ImGui::GetIO().FontGlobalScale;
+                reserved.x *= scale;
+                reserved.y *= scale;
+                const ImVec2 avail = ImGui::GetContentRegionAvail();
+                if (reserved.x > avail.x)
+                {
+                    const float ratio = reserved.y / reserved.x;
+                    reserved.x = avail.x;
+                    reserved.y = avail.x * ratio;
+                }
+                ImGui::Dummy(reserved);
+            }
+            return false;
+        }
+
         nfo.texture_id = static_cast<ImTextureID>(handle);
         nfo.size       = ImVec2(static_cast<float>(size.x), static_cast<float>(size.y));
         nfo.uv0        = ImVec2(0.0f, 0.0f);
