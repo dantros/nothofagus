@@ -48,3 +48,6 @@ imgui.ini
 
 # Generated SPIR-V shader binaries
 *.spv
+
+# Actual renders dumped by the visual tests for the golden viewer
+tests/visual/actual/

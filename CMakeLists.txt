@@ -320,6 +320,14 @@ if (${NOTHOFAGUS_BUILD_TESTS})
     add_subdirectory("tests")
 endif()
 
+# Visual Tests Explorer: a windowed Nothofagus tool to inspect golden/actual/diff
+# images and update goldens. Pulls in stb_image_plus for file I/O. OFF by default
+# (interactive tool, not part of the headless CI lane).
+option(NOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER "Build the Visual Tests Explorer tool?" OFF)
+if (${NOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER})
+    add_subdirectory("tests/visual_tests_explorer")
+endif()
+
 option(NOTHOFAGUS_BUILD_DOCS "Build Nothofagus documentation? [WIP]" OFF)
 if (${NOTHOFAGUS_BUILD_DOCS})
     find_package(Doxygen QUIET)
