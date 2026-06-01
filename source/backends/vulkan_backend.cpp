@@ -1,4 +1,5 @@
 #include "vulkan_backend.h"
+#include "check.h"
 #include <VkBootstrap.h>
 #include <vk_mem_alloc.h>
 #include <backends/imgui_impl_vulkan.h>
@@ -1172,6 +1173,8 @@ void VulkanBackend::freeTexture(DTexture dtexture)
 std::uint64_t VulkanBackend::flatTextureHandle(DTexture flatTexture) const
 {
     const VulkanTexture& tex = mTextures.at(flatTexture.id);
+    debugCheck(tex.isImguiFlat,
+        "flatTextureHandle: DTexture is not a flat texture (built via TextureUploadMode::Flat)");
     // ImGui's Vulkan backend treats the ImTextureID as the VkDescriptorSet bits;
     // round-trip through uintptr_t to match how it reconstructs the handle.
     return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(tex.descriptorSet));

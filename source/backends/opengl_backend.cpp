@@ -275,7 +275,7 @@ DTexture OpenGLBackend::uploadTexture(const Texture& texture,
         glBindTexture(GL_TEXTURE_2D, 0);
 
         const std::size_t flatId = mNextId++;
-        mTextures[flatId] = OpenGLTexture{gpuTexture};
+        mTextures[flatId] = OpenGLTexture{gpuTexture, /*isFlat=*/true};
         return DTexture{flatId};
     }
 
@@ -345,6 +345,8 @@ std::uint64_t OpenGLBackend::flatTextureHandle(DTexture flatTexture) const
 {
     auto it = mTextures.find(flatTexture.id);
     debugCheck(it != mTextures.end(), "flatTextureHandle: texture not found");
+    debugCheck(it->second.isFlat,
+        "flatTextureHandle: DTexture is not a flat texture (built via TextureUploadMode::Flat)");
     // A flat texture's native handle is its GL_TEXTURE_2D name, which ImGui binds directly.
     return static_cast<std::uint64_t>(it->second.texture);
 }
