@@ -186,6 +186,17 @@
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
         },
         {
+            "name": "windows-debug-sdl3-vulkan-tests",
+            "inherits": "windows-debug-sdl3-vulkan",
+            "cacheVariables": {
+                "NOTHOFAGUS_BUILD_EXAMPLES": "OFF",
+                "NOTHOFAGUS_BUILD_TESTS": "ON",
+                "NOTHOFAGUS_BUILD_TESTS_VISUAL": "ON",
+                "NOTHOFAGUS_BUILD_TESTS_NONVISUAL": "ON",
+                "NOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER": "ON"
+            }
+        },
+        {
             "name": "windows-release-sdl3-vulkan",
             "inherits": "windows-sdl3-vulkan",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
@@ -275,6 +286,17 @@
             "name": "linux-debug-sdl3-vulkan-examples",
             "inherits": "linux-debug-sdl3-vulkan",
             "cacheVariables": { "NOTHOFAGUS_BUILD_EXAMPLES": "ON" }
+        },
+        {
+            "name": "linux-debug-sdl3-vulkan-tests",
+            "inherits": "linux-debug-sdl3-vulkan",
+            "cacheVariables": {
+                "NOTHOFAGUS_BUILD_EXAMPLES": "OFF",
+                "NOTHOFAGUS_BUILD_TESTS": "ON",
+                "NOTHOFAGUS_BUILD_TESTS_VISUAL": "ON",
+                "NOTHOFAGUS_BUILD_TESTS_NONVISUAL": "ON",
+                "NOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER": "ON"
+            }
         },
         {
             "name": "linux-release-sdl3-vulkan",
