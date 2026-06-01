@@ -3,7 +3,8 @@
 #include <texture.h>
 #include <bellota.h>
 #include <mesh.h>
-#include "golden_image.h"
+#include "direct_texture_io.h"
+#include "direct_texture_compare.h"
 #include <string>
 #include <cstdlib>
 #include <filesystem>
@@ -82,7 +83,7 @@ static void dumpActual(const std::string& name, const Nothofagus::DirectTexture&
     {
         std::error_code ec;
         std::filesystem::create_directories(actualDir(), ec);
-        GoldenImage::save(actualPath(name), screenshot);
+        Nothofagus::TestHelpers::save(actualPath(name), screenshot);
     }
     catch (const std::exception&)
     {
@@ -94,19 +95,19 @@ static void checkAgainstGolden(const std::string& name, const Nothofagus::Direct
 {
     const std::string path = goldenPath(name);
 
-    if (shouldUpdateGolden() || !GoldenImage::exists(path))
+    if (shouldUpdateGolden() || !std::filesystem::exists(path))
     {
         std::error_code ec;
         std::filesystem::create_directories(goldenDir(), ec);
-        GoldenImage::save(path, screenshot);
+        Nothofagus::TestHelpers::save(path, screenshot);
         WARN("Golden file written: " + path);
         return;
     }
 
-    Nothofagus::DirectTexture expected = GoldenImage::load(path);
+    Nothofagus::DirectTexture expected = Nothofagus::TestHelpers::load(path);
 
-    const GoldenImage::ComparisonResult result =
-        GoldenImage::compare(screenshot, expected, perChannelTolerance(), maxDifferingPixels());
+    const Nothofagus::TestHelpers::ComparisonResult result =
+        Nothofagus::TestHelpers::compare(screenshot, expected, perChannelTolerance(), maxDifferingPixels());
 
     if (!result.withinTolerance || shouldDumpActual())
         dumpActual(name, screenshot);

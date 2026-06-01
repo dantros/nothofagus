@@ -2,7 +2,7 @@ add_executable(golden_viewer
     "golden_viewer.cpp"
 )
 set_property(TARGET golden_viewer PROPERTY CXX_STANDARD 20)
-target_link_libraries(golden_viewer PRIVATE nothofagus nothofagus_golden)
+target_link_libraries(golden_viewer PRIVATE nothofagus nothofagus_test_helpers)
 
 # Default golden / actual directories point at the visual-test source tree so the
 # viewer "just works" out of the box; both are overridable at runtime (argv / env

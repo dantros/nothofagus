@@ -3,7 +3,7 @@
 // images side by side and lets you update a golden from the current actual.
 //
 // Nothofagus deliberately does no file I/O; this tool (via the shared
-// nothofagus_golden helper, which wraps stb_image_plus) does all the loading,
+// nothofagus_test_helpers lib, which wraps stb_image_plus) does all the loading,
 // saving and comparison. Run rendering_tests with DUMP_ACTUAL=1 first to
 // populate the "actual" directory.
 //
@@ -15,7 +15,8 @@
 #include <canvas.h>
 #include <texture.h>
 #include <bellota.h>
-#include <golden_image.h>
+#include <direct_texture_io.h>
+#include <direct_texture_compare.h>
 
 #include <imgui.h>
 #include <imfilebrowser.h>
@@ -132,7 +133,7 @@ private:
         const Entry& entry = mEntries[mSelected];
         try
         {
-            mGolden = GoldenImage::load(goldenPath(entry.name));
+            mGolden = Nothofagus::TestHelpers::load(goldenPath(entry.name));
         }
         catch (const std::exception& e)
         {
@@ -144,8 +145,8 @@ private:
         {
             try
             {
-                mActual = GoldenImage::load(actualPath(entry.name));
-                mDiff   = GoldenImage::makeDiff(mActual.value(), mGolden.value());
+                mActual = Nothofagus::TestHelpers::load(actualPath(entry.name));
+                mDiff   = Nothofagus::TestHelpers::makeDiff(mActual.value(), mGolden.value());
             }
             catch (const std::exception& e)
             {
@@ -271,11 +272,11 @@ private:
 
     // Comparison for the currently-cached selected images (cheap; recomputed
     // each frame so tolerance sliders update live).
-    std::optional<GoldenImage::ComparisonResult> currentResult() const
+    std::optional<Nothofagus::TestHelpers::ComparisonResult> currentResult() const
     {
         if (!mGolden.has_value() || !mActual.has_value())
             return std::nullopt;
-        return GoldenImage::compare(mActual.value(), mGolden.value(),
+        return Nothofagus::TestHelpers::compare(mActual.value(), mGolden.value(),
                                     static_cast<std::uint8_t>(mTolerance),
                                     static_cast<std::size_t>(mMaxDiffPixels));
     }
@@ -288,9 +289,9 @@ private:
             return false;
         try
         {
-            Nothofagus::DirectTexture golden = GoldenImage::load(goldenPath(entry.name));
-            Nothofagus::DirectTexture actual = GoldenImage::load(actualPath(entry.name));
-            return GoldenImage::compare(actual, golden,
+            Nothofagus::DirectTexture golden = Nothofagus::TestHelpers::load(goldenPath(entry.name));
+            Nothofagus::DirectTexture actual = Nothofagus::TestHelpers::load(actualPath(entry.name));
+            return Nothofagus::TestHelpers::compare(actual, golden,
                                         static_cast<std::uint8_t>(mTolerance),
                                         static_cast<std::size_t>(mMaxDiffPixels)).withinTolerance;
         }

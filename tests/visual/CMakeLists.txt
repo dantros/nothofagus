@@ -2,7 +2,7 @@ add_executable(rendering_tests
     "rendering_tests.cpp"
 )
 set_property(TARGET rendering_tests PROPERTY CXX_STANDARD 20)
-target_link_libraries(rendering_tests PRIVATE nothofagus nothofagus_golden Catch2::Catch2WithMain)
+target_link_libraries(rendering_tests PRIVATE nothofagus nothofagus_test_helpers Catch2::Catch2WithMain)
 
 # Point tests at the golden directory (source tree, so updates persist) and at a
 # directory to dump "actual" renders into for the golden viewer.

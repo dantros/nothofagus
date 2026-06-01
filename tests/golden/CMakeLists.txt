@@ -1,7 +1,7 @@
-# Shared golden-image helper: PNG save/load (via stb_image_plus), tolerance-based
-# comparison, and visual diff generation. Linked by both the visual test
-# executable and the golden-image viewer tool, so the file I/O that Nothofagus
-# itself deliberately avoids lives here, in one place.
+# Shared test helpers: DirectTexture image I/O (direct_texture_io, via
+# stb_image_plus) and tolerance-based comparison (direct_texture_compare).
+# Linked by both the visual test executable and the golden-image viewer tool, so
+# the file I/O that Nothofagus itself deliberately avoids lives here, in one place.
 
 # Bring in stb_image_plus once (it may also be pulled in by the viewer tool).
 if(NOT TARGET stb_image_plus)
@@ -13,12 +13,14 @@ if(NOT TARGET stb_image_plus)
     )
 endif()
 
-add_library(nothofagus_golden STATIC
-    "golden_image.cpp"
-    "golden_image.h"
+add_library(nothofagus_test_helpers STATIC
+    "direct_texture_io.cpp"
+    "direct_texture_io.h"
+    "direct_texture_compare.cpp"
+    "direct_texture_compare.h"
 )
-set_property(TARGET nothofagus_golden PROPERTY CXX_STANDARD 20)
-target_include_directories(nothofagus_golden PUBLIC
+set_property(TARGET nothofagus_test_helpers PROPERTY CXX_STANDARD 20)
+target_include_directories(nothofagus_test_helpers PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}"
 )
-target_link_libraries(nothofagus_golden PUBLIC nothofagus stb_image_plus)
+target_link_libraries(nothofagus_test_helpers PUBLIC nothofagus stb_image_plus)
