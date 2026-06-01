@@ -19,3 +19,13 @@ target_compile_definitions(visual_tests_explorer PRIVATE
     VISUAL_TESTS_EXPLORER_DEFAULT_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/visual/golden"
     VISUAL_TESTS_EXPLORER_DEFAULT_ACTUAL_DIR="${CMAKE_SOURCE_DIR}/tests/visual/actual"
 )
+
+# When the visual tests are part of this build (e.g. the *-sdl3-vulkan-tests
+# presets), point the "Generate actual images" button at the rendering_tests
+# binary and ensure it is built alongside the explorer. Without the visual
+# tests, the button falls back to the RENDERING_TESTS_BIN env var.
+if(TARGET rendering_tests)
+    add_dependencies(visual_tests_explorer rendering_tests)
+    target_compile_definitions(visual_tests_explorer PRIVATE
+        VISUAL_TESTS_EXPLORER_TESTS_BIN="$<TARGET_FILE:rendering_tests>")
+endif()

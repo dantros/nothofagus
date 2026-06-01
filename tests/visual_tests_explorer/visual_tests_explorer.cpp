@@ -34,6 +34,12 @@
 #ifndef VISUAL_TESTS_EXPLORER_DEFAULT_ACTUAL_DIR
     #define VISUAL_TESTS_EXPLORER_DEFAULT_ACTUAL_DIR "."
 #endif
+// Path to the rendering_tests binary that produces the actual images. Set by
+// CMake when the visual tests are part of the build; empty otherwise (the
+// "Generate actual images" button then asks for RENDERING_TESTS_BIN).
+#ifndef VISUAL_TESTS_EXPLORER_TESTS_BIN
+    #define VISUAL_TESTS_EXPLORER_TESTS_BIN ""
+#endif
 
 namespace fs = std::filesystem;
 
@@ -50,6 +56,17 @@ std::string envOr(const char* key, const std::string& fallback)
 {
     const char* value = std::getenv(key);
     return (value != nullptr && value[0] != '\0') ? std::string(value) : fallback;
+}
+
+// Set an environment variable in this process so a child launched via
+// std::system inherits it. Portable across POSIX and Windows.
+void setEnvVar(const char* key, const std::string& value)
+{
+#if defined(_WIN32)
+    _putenv_s(key, value.c_str());
+#else
+    ::setenv(key, value.c_str(), 1);
+#endif
 }
 
 // Integer scale that fits an image of the given size into a target box, never
@@ -229,6 +246,9 @@ private:
         ImGui::TextWrapped("%s", mActualDir.c_str());
         if (ImGui::Button("Pick actual dir..."))
             mActualPicker.Open();
+        ImGui::SameLine();
+        if (ImGui::Button("Generate actual images"))
+            generateActualImages();
 
         ImGui::Separator();
         ImGui::SliderInt("Tolerance", &mTolerance, 0, 64);
@@ -347,6 +367,39 @@ private:
                 updateGoldenFromActual(mEntries[i]);
         }
         rebuildSelection();
+    }
+
+    // Runs the rendering_tests binary with DUMP_ACTUAL=1 so it renders every
+    // case and writes the actual PNGs into the current actual dir, then rescans.
+    // The engine does no file I/O itself, so producing actuals means driving the
+    // test executable that owns the scene definitions.
+    void generateActualImages()
+    {
+        const std::string bin = envOr("RENDERING_TESTS_BIN", VISUAL_TESTS_EXPLORER_TESTS_BIN);
+        if (bin.empty())
+        {
+            mLoadError = "rendering_tests path unknown. Build with the visual tests "
+                         "enabled, or set the RENDERING_TESTS_BIN env var.";
+            return;
+        }
+
+        std::error_code ec;
+        fs::create_directories(mActualDir, ec);
+
+        // The child inherits these via the environment.
+        setEnvVar("DUMP_ACTUAL", "1");
+        setEnvVar("ACTUAL_DIR", mActualDir);
+        setEnvVar("GOLDEN_DIR", mGoldenDir);
+
+        const std::string command = "\"" + bin + "\"";
+        const int rc = std::system(command.c_str());
+        // A non-zero code just means some cases differ from their goldens; the
+        // actual images are dumped regardless, which is all we need here.
+        mLoadError = (rc == 0)
+            ? std::string{}
+            : "rendering_tests reported differences (actuals were still generated).";
+
+        rescan();
     }
 
     Nothofagus::Canvas mCanvas;
