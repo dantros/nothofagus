@@ -31,16 +31,9 @@ std::uint64_t TexturePack::ensureFlatRep(ActiveBackend& backend)
         if (not texture.has_value())
             return 0;  // proxy / GPU-only texture has no CPU pixels to flatten
 
-        // Static path: CPU-flatten (palette resolved for indirect) and take layer 0.
+        // Flat upload palette-resolves (for indirect) and takes layer 0 internally.
         // Dynamic (animated/tile-map) sources are routed elsewhere by the caller.
-        TextureData data = std::visit(GenerateTextureDataVisitor{}, texture.value());
-        const int width  = static_cast<int>(data.width());
-        const int height = static_cast<int>(data.height());
-        std::span<std::uint8_t> full = data.getDataSpan();
-        const std::size_t layerBytes = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u;
-        std::span<const std::uint8_t> layer0(full.data(), std::min(layerBytes, full.size()));
-
-        dflatTextureOpt = backend.uploadFlatTexture(layer0, width, height, minFilter, magFilter);
+        dflatTextureOpt = backend.uploadTexture(texture.value(), TextureUploadMode::Flat, minFilter, magFilter);
     }
     return backend.imguiHandleOf(*dflatTextureOpt);
 }
@@ -55,7 +48,7 @@ void TexturePack::syncToGpu(ActiveBackend& backend)
     {
         // First upload — bring atlas, palette, and (for tilemaps) map online,
         // then wire them together via the backend's link* binding ops.
-        dtextureOpt = backend.uploadTexture(texture.value(), minFilter, magFilter);
+        dtextureOpt = backend.uploadTexture(texture.value(), TextureUploadMode::Array, minFilter, magFilter);
 
         if (isIndirectOrTileMap)
         {
@@ -88,7 +81,7 @@ void TexturePack::syncToGpu(ActiveBackend& backend)
         if (indirectTexture.isAtlasDirty() && dpaletteTextureOpt.has_value())
         {
             backend.freeTexture(*dtextureOpt);
-            dtextureOpt = backend.uploadTexture(texture.value(), minFilter, magFilter);
+            dtextureOpt = backend.uploadTexture(texture.value(), TextureUploadMode::Array, minFilter, magFilter);
             if (mode == TextureMode::TileMap && dmapTextureOpt.has_value())
                 backend.linkTileMapTextures(*dtextureOpt, *dmapTextureOpt, *dpaletteTextureOpt);
             else

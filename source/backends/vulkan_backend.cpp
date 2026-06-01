@@ -900,8 +900,106 @@ void VulkanBackend::shutdown()
 // ---------------------------------------------------------------------------
 
 DTexture VulkanBackend::uploadTexture(
-    const Texture& texture, TextureSampleMode minFilter, TextureSampleMode magFilter)
+    const Texture& texture, TextureUploadMode uploadMode, TextureSampleMode minFilter, TextureSampleMode magFilter)
 {
+    if (uploadMode == TextureUploadMode::Flat)
+    {
+        // Flat (ImGui-bindable) rep: a single-layer 2D RGBA image (palette
+        // resolved via generateTextureData, layer 0) that ImGui samples through a
+        // 2D view + AddTexture descriptor (ImGui's shared sampler). Stored in
+        // mTextures (isImguiFlat) so freeTexture reclaims it via RemoveTexture.
+        const TextureData flatData = std::visit(GenerateTextureDataVisitor{}, texture);
+        const uint32_t flatWidth  = static_cast<uint32_t>(flatData.width());
+        const uint32_t flatHeight = static_cast<uint32_t>(flatData.height());
+        const VkDeviceSize flatImageSize = static_cast<VkDeviceSize>(flatWidth) * flatHeight * 4u;  // layer 0
+
+        VkBufferCreateInfo stagingBufferInfo{};
+        stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        stagingBufferInfo.size  = flatImageSize;
+        stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+        VmaAllocationCreateInfo stagingAllocInfo{};
+        stagingAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+        stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                                 VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        VkBuffer      stagingBuffer;
+        VmaAllocation stagingAlloc;
+        VmaAllocationInfo stagingInfo;
+        vmaCreateBuffer(mAllocator, &stagingBufferInfo, &stagingAllocInfo,
+                        &stagingBuffer, &stagingAlloc, &stagingInfo);
+        std::memcpy(stagingInfo.pMappedData, flatData.getDataSpan().data(), flatImageSize);
+
+        VkImageCreateInfo imageInfo{};
+        imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.imageType     = VK_IMAGE_TYPE_2D;
+        imageInfo.format        = VK_FORMAT_R8G8B8A8_UNORM;
+        imageInfo.extent        = {flatWidth, flatHeight, 1};
+        imageInfo.mipLevels     = 1;
+        imageInfo.arrayLayers   = 1;
+        imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
+        imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+        imageInfo.usage         = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        VmaAllocationCreateInfo imageAllocInfo{};
+        imageAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+        VkImage       image;
+        VmaAllocation imageAlloc;
+        vmaCreateImage(mAllocator, &imageInfo, &imageAllocInfo, &image, &imageAlloc, nullptr);
+
+        VkCommandBuffer commandBuffer = beginOneTimeCommandBuffer();
+        transitionImageLayout(commandBuffer, image,
+            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0, VK_ACCESS_TRANSFER_WRITE_BIT);
+
+        VkBufferImageCopy region{};
+        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.imageExtent      = {flatWidth, flatHeight, 1};
+        vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, image,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+        transitionImageLayout(commandBuffer, image,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+
+        endOneTimeCommandBuffer(commandBuffer);
+        vmaDestroyBuffer(mAllocator, stagingBuffer, stagingAlloc);
+
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image                           = image;
+        viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format                          = VK_FORMAT_R8G8B8A8_UNORM;
+        viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        viewInfo.subresourceRange.levelCount     = 1;
+        viewInfo.subresourceRange.baseArrayLayer = 0;
+        viewInfo.subresourceRange.layerCount     = 1;
+
+        VkImageView imageView;
+        if (vkCreateImageView(mDevice, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create ImGui flat image view");
+
+        VkDescriptorSet descriptorSet =
+            ImGui_ImplVulkan_AddTexture(imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+        VulkanTexture flatTexture{};
+        flatTexture.image         = image;
+        flatTexture.allocation    = imageAlloc;
+        flatTexture.imageView     = imageView;
+        flatTexture.sampler       = VK_NULL_HANDLE;   // AddTexture(view, layout) uses ImGui's shared sampler
+        flatTexture.descriptorSet = descriptorSet;
+        flatTexture.isImguiFlat   = true;
+        flatTexture.mode          = TextureMode::Direct;
+
+        const std::size_t flatId = mNextId++;
+        mTextures[flatId] = flatTexture;
+        return DTexture{flatId};
+    }
+
     const TextureMode mode = textureModeOf(texture);
 
     // Determine upload data and format based on texture type.
@@ -1068,105 +1166,8 @@ void VulkanBackend::freeTexture(DTexture dtexture)
 }
 
 // ---------------------------------------------------------------------------
-// Flat (ImGui-bindable) texture representation
+// Flat (ImGui-bindable) texture handle
 // ---------------------------------------------------------------------------
-
-DTexture VulkanBackend::uploadFlatTexture(std::span<const std::uint8_t> rgba, int width, int height,
-                                          TextureSampleMode /*minFilter*/, TextureSampleMode /*magFilter*/)
-{
-    // ImGui's Vulkan backend samples a single 2D image through a shared sampler,
-    // so this is a single-layer 2D image (VK_IMAGE_VIEW_TYPE_2D), unlike the
-    // engine's 2D-array textures. The descriptor set comes from
-    // ImGui_ImplVulkan_AddTexture so it is compatible with ImGui's pipeline.
-    // Stored in the normal mTextures map (isImguiFlat) so freeTexture reclaims it.
-    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(rgba.size());
-
-    VkBufferCreateInfo stagingBufferInfo{};
-    stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    stagingBufferInfo.size  = imageSize;
-    stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-
-    VmaAllocationCreateInfo stagingAllocInfo{};
-    stagingAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                             VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    VkBuffer      stagingBuffer;
-    VmaAllocation stagingAlloc;
-    VmaAllocationInfo stagingInfo;
-    vmaCreateBuffer(mAllocator, &stagingBufferInfo, &stagingAllocInfo,
-                    &stagingBuffer, &stagingAlloc, &stagingInfo);
-    std::memcpy(stagingInfo.pMappedData, rgba.data(), imageSize);
-
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType     = VK_IMAGE_TYPE_2D;
-    imageInfo.format        = VK_FORMAT_R8G8B8A8_UNORM;
-    imageInfo.extent        = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
-    imageInfo.mipLevels     = 1;
-    imageInfo.arrayLayers   = 1;
-    imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage         = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-    VmaAllocationCreateInfo imageAllocInfo{};
-    imageAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-    VkImage       image;
-    VmaAllocation imageAlloc;
-    vmaCreateImage(mAllocator, &imageInfo, &imageAllocInfo, &image, &imageAlloc, nullptr);
-
-    VkCommandBuffer commandBuffer = beginOneTimeCommandBuffer();
-    transitionImageLayout(commandBuffer, image,
-        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0, VK_ACCESS_TRANSFER_WRITE_BIT);
-
-    VkBufferImageCopy region{};
-    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    region.imageExtent      = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
-    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-    transitionImageLayout(commandBuffer, image,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
-
-    endOneTimeCommandBuffer(commandBuffer);
-    vmaDestroyBuffer(mAllocator, stagingBuffer, stagingAlloc);
-
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image                           = image;
-    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format                          = VK_FORMAT_R8G8B8A8_UNORM;
-    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.levelCount     = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount     = 1;
-
-    VkImageView imageView;
-    if (vkCreateImageView(mDevice, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
-        throw std::runtime_error("Failed to create ImGui image view");
-
-    VkDescriptorSet descriptorSet =
-        ImGui_ImplVulkan_AddTexture(imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-    VulkanTexture flatTexture{};
-    flatTexture.image         = image;
-    flatTexture.allocation    = imageAlloc;
-    flatTexture.imageView     = imageView;
-    flatTexture.sampler       = VK_NULL_HANDLE;   // AddTexture(view, layout) uses ImGui's shared sampler
-    flatTexture.descriptorSet = descriptorSet;
-    flatTexture.isImguiFlat   = true;
-    flatTexture.mode          = TextureMode::Direct;
-
-    const std::size_t newId = mNextId++;
-    mTextures[newId] = flatTexture;
-    return DTexture{newId};
-}
 
 std::uint64_t VulkanBackend::imguiHandleOf(DTexture flatTexture) const
 {

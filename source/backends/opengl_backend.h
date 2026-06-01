@@ -21,6 +21,7 @@ public:
     void rebuildImguiFontTexture();
 
     DTexture      uploadTexture(const Texture& texture,
+                                TextureUploadMode uploadMode,
                                 TextureSampleMode minFilter,
                                 TextureSampleMode magFilter);
     void          freeTexture(DTexture texture);
@@ -38,8 +39,6 @@ public:
     DTexture      getRenderTargetTexture(DRenderTarget renderTarget);
     void          freeRenderTarget(DRenderTarget renderTarget, DTexture proxyTexture);
 
-    DTexture      uploadFlatTexture(std::span<const std::uint8_t> rgba, int width, int height,
-                                    TextureSampleMode minFilter, TextureSampleMode magFilter);
     std::uint64_t imguiHandleOf(DTexture flatTexture) const;
 
     void beginFrame(glm::vec3 clearColor, ViewportRect gameViewport,

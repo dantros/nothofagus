@@ -42,9 +42,9 @@ struct TexturePack
 
     /// Lazily create the flat (ImGui-bindable) GPU representation of this texture
     /// and return its bindable handle (an `ImTextureID` value), or 0 for a proxy
-    /// texture (no CPU pixels). Static path only (Phase 1): CPU-flattens via
-    /// `generateTextureData` and uploads a 2D `uploadFlatTexture`. Cached in
-    /// `dflatTextureOpt`; freed by `freeGpuResources`.
+    /// texture (no CPU pixels). Static path only: uploads via
+    /// `uploadTexture(..., TextureUploadMode::Flat, ...)` (palette-resolved RGBA,
+    /// layer 0). Cached in `dflatTextureOpt`; freed by `freeGpuResources`.
     std::uint64_t ensureFlatRep(ActiveBackend& backend);
 
     /// Free every backend handle this pack owns (palette + map + main texture),

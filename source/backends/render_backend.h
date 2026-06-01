@@ -43,6 +43,7 @@ concept RenderBackend = requires(
     glm::ivec2 canvasSize,
     const Texture& texture,
     TextureSampleMode samplerMode,
+    TextureUploadMode uploadMode,
     const Mesh& mesh,
     glm::ivec2 targetSize,
     DMesh dmesh,
@@ -65,7 +66,7 @@ concept RenderBackend = requires(
     { backend.rebuildImguiFontTexture()                   } -> std::same_as<void>;
 
     // GPU resource management
-    { backend.uploadTexture(texture, samplerMode, samplerMode) } -> std::same_as<DTexture>;
+    { backend.uploadTexture(texture, uploadMode, samplerMode, samplerMode) } -> std::same_as<DTexture>;
     { backend.freeTexture(dtexture)                            } -> std::same_as<void>;
     { backend.uploadPaletteTexture(paletteColors)              } -> std::same_as<DTexture>;
     { backend.updatePaletteTexture(dtexture, paletteColors)    } -> std::same_as<void>;
@@ -83,14 +84,10 @@ concept RenderBackend = requires(
     // (the GL handle is owned by the render target's color attachment and freed by freeRenderTarget).
     { backend.freeRenderTarget(renderTarget, dtexture)         } -> std::same_as<void>;
 
-    // Flat (ImGui-bindable) representation of a texture — uploads RGBA8 bytes
-    // into a plain 2D GPU texture (GL_TEXTURE_2D / Vulkan 2D image + ImGui
-    // descriptor) stored in the normal texture map, so freeTexture reclaims it.
-    // Unlike the engine's array textures (sampled with a per-draw layer index),
-    // this single-layer 2D texture is sampled directly by ImGui. imguiHandleOf
-    // returns the bindable handle (GL name / descriptor bits) for such a DTexture.
-    // Bytes are row-major, top-to-bottom, 4 bytes per pixel.
-    { backend.uploadFlatTexture(mapData, framebufferWidth, framebufferHeight, samplerMode, samplerMode) } -> std::same_as<DTexture>;
+    // A texture uploaded with TextureUploadMode::Flat is a plain 2D RGBA texture
+    // (stored in the normal texture map, reclaimed by freeTexture) that ImGui can
+    // sample directly. imguiHandleOf returns the bindable handle (GL name /
+    // descriptor bits) for such a DTexture.
     { backend.imguiHandleOf(dtexture)                          } -> std::same_as<std::uint64_t>;
 
     // Per-frame rendering

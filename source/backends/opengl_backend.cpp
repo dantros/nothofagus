@@ -247,11 +247,38 @@ void OpenGLBackend::shutdown()
 }
 
 DTexture OpenGLBackend::uploadTexture(const Texture& texture,
+                                       TextureUploadMode uploadMode,
                                        TextureSampleMode minFilter,
                                        TextureSampleMode magFilter)
 {
     GLuint gpuTexture;
     glGenTextures(1, &gpuTexture);
+
+    if (uploadMode == TextureUploadMode::Flat)
+    {
+        // Flat (ImGui-bindable) rep: a plain GL_TEXTURE_2D of palette-resolved
+        // RGBA (layer 0) that ImGui's sampler2D binds directly, unlike the
+        // engine's GL_TEXTURE_2D_ARRAY sprites. Stored in the normal texture map
+        // so freeTexture reclaims it. glTexImage2D reads exactly width*height*4
+        // bytes — i.e. layer 0 — even when generateTextureData has more layers.
+        TextureData textureData = std::visit(GenerateTextureDataVisitor(), texture);
+        glBindTexture(GL_TEXTURE_2D, gpuTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, textureData.width(), textureData.height(),
+                     0, GL_RGBA, GL_UNSIGNED_BYTE, textureData.getDataSpan().data());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        // No mip levels — force a non-mipped filter (default would be incomplete).
+        const GLint flatMin = (minFilter == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
+        const GLint flatMag = (magFilter == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, flatMin);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, flatMag);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        const std::size_t flatId = mNextId++;
+        mTextures[flatId] = OpenGLTexture{gpuTexture};
+        return DTexture{flatId};
+    }
+
     glBindTexture(GL_TEXTURE_2D_ARRAY, gpuTexture);
 
     const TextureMode mode = textureModeOf(texture);
@@ -312,34 +339,6 @@ void OpenGLBackend::freeTexture(DTexture texture)
         it->second.clear();
         mTextures.erase(it);
     }
-}
-
-DTexture OpenGLBackend::uploadFlatTexture(std::span<const std::uint8_t> rgba, int width, int height,
-                                          TextureSampleMode minFilter, TextureSampleMode magFilter)
-{
-    // Flat (ImGui-bindable) representation: GL_TEXTURE_2D so ImGui's plain
-    // sampler2D samples it directly, unlike the engine's GL_TEXTURE_2D_ARRAY
-    // sprite textures. Stored in the normal texture map so freeTexture reclaims it.
-    GLuint gpuTexture;
-    glGenTextures(1, &gpuTexture);
-    glBindTexture(GL_TEXTURE_2D, gpuTexture);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    // Default min filter is GL_NEAREST_MIPMAP_LINEAR — with no mip levels the
-    // texture would be incomplete (sampled as black). Force a non-mipped filter.
-    const GLint glMinFilter = (minFilter == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
-    const GLint glMagFilter = (magFilter == TextureSampleMode::Linear) ? GL_LINEAR : GL_NEAREST;
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, glMinFilter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glMagFilter);
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    std::size_t newId = mNextId++;
-    mTextures[newId] = OpenGLTexture{gpuTexture};
-    return DTexture{newId};
 }
 
 std::uint64_t OpenGLBackend::imguiHandleOf(DTexture flatTexture) const
