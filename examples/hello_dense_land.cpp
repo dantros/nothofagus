@@ -1,18 +1,18 @@
-/// hello_tilemap_huge.cpp
-/// Demonstrates the pooled `Tilemap` + `TilemapExplorer` huge-tilemap pipeline.
+/// hello_dense_land.cpp
+/// Demonstrates the pooled `DenseLand` + `DenseLandExplorer` huge-world pipeline.
 /// Builds a 256×256-cell world (≈64 chunks of 32×32) with a small tile atlas,
-/// then lets the user pan with WASD via `tilemapExplorer.setCamera(...)`. Only the
+/// then lets the user pan with WASD via `denseLandExplorer.setCamera(...)`. Only the
 /// pool slots covering the visible window + a 1-chunk margin are drawn each
 /// frame; world chunks rotate through the pool as the camera moves.
 ///
-/// The world cell grid lives once inside the `Tilemap` (~64 KB for 256×256).
+/// The world cell grid lives once inside the `DenseLand` (~64 KB for 256×256).
 /// The pool allocates a handful of `IndirectTexture` + `Bellota` slots sized to
 /// the canvas — regardless of how big the world is.
 ///
 /// ImGui controls:
 ///   - Memory breakdown — watch the world cell grid scale while the pool stays flat
 ///   - Teleport         — jump the camera to an arbitrary world cell
-///   - Recreate         — replace the tilemap with a different mapSize
+///   - Recreate         — replace the denseLand with a different mapSize
 
 #include <nothofagus.h>
 #include <imgui.h>
@@ -114,7 +114,7 @@ int main()
 
     Nothofagus::Canvas canvas(
         { canvasWidth, canvasHeight },             // canvas: 480×320 logical pixels
-        "Hello Huge Tilemap",
+        "Hello Huge DenseLand",
         { 0.05f, 0.05f, 0.07f },
         pixelScale
     );
@@ -163,13 +163,13 @@ int main()
     int newCanvasWidth  = canvasWidth;
     int newCanvasHeight = canvasHeight;
 
-    // Fills a tilemap with a banded pattern that cycles through layers 1..4,
+    // Fills a denseLand with a banded pattern that cycles through layers 1..4,
     // then overlays chunk row/col index labels at each chunk's top-left:
     //   line 1 (top row of chunk): chunk row index digits
     //   line 2 (one cell below):   chunk col index digits
     // Labels are white-on-black, one digit per cell, left-aligned. With
     // chunkSize {16, 16} and 8x8 color bands, each chunk spans 2x2 mega-blocks.
-    auto populateWorld = [&](Nothofagus::Tilemap& world, glm::ivec2 size)
+    auto populateWorld = [&](Nothofagus::DenseLand& world, glm::ivec2 size)
     {
         // Base band pattern (the four bordered colors).
         for (int row = 0; row < size.y; ++row)
@@ -208,28 +208,28 @@ int main()
                 writeChunkLabel(chunkRow, chunkCol);
     };
 
-    // Build the initial Tilemap (world data) + TilemapExplorer (pooled renderer).
-    Nothofagus::TilemapId tilemapId = canvas.addTilemap(
-        Nothofagus::Tilemap(mapSize, chunkSize, tileSize, palette,
+    // Build the initial DenseLand (world data) + DenseLandExplorer (pooled renderer).
+    Nothofagus::DenseLandId denseLandId = canvas.addDenseLand(
+        Nothofagus::DenseLand(mapSize, chunkSize, tileSize, palette,
             std::span<const std::vector<std::uint8_t>>(tileGraphics)));
-    Nothofagus::TilemapExplorerId explorerId =
-        canvas.addTilemapExplorer(Nothofagus::TilemapExplorer(tilemapId));
-    populateWorld(canvas.tilemap(tilemapId), mapSize);
+    Nothofagus::DenseLandExplorerId explorerId =
+        canvas.addDenseLandExplorer(Nothofagus::DenseLandExplorer(denseLandId));
+    populateWorld(canvas.denseLand(denseLandId), mapSize);
 
-    // Tear down the current explorer+tilemap and rebuild at a new size. Safe to call
-    // from inside the update callback: removeTilemapExplorer/removeTilemap drop pool
+    // Tear down the current explorer+denseLand and rebuild at a new size. Safe to call
+    // from inside the update callback: removeDenseLandExplorer/removeDenseLand drop pool
     // bellotas+textures and the world data; the add* calls register fresh ones; the
     // per-frame explorer pass picks them up the same frame.
     auto rebuild = [&](glm::ivec2 newSize)
     {
-        canvas.removeTilemapExplorer(explorerId);
-        canvas.removeTilemap(tilemapId);
+        canvas.removeDenseLandExplorer(explorerId);
+        canvas.removeDenseLand(denseLandId);
         mapSize = newSize;
-        tilemapId = canvas.addTilemap(
-            Nothofagus::Tilemap(mapSize, chunkSize, tileSize, palette,
+        denseLandId = canvas.addDenseLand(
+            Nothofagus::DenseLand(mapSize, chunkSize, tileSize, palette,
                 std::span<const std::vector<std::uint8_t>>(tileGraphics)));
-        explorerId = canvas.addTilemapExplorer(Nothofagus::TilemapExplorer(tilemapId));
-        populateWorld(canvas.tilemap(tilemapId), mapSize);
+        explorerId = canvas.addDenseLandExplorer(Nothofagus::DenseLandExplorer(denseLandId));
+        populateWorld(canvas.denseLand(denseLandId), mapSize);
         camera = {0.0f, 0.0f};
     };
 
@@ -282,7 +282,7 @@ int main()
                 camera += (dir / len) * (panSpeed * dt);
             }
         }
-        canvas.tilemapExplorer(explorerId).setCamera(camera);
+        canvas.denseLandExplorer(explorerId).setCamera(camera);
 
         // ── Edit storm ─────────────────────────────────────────────────
         // Randomly setCell across the world — each edit bumps its chunk's
@@ -290,7 +290,7 @@ int main()
         // pass for whichever slot is painting that chunk.
         if (editsPerFrame > 0)
         {
-            Nothofagus::Tilemap& world = canvas.tilemap(tilemapId);
+            Nothofagus::DenseLand& world = canvas.denseLand(denseLandId);
             auto next = [&] { rngState = rngState * 1664525u + 1013904223u; return rngState; };
             for (int i = 0; i < editsPerFrame; ++i)
             {
@@ -304,7 +304,7 @@ int main()
         }
 
         // ── ImGui control panel ─────────────────────────────────────────
-        ImGui::Begin("Tilemap");
+        ImGui::Begin("DenseLand");
 
         // Status
         const Nothofagus::ScreenSize liveCanvasSize = canvas.screenSize();
@@ -323,7 +323,7 @@ int main()
             const std::size_t layerCount  = tileGraphics.size();
             const std::size_t paletteSize = palette.colors.size();
 
-            // Tilemap world data
+            // DenseLand world data
             const std::size_t cellGridBytes    = static_cast<std::size_t>(mapSize.x) * static_cast<std::size_t>(mapSize.y);
             const glm::ivec2  chunkGridSize    {
                 (mapSize.x + chunkSize.x - 1) / chunkSize.x,
@@ -334,7 +334,7 @@ int main()
             const std::size_t worldPaletteBytes = paletteSize * sizeof(glm::vec4);
             const std::size_t worldTotalBytes  = cellGridBytes + chunkGensBytes + worldAtlasBytes + worldPaletteBytes;
 
-            // Pool (matches the formula in TilemapManager::buildPoolSlots).
+            // Pool (matches the formula in DenseLandManager::buildPoolSlots).
             // Reads canvas.screenSize() so the readout tracks runtime setScreenSize.
             const Nothofagus::ScreenSize liveScreen = canvas.screenSize();
             const glm::ivec2 chunkPixelSize{ chunkSize.x * tileSize.x, chunkSize.y * tileSize.y };
@@ -352,7 +352,7 @@ int main()
             const std::size_t grandTotalBytes = worldTotalBytes + poolTotalBytes;
 
             char buf[64];
-            ImGui::Text("Tilemap (world data):");
+            ImGui::Text("DenseLand (world data):");
             fmtBytes(buf, sizeof(buf), cellGridBytes);     ImGui::Text("  cell grid:   %s", buf);
             fmtBytes(buf, sizeof(buf), chunkGensBytes);    ImGui::Text("  chunk gens:  %s", buf);
             fmtBytes(buf, sizeof(buf), worldAtlasBytes);   ImGui::Text("  atlas:       %s", buf);
@@ -389,8 +389,8 @@ int main()
 
         ImGui::Separator();
 
-        // Recreate — replace the tilemap with a fresh one at a new size.
-        ImGui::Text("Recreate tilemap:");
+        // Recreate — replace the denseLand with a fresh one at a new size.
+        ImGui::Text("Recreate denseLand:");
         ImGui::InputInt("cols", &newCols);
         ImGui::InputInt("rows", &newRows);
         if (ImGui::Button("Recreate"))
@@ -419,7 +419,7 @@ int main()
 
         ImGui::Separator();
 
-        // Resize canvas — exercises M4 (TilemapExplorer pool re-allocates against the new size).
+        // Resize canvas — exercises M4 (DenseLandExplorer pool re-allocates against the new size).
         ImGui::Text("Resize canvas:");
         ImGui::InputInt("canvas w", &newCanvasWidth);
         ImGui::InputInt("canvas h", &newCanvasHeight);

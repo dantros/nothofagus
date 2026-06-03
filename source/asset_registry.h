@@ -32,7 +32,7 @@ using MeshUsageMonitor    = ResourceUsageMonitor<MeshId>;
 /// (destructor or canvas shutdown) goes through `freeAllGpuResources()` so
 /// the caller can sequence it against the backend's own shutdown.
 ///
-/// Does NOT enforce tilemap-pool-ownership gates or tear down ImGui RTT
+/// Does NOT enforce explorer-pool-ownership gates or tear down ImGui RTT
 /// secondary contexts — both are FrameRunner-level concerns layered on top
 /// of this class.
 class AssetRegistry

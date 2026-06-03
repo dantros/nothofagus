@@ -9,7 +9,7 @@
 namespace Nothofagus
 {
 
-/// Shared interface satisfied by both `Tilemap` (dense) and `Sparsemap` (sparse). The
+/// Shared interface satisfied by both `DenseLand` (dense) and `SparseLand` (sparse). The
 /// `Explorer<T>` and the internal `ExplorerManager<T>` depend on this concept; satisfying
 /// it is what makes a backend pluggable into the chunk-pool renderer.
 template<typename T>
@@ -26,13 +26,13 @@ concept LandType = requires(const T& t, glm::ivec2 coord, std::span<std::uint8_t
 
 /// Per-backend ID type binding: maps a `LandType` type to its corresponding land ID
 /// (the world the explorer roams) and explorer ID. Specialized for each concrete backend
-/// alongside its type definition (see `tilemap.h` and `sparsemap.h`).
+/// alongside its type definition (see `dense_land.h` and `sparse_land.h`).
 template<typename T> struct LandTraits;
 
 /// Windowed renderer handle for any `LandType` backend: holds the camera (world-pixel
 /// coordinate shown at the canvas center) and the depth offset for the pool's bellotas.
 /// The actual pool of bellotas + `IndirectTexture` slots is owned by `ExplorerManager<T>`
-/// inside the canvas. See CLAUDE.md "Huge tilemaps" / "Sparse tilemaps" for pool semantics
+/// inside the canvas. See CLAUDE.md "Huge denseLands" / "Sparse denseLands" for pool semantics
 /// and explorer-managed lifecycle rules.
 template<LandType T>
 class Explorer

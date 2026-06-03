@@ -13,7 +13,7 @@ namespace Nothofagus
 {
 
 /// One slot in an `Explorer<T>`'s chunk pool — IDs are stable for the slot's lifetime.
-/// Backend-agnostic: a slot doesn't know whether it serves a `Tilemap` or a `Sparsemap`,
+/// Backend-agnostic: a slot doesn't know whether it serves a `DenseLand` or a `SparseLand`,
 /// it just paints whatever chunk the manager assigns to it via `setMapBulk`.
 struct PoolSlot
 {

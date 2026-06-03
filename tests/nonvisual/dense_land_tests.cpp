@@ -31,12 +31,12 @@ std::vector<std::vector<std::uint8_t>> makeTrivialAtlas(glm::ivec2 tileSize, std
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// Tilemap::inBounds — corners, just-outside-each-edge, far-out values
+// DenseLand::inBounds — corners, just-outside-each-edge, far-out values
 // ---------------------------------------------------------------------------
-TEST_CASE("Tilemap::inBounds reports world-cell membership correctly", "[tilemap]")
+TEST_CASE("DenseLand::inBounds reports world-cell membership correctly", "[denseLand]")
 {
     auto atlas = makeTrivialAtlas({8, 8}, 4);
-    const Nothofagus::Tilemap tm({10, 6}, {4, 3}, {8, 8}, makeMinimalPalette(),
+    const Nothofagus::DenseLand tm({10, 6}, {4, 3}, {8, 8}, makeMinimalPalette(),
                                  std::span<const std::vector<std::uint8_t>>(atlas));
 
     SECTION("corners are inside")
@@ -63,12 +63,12 @@ TEST_CASE("Tilemap::inBounds reports world-cell membership correctly", "[tilemap
 }
 
 // ---------------------------------------------------------------------------
-// Tilemap::setCell / cell round-trip across the whole world
+// DenseLand::setCell / cell round-trip across the whole world
 // ---------------------------------------------------------------------------
-TEST_CASE("Tilemap::cell returns what setCell wrote", "[tilemap]")
+TEST_CASE("DenseLand::cell returns what setCell wrote", "[denseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Tilemap tm({12, 8}, {3, 2}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::DenseLand tm({12, 8}, {3, 2}, {4, 4}, makeMinimalPalette(),
                            std::span<const std::vector<std::uint8_t>>(atlas));
 
     for (int y = 0; y < 8; ++y)
@@ -81,12 +81,12 @@ TEST_CASE("Tilemap::cell returns what setCell wrote", "[tilemap]")
 }
 
 // ---------------------------------------------------------------------------
-// Tilemap::chunkData and chunkDataInto produce identical bytes
+// DenseLand::chunkData and chunkDataInto produce identical bytes
 // ---------------------------------------------------------------------------
-TEST_CASE("Tilemap::chunkData and chunkDataInto produce identical bytes", "[tilemap]")
+TEST_CASE("DenseLand::chunkData and chunkDataInto produce identical bytes", "[denseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Tilemap tm({12, 8}, {3, 2}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::DenseLand tm({12, 8}, {3, 2}, {4, 4}, makeMinimalPalette(),
                            std::span<const std::vector<std::uint8_t>>(atlas));
 
     for (int y = 0; y < 8; ++y)
@@ -108,13 +108,13 @@ TEST_CASE("Tilemap::chunkData and chunkDataInto produce identical bytes", "[tile
 }
 
 // ---------------------------------------------------------------------------
-// Tilemap edge chunks zero-fill out-of-world cells when mapSize is not a
+// DenseLand edge chunks zero-fill out-of-world cells when mapSize is not a
 // multiple of chunkSize
 // ---------------------------------------------------------------------------
-TEST_CASE("Tilemap edge chunks zero-fill out-of-world cells", "[tilemap]")
+TEST_CASE("DenseLand edge chunks zero-fill out-of-world cells", "[denseLand]")
 {
     auto atlas = makeTrivialAtlas({2, 2}, 4);
-    Nothofagus::Tilemap tm({10, 6}, {4, 4}, {2, 2}, makeMinimalPalette(),
+    Nothofagus::DenseLand tm({10, 6}, {4, 4}, {2, 2}, makeMinimalPalette(),
                            std::span<const std::vector<std::uint8_t>>(atlas));
 
     REQUIRE(tm.chunkGridSize() == glm::ivec2(3, 2));
@@ -145,10 +145,10 @@ TEST_CASE("Tilemap edge chunks zero-fill out-of-world cells", "[tilemap]")
 // ---------------------------------------------------------------------------
 // Per-chunk generation counter — bumps only for the chunk receiving an edit
 // ---------------------------------------------------------------------------
-TEST_CASE("Tilemap per-chunk generation counter bumps locally", "[tilemap]")
+TEST_CASE("DenseLand per-chunk generation counter bumps locally", "[denseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Tilemap tm({8, 8}, {4, 4}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::DenseLand tm({8, 8}, {4, 4}, {4, 4}, makeMinimalPalette(),
                            std::span<const std::vector<std::uint8_t>>(atlas));
 
     CHECK(tm.chunkGeneration({0, 0}) == 0);
@@ -169,9 +169,9 @@ TEST_CASE("Tilemap per-chunk generation counter bumps locally", "[tilemap]")
 
 // ---------------------------------------------------------------------------
 // IndirectTexture::setMapBulk — round-trip + dirty flag. This is the hot-path
-// upload primitive used by TilemapExplorer slot syncs in tilemap_manager.cpp.
+// upload primitive used by DenseLandExplorer slot syncs in explorer_manager.cpp.
 // ---------------------------------------------------------------------------
-TEST_CASE("IndirectTexture::setMapBulk overwrites the entire cell grid", "[tilemap]")
+TEST_CASE("IndirectTexture::setMapBulk overwrites the entire cell grid", "[denseLand]")
 {
     Nothofagus::IndirectTexture tex({4, 4}, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f), 4);
     tex.setPallete(makeMinimalPalette());
@@ -192,7 +192,7 @@ TEST_CASE("IndirectTexture::setMapBulk overwrites the entire cell grid", "[tilem
             CHECK(tex.cell(col, row) == input[static_cast<std::size_t>(row * 3 + col)]);
 }
 
-TEST_CASE("IndirectTexture::setMapBulk preserves atlas and palette state", "[tilemap]")
+TEST_CASE("IndirectTexture::setMapBulk preserves atlas and palette state", "[denseLand]")
 {
     Nothofagus::IndirectTexture tex({4, 4}, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f), 4);
     tex.setPallete(makeMinimalPalette());
@@ -220,10 +220,10 @@ TEST_CASE("IndirectTexture::setMapBulk preserves atlas and palette state", "[til
 // trapped via a custom assertion handler), these cases can be tested with
 // REQUIRE_THROWS_AS / similar. Until then we exercise only the happy path.
 // ---------------------------------------------------------------------------
-TEST_CASE("Tilemap::chunkDataInto accepts a correctly-sized span", "[tilemap]")
+TEST_CASE("DenseLand::chunkDataInto accepts a correctly-sized span", "[denseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Tilemap tm({8, 8}, {4, 4}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::DenseLand tm({8, 8}, {4, 4}, {4, 4}, makeMinimalPalette(),
                            std::span<const std::vector<std::uint8_t>>(atlas));
 
     std::vector<std::uint8_t> buf(4 * 4);  // matches chunkSize.x * chunkSize.y
@@ -232,16 +232,16 @@ TEST_CASE("Tilemap::chunkDataInto accepts a correctly-sized span", "[tilemap]")
 }
 
 // ---------------------------------------------------------------------------
-// TilemapExplorer pool-grid-size formula edge cases.
+// DenseLandExplorer pool-grid-size formula edge cases.
 //
-// Mirrors the formula at source/tilemap_manager.cpp:84-87:
+// Mirrors the formula at source/explorer_manager_impl.h:
 //   poolGridSize.x = ceil_div(screenSize.x, chunkPixelSize.x) + 2
 //   poolGridSize.y = ceil_div(screenSize.y, chunkPixelSize.y) + 2
 //
 // If the source formula changes, this helper must be updated in lockstep.
 // The "camera exactly on a chunk boundary" and "world smaller than viewport"
 // edge cases listed in the original test gap are integration scenarios that
-// require a live Canvas + TilemapExplorer; they belong with the visual /
+// require a live Canvas + DenseLandExplorer; they belong with the visual /
 // integration suite (or a future explorer integration file), not here.
 // ---------------------------------------------------------------------------
 namespace
@@ -255,7 +255,7 @@ glm::ivec2 poolGridSizeFor(glm::ivec2 screenSize, glm::ivec2 chunkPixelSize)
 }
 }
 
-TEST_CASE("TilemapExplorer pool grid size handles small viewports", "[tilemap]")
+TEST_CASE("DenseLandExplorer pool grid size handles small viewports", "[denseLand]")
 {
     SECTION("viewport smaller than one chunk yields the +2 margin only")
     {

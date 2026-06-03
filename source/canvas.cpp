@@ -97,7 +97,7 @@ ScreenSize Canvas::windowSize() const                            { return mImplP
 ViewportRect Canvas::gameViewport() const                       { return mImplPtr->frameRunner.gameViewport(); }
 
 // ---------------------------------------------------------------------------
-// Bellotas — forward to AssetRegistry; remove gates against TilemapExplorer pool
+// Bellotas — forward to AssetRegistry; remove gates against DenseLandExplorer pool
 // ---------------------------------------------------------------------------
 
 BellotaId Canvas::addBellota(const Bellota& bellota)            { return mImplPtr->assets.addBellota(bellota); }
@@ -105,7 +105,7 @@ BellotaId Canvas::addBellota(const Bellota& bellota)            { return mImplPt
 void Canvas::removeBellota(const BellotaId bellotaId)
 {
     debugCheck(!mImplPtr->frameRunner.isExplorerManagedBellota(bellotaId.id),
-        "Bellota is owned by an explorer pool — use canvas.removeTilemapExplorer() / canvas.removeSparsemapExplorer() instead of removing slot bellotas directly.");
+        "Bellota is owned by an explorer pool — use canvas.removeDenseLandExplorer() / canvas.removeSparseLandExplorer() instead of removing slot bellotas directly.");
     mImplPtr->assets.removeBellota(bellotaId);
 }
 
@@ -115,7 +115,7 @@ void Canvas::setTint(const BellotaId bellotaId, const Tint& tint) { mImplPtr->as
 void Canvas::removeTint(const BellotaId bellotaId)              { mImplPtr->assets.removeTint(bellotaId); }
 
 // ---------------------------------------------------------------------------
-// Textures — forward to AssetRegistry; remove gates against TilemapExplorer pool
+// Textures — forward to AssetRegistry; remove gates against DenseLandExplorer pool
 // ---------------------------------------------------------------------------
 
 TextureId Canvas::addTexture(const Texture& texture)            { return mImplPtr->assets.addTexture(texture); }
@@ -123,7 +123,7 @@ TextureId Canvas::addTexture(const Texture& texture)            { return mImplPt
 void Canvas::removeTexture(const TextureId textureId)
 {
     debugCheck(!mImplPtr->frameRunner.isExplorerManagedTexture(textureId.id),
-        "Texture is owned by an explorer pool — use canvas.removeTilemapExplorer() / canvas.removeSparsemapExplorer() instead of removing slot textures directly.");
+        "Texture is owned by an explorer pool — use canvas.removeDenseLandExplorer() / canvas.removeSparseLandExplorer() instead of removing slot textures directly.");
     mImplPtr->assets.removeTexture(textureId);
 }
 
@@ -163,30 +163,30 @@ TextureId Canvas::renderTargetTexture(RenderTargetId renderTargetId) const      
 void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor) { mImplPtr->assets.setRenderTargetClearColor(renderTargetId, clearColor); }
 
 // ---------------------------------------------------------------------------
-// Tilemaps — forward to FrameRunner (ExplorerManager<Tilemap> lives there)
+// DenseLands — forward to FrameRunner (ExplorerManager<DenseLand> lives there)
 // ---------------------------------------------------------------------------
 
-TilemapId Canvas::addTilemap(Tilemap tilemap)                                              { return mImplPtr->frameRunner.addTilemap(std::move(tilemap)); }
-void Canvas::removeTilemap(TilemapId tilemapId)                                            { mImplPtr->frameRunner.removeTilemap(tilemapId); }
-Tilemap& Canvas::tilemap(TilemapId tilemapId)                                              { return mImplPtr->frameRunner.tilemap(tilemapId); }
-const Tilemap& Canvas::tilemap(TilemapId tilemapId) const                                  { return mImplPtr->frameRunner.tilemap(tilemapId); }
-TilemapExplorerId Canvas::addTilemapExplorer(TilemapExplorer explorer)                     { return mImplPtr->frameRunner.addTilemapExplorer(explorer, *this); }
-void Canvas::removeTilemapExplorer(TilemapExplorerId explorerId)                           { mImplPtr->frameRunner.removeTilemapExplorer(explorerId, *this); }
-TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId explorerId)                     { return mImplPtr->frameRunner.tilemapExplorer(explorerId); }
-const TilemapExplorer& Canvas::tilemapExplorer(TilemapExplorerId explorerId) const         { return mImplPtr->frameRunner.tilemapExplorer(explorerId); }
+DenseLandId Canvas::addDenseLand(DenseLand denseLand)                                              { return mImplPtr->frameRunner.addDenseLand(std::move(denseLand)); }
+void Canvas::removeDenseLand(DenseLandId denseLandId)                                            { mImplPtr->frameRunner.removeDenseLand(denseLandId); }
+DenseLand& Canvas::denseLand(DenseLandId denseLandId)                                              { return mImplPtr->frameRunner.denseLand(denseLandId); }
+const DenseLand& Canvas::denseLand(DenseLandId denseLandId) const                                  { return mImplPtr->frameRunner.denseLand(denseLandId); }
+DenseLandExplorerId Canvas::addDenseLandExplorer(DenseLandExplorer explorer)                     { return mImplPtr->frameRunner.addDenseLandExplorer(explorer, *this); }
+void Canvas::removeDenseLandExplorer(DenseLandExplorerId explorerId)                           { mImplPtr->frameRunner.removeDenseLandExplorer(explorerId, *this); }
+DenseLandExplorer& Canvas::denseLandExplorer(DenseLandExplorerId explorerId)                     { return mImplPtr->frameRunner.denseLandExplorer(explorerId); }
+const DenseLandExplorer& Canvas::denseLandExplorer(DenseLandExplorerId explorerId) const         { return mImplPtr->frameRunner.denseLandExplorer(explorerId); }
 
 // ---------------------------------------------------------------------------
-// Sparsemaps — forward to FrameRunner (ExplorerManager<Sparsemap> lives there)
+// SparseLands — forward to FrameRunner (ExplorerManager<SparseLand> lives there)
 // ---------------------------------------------------------------------------
 
-SparsemapId Canvas::addSparsemap(Sparsemap sparsemap)                                              { return mImplPtr->frameRunner.addSparsemap(std::move(sparsemap)); }
-void Canvas::removeSparsemap(SparsemapId sparsemapId)                                              { mImplPtr->frameRunner.removeSparsemap(sparsemapId); }
-Sparsemap& Canvas::sparsemap(SparsemapId sparsemapId)                                              { return mImplPtr->frameRunner.sparsemap(sparsemapId); }
-const Sparsemap& Canvas::sparsemap(SparsemapId sparsemapId) const                                  { return mImplPtr->frameRunner.sparsemap(sparsemapId); }
-SparsemapExplorerId Canvas::addSparsemapExplorer(SparsemapExplorer explorer)                       { return mImplPtr->frameRunner.addSparsemapExplorer(explorer, *this); }
-void Canvas::removeSparsemapExplorer(SparsemapExplorerId explorerId)                               { mImplPtr->frameRunner.removeSparsemapExplorer(explorerId, *this); }
-SparsemapExplorer& Canvas::sparsemapExplorer(SparsemapExplorerId explorerId)                       { return mImplPtr->frameRunner.sparsemapExplorer(explorerId); }
-const SparsemapExplorer& Canvas::sparsemapExplorer(SparsemapExplorerId explorerId) const           { return mImplPtr->frameRunner.sparsemapExplorer(explorerId); }
+SparseLandId Canvas::addSparseLand(SparseLand sparseLand)                                              { return mImplPtr->frameRunner.addSparseLand(std::move(sparseLand)); }
+void Canvas::removeSparseLand(SparseLandId sparseLandId)                                              { mImplPtr->frameRunner.removeSparseLand(sparseLandId); }
+SparseLand& Canvas::sparseLand(SparseLandId sparseLandId)                                              { return mImplPtr->frameRunner.sparseLand(sparseLandId); }
+const SparseLand& Canvas::sparseLand(SparseLandId sparseLandId) const                                  { return mImplPtr->frameRunner.sparseLand(sparseLandId); }
+SparseLandExplorerId Canvas::addSparseLandExplorer(SparseLandExplorer explorer)                       { return mImplPtr->frameRunner.addSparseLandExplorer(explorer, *this); }
+void Canvas::removeSparseLandExplorer(SparseLandExplorerId explorerId)                               { mImplPtr->frameRunner.removeSparseLandExplorer(explorerId, *this); }
+SparseLandExplorer& Canvas::sparseLandExplorer(SparseLandExplorerId explorerId)                       { return mImplPtr->frameRunner.sparseLandExplorer(explorerId); }
+const SparseLandExplorer& Canvas::sparseLandExplorer(SparseLandExplorerId explorerId) const           { return mImplPtr->frameRunner.sparseLandExplorer(explorerId); }
 
 // ---------------------------------------------------------------------------
 // RTT pass scheduling (the queue lives on FrameRunner; the ImGui-to-RTT

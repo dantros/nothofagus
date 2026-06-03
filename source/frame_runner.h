@@ -1,8 +1,8 @@
 #pragma once
 
 #include "canvas.h"
-#include "tilemap.h"
-#include "sparsemap.h"
+#include "dense_land.h"
+#include "sparse_land.h"
 #include "explorer.h"
 #include "explorer_manager.h"
 #include "bellota_container.h"   // for BellotaPack in mSortedBellotaPacks
@@ -15,16 +15,16 @@
 namespace Nothofagus
 {
 
-using TilemapExplorerManager   = ExplorerManager<Tilemap>;
-using SparsemapExplorerManager = ExplorerManager<Sparsemap>;
+using DenseLandExplorerManager   = ExplorerManager<DenseLand>;
+using SparseLandExplorerManager = ExplorerManager<SparseLand>;
 
 // Explicit instantiations live in explorer_manager.cpp. Declared here (next to
-// where Tilemap/Sparsemap are already in scope) instead of inside
+// where DenseLand/SparseLand are already in scope) instead of inside
 // explorer_manager.h so that header stays free of any concrete-backend
 // references. The aliases above can't be used in this form — explicit
 // instantiation requires a template-id, not a typedef-name.
-extern template class ExplorerManager<Tilemap>;
-extern template class ExplorerManager<Sparsemap>;
+extern template class ExplorerManager<DenseLand>;
+extern template class ExplorerManager<SparseLand>;
 
 // Forward decls — FrameRunner only takes these by reference (in run/tick), so
 // the full headers don't need to be visible here. frame_runner.h is an
@@ -72,13 +72,13 @@ public:
     // ----- Cross-cutting predicates used by Canvas's remove-gates -----
     bool isExplorerManagedBellota(std::size_t bellotaId) const
     {
-        return mTilemapManager.isExplorerManagedBellota(bellotaId)
-            || mSparsemapManager.isExplorerManagedBellota(bellotaId);
+        return mDenseLandManager.isExplorerManagedBellota(bellotaId)
+            || mSparseLandManager.isExplorerManagedBellota(bellotaId);
     }
     bool isExplorerManagedTexture(std::size_t textureId) const
     {
-        return mTilemapManager.isExplorerManagedTexture(textureId)
-            || mSparsemapManager.isExplorerManagedTexture(textureId);
+        return mDenseLandManager.isExplorerManagedTexture(textureId)
+            || mSparseLandManager.isExplorerManagedTexture(textureId);
     }
 
     // ----- Window / display (depend on pimpl-hidden Window) -----
@@ -101,25 +101,25 @@ public:
     void setAutoRemoveUnusedTextures(bool enabled)                                          { mAutoTextureGC = enabled; }
     void setAutoRemoveUnusedMeshes(bool enabled)                                            { mAutoMeshGC = enabled; }
 
-    // ----- Tilemaps (TilemapExplorerManager stays with FrameRunner) -----
-    TilemapId addTilemap(Tilemap tilemap)                                                   { return mTilemapManager.add(std::move(tilemap)); }
-    void removeTilemap(TilemapId tilemapId)                                                 { mTilemapManager.remove(tilemapId); }
-    Tilemap& tilemap(TilemapId tilemapId)                                                   { return mTilemapManager.get(tilemapId); }
-    const Tilemap& tilemap(TilemapId tilemapId) const                                       { return mTilemapManager.get(tilemapId); }
-    TilemapExplorerId addTilemapExplorer(TilemapExplorer explorer, Canvas& canvas)          { return mTilemapManager.addExplorer(explorer, canvas); }
-    void removeTilemapExplorer(TilemapExplorerId explorerId, Canvas& canvas)                { mTilemapManager.removeExplorer(explorerId, canvas); }
-    TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId)                          { return mTilemapManager.getExplorer(explorerId); }
-    const TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId) const              { return mTilemapManager.getExplorer(explorerId); }
+    // ----- DenseLands (DenseLandExplorerManager stays with FrameRunner) -----
+    DenseLandId addDenseLand(DenseLand denseLand)                                                   { return mDenseLandManager.add(std::move(denseLand)); }
+    void removeDenseLand(DenseLandId denseLandId)                                                 { mDenseLandManager.remove(denseLandId); }
+    DenseLand& denseLand(DenseLandId denseLandId)                                                   { return mDenseLandManager.get(denseLandId); }
+    const DenseLand& denseLand(DenseLandId denseLandId) const                                       { return mDenseLandManager.get(denseLandId); }
+    DenseLandExplorerId addDenseLandExplorer(DenseLandExplorer explorer, Canvas& canvas)          { return mDenseLandManager.addExplorer(explorer, canvas); }
+    void removeDenseLandExplorer(DenseLandExplorerId explorerId, Canvas& canvas)                { mDenseLandManager.removeExplorer(explorerId, canvas); }
+    DenseLandExplorer& denseLandExplorer(DenseLandExplorerId explorerId)                          { return mDenseLandManager.getExplorer(explorerId); }
+    const DenseLandExplorer& denseLandExplorer(DenseLandExplorerId explorerId) const              { return mDenseLandManager.getExplorer(explorerId); }
 
-    // ----- Sparsemaps (SparsemapExplorerManager stays with FrameRunner) -----
-    SparsemapId addSparsemap(Sparsemap sparsemap)                                                   { return mSparsemapManager.add(std::move(sparsemap)); }
-    void removeSparsemap(SparsemapId sparsemapId)                                                   { mSparsemapManager.remove(sparsemapId); }
-    Sparsemap& sparsemap(SparsemapId sparsemapId)                                                   { return mSparsemapManager.get(sparsemapId); }
-    const Sparsemap& sparsemap(SparsemapId sparsemapId) const                                       { return mSparsemapManager.get(sparsemapId); }
-    SparsemapExplorerId addSparsemapExplorer(SparsemapExplorer explorer, Canvas& canvas)            { return mSparsemapManager.addExplorer(explorer, canvas); }
-    void removeSparsemapExplorer(SparsemapExplorerId explorerId, Canvas& canvas)                    { mSparsemapManager.removeExplorer(explorerId, canvas); }
-    SparsemapExplorer& sparsemapExplorer(SparsemapExplorerId explorerId)                            { return mSparsemapManager.getExplorer(explorerId); }
-    const SparsemapExplorer& sparsemapExplorer(SparsemapExplorerId explorerId) const                { return mSparsemapManager.getExplorer(explorerId); }
+    // ----- SparseLands (SparseLandExplorerManager stays with FrameRunner) -----
+    SparseLandId addSparseLand(SparseLand sparseLand)                                                   { return mSparseLandManager.add(std::move(sparseLand)); }
+    void removeSparseLand(SparseLandId sparseLandId)                                                   { mSparseLandManager.remove(sparseLandId); }
+    SparseLand& sparseLand(SparseLandId sparseLandId)                                                   { return mSparseLandManager.get(sparseLandId); }
+    const SparseLand& sparseLand(SparseLandId sparseLandId) const                                       { return mSparseLandManager.get(sparseLandId); }
+    SparseLandExplorerId addSparseLandExplorer(SparseLandExplorer explorer, Canvas& canvas)            { return mSparseLandManager.addExplorer(explorer, canvas); }
+    void removeSparseLandExplorer(SparseLandExplorerId explorerId, Canvas& canvas)                    { mSparseLandManager.removeExplorer(explorerId, canvas); }
+    SparseLandExplorer& sparseLandExplorer(SparseLandExplorerId explorerId)                            { return mSparseLandManager.getExplorer(explorerId); }
+    const SparseLandExplorer& sparseLandExplorer(SparseLandExplorerId explorerId) const                { return mSparseLandManager.getExplorer(explorerId); }
 
     // ----- RTT pass scheduling (the queue lives here; consumed in runOneFrame) -----
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds)         { mPendingRttPasses.emplace_back(renderTargetId, std::move(bellotaIds)); }
@@ -149,8 +149,8 @@ private:
 
     ActiveBackend mBackend; ///< GPU rendering backend (compile-time selected).
 
-    TilemapExplorerManager   mTilemapManager;   ///< Dense huge-tilemap storage + per-frame explorer pool logic.
-    SparsemapExplorerManager mSparsemapManager; ///< Sparse tilemap storage + per-frame explorer pool logic.
+    DenseLandExplorerManager   mDenseLandManager;   ///< Dense land (huge dense-world) storage + per-frame explorer pool logic.
+    SparseLandExplorerManager mSparseLandManager; ///< Sparse denseLand storage + per-frame explorer pool logic.
 
     /// RTT passes queued by renderTo() during the update callback, executed before the main render.
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;

@@ -1,15 +1,15 @@
-add_executable(tilemap_tests
-    "tilemap_tests.cpp"
+add_executable(dense_land_tests
+    "dense_land_tests.cpp"
 )
-set_property(TARGET tilemap_tests PROPERTY CXX_STANDARD 20)
-target_link_libraries(tilemap_tests PRIVATE nothofagus Catch2::Catch2WithMain)
+set_property(TARGET dense_land_tests PROPERTY CXX_STANDARD 20)
+target_link_libraries(dense_land_tests PRIVATE nothofagus Catch2::Catch2WithMain)
 
-add_executable(sparsemap_tests
-    "sparsemap_tests.cpp"
+add_executable(sparse_land_tests
+    "sparse_land_tests.cpp"
 )
-set_property(TARGET sparsemap_tests PROPERTY CXX_STANDARD 20)
-target_link_libraries(sparsemap_tests PRIVATE nothofagus Catch2::Catch2WithMain)
+set_property(TARGET sparse_land_tests PROPERTY CXX_STANDARD 20)
+target_link_libraries(sparse_land_tests PRIVATE nothofagus Catch2::Catch2WithMain)
 
 include(Catch)
-catch_discover_tests(tilemap_tests)
-catch_discover_tests(sparsemap_tests)
+catch_discover_tests(dense_land_tests)
+catch_discover_tests(sparse_land_tests)
