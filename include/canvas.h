@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 #include <span>
+#include <optional>
 #include <cstddef>
 
 struct ImFont;
@@ -319,6 +320,19 @@ public:
     ImguiFontSourceId italicImguiFontSourceId() const;
     ImguiFontSourceId boldItalicImguiFontSourceId() const;
     ImguiFontSourceId monoImguiFontSourceId() const;
+
+    /**
+     * @brief Source id for an embedded CJK script (Simplified/Traditional
+     *        Chinese, Japanese, Korean), or std::nullopt when that script was
+     *        not compiled in (its NOTHOFAGUS_EMBED_CJK_* option was OFF).
+     *
+     * The signature is stable across build configs, so consumer code never
+     * needs the build defines — just check the optional at runtime. CJK glyphs
+     * are NOT part of the default UI font: bake the returned source yourself
+     * via `bakeImguiFont(*src, sizePx)` and push it where CJK text is needed,
+     * so the atlas only grows when you actually use it.
+     */
+    std::optional<ImguiFontSourceId> embeddedCjkFontSource(CjkScript script) const;
 
     /**
      * @brief Build a ready-to-use MarkdownStyle from the embedded Noto Sans

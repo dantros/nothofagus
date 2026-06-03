@@ -23,9 +23,21 @@ struct EmbeddedFace
     std::size_t len{0};
 };
 
+/// One optional embedded CJK face: its compressed blob, the glyph range to
+/// bake it with, and which script it serves. Present only for scripts whose
+/// NOTHOFAGUS_EMBED_CJK_* option was ON at build time.
+struct CjkFace
+{
+    EmbeddedFace data;
+    GlyphRange   range;
+    CjkScript    script;
+};
+
 /// The five embedded built-in faces that ship with every Canvas. `regular`
 /// is also the default UI / secondary-context font; the others back true
-/// bold / italic / bold-italic / monospace markdown rendering.
+/// bold / italic / bold-italic / monospace markdown rendering. All blobs are
+/// stb-compressed (decompressed at bake time via AddFontFromMemoryCompressedTTF).
+/// `cjk` is empty unless the build embedded one or more CJK scripts.
 struct EmbeddedFontFamily
 {
     EmbeddedFace regular;
@@ -33,6 +45,7 @@ struct EmbeddedFontFamily
     EmbeddedFace italic;
     EmbeddedFace boldItalic;
     EmbeddedFace mono;
+    std::vector<CjkFace> cjk;
 };
 
 /// Owns the entire ImGui-font lifecycle for a Canvas:
@@ -161,6 +174,11 @@ public:
     ImguiFontSourceId boldItalicSourceId() const noexcept { return mBoldItalicSourceId; }
     ImguiFontSourceId monoSourceId() const noexcept { return mMonoSourceId; }
 
+    /// Source id for an embedded CJK script, or std::nullopt when that script
+    /// was not compiled in. Registered in initialize() and, like the Latin
+    /// built-ins, protected from removeSource().
+    std::optional<ImguiFontSourceId> cjkSourceId(CjkScript script) const noexcept;
+
 private:
     struct FontSource
     {
@@ -168,6 +186,7 @@ private:
         GlyphRange             glyphRange{GlyphRange::Default};
         const void*            externalData{nullptr};   // non-null only for the embedded built-in faces
         std::size_t            externalLen{0};
+        bool                   compressed{false};        // dataPtr() is stb-compressed TTF (embedded faces)
 
         const void* dataPtr() const noexcept { return externalData ? externalData : ttfData.data(); }
         std::size_t dataLen() const noexcept { return externalData ? externalLen : ttfData.size(); }
@@ -222,6 +241,7 @@ private:
     ImguiFontSourceId                                     mItalicSourceId{};
     ImguiFontSourceId                                     mBoldItalicSourceId{};
     ImguiFontSourceId                                     mMonoSourceId{};
+    std::unordered_map<int, ImguiFontSourceId>            mCjkSourceIds;  // keyed by CjkScript
     std::vector<PendingFontOp>                            mPendingFontOps;
 };
 

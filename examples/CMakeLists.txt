@@ -75,6 +75,13 @@ add_executable(hello_custom_font
 )
 set_property(TARGET hello_custom_font PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_custom_font PRIVATE nothofagus)
+# Mirror the lib's PRIVATE NOTHOFAGUS_HAS_CJK_* defines onto the example so its
+# macro-guarded CJK demo blocks compile in when the matching font is embedded.
+foreach(_cjk SC TC JP KR)
+    if(NOTHOFAGUS_EMBED_CJK_${_cjk})
+        target_compile_definitions(hello_custom_font PRIVATE NOTHOFAGUS_HAS_CJK_${_cjk})
+    endif()
+endforeach()
 
 add_executable(hello_screenshot
     "hello_screenshot.cpp"

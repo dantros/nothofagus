@@ -34,8 +34,10 @@ const ImWchar* glyphRangesFor(GlyphRange range)
 /// Adds the main HiDPI ImGui font directly to the atlas (not tracked in the
 /// IndexedContainer). The size recipe - `imguiFontSize * contentScale *
 /// contentScale` - bakes glyphs at the framebuffer resolution so they remain
-/// crisp and OS-DPI-scaled on the main-canvas UI. Same FontDataOwnedByAtlas
-/// = false discipline as bakeOne so atlas Clear / shutdown can't double-free.
+/// crisp and OS-DPI-scaled on the main-canvas UI. The regular face is a
+/// stb-compressed blob, so it goes through AddFontFromMemoryCompressedTTF,
+/// which always decompresses into a fresh atlas-owned buffer - the static
+/// compressed source stays available for every atlas rebuild.
 void addMainHiDpiFont(const void* fontData,
                       std::size_t fontDataLen,
                       float       imguiFontSize,
@@ -43,8 +45,8 @@ void addMainHiDpiFont(const void* fontData,
 {
     ImFontConfig fontConfig;
     fontConfig.FontDataOwnedByAtlas = false;
-    ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
-        const_cast<void*>(fontData),
+    ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(
+        fontData,
         static_cast<int>(fontDataLen),
         imguiFontSize * contentScale * contentScale,
         &fontConfig
@@ -68,20 +70,29 @@ ImguiFontManager::ImguiFontManager(const EmbeddedFontFamily& family,
 ImFont* ImguiFontManager::bakeOne(const FontSource& source, float sizePx) const
 {
     // FontDataOwnedByAtlas = false: the source's buffer is owned either by
-    // the embedded binary (default source) or by FontSource::ttfData (user
+    // the embedded binary (built-in faces) or by FontSource::ttfData (user
     // sources), and is shared across every entry baked from this source plus
     // every atlas rebuild. Without this, ImGui would IM_FREE the same pointer
     // on Clear / shutdown.
+    //
+    // Embedded faces are stb-compressed -> AddFontFromMemoryCompressedTTF
+    // (decompresses into a fresh atlas-owned buffer each bake, leaving our
+    // static compressed source untouched). User sources are raw TTF.
     ImFontConfig fontConfig;
     fontConfig.FontDataOwnedByAtlas = false;
     fontConfig.GlyphRanges = glyphRangesFor(source.glyphRange);
-    ImFont* font = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
-        const_cast<void*>(source.dataPtr()),
-        static_cast<int>(source.dataLen()),
-        sizePx,
-        &fontConfig
-    );
-    debugCheck(font != nullptr, "AddFontFromMemoryTTF returned null - source TTF buffer is invalid");
+    ImFont* font = source.compressed
+        ? ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(
+              source.dataPtr(),
+              static_cast<int>(source.dataLen()),
+              sizePx,
+              &fontConfig)
+        : ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
+              const_cast<void*>(source.dataPtr()),
+              static_cast<int>(source.dataLen()),
+              sizePx,
+              &fontConfig);
+    debugCheck(font != nullptr, "AddFontFromMemory*TTF returned null - source font buffer is invalid");
     return font;
 }
 
@@ -90,12 +101,14 @@ void ImguiFontManager::initialize(float contentScale)
     // Register each built-in face as a non-owning font source. externalData /
     // externalLen point straight at the embedded binary blobs so nothing is
     // memcpy'd into a vector.
-    auto addBuiltin = [this](const EmbeddedFace& face) -> ImguiFontSourceId
+    auto addBuiltin = [this](const EmbeddedFace& face,
+                             GlyphRange glyphRange = GlyphRange::Default) -> ImguiFontSourceId
     {
         FontSource source;
-        source.glyphRange   = GlyphRange::Default;
+        source.glyphRange   = glyphRange;
         source.externalData = face.data;
         source.externalLen  = face.len;
+        source.compressed   = true;   // all embedded faces are stb-compressed
         return ImguiFontSourceId{ mSources.add(source) };
     };
 
@@ -104,6 +117,13 @@ void ImguiFontManager::initialize(float contentScale)
     mItalicSourceId     = addBuiltin(mFamily.italic);
     mBoldItalicSourceId = addBuiltin(mFamily.boldItalic);
     mMonoSourceId       = addBuiltin(mFamily.mono);
+
+    // Optional CJK faces (present only for scripts compiled in). Each carries
+    // its own glyph range; the source id is recorded per script and exposed
+    // via cjkSourceId(). Not merged into the main/default font - opt-in, so
+    // the atlas stays small until the user bakes one.
+    for (const CjkFace& face : mFamily.cjk)
+        mCjkSourceIds[static_cast<int>(face.script)] = addBuiltin(face.data, face.range);
 
     // Main HiDPI font and the secondary-context default are both built from
     // the regular face (unchanged behavior from the single-font setup).
@@ -125,11 +145,15 @@ void ImguiFontManager::drainPendingOpsAndRebuildAtlas(float contentScale)
     for (const auto& op : mPendingFontOps)
     {
         if (op.kind != PendingFontOp::Kind::RemoveSource) continue;
+        bool isCjkBuiltin = false;
+        for (const auto& [script, srcId] : mCjkSourceIds)
+            if (srcId.id == op.sourceId.id) { isCjkBuiltin = true; break; }
         debugCheck(op.sourceId.id != mDefaultSourceId.id
                 && op.sourceId.id != mBoldSourceId.id
                 && op.sourceId.id != mItalicSourceId.id
                 && op.sourceId.id != mBoldItalicSourceId.id
-                && op.sourceId.id != mMonoSourceId.id,
+                && op.sourceId.id != mMonoSourceId.id
+                && !isCjkBuiltin,
             "ImguiFontManager: cannot remove a built-in font source");
         debugCheck(mSources.contains(op.sourceId.id),
             "ImguiFontManager::removeSource: unknown source id");
@@ -202,6 +226,13 @@ void ImguiFontManager::removeSource(ImguiFontSourceId sourceId)
 bool ImguiFontManager::containsSource(ImguiFontSourceId sourceId) const noexcept
 {
     return mSources.contains(sourceId.id);
+}
+
+std::optional<ImguiFontSourceId> ImguiFontManager::cjkSourceId(CjkScript script) const noexcept
+{
+    auto it = mCjkSourceIds.find(static_cast<int>(script));
+    if (it == mCjkSourceIds.end()) return std::nullopt;
+    return it->second;
 }
 
 ImguiFontId ImguiFontManager::bake(ImguiFontSourceId sourceId, float sizePx)

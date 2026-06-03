@@ -28,6 +28,34 @@ int main()
     Nothofagus::ImguiFontId default18 =
         canvas.bakeImguiFont(canvas.defaultImguiFontSourceId(), 18.0f);
 
+    // Embedded CJK fonts (opt-in). Each block compiles in only when its
+    // NOTHOFAGUS_EMBED_CJK_* CMake option is ON (which the example target
+    // mirrors as a NOTHOFAGUS_HAS_CJK_* define). embeddedCjkFontSource is
+    // guaranteed non-null in that config, so we deref directly. Baking before
+    // run() is synchronous (the atlas is unlocked), so these are ready
+    // immediately. Plain string literals are UTF-8 under clang/clang-cl.
+    struct CjkDemo { const char* label; const char* sample; Nothofagus::ImguiFontId font; };
+    std::vector<CjkDemo> cjkDemos;
+    [[maybe_unused]] auto bakeCjk = [&](Nothofagus::CjkScript script) {
+        return canvas.bakeImguiFont(*canvas.embeddedCjkFontSource(script), 28.0f);
+    };
+#ifdef NOTHOFAGUS_HAS_CJK_SC
+    cjkDemos.push_back({ "Simplified Chinese", "\xe7\xae\x80\xe4\xbd\x93\xe4\xb8\xad\xe6\x96\x87\xe7\xa4\xba\xe4\xbe\x8b",
+                         bakeCjk(Nothofagus::CjkScript::SimplifiedChinese) });   // 简体中文示例
+#endif
+#ifdef NOTHOFAGUS_HAS_CJK_TC
+    cjkDemos.push_back({ "Traditional Chinese", "\xe7\xb9\x81\xe9\xab\x94\xe4\xb8\xad\xe6\x96\x87\xe7\xaf\x84\xe4\xbe\x8b",
+                         bakeCjk(Nothofagus::CjkScript::TraditionalChinese) });  // 繁體中文範例
+#endif
+#ifdef NOTHOFAGUS_HAS_CJK_JP
+    cjkDemos.push_back({ "Japanese", "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e\xe3\x81\xae\xe3\x82\xb5\xe3\x83\xb3\xe3\x83\x97\xe3\x83\xab",
+                         bakeCjk(Nothofagus::CjkScript::Japanese) });            // 日本語のサンプル
+#endif
+#ifdef NOTHOFAGUS_HAS_CJK_KR
+    cjkDemos.push_back({ "Korean", "\xed\x95\x9c\xea\xb5\xad\xec\x96\xb4 \xec\x98\x88\xec\x8b\x9c",
+                         bakeCjk(Nothofagus::CjkScript::Korean) });              // 한국어 예시
+#endif
+
     char pathBuf[512] = "";
     char textBuf[512] = "The quick brown fox jumps over the lazy dog";
     int  fontSize     = 24;
@@ -121,6 +149,21 @@ int main()
         else
         {
             ImGui::TextDisabled("(type a TTF path above and press Enter)");
+        }
+
+        if (!cjkDemos.empty())
+        {
+            ImGui::Separator();
+            canvas.pushImguiFont(default18);
+            ImGui::Text("CJK (embedded, opt-in):");
+            canvas.popImguiFont();
+            for (const CjkDemo& demo : cjkDemos)
+            {
+                ImGui::TextDisabled("%s", demo.label);
+                canvas.pushImguiFont(demo.font);
+                ImGui::Text("%s", demo.sample);
+                canvas.popImguiFont();
+            }
         }
 
         ImGui::End();

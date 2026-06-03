@@ -9,6 +9,40 @@
 namespace Nothofagus
 {
 
+/// Build the embedded font family from the generated compressed blobs. The
+/// five Latin faces are always present; each CJK face is included only when
+/// its NOTHOFAGUS_HAS_CJK_* define is set (driven by the matching CMake
+/// option). All blobs are stb-compressed; ImguiFontManager bakes them via
+/// AddFontFromMemoryCompressedTTF.
+static EmbeddedFontFamily makeEmbeddedFontFamily()
+{
+    EmbeddedFontFamily family{
+        { notoSansRegular_compressed_data,    notoSansRegular_compressed_size },
+        { notoSansBold_compressed_data,       notoSansBold_compressed_size },
+        { notoSansItalic_compressed_data,     notoSansItalic_compressed_size },
+        { notoSansBoldItalic_compressed_data, notoSansBoldItalic_compressed_size },
+        { notoSansMono_compressed_data,       notoSansMono_compressed_size },
+        {},
+    };
+#ifdef NOTHOFAGUS_HAS_CJK_SC
+    family.cjk.push_back({ { notoSansCjkSc_compressed_data, notoSansCjkSc_compressed_size },
+                           GlyphRange::ChineseSimplifiedCommon, CjkScript::SimplifiedChinese });
+#endif
+#ifdef NOTHOFAGUS_HAS_CJK_TC
+    family.cjk.push_back({ { notoSansCjkTc_compressed_data, notoSansCjkTc_compressed_size },
+                           GlyphRange::ChineseFull, CjkScript::TraditionalChinese });
+#endif
+#ifdef NOTHOFAGUS_HAS_CJK_JP
+    family.cjk.push_back({ { notoSansCjkJp_compressed_data, notoSansCjkJp_compressed_size },
+                           GlyphRange::Japanese, CjkScript::Japanese });
+#endif
+#ifdef NOTHOFAGUS_HAS_CJK_KR
+    family.cjk.push_back({ { notoSansCjkKr_compressed_data, notoSansCjkKr_compressed_size },
+                           GlyphRange::Korean, CjkScript::Korean });
+#endif
+    return family;
+}
+
 /**
  * @struct Canvas::Implementation
  * @brief Single nested pimpl holding every internal collaborator by value.
@@ -37,13 +71,7 @@ struct Canvas::Implementation
         : frameRunner(screenSize, title, clearColor, pixelSize, headless),
           assets(frameRunner.backend()),
           imguiRtt(frameRunner.backend(), assets.renderTargets(),
-                   EmbeddedFontFamily{
-                       { notoSansRegularTtf,    notoSansRegularTtfLen },
-                       { notoSansBoldTtf,       notoSansBoldTtfLen },
-                       { notoSansItalicTtf,     notoSansItalicTtfLen },
-                       { notoSansBoldItalicTtf, notoSansBoldItalicTtfLen },
-                       { notoSansMonoTtf,       notoSansMonoTtfLen },
-                   },
+                   makeEmbeddedFontFamily(),
                    imguiFontSize)
     {
         // Main HiDPI font bake — needs the backend's ImGui renderer to be live,
@@ -229,6 +257,7 @@ ImguiFontSourceId Canvas::boldImguiFontSourceId() const                         
 ImguiFontSourceId Canvas::italicImguiFontSourceId() const                                               { return mImplPtr->imguiRtt.fonts().italicSourceId(); }
 ImguiFontSourceId Canvas::boldItalicImguiFontSourceId() const                                           { return mImplPtr->imguiRtt.fonts().boldItalicSourceId(); }
 ImguiFontSourceId Canvas::monoImguiFontSourceId() const                                                 { return mImplPtr->imguiRtt.fonts().monoSourceId(); }
+std::optional<ImguiFontSourceId> Canvas::embeddedCjkFontSource(CjkScript script) const                  { return mImplPtr->imguiRtt.fonts().cjkSourceId(script); }
 ImguiFontId Canvas::bakeImguiFont(ImguiFontSourceId sourceId, float sizePx)                             { return mImplPtr->imguiRtt.fonts().bake(sourceId, sizePx); }
 void Canvas::removeImguiFont(ImguiFontId id)                                                            { mImplPtr->imguiRtt.fonts().remove(id); }
 bool Canvas::isImguiFontReady(ImguiFontId id) const                                                     { return mImplPtr->imguiRtt.fonts().get(id) != nullptr; }
