@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -39,6 +40,14 @@
 // "Generate actual images" button then asks for RENDERING_TESTS_BIN).
 #ifndef VISUAL_TESTS_EXPLORER_TESTS_BIN
     #define VISUAL_TESTS_EXPLORER_TESTS_BIN ""
+#endif
+// Path to a headless (pure-offscreen) rendering_tests binary, built by CMake as
+// an ExternalProject. It drives BOTH the GPU and SwiftShader backends (toggled
+// by the Vulkan ICD), so it powers the explorer's backend toggle and the
+// SwiftShader-vs-GPU comparison. Empty when not built; overridable at runtime
+// via the RENDERING_TESTS_HEADLESS_BIN env var.
+#ifndef VISUAL_TESTS_EXPLORER_HEADLESS_TESTS_BIN
+    #define VISUAL_TESTS_EXPLORER_HEADLESS_TESTS_BIN ""
 #endif
 
 namespace fs = std::filesystem;
@@ -67,6 +76,21 @@ void setEnvVar(const char* key, const std::string& value)
 #else
     ::setenv(key, value.c_str(), 1);
 #endif
+}
+
+// Render backend the "Generate actual images" button drives, passed to
+// rendering_tests via the NOTHOFAGUS_RENDER_BACKEND env var.
+enum class Backend { Auto = 0, Gpu, SwiftShader };
+
+const char* backendEnvValue(Backend backend)
+{
+    switch (backend)
+    {
+        case Backend::Gpu:         return "gpu";
+        case Backend::SwiftShader: return "swiftshader";
+        case Backend::Auto:        break;
+    }
+    return "auto";
 }
 
 // Integer scale that fits an image of the given size into a target box, never
@@ -104,6 +128,9 @@ private:
 
     void rescan()
     {
+        // Rescanning re-derives entries from the golden/actual dirs; any prior
+        // backend-comparison lane data no longer applies.
+        mCompareMode = false;
         mEntries.clear();
         std::error_code ec;
         if (fs::is_directory(mGoldenDir, ec))
@@ -148,30 +175,49 @@ private:
             return;
 
         const Entry& entry = mEntries[mSelected];
-        try
-        {
-            mGolden = Nothofagus::TestHelpers::load(goldenPath(entry.name));
-        }
-        catch (const std::exception& e)
-        {
-            mLoadError = std::string("golden: ") + e.what();
-            return;
-        }
 
-        if (entry.hasActual)
+        if (mCompareMode)
         {
+            // SwiftShader (left) | GPU (middle) | diff (right). The three texture
+            // slots are reused purely as left/middle/right display panels here.
             try
             {
-                mActual = Nothofagus::TestHelpers::load(actualPath(entry.name));
+                mGolden = Nothofagus::TestHelpers::load(laneDir(Backend::SwiftShader) + "/" + entry.name + ".png");
+                mActual = Nothofagus::TestHelpers::load(laneDir(Backend::Gpu) + "/" + entry.name + ".png");
                 mDiff   = Nothofagus::TestHelpers::makeDiff(mActual.value(), mGolden.value());
             }
             catch (const std::exception& e)
             {
-                mLoadError = std::string("actual: ") + e.what();
+                mLoadError = std::string("backend compare: ") + e.what();
+            }
+        }
+        else
+        {
+            try
+            {
+                mGolden = Nothofagus::TestHelpers::load(goldenPath(entry.name));
+            }
+            catch (const std::exception& e)
+            {
+                mLoadError = std::string("golden: ") + e.what();
+                return;
+            }
+
+            if (entry.hasActual)
+            {
+                try
+                {
+                    mActual = Nothofagus::TestHelpers::load(actualPath(entry.name));
+                    mDiff   = Nothofagus::TestHelpers::makeDiff(mActual.value(), mGolden.value());
+                }
+                catch (const std::exception& e)
+                {
+                    mLoadError = std::string("actual: ") + e.what();
+                }
             }
         }
 
-        // Lay out golden | actual | diff across thirds of the canvas.
+        // Lay out three panels across thirds of the canvas.
         const auto& size = mCanvas.screenSize();
         const float thirdX[3] = {size.width * 0.5f / 3.0f,
                                  size.width * 1.5f / 3.0f,
@@ -230,8 +276,12 @@ private:
         ImGui::SetNextWindowSize({360, 540}, ImGuiCond_FirstUseEver);
         ImGui::Begin("Visual Tests Explorer");
 
-        ImGui::TextWrapped("Layout: golden | actual | diff (left to right). "
-                           "Diff is red where the images differ.");
+        if (mCompareMode)
+            ImGui::TextWrapped("Backend compare: SwiftShader | GPU | diff (left to right). "
+                               "Diff is red where the two backends differ.");
+        else
+            ImGui::TextWrapped("Layout: golden | actual | diff (left to right). "
+                               "Diff is red where the images differ.");
         ImGui::Separator();
 
         ImGui::TextUnformatted("Golden dir:");
@@ -249,6 +299,30 @@ private:
         ImGui::SameLine();
         if (ImGui::Button("Generate actual images"))
             generateActualImages();
+
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::Combo("Backend", &mBackend, "Auto\0GPU\0SwiftShader\0");
+
+        // SwiftShader vs GPU comparison drives the headless rendering_tests binary.
+        const bool haveHeadlessBin =
+            !envOr("RENDERING_TESTS_HEADLESS_BIN", VISUAL_TESTS_EXPLORER_HEADLESS_TESTS_BIN).empty();
+        ImGui::BeginDisabled(!haveHeadlessBin);
+        if (ImGui::Button("Compare SwiftShader vs GPU"))
+            compareBackends();
+        ImGui::EndDisabled();
+        if (!haveHeadlessBin && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Needs a headless rendering_tests binary.\n"
+                              "Build the explorer via a *-sdl3-vulkan-tests preset, or set "
+                              "RENDERING_TESTS_HEADLESS_BIN.");
+        if (mCompareMode)
+        {
+            ImGui::SameLine();
+            if (ImGui::Button("Back to golden view"))
+            {
+                mCompareMode = false;
+                rebuildSelection();
+            }
+        }
 
         ImGui::Separator();
         ImGui::SliderInt("Tolerance", &mTolerance, 0, 64);
@@ -272,7 +346,16 @@ private:
         {
             const Entry& entry = mEntries[i];
             std::string label;
-            if (!entry.hasActual)
+            if (mCompareMode)
+            {
+                // Marker reflects whether SwiftShader and the GPU agree.
+                const auto it = mBackendDiffs.find(entry.name);
+                if (it == mBackendDiffs.end())
+                    label = "[--] ";        // no paired backend renders
+                else
+                    label = it->second.withinTolerance ? "[==] " : "[!=] ";
+            }
+            else if (!entry.hasActual)
                 label = "[--] ";        // no actual to compare
             else
                 label = entryWithinTolerance(i) ? "[ok] " : "[XX] ";
@@ -334,6 +417,25 @@ private:
         const Entry& entry = mEntries[mSelected];
         ImGui::Text("Case: %s", entry.name.c_str());
 
+        if (mCompareMode)
+        {
+            const auto it = mBackendDiffs.find(entry.name);
+            if (it == mBackendDiffs.end())
+            {
+                ImGui::TextWrapped("No paired SwiftShader/GPU renders for this case.");
+                ImGui::End();
+                return;
+            }
+            const Nothofagus::TestHelpers::ComparisonResult& result = it->second;
+            ImGui::Text("SwiftShader vs GPU: %s", result.withinTolerance ? "MATCH" : "DIFFER");
+            ImGui::Text("Size mismatch: %s", result.sizeMismatch ? "yes" : "no");
+            ImGui::Text("Differing px: %zu", result.differingPixels);
+            ImGui::Text("Max delta: %d", static_cast<int>(result.maxChannelDelta));
+            ImGui::Text("Mean delta: %.4f", result.meanChannelDelta);
+            ImGui::End();
+            return;
+        }
+
         if (!entry.hasActual)
         {
             ImGui::TextWrapped("No actual image. Run rendering_tests with DUMP_ACTUAL=1.");
@@ -369,37 +471,104 @@ private:
         rebuildSelection();
     }
 
-    // Runs the rendering_tests binary with DUMP_ACTUAL=1 so it renders every
-    // case and writes the actual PNGs into the current actual dir, then rescans.
-    // The engine does no file I/O itself, so producing actuals means driving the
-    // test executable that owns the scene definitions.
-    void generateActualImages()
+    // Sibling actual dir for a specific backend's renders, e.g.
+    // <actual>_swiftshader / <actual>_gpu, used by the comparison feature.
+    std::string laneDir(Backend backend) const
     {
-        const std::string bin = envOr("RENDERING_TESTS_BIN", VISUAL_TESTS_EXPLORER_TESTS_BIN);
+        return mActualDir + "_" + backendEnvValue(backend);
+    }
+
+    // The rendering_tests binary to drive for a given backend. SwiftShader and an
+    // explicit GPU lane need the *headless* binary (robust, swapchain-free path);
+    // Auto falls back to the in-build windowed binary. Returns empty if unknown.
+    std::string renderingTestsBin(Backend backend) const
+    {
+        if (backend == Backend::Auto)
+            return envOr("RENDERING_TESTS_BIN", VISUAL_TESTS_EXPLORER_TESTS_BIN);
+
+        std::string headless = envOr("RENDERING_TESTS_HEADLESS_BIN", VISUAL_TESTS_EXPLORER_HEADLESS_TESTS_BIN);
+        if (!headless.empty())
+            return headless;
+        // Last resort: the windowed binary. Fine for the GPU lane; the SwiftShader
+        // lane will likely fail on the windowed presentation path.
+        return envOr("RENDERING_TESTS_BIN", VISUAL_TESTS_EXPLORER_TESTS_BIN);
+    }
+
+    // Runs the rendering_tests binary with DUMP_ACTUAL=1 so it renders every case
+    // and writes the actual PNGs into outDir, using the requested backend. The
+    // engine does no file I/O itself, so producing actuals means driving the test
+    // executable that owns the scene definitions. Returns false if the binary path
+    // is unknown (mLoadError is set); a non-zero exit (cases differing from their
+    // goldens) is not treated as failure — the actuals are dumped regardless.
+    bool runRenderingTests(Backend backend, const std::string& outDir)
+    {
+        const std::string bin = renderingTestsBin(backend);
         if (bin.empty())
         {
             mLoadError = "rendering_tests path unknown. Build with the visual tests "
-                         "enabled, or set the RENDERING_TESTS_BIN env var.";
-            return;
+                         "enabled, or set RENDERING_TESTS_BIN / RENDERING_TESTS_HEADLESS_BIN.";
+            return false;
         }
 
         std::error_code ec;
-        fs::create_directories(mActualDir, ec);
+        fs::create_directories(outDir, ec);
 
         // The child inherits these via the environment.
+        setEnvVar("NOTHOFAGUS_RENDER_BACKEND", backendEnvValue(backend));
         setEnvVar("DUMP_ACTUAL", "1");
-        setEnvVar("ACTUAL_DIR", mActualDir);
+        setEnvVar("ACTUAL_DIR", outDir);
         setEnvVar("GOLDEN_DIR", mGoldenDir);
 
         const std::string command = "\"" + bin + "\"";
         const int rc = std::system(command.c_str());
-        // A non-zero code just means some cases differ from their goldens; the
-        // actual images are dumped regardless, which is all we need here.
-        mLoadError = (rc == 0)
-            ? std::string{}
-            : "rendering_tests reported differences (actuals were still generated).";
+        if (rc != 0)
+            mLoadError = "rendering_tests reported differences (actuals were still generated).";
+        return true;
+    }
 
+    // Renders every case with the currently selected backend into the inspected
+    // actual dir, then rescans so golden | actual | diff reflects the new renders.
+    void generateActualImages()
+    {
+        mCompareMode = false;
+        mLoadError.clear();
+        runRenderingTests(static_cast<Backend>(mBackend), mActualDir);
         rescan();
+    }
+
+    // Renders every case twice — once on SwiftShader, once on the GPU — into
+    // sibling lane dirs, diffs the two per case, and enters backend-compare mode
+    // so the panels show SwiftShader | GPU | diff. This answers "do the two
+    // backends actually differ, and where?".
+    void compareBackends()
+    {
+        mLoadError.clear();
+        const bool okSw  = runRenderingTests(Backend::SwiftShader, laneDir(Backend::SwiftShader));
+        const bool okGpu = runRenderingTests(Backend::Gpu, laneDir(Backend::Gpu));
+        if (!okSw || !okGpu)
+            return; // mLoadError already set (binary path unknown)
+
+        mBackendDiffs.clear();
+        const std::string swDir  = laneDir(Backend::SwiftShader);
+        const std::string gpuDir = laneDir(Backend::Gpu);
+        for (const Entry& entry : mEntries)
+        {
+            try
+            {
+                Nothofagus::DirectTexture sw  = Nothofagus::TestHelpers::load(swDir  + "/" + entry.name + ".png");
+                Nothofagus::DirectTexture gpu = Nothofagus::TestHelpers::load(gpuDir + "/" + entry.name + ".png");
+                mBackendDiffs[entry.name] = Nothofagus::TestHelpers::compare(sw, gpu,
+                                                static_cast<std::uint8_t>(mTolerance),
+                                                static_cast<std::size_t>(mMaxDiffPixels));
+            }
+            catch (const std::exception&)
+            {
+                // Missing lane render for this case — skip (no entry in the map).
+            }
+        }
+
+        mCompareMode = true;
+        rebuildSelection();
     }
 
     Nothofagus::Canvas mCanvas;
@@ -411,6 +580,16 @@ private:
 
     int mTolerance     = 2;
     int mMaxDiffPixels = 0;
+
+    // Backend the "Generate actual images" button renders with (combo index maps
+    // to the Backend enum). Auto leaves the loader's ICD untouched.
+    int mBackend = static_cast<int>(Backend::Auto);
+
+    // Backend-comparison mode: when set, the three panels show SwiftShader | GPU |
+    // diff(SwiftShader, GPU) for the selected case instead of golden | actual | diff,
+    // and the per-case verdicts come from mBackendDiffs (SwiftShader vs GPU).
+    bool mCompareMode = false;
+    std::map<std::string, Nothofagus::TestHelpers::ComparisonResult> mBackendDiffs;
 
     std::optional<Nothofagus::DirectTexture> mGolden;
     std::optional<Nothofagus::DirectTexture> mActual;

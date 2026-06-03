@@ -44,6 +44,7 @@ cmake --install build/windows-debug-glfw-opengl-examples
 - `NOTHOFAGUS_ENABLE_TRACY` — wire in the Tracy profiler (default OFF).
 - `NOTHOFAGUS_EMBED_CJK_SC` / `_TC` / `_JP` / `_KR` — embed the optional built-in CJK font for Simplified Chinese / Traditional Chinese / Japanese / Korean (each default OFF). `NOTHOFAGUS_EMBED_CJK` is a convenience aggregate that turns all four on. When all are OFF, no CJK `.cpp` is generated/compiled and no `NOTHOFAGUS_HAS_CJK_*` define is set — zero binary/compile cost. The embedded faces are accessed at runtime via `Canvas::embeddedCjkFontSource(CjkScript)`; see [Embedded fonts](#imgui-fonts--imguifontmanager-imguifontsourceid-imguifontid).
 - `NOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER` — build the windowed Visual Tests Explorer tool under `tests/visual_tests_explorer/` (default OFF; pulls in `stb_image_plus` + the `nothofagus_test_helpers` lib).
+- `NOTHOFAGUS_FETCH_SWIFTSHADER` — at configure time, download + SHA256-verify a prebuilt SwiftShader Vulkan ICD (linux-x86_64 only; warn-skips elsewhere) into `<build>/swiftshader/` and generate its ICD JSON, so the visual tests can render against the deterministic CPU rasterizer that CI uses (default OFF; requires `NOTHOFAGUS_BACKEND_VULKAN=ON`). The pinned URL+hash live in [cmake/swiftshader_version.cmake](cmake/swiftshader_version.cmake) (the single source of truth shared with CI); the fetch logic is [cmake/fetch_swiftshader.cmake](cmake/fetch_swiftshader.cmake). Turned ON by the `*-headless-vulkan-tests` and `linux-*-sdl3-vulkan-tests` presets. See [SwiftShader / deterministic local visual tests](#swiftshader--deterministic-local-visual-tests).
 
 ## Architecture
 
@@ -846,12 +847,28 @@ Run via CTest from the build directory. Both groups use Catch2 (`catch_discover_
 Goldens are **PNG files** (lossless RGBA), read/written by the shared `nothofagus_test_helpers` lib, which wraps `stb_image_plus` — Nothofagus itself does no file I/O, so all the loading/saving/comparison lives here. The lib splits into [tests/nothofagus_test_helpers/direct_texture_io.h](tests/nothofagus_test_helpers/direct_texture_io.h) (`Nothofagus::TestHelpers::save` / `load` for a `DirectTexture`) and [tests/nothofagus_test_helpers/direct_texture_compare.h](tests/nothofagus_test_helpers/direct_texture_compare.h) (`compare` / `makeDiff`). Comparison is **tolerance-based**: `Nothofagus::TestHelpers::compare(...)` returns a `ComparisonResult` (differing-pixel count, max/mean channel delta) and passes when sizes match and the count of pixels differing by more than the per-channel tolerance stays within a cap.
 
 `rendering_tests` env knobs:
-- `GOLDEN_DIR` — pick a golden set (`golden/` local, `golden_mesa/`, `golden_headless_vulkan/` for the SwiftShader CI lane).
+- `GOLDEN_DIR` — pick a golden set (`golden/` local, `golden_mesa/`, `golden_headless_vulkan/` for the SwiftShader CI lane). The compile-time default is preset-aware: headless builds default to `golden_headless_vulkan/`, windowed/GPU builds to `golden/` (this env still overrides).
+- `NOTHOFAGUS_RENDER_BACKEND` — `swiftshader` | `gpu` | `auto` (default `auto`). Selected before the first `Canvas` (the first Vulkan call) by a Catch2 `testRunStarting` listener that sets/clears `VK_ICD_FILENAMES`/`VK_DRIVER_FILES`. `swiftshader` forces the ICD baked in by `NOTHOFAGUS_FETCH_SWIFTSHADER` (warns and falls back if not built in); `gpu` clears any inherited override to use the system GPU; `auto` leaves the loader untouched. See [SwiftShader / deterministic local visual tests](#swiftshader--deterministic-local-visual-tests).
 - `UPDATE_GOLDEN=1` — (re)write goldens instead of comparing (also auto-writes when a golden is missing).
 - `GOLDEN_TOLERANCE` / `GOLDEN_MAX_DIFF_PIXELS` — override the default per-channel tolerance (2) and max differing-pixel count (0).
 - `DUMP_ACTUAL=1` — also dump each render to `tests/visual/actual/` (always dumped on failure) for the viewer. `tests/visual/actual/` is git-ignored.
 
 The **Visual Tests Explorer** ([tests/visual_tests_explorer/](tests/visual_tests_explorer/)) is a windowed Nothofagus app, built with `-DNOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER=ON`. It shows golden / actual / diff side by side per test case, with live tolerance sliders and an "Update golden from actual" button (and "update all failing"). It is file-driven and generic: run `rendering_tests` with `DUMP_ACTUAL=1`, then launch `visual_tests_explorer [goldenDir] [actualDir]` (dirs also come from `GOLDEN_DIR`/`ACTUAL_DIR` env or the in-app picker). It is OFF by default and not built in CI (it needs a window).
+
+The explorer also has a **Backend** combo (`Auto` / `GPU` / `SwiftShader`) that picks the `NOTHOFAGUS_RENDER_BACKEND` its "Generate actual images" run uses, plus a **"Compare SwiftShader vs GPU"** button: it renders every case on both backends into sibling `<actual>_swiftshader/` and `<actual>_gpu/` dirs, diffs the two per case, and switches the three panels to `SwiftShader | GPU | diff` so you can see *whether and where* the two backends disagree (per-case differing-pixel/max-delta stats in the "Selected" panel). Because SwiftShader only renders robustly in the headless (swapchain-free) path, the explorer's `*-sdl3-vulkan-tests` build auto-builds a **headless** `rendering_tests` as an `ExternalProject` (`NOTHOFAGUS_HEADLESS_VULKAN=ON` + `NOTHOFAGUS_FETCH_SWIFTSHADER=ON`) and drives it for both backend lanes; its path is baked in (overridable via the `RENDERING_TESTS_HEADLESS_BIN` env var). The compare button greys out with a tooltip if no headless binary is available.
+
+#### SwiftShader / deterministic local visual tests
+
+Real GPUs rasterize slightly differently than the CPU rasterizer the goldens were authored with, so running the visual suite on developer hardware drifts. SwiftShader (a software Vulkan ICD) gives deterministic, hardware-independent pixels — it is what CI uses. To reproduce the CI lane locally:
+
+```bash
+cmake --preset linux-release-headless-vulkan-tests   # fetches SwiftShader at configure time
+cmake --build build/linux-release-headless-vulkan-tests --target rendering_tests
+NOTHOFAGUS_RENDER_BACKEND=swiftshader \
+  ./build/linux-release-headless-vulkan-tests/tests/visual/rendering_tests
+```
+
+This is byte-identical to the CI job ([.github/workflows/rendering-tests.yml](.github/workflows/rendering-tests.yml)), which now uses the same CMake fetch (`-DNOTHOFAGUS_FETCH_SWIFTSHADER=ON` + `NOTHOFAGUS_RENDER_BACKEND=swiftshader`) instead of a hand-written ICD download/register step — no `/etc/vulkan` registration, one pinned version source in [cmake/swiftshader_version.cmake](cmake/swiftshader_version.cmake). Only a **linux-x86_64** prebuilt exists upstream; on other platforms the fetch warns-and-skips and the `swiftshader` backend falls back with a warning. To bump the SwiftShader version, publish a new prebuilt release and update the three variables in `cmake/swiftshader_version.cmake` together, then regenerate `golden_headless_vulkan/`.
 
 ## Dependencies
 
