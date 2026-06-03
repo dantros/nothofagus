@@ -1,11 +1,11 @@
-/// hello_sparsemap.cpp
-/// Demonstrates the pooled `Sparsemap` + `SparsemapExplorer` sparse-tilemap pipeline —
-/// the same chunk-pool optimization as `Tilemap`, but the world data lives in a
+/// hello_sparse_land.cpp
+/// Demonstrates the pooled `SparseLand` + `SparseLandExplorer` sparse-world pipeline —
+/// the same chunk-pool optimization as `DenseLand`, but the world data lives in a
 /// hash-map of chunks instead of a dense grid. There is no `mapSize`; the world is
 /// unbounded and chunks exist only where added.
 ///
 /// What this demo shows:
-///   - An empty Sparsemap renders nothing (pool slots are hidden via `chunkInBounds`).
+///   - An empty SparseLand renders nothing (pool slots are hidden via `chunkInBounds`).
 ///   - **Visibly sparse world**: a deterministic per-coord hash decides whether each
 ///     chunk exists. With density at 25%, ~3 of every 4 chunk slots are empty — you
 ///     see colored "island" chunks scattered across mostly-empty space, with the
@@ -42,7 +42,7 @@ namespace Pal
     constexpr std::uint8_t Green       = 6;
 }
 
-// Tile with a black 1-pixel border around a solid color (matches hello_tilemap_huge).
+// Tile with a black 1-pixel border around a solid color (matches hello_dense_land).
 static std::vector<std::uint8_t> makeBorderedTile(glm::ivec2 tileSize, std::uint8_t fillIndex)
 {
     const int tileWidth  = tileSize.x;
@@ -62,7 +62,7 @@ static std::vector<std::uint8_t> makeBorderedTile(glm::ivec2 tileSize, std::uint
 }
 
 // White-on-black tile with a single 8x8 ASCII glyph centered in the cell.
-// Mirrors `makeDigitTile` from hello_tilemap_huge.cpp: rasterises the glyph with
+// Mirrors `makeDigitTile` from hello_dense_land.cpp: rasterises the glyph with
 // `Nothofagus::writeChar` (font8x8 basic, colorIds 0=bg / 1=fg) then remaps to
 // palette indices so the glyph reads as white-on-black against the chunk color.
 static std::vector<std::uint8_t> makeAsciiTile(glm::ivec2 tileSize,
@@ -84,7 +84,7 @@ static std::vector<std::uint8_t> makeAsciiTile(glm::ivec2 tileSize,
 // Atlas layer layout (matches the tileGraphics vector built in main()):
 //   0..4    bordered color tiles (chunk background colors)
 //   5..14   digit glyphs '0'..'9'
-//   15      minus-sign glyph '-'  (sparsemap coords go negative)
+//   15      minus-sign glyph '-'  (sparseLand coords go negative)
 constexpr std::uint8_t digitLayer(int digit) { return static_cast<std::uint8_t>(5 + digit); }
 constexpr std::uint8_t minusLayer()           { return 15; }
 
@@ -161,7 +161,7 @@ int main()
 
     Nothofagus::Canvas canvas(
         { canvasWidth, canvasHeight },
-        "Hello Sparsemap",
+        "Hello SparseLand",
         { 0.05f, 0.05f, 0.07f },
         pixelScale
     );
@@ -190,14 +190,14 @@ int main()
         tileGraphics.push_back(makeAsciiTile(tileSize, d, palette));   // layers 5..14
     tileGraphics.push_back(makeAsciiTile(tileSize, '-', palette));     // layer 15
 
-    // Register the Sparsemap (world data) and a SparsemapExplorer (pooled renderer)
-    // against the canvas. The explorer takes the SparsemapId it draws from. Nothing
+    // Register the SparseLand (world data) and a SparseLandExplorer (pooled renderer)
+    // against the canvas. The explorer takes the SparseLandId it draws from. Nothing
     // renders until we start populating chunks below.
-    Nothofagus::SparsemapId sparsemapId = canvas.addSparsemap(
-        Nothofagus::Sparsemap(chunkSize, tileSize, palette,
+    Nothofagus::SparseLandId sparseLandId = canvas.addSparseLand(
+        Nothofagus::SparseLand(chunkSize, tileSize, palette,
             std::span<const std::vector<std::uint8_t>>(tileGraphics)));
-    Nothofagus::SparsemapExplorerId explorerId =
-        canvas.addSparsemapExplorer(Nothofagus::SparsemapExplorer(sparsemapId));
+    Nothofagus::SparseLandExplorerId explorerId =
+        canvas.addSparseLandExplorer(Nothofagus::SparseLandExplorer(sparseLandId));
 
     // No explicit initial seed — the first streaming pass below populates the visible
     // region using the deterministic density hash. With streaming off, the world starts
@@ -248,9 +248,9 @@ int main()
             const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
             camera += (dir / len) * (panSpeed * dt);
         }
-        canvas.sparsemapExplorer(explorerId).setCamera(camera);
+        canvas.sparseLandExplorer(explorerId).setCamera(camera);
 
-        Nothofagus::Sparsemap& world = canvas.sparsemap(sparsemapId);
+        Nothofagus::SparseLand& world = canvas.sparseLand(sparseLandId);
 
         // ── Streaming around the camera (density-gated) ─────────────────
         // For each chunk slot inside the load radius, the deterministic density hash
@@ -297,7 +297,7 @@ int main()
 
         // ── UI ──────────────────────────────────────────────────────────
         ImGui::SetNextWindowSize(ImVec2(360, 0), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Sparsemap");
+        ImGui::Begin("SparseLand");
 
         // Status
         const Nothofagus::ScreenSize liveCanvasSize = canvas.screenSize();
@@ -317,7 +317,7 @@ int main()
             const std::size_t paletteSize = palette.colors.size();
             const std::size_t chunkCount  = world.chunkCount();
 
-            // Sparsemap world data — atlas+palette live once in the cache template
+            // SparseLand world data — atlas+palette live once in the cache template
             // (cloned into each pool slot); per-chunk cost is the cell grid + the
             // generation counter + an approximate hash-map / vector node overhead.
             const std::size_t cellsPerChunk      = static_cast<std::size_t>(chunkSize.x) * static_cast<std::size_t>(chunkSize.y);
@@ -332,7 +332,7 @@ int main()
             const std::size_t worldPaletteBytes  = paletteSize * sizeof(glm::vec4);
             const std::size_t worldTotalBytes    = chunkCellsBytes + chunkGenBytes + chunkOverheadBytes + worldAtlasBytes + worldPaletteBytes;
 
-            // Pool — same formula as TilemapExplorer (see ExplorerManager::buildPoolSlots).
+            // Pool — same formula as DenseLandExplorer (see ExplorerManager::buildPoolSlots).
             const glm::ivec2 chunkPixelSize{ chunkSize.x * tileSize.x, chunkSize.y * tileSize.y };
             const glm::ivec2 poolGridSize{
                 (static_cast<int>(liveCanvasSize.width)  + chunkPixelSize.x - 1) / chunkPixelSize.x + 2,
@@ -348,7 +348,7 @@ int main()
             const std::size_t grandTotalBytes = worldTotalBytes + poolTotalBytes;
 
             char buf[64];
-            ImGui::Text("Sparsemap (world data, %zu chunks):", chunkCount);
+            ImGui::Text("SparseLand (world data, %zu chunks):", chunkCount);
             formatBytes(buf, sizeof(buf), chunkCellsBytes);    ImGui::Text("  chunk cells:     %s", buf);
             formatBytes(buf, sizeof(buf), chunkGenBytes);      ImGui::Text("  chunk gens:      %s", buf);
             formatBytes(buf, sizeof(buf), chunkOverheadBytes); ImGui::Text("  chunk overhead:  %s (~%zu B/chunk)", buf, perChunkOverheadBytes);
@@ -425,7 +425,7 @@ int main()
             "(see Density slider) — same coordinate, same answer, so revisiting a region "
             "restores the same scattered layout. Lower the Density to see more gaps. "
             "With streaming off, the world stops syncing; missing-chunk slots hide via "
-            "chunkInBounds. Watch the Sparsemap chunk count scale with what's resident, "
+            "chunkInBounds. Watch the SparseLand chunk count scale with what's resident, "
             "while the pool stays flat regardless of world extent.");
 
         ImGui::End();

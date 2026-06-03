@@ -100,17 +100,17 @@ add_executable(hello_tilemap
 set_property(TARGET hello_tilemap PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_tilemap PRIVATE nothofagus)
 
-add_executable(hello_tilemap_huge
-    "hello_tilemap_huge.cpp"
+add_executable(hello_dense_land
+    "hello_dense_land.cpp"
 )
-set_property(TARGET hello_tilemap_huge PROPERTY CXX_STANDARD 20)
-target_link_libraries(hello_tilemap_huge PRIVATE nothofagus)
+set_property(TARGET hello_dense_land PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_dense_land PRIVATE nothofagus)
 
-add_executable(hello_sparsemap
-    "hello_sparsemap.cpp"
+add_executable(hello_sparse_land
+    "hello_sparse_land.cpp"
 )
-set_property(TARGET hello_sparsemap PROPERTY CXX_STANDARD 20)
-target_link_libraries(hello_sparsemap PRIVATE nothofagus)
+set_property(TARGET hello_sparse_land PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_sparse_land PRIVATE nothofagus)
 
 add_executable(hello_mesh
     "hello_mesh.cpp"

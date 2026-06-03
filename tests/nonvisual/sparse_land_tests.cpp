@@ -32,15 +32,15 @@ std::vector<std::vector<std::uint8_t>> makeTrivialAtlas(glm::ivec2 tileSize, std
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// Sparsemap::chunkInBounds — empty by default, true after addChunk, false after removeChunk
+// SparseLand::chunkInBounds — empty by default, true after addChunk, false after removeChunk
 // ---------------------------------------------------------------------------
-TEST_CASE("Sparsemap::chunkInBounds tracks chunk lifecycle", "[sparsemap]")
+TEST_CASE("SparseLand::chunkInBounds tracks chunk lifecycle", "[sparseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Sparsemap sm({3, 2}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::SparseLand sm({3, 2}, {4, 4}, makeMinimalPalette(),
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
-    SECTION("empty sparsemap has no chunks anywhere")
+    SECTION("empty sparseLand has no chunks anywhere")
     {
         CHECK_FALSE(sm.chunkInBounds({0, 0}));
         CHECK_FALSE(sm.chunkInBounds({1, 1}));
@@ -75,12 +75,12 @@ TEST_CASE("Sparsemap::chunkInBounds tracks chunk lifecycle", "[sparsemap]")
 }
 
 // ---------------------------------------------------------------------------
-// Sparsemap::setCell — lazy-creates the owning chunk on first write
+// SparseLand::setCell — lazy-creates the owning chunk on first write
 // ---------------------------------------------------------------------------
-TEST_CASE("Sparsemap::setCell lazy-creates the owning chunk", "[sparsemap]")
+TEST_CASE("SparseLand::setCell lazy-creates the owning chunk", "[sparseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::SparseLand sm({4, 4}, {4, 4}, makeMinimalPalette(),
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
     REQUIRE_FALSE(sm.chunkInBounds({0, 0}));
@@ -96,10 +96,10 @@ TEST_CASE("Sparsemap::setCell lazy-creates the owning chunk", "[sparsemap]")
     CHECK(sm.chunkGeneration({0, 0}) == 1);
 }
 
-TEST_CASE("Sparsemap::setCell routes coordinates to the correct chunk", "[sparsemap]")
+TEST_CASE("SparseLand::setCell routes coordinates to the correct chunk", "[sparseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::SparseLand sm({4, 4}, {4, 4}, makeMinimalPalette(),
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
     // Spread writes across four chunk quadrants.
@@ -121,12 +121,12 @@ TEST_CASE("Sparsemap::setCell routes coordinates to the correct chunk", "[sparse
 }
 
 // ---------------------------------------------------------------------------
-// Sparsemap::cell — returns 0 when the owning chunk is not present
+// SparseLand::cell — returns 0 when the owning chunk is not present
 // ---------------------------------------------------------------------------
-TEST_CASE("Sparsemap::cell returns 0 for missing chunks", "[sparsemap]")
+TEST_CASE("SparseLand::cell returns 0 for missing chunks", "[sparseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::SparseLand sm({4, 4}, {4, 4}, makeMinimalPalette(),
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
     CHECK(sm.cell({0, 0}) == 0);
@@ -139,12 +139,12 @@ TEST_CASE("Sparsemap::cell returns 0 for missing chunks", "[sparsemap]")
 }
 
 // ---------------------------------------------------------------------------
-// Sparsemap::addChunk — round-trip with explicit cellData, generation bumps
+// SparseLand::addChunk — round-trip with explicit cellData, generation bumps
 // ---------------------------------------------------------------------------
-TEST_CASE("Sparsemap::addChunk with cellData round-trips through chunkDataInto", "[sparsemap]")
+TEST_CASE("SparseLand::addChunk with cellData round-trips through chunkDataInto", "[sparseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Sparsemap sm({3, 2}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::SparseLand sm({3, 2}, {4, 4}, makeMinimalPalette(),
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
     const std::vector<std::uint8_t> input{1, 2, 3, 0, 1, 2};  // 3 cols × 2 rows
@@ -158,10 +158,10 @@ TEST_CASE("Sparsemap::addChunk with cellData round-trips through chunkDataInto",
     CHECK(std::equal(out.begin(), out.end(), input.begin()));
 }
 
-TEST_CASE("Sparsemap::addChunk with empty cellData zero-initializes the chunk", "[sparsemap]")
+TEST_CASE("SparseLand::addChunk with empty cellData zero-initializes the chunk", "[sparseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::SparseLand sm({4, 4}, {4, 4}, makeMinimalPalette(),
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
     sm.addChunk({0, 0});  // default cellData = {}
@@ -174,12 +174,12 @@ TEST_CASE("Sparsemap::addChunk with empty cellData zero-initializes the chunk", 
 }
 
 // ---------------------------------------------------------------------------
-// Sparsemap::chunkDataInto — zero-fills when the chunk is not present
+// SparseLand::chunkDataInto — zero-fills when the chunk is not present
 // ---------------------------------------------------------------------------
-TEST_CASE("Sparsemap::chunkDataInto zero-fills missing chunks", "[sparsemap]")
+TEST_CASE("SparseLand::chunkDataInto zero-fills missing chunks", "[sparseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::SparseLand sm({4, 4}, {4, 4}, makeMinimalPalette(),
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
     // Prime the buffer with a sentinel so a successful zero-fill is observable.
@@ -192,12 +192,12 @@ TEST_CASE("Sparsemap::chunkDataInto zero-fills missing chunks", "[sparsemap]")
 }
 
 // ---------------------------------------------------------------------------
-// Sparsemap::chunkGeneration — independent per chunk, bumps locally
+// SparseLand::chunkGeneration — independent per chunk, bumps locally
 // ---------------------------------------------------------------------------
-TEST_CASE("Sparsemap per-chunk generation counter bumps independently", "[sparsemap]")
+TEST_CASE("SparseLand per-chunk generation counter bumps independently", "[sparseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::SparseLand sm({4, 4}, {4, 4}, makeMinimalPalette(),
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
     CHECK(sm.chunkGeneration({0, 0}) == 0);  // missing → 0
@@ -220,12 +220,12 @@ TEST_CASE("Sparsemap per-chunk generation counter bumps independently", "[sparse
 }
 
 // ---------------------------------------------------------------------------
-// Sparsemap::removeChunk drops state — re-adding starts fresh at generation 1
+// SparseLand::removeChunk drops state — re-adding starts fresh at generation 1
 // ---------------------------------------------------------------------------
-TEST_CASE("Sparsemap::removeChunk drops generation; re-adding restarts at 1", "[sparsemap]")
+TEST_CASE("SparseLand::removeChunk drops generation; re-adding restarts at 1", "[sparseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::SparseLand sm({4, 4}, {4, 4}, makeMinimalPalette(),
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
     sm.setCell({0, 0}, 1);
@@ -246,12 +246,12 @@ TEST_CASE("Sparsemap::removeChunk drops generation; re-adding restarts at 1", "[
 // ---------------------------------------------------------------------------
 // debugCheck-rejection cases (e.g., chunkDataInto with a wrong-sized span,
 // setCell with an out-of-range layer index) are NOT testable via Catch2 — see
-// the note at the bottom of tilemap_tests.cpp. We exercise only happy paths.
+// the note at the bottom of dense_land_tests.cpp. We exercise only happy paths.
 // ---------------------------------------------------------------------------
-TEST_CASE("Sparsemap::chunkDataInto accepts a correctly-sized span", "[sparsemap]")
+TEST_CASE("SparseLand::chunkDataInto accepts a correctly-sized span", "[sparseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::SparseLand sm({4, 4}, {4, 4}, makeMinimalPalette(),
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
     sm.addChunk({0, 0});
@@ -267,10 +267,10 @@ TEST_CASE("Sparsemap::chunkDataInto accepts a correctly-sized span", "[sparsemap
 // helper would be dark — the rest of the suite only crosses negatives through
 // `addChunk` (which takes chunk coords) and `cell` against missing chunks.
 // ---------------------------------------------------------------------------
-TEST_CASE("Sparsemap::setCell / cell round-trip across negative world coords", "[sparsemap]")
+TEST_CASE("SparseLand::setCell / cell round-trip across negative world coords", "[sparseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::SparseLand sm({4, 4}, {4, 4}, makeMinimalPalette(),
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
     // chunkSize = 4 → chunk -1 spans cells [-4..-1]; chunk -2 spans [-8..-5].
@@ -297,10 +297,10 @@ TEST_CASE("Sparsemap::setCell / cell round-trip across negative world coords", "
     CHECK(sm.cell({-3, -3}) == 0);
 }
 
-TEST_CASE("Sparsemap::setCell straddles the 0 / -1 boundary cleanly", "[sparsemap]")
+TEST_CASE("SparseLand::setCell straddles the 0 / -1 boundary cleanly", "[sparseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::SparseLand sm({4, 4}, {4, 4}, makeMinimalPalette(),
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
     // Cells immediately on either side of zero must land in distinct chunks
@@ -327,10 +327,10 @@ TEST_CASE("Sparsemap::setCell straddles the 0 / -1 boundary cleanly", "[sparsema
     CHECK(sm.chunkGeneration({-1, -1}) == 1);
 }
 
-TEST_CASE("Sparsemap::setCell handles INT_MIN-adjacent coords without overflow UB", "[sparsemap]")
+TEST_CASE("SparseLand::setCell handles INT_MIN-adjacent coords without overflow UB", "[sparseLand]")
 {
     auto atlas = makeTrivialAtlas({4, 4}, 4);
-    Nothofagus::Sparsemap sm({4, 4}, {4, 4}, makeMinimalPalette(),
+    Nothofagus::SparseLand sm({4, 4}, {4, 4}, makeMinimalPalette(),
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
     // The pre-helper implementation negated worldCell.x to compute the chunk
@@ -355,19 +355,19 @@ TEST_CASE("Sparsemap::setCell handles INT_MIN-adjacent coords without overflow U
 
 // ---------------------------------------------------------------------------
 // Public-API surface coverage for methods the explorer doesn't consume. These
-// are part of the `LandType` concept and the Sparsemap public surface, so
+// are part of the `LandType` concept and the SparseLand public surface, so
 // they're worth a light round-trip even though the chunk-sync hot path never
 // calls them. Without this coverage, dropping or renaming them would slip past
 // the existing test suite.
 // ---------------------------------------------------------------------------
-TEST_CASE("Sparsemap accessors echo construction parameters", "[sparsemap]")
+TEST_CASE("SparseLand accessors echo construction parameters", "[sparseLand]")
 {
     const glm::ivec2 chunkSize{5, 3};
     const glm::ivec2 tileSize{8, 16};
     const Nothofagus::ColorPallete palette = makeMinimalPalette();
     auto atlas = makeTrivialAtlas(tileSize, 2);
 
-    Nothofagus::Sparsemap sm(chunkSize, tileSize, palette,
+    Nothofagus::SparseLand sm(chunkSize, tileSize, palette,
                              std::span<const std::vector<std::uint8_t>>(atlas));
 
     CHECK(sm.chunkSize()      == chunkSize);

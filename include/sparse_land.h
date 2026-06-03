@@ -1,8 +1,8 @@
 #pragma once
 
 #include "texture.h"
-#include "sparsemap_id.h"
-#include "sparsemap_explorer_id.h"
+#include "sparse_land_id.h"
+#include "sparse_land_explorer_id.h"
 #include "ivec2_hash.h"
 #include "explorer.h"
 #include <glm/glm.hpp>
@@ -14,22 +14,22 @@
 namespace Nothofagus
 {
 
-/// World data for sparse tilemaps: a hash-map of chunks at integer chunk coordinates,
+/// World data for sparse denseLands: a hash-map of chunks at integer chunk coordinates,
 /// shared tile atlas, palette. No `mapSize` — the world is unbounded and chunks exist
-/// only where added. Pair with a `SparsemapExplorer` for rendering; the same
-/// pool-of-bellotas optimization as `Tilemap` applies, just with `chunkInBounds` replacing
+/// only where added. Pair with a `SparseLandExplorer` for rendering; the same
+/// pool-of-bellotas optimization as `DenseLand` applies, just with `chunkInBounds` replacing
 /// the dense out-of-world check.
 ///
 /// `setCell` lazy-creates the owning chunk (zero-initialized) if missing — convenient
 /// for ad-hoc editing. `addChunk` / `removeChunk` are the bulk streaming paths.
-class Sparsemap
+class SparseLand
 {
 public:
     /// @param chunkSize     Cells per pool slot.
     /// @param tileSize      Pixel size of one cell (one tile graphic).
     /// @param palette       Shared palette for all tiles.
     /// @param tileGraphics  One entry per atlas layer; each entry is `tileSize.x * tileSize.y` palette indices.
-    Sparsemap(glm::ivec2 chunkSize,
+    SparseLand(glm::ivec2 chunkSize,
               glm::ivec2 tileSize,
               const ColorPallete& palette,
               std::span<const std::vector<std::uint8_t>> tileGraphics);
@@ -95,10 +95,10 @@ private:
 };
 
 template<>
-struct LandTraits<Sparsemap>
+struct LandTraits<SparseLand>
 {
-    using LandId     = SparsemapId;
-    using ExplorerId = SparsemapExplorerId;
+    using LandId     = SparseLandId;
+    using ExplorerId = SparseLandExplorerId;
 };
 
 }

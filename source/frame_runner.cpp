@@ -257,13 +257,13 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
     }
 
     {
-        ZoneScopedN("TilemapExplorers");
-        mTilemapManager.updateExplorers(canvas);
+        ZoneScopedN("DenseLandExplorers");
+        mDenseLandManager.updateExplorers(canvas);
     }
 
     {
-        ZoneScopedN("SparsemapExplorers");
-        mSparsemapManager.updateExplorers(canvas);
+        ZoneScopedN("SparseLandExplorers");
+        mSparseLandManager.updateExplorers(canvas);
     }
 
     const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
@@ -421,9 +421,9 @@ ScreenSize getPrimaryMonitorSize()
 // declarations in frame_runner.h. Any third backend added later only needs a
 // `static_assert(LandType<X>);` in its source + a line here and a matching
 // extern decl in frame_runner.h. Spelled with the template-id (not the
-// TilemapExplorerManager / SparsemapExplorerManager aliases) because explicit
+// DenseLandExplorerManager / SparseLandExplorerManager aliases) because explicit
 // instantiation does not accept typedef-names.
-template class ExplorerManager<Tilemap>;
-template class ExplorerManager<Sparsemap>;
+template class ExplorerManager<DenseLand>;
+template class ExplorerManager<SparseLand>;
 
 }

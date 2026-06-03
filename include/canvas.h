@@ -5,8 +5,8 @@
 #include "mesh.h"
 #include "texture.h"
 #include "render_target.h"
-#include "tilemap.h"
-#include "sparsemap.h"
+#include "dense_land.h"
+#include "sparse_land.h"
 #include "explorer.h"
 #include "controller.h"
 #include "tint.h"
@@ -27,8 +27,8 @@ struct ImFont;
 namespace Nothofagus
 {
 
-using TilemapExplorer   = Explorer<Tilemap>;
-using SparsemapExplorer = Explorer<Sparsemap>;
+using DenseLandExplorer   = Explorer<DenseLand>;
+using SparseLandExplorer = Explorer<SparseLand>;
 
 // Default screen size for the canvas.
 constexpr static ScreenSize DEFAULT_SCREEN_SIZE{256, 240};
@@ -193,49 +193,49 @@ public:
 
     TextureId renderTargetTexture(RenderTargetId renderTargetId) const;
 
-    /// Register a Tilemap (world data) with the canvas. Returns a stable id.
-    /// No GPU resources are allocated until a TilemapExplorer is registered against this Tilemap.
-    TilemapId addTilemap(Tilemap tilemap);
+    /// Register a DenseLand (world data) with the canvas. Returns a stable id.
+    /// No GPU resources are allocated until a DenseLandExplorer is registered against this DenseLand.
+    DenseLandId addDenseLand(DenseLand denseLand);
 
-    /// Remove a Tilemap. debugChecks that no TilemapExplorer still references it.
-    void removeTilemap(TilemapId tilemapId);
+    /// Remove a DenseLand. debugChecks that no DenseLandExplorer still references it.
+    void removeDenseLand(DenseLandId denseLandId);
 
-    /// Access a registered Tilemap (mutable; use `setCell` to edit world data).
-    Tilemap& tilemap(TilemapId tilemapId);
-    const Tilemap& tilemap(TilemapId tilemapId) const;
+    /// Access a registered DenseLand (mutable; use `setCell` to edit world data).
+    DenseLand& denseLand(DenseLandId denseLandId);
+    const DenseLand& denseLand(DenseLandId denseLandId) const;
 
-    /// Register a TilemapExplorer (renderer) against a previously-added Tilemap.
+    /// Register a DenseLandExplorer (renderer) against a previously-added DenseLand.
     /// Allocates the chunk pool (small IndirectTexture + Bellota slots tagged explorer-managed).
-    TilemapExplorerId addTilemapExplorer(TilemapExplorer explorer);
+    DenseLandExplorerId addDenseLandExplorer(DenseLandExplorer explorer);
 
-    /// Remove a TilemapExplorer and tear down its pool slots.
-    void removeTilemapExplorer(TilemapExplorerId explorerId);
+    /// Remove a DenseLandExplorer and tear down its pool slots.
+    void removeDenseLandExplorer(DenseLandExplorerId explorerId);
 
-    /// Access a registered TilemapExplorer (mutable; use `setCamera` to scroll).
-    TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId);
-    const TilemapExplorer& tilemapExplorer(TilemapExplorerId explorerId) const;
+    /// Access a registered DenseLandExplorer (mutable; use `setCamera` to scroll).
+    DenseLandExplorer& denseLandExplorer(DenseLandExplorerId explorerId);
+    const DenseLandExplorer& denseLandExplorer(DenseLandExplorerId explorerId) const;
 
-    /// Register a Sparsemap (sparse world data) with the canvas. Returns a stable id.
-    /// No GPU resources are allocated until a SparsemapExplorer is registered against this Sparsemap.
-    SparsemapId addSparsemap(Sparsemap sparsemap);
+    /// Register a SparseLand (sparse world data) with the canvas. Returns a stable id.
+    /// No GPU resources are allocated until a SparseLandExplorer is registered against this SparseLand.
+    SparseLandId addSparseLand(SparseLand sparseLand);
 
-    /// Remove a Sparsemap. debugChecks that no SparsemapExplorer still references it.
-    void removeSparsemap(SparsemapId sparsemapId);
+    /// Remove a SparseLand. debugChecks that no SparseLandExplorer still references it.
+    void removeSparseLand(SparseLandId sparseLandId);
 
-    /// Access a registered Sparsemap (mutable; use `addChunk` / `setCell` to edit world data).
-    Sparsemap& sparsemap(SparsemapId sparsemapId);
-    const Sparsemap& sparsemap(SparsemapId sparsemapId) const;
+    /// Access a registered SparseLand (mutable; use `addChunk` / `setCell` to edit world data).
+    SparseLand& sparseLand(SparseLandId sparseLandId);
+    const SparseLand& sparseLand(SparseLandId sparseLandId) const;
 
-    /// Register a SparsemapExplorer (renderer) against a previously-added Sparsemap.
+    /// Register a SparseLandExplorer (renderer) against a previously-added SparseLand.
     /// Allocates the chunk pool (small IndirectTexture + Bellota slots tagged explorer-managed).
-    SparsemapExplorerId addSparsemapExplorer(SparsemapExplorer explorer);
+    SparseLandExplorerId addSparseLandExplorer(SparseLandExplorer explorer);
 
-    /// Remove a SparsemapExplorer and tear down its pool slots.
-    void removeSparsemapExplorer(SparsemapExplorerId explorerId);
+    /// Remove a SparseLandExplorer and tear down its pool slots.
+    void removeSparseLandExplorer(SparseLandExplorerId explorerId);
 
-    /// Access a registered SparsemapExplorer (mutable; use `setCamera` to scroll).
-    SparsemapExplorer& sparsemapExplorer(SparsemapExplorerId explorerId);
-    const SparsemapExplorer& sparsemapExplorer(SparsemapExplorerId explorerId) const;
+    /// Access a registered SparseLandExplorer (mutable; use `setCamera` to scroll).
+    SparseLandExplorer& sparseLandExplorer(SparseLandExplorerId explorerId);
+    const SparseLandExplorer& sparseLandExplorer(SparseLandExplorerId explorerId) const;
 
     void renderTo(RenderTargetId renderTargetId, std::vector<BellotaId> bellotaIds);
 

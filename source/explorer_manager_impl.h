@@ -61,7 +61,7 @@ void exploreCell(PoolSlot& slot, glm::ivec2 desired, const ExplorerFrame<T>& fra
     const std::uint64_t currentGen = frame.sourceData.chunkGeneration(desired);
     if (desired != slot.currentWorldChunk || currentGen != slot.syncedGeneration)
     {
-        ZoneScopedN("TilemapChunkSync");
+        ZoneScopedN("LandChunkSync");
         IndirectTexture& slotTex = std::get<IndirectTexture>(
             frame.canvas.texture(slot.textureId));
         frame.sourceData.chunkDataInto(desired, frame.chunkScratch);

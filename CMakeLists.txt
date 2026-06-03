@@ -101,8 +101,8 @@ add_library(nothofagus
     "source/text.cpp"
     "source/animation_state_machine.cpp"
     "source/animation_state.cpp"
-    "source/tilemap.cpp"
-    "source/sparsemap.cpp"
+    "source/dense_land.cpp"
+    "source/sparse_land.cpp"
     "source/explorer_manager.cpp"
     "source/markdown_renderer.cpp"
 
@@ -381,7 +381,8 @@ if (${NOTHOFAGUS_INSTALL})
             hello_screenshot
             hello_headless
             hello_tilemap
-            hello_sparsemap
+            hello_dense_land
+            hello_sparse_land
             test_gamepad
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT NothofagusExamples_Runtime

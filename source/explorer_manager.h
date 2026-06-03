@@ -18,8 +18,8 @@ class Canvas;
 /// bellota/texture removals. Three methods that need to touch canvas-owned
 /// bellotas/textures take a `Canvas&` and use only its public surface.
 ///
-/// Instantiated once per backend in `CanvasImpl`: `ExplorerManager<Tilemap>` for the
-/// dense huge-tilemap path, `ExplorerManager<Sparsemap>` for the sparse / streaming
+/// Instantiated once per backend in `CanvasImpl`: `ExplorerManager<DenseLand>` for the
+/// dense huge-world path, `ExplorerManager<SparseLand>` for the sparse / streaming
 /// path. The two managers are independent — their explorer-managed sets do not overlap.
 template<LandType T>
 class ExplorerManager

@@ -5,11 +5,11 @@
 namespace Nothofagus
 {
 
-struct SparsemapExplorerId
+struct SparseLandExplorerId
 {
     std::size_t id;
 
-    bool operator==(const SparsemapExplorerId& rhs) const
+    bool operator==(const SparseLandExplorerId& rhs) const
     {
         return id == rhs.id;
     }
