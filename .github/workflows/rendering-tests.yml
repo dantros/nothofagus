@@ -63,12 +63,12 @@ jobs:
         -S ${{ github.workspace }}
 
     - name: Build
-      run: cmake --build build --config Release --target rendering_tests tilemap_tests sparsemap_tests
+      run: cmake --build build --config Release --target rendering_tests dense_land_tests sparse_land_tests
 
     - name: Run nonvisual tests
       run: |
-        ./build/tests/nonvisual/tilemap_tests
-        ./build/tests/nonvisual/sparsemap_tests
+        ./build/tests/nonvisual/dense_land_tests
+        ./build/tests/nonvisual/sparse_land_tests
 
     - name: Run tests against Vulkan golden files
       run: ./build/tests/visual/rendering_tests
