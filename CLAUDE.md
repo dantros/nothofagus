@@ -216,7 +216,7 @@ The public Canvas API surfaces a small set of window/screen mutators alongside t
 ```cpp
 // Logical canvas (game pixel grid) — independent of window size.
 const Nothofagus::ScreenSize& size = canvas.screenSize();
-canvas.setScreenSize({320, 240});       // re-letterboxes; active TilemapExplorer pools rebuild
+canvas.setScreenSize({320, 240});       // re-letterboxes; active DenseLand/SparseLand explorer pools rebuild
 
 // Window-space size (in physical pixels) and the framebuffer game viewport.
 Nothofagus::ScreenSize winSize  = canvas.windowSize();
@@ -244,7 +244,7 @@ canvas.close();
 
 **Resizing rules:**
 - Manual window resize and fullscreen always letterbox/pillarbox to preserve the logical canvas aspect ratio — black bands fill unused screen area. The game viewport is recomputed every frame from `mWindow->getFramebufferSize()` so it adapts automatically.
-- `setScreenSize(...)` changes the logical canvas itself; tilemap/sparsemap explorer pools rebuild themselves on the next pre-pass to match the new size.
+- `setScreenSize(...)` changes the logical canvas itself; dense-land/sparse-land explorer pools rebuild themselves on the next pre-pass to match the new size.
 - `getPrimaryMonitorSize()` is a free function that safely initialises GLFW internally (idempotent) and can be called before constructing a Canvas.
 
 ### Textures and bellotas
@@ -451,95 +451,95 @@ Nothofagus::TextureId tileMapTexId = canvas.addTexture(tileMap);
 - The palette is shared between the tile-map and indirect rendering paths — `setPallete` works the same way.
 - `setMapBulk(span)` overwrites the entire cell grid in one shot from a row-major byte buffer of `mapSize.x * mapSize.y` layer indices. Faster than per-cell `setCell` when replacing a large region — one memcpy + one dirty-flag set, no per-cell bookkeeping.
 
-#### Huge tilemaps via `Tilemap` + `TilemapExplorer`
+#### Dense lands via `DenseLand` + `DenseLandExplorer`
 
-Single-`IndirectTexture` tilemaps scale poorly: any `setCell` re-uploads the entire world's map texture, and the bellota's mesh covers the whole world even when only a small window is visible. For huge maps (open worlds, side-scrolling levels), use the **`Tilemap` + `TilemapExplorer` pair** instead. The world data lives once in a `Tilemap`; a `TilemapExplorer` owns a small pool of `IndirectTexture` + `Bellota` slots sized to the canvas viewport + a 1-chunk margin. Slots are anchored to pool indices; world chunks rotate through them as the camera scrolls. Only border slots crossing into/out of explorer get their cell data rewritten — smooth scrolling within a chunk is a zero-rebind frame.
+Single-`IndirectTexture` tilemaps scale poorly: any `setCell` re-uploads the entire world's map texture, and the bellota's mesh covers the whole world even when only a small window is visible. For huge maps (open worlds, side-scrolling levels), use the **`DenseLand` + `DenseLandExplorer` pair** instead. The world data lives once in a `DenseLand`; a `DenseLandExplorer` owns a small pool of `IndirectTexture` + `Bellota` slots sized to the canvas viewport + a 1-chunk margin. Slots are anchored to pool indices; world chunks rotate through them as the camera scrolls. Only border slots crossing into/out of explorer get their cell data rewritten — smooth scrolling within a chunk is a zero-rebind frame.
 
 ```cpp
 // Build the tile graphics (palette indices, one std::vector per atlas layer).
 std::vector<std::vector<std::uint8_t>> tileGraphics{ /* layer 0, layer 1, ... */ };
 
-// Register the Tilemap (world data) and a TilemapExplorer (pooled renderer)
-// against the canvas. The explorer takes the TilemapId it draws from.
-Nothofagus::TilemapId tilemapId = canvas.addTilemap(
-    Nothofagus::Tilemap(
+// Register the DenseLand (world data) and a DenseLandExplorer (pooled renderer)
+// against the canvas. The explorer takes the DenseLandId it draws from.
+Nothofagus::DenseLandId denseLandId = canvas.addDenseLand(
+    Nothofagus::DenseLand(
         /*mapSize  */ glm::ivec2{256, 256},   // world cells
         /*chunkSize*/ glm::ivec2{32, 32},     // cells per pool slot
         /*tileSize */ glm::ivec2{16, 16},     // pixels per cell
         palette,
         std::span<const std::vector<std::uint8_t>>(tileGraphics)));
-Nothofagus::TilemapExplorerId explorerId =
-    canvas.addTilemapExplorer(Nothofagus::TilemapExplorer(tilemapId));
+Nothofagus::DenseLandExplorerId explorerId =
+    canvas.addDenseLandExplorer(Nothofagus::DenseLandExplorer(denseLandId));
 
 // Edit the world at world-cell coordinates — the owning chunk's generation
 // bumps, the pool slot displaying it (if any) re-syncs next frame.
-canvas.tilemap(tilemapId).setCell({worldCol, worldRow}, layerIndex);
+canvas.denseLand(denseLandId).setCell({worldCol, worldRow}, layerIndex);
 
 // Guard arbitrary coordinates against the world extent before editing.
-if (canvas.tilemap(tilemapId).inBounds({worldCol, worldRow}))
-    canvas.tilemap(tilemapId).setCell({worldCol, worldRow}, layerIndex);
+if (canvas.denseLand(denseLandId).inBounds({worldCol, worldRow}))
+    canvas.denseLand(denseLandId).setCell({worldCol, worldRow}, layerIndex);
 
 // Pan the explorer via the camera (world pixels; (0,0) = world origin centered).
-canvas.tilemapExplorer(explorerId).setCamera({scrollX, scrollY});
+canvas.denseLandExplorer(explorerId).setCamera({scrollX, scrollY});
 ```
 
 **How it works:**
-- `Tilemap` is internally a single `IndirectTexture` shaped to the full world (atlas + palette + `setMap(mapSize)` cell grid) plus per-chunk generation counters. The cache texture is never registered with the canvas, so no GPU resources are allocated — `IndirectTexture` is reused purely for its storage layout and tested mutation methods (`setCell` / `cell` / `setMapBulk`). Use `tilemap.cacheTexture()` to inspect or clone the underlying texture.
-- `TilemapExplorer` is registered against a `TilemapId`; on registration the canvas allocates a `ceil(screenSize / chunkPixelSize) + 2` grid of pool slots. Each slot is an `IndirectTexture` (with its own copy of the atlas + palette, chunk-sized map storage) plus a `Bellota`. Both are **explorer-managed**: calling `canvas.removeBellota`/`canvas.removeTexture` on those ids fires a `debugCheck`. Use `canvas.removeTilemapExplorer(explorerId)` to tear the pool down.
+- `DenseLand` is internally a single `IndirectTexture` shaped to the full world (atlas + palette + `setMap(mapSize)` cell grid) plus per-chunk generation counters. The cache texture is never registered with the canvas, so no GPU resources are allocated — `IndirectTexture` is reused purely for its storage layout and tested mutation methods (`setCell` / `cell` / `setMapBulk`). Use `denseLand.cacheTexture()` to inspect or clone the underlying texture.
+- `DenseLandExplorer` is registered against a `DenseLandId`; on registration the canvas allocates a `ceil(screenSize / chunkPixelSize) + 2` grid of pool slots. Each slot is an `IndirectTexture` (with its own copy of the atlas + palette, chunk-sized map storage) plus a `Bellota`. Both are **explorer-managed**: calling `canvas.removeBellota`/`canvas.removeTexture` on those ids fires a `debugCheck`. Use `canvas.removeDenseLandExplorer(explorerId)` to tear the pool down.
 - Per-frame pre-pass (runs between the user update callback and the texture-upload pass): for each explorer, compute which world chunk each slot should display based on the camera; for any slot whose desired chunk changed (or whose chunk's generation advanced), memcpy the chunk's cells into the slot's IndirectTexture via `setMapBulk` and reposition the slot's bellota. The existing dirty-upload path then re-uploads only those small chunk map textures.
 - Renderer learns nothing new — pool slots flow through the existing 3-binding tilemap path. No shader, backend, or render-loop changes.
 - **Pool resize on `setScreenSize`:** the pre-pass also compares the canvas's current `screenSize()` against the size the pool was built for. If they differ, the pool is torn down and rebuilt against the new size in one frame, then chunk-synced — `canvas.setScreenSize(...)` "just works" with active views. Window resize / fullscreen don't trigger this because the letterbox preserves the logical canvas; only explicit `setScreenSize` does.
 
 **Memory cost:**
-- Atlas: 1 copy in `Tilemap` + 1 copy per pool slot (~50 copies for typical viewports).
+- Atlas: 1 copy in `DenseLand` + 1 copy per pool slot (~50 copies for typical viewports).
 - Palette: same — 1 + ~pool.
-- World cell grid: 1 byte per world cell, held once in `Tilemap`.
+- World cell grid: 1 byte per world cell, held once in `DenseLand`.
 - Independent of world size beyond the cell grid itself: a 1000×1000-cell world (~1 MB cell grid) uses ~50 IndirectTextures and ~50 bellotas, regardless of how big the world is.
 
 **Lifecycle rules:**
-- `addTilemap` registers the world data and returns a `TilemapId`; `addTilemapExplorer(TilemapExplorer(tilemapId))` registers the pooled renderer against that id.
-- **Tear down explorers before their tilemaps.** `removeTilemap(tilemapId)` fires a `debugCheck` if any `TilemapExplorer` still references it; call `removeTilemapExplorer(explorerId)` on every owning explorer first. (See [examples/hello_tilemap_huge.cpp](examples/hello_tilemap_huge.cpp) `rebuild` lambda for the canonical pattern.)
-- `removeTilemapExplorer(explorerId)` removes all pool bellotas and textures it owns.
-- Multiple `TilemapExplorer` instances may reference the same `Tilemap` (e.g., main explorer + mini-map explorer); each polls per-chunk generation counters independently.
-- The `Tilemap` constructor `debugCheck`s that `chunkSize.x * tileSize.x` and `chunkSize.y * tileSize.y` fit in `int`. This one-time bound keeps the per-frame chunk-pixel math in `explorer_manager.cpp` safe in plain `int` without runtime overflow guards.
+- `addDenseLand` registers the world data and returns a `DenseLandId`; `addDenseLandExplorer(DenseLandExplorer(denseLandId))` registers the pooled renderer against that id.
+- **Tear down explorers before their dense lands.** `removeDenseLand(denseLandId)` fires a `debugCheck` if any `DenseLandExplorer` still references it; call `removeDenseLandExplorer(explorerId)` on every owning explorer first. (See [examples/hello_dense_land.cpp](examples/hello_dense_land.cpp) `rebuild` lambda for the canonical pattern.)
+- `removeDenseLandExplorer(explorerId)` removes all pool bellotas and textures it owns.
+- Multiple `DenseLandExplorer` instances may reference the same `DenseLand` (e.g., main explorer + mini-map explorer); each polls per-chunk generation counters independently.
+- The `DenseLand` constructor `debugCheck`s that `chunkSize.x * tileSize.x` and `chunkSize.y * tileSize.y` fit in `int`. This one-time bound keeps the per-frame chunk-pixel math in `explorer_manager.cpp` safe in plain `int` without runtime overflow guards.
 
-**Camera convention (v1):** `setCamera(offset)` sets the world-pixel coordinate that appears at the canvas center. `(0, 0)` = world origin centered. The `Tilemap`'s coordinate space is bottom-left = `(0, 0)` cell, top-right = `(mapSize.x - 1, mapSize.y - 1)`.
+**Camera convention (v1):** `setCamera(offset)` sets the world-pixel coordinate that appears at the canvas center. `(0, 0)` = world origin centered. The `DenseLand`'s coordinate space is bottom-left = `(0, 0)` cell, top-right = `(mapSize.x - 1, mapSize.y - 1)`.
 
-**Deferred:** streaming (world cell grid eviction to disk); RTT-targeted tilemap rendering; shader-scrolled single-draw fast path; per-cell partial GPU upload inside a chunk's map texture; direct rendering of small tilemaps via `canvas.addTexture(tilemap.cacheTexture())`.
+**Deferred:** streaming (world cell grid eviction to disk); RTT-targeted tilemap rendering; shader-scrolled single-draw fast path; per-cell partial GPU upload inside a chunk's map texture; direct rendering of small dense lands via `canvas.addTexture(denseLand.cacheTexture())`.
 
-#### Sparse tilemaps via `Sparsemap` + `SparsemapExplorer`
+#### Sparse lands via `SparseLand` + `SparseLandExplorer`
 
-Sibling to `Tilemap` for **unbounded / sparse worlds**: same chunk-pool rendering, same shader path, same pool sizing math — but the world data lives in a hash-map of chunks keyed by chunk coordinate instead of a dense `mapSize`-shaped grid. Memory scales with **populated chunks**, not with how far the camera can travel. Ideal for procedural worlds, streaming, or hand-authored open worlds that don't fit in memory.
+Sibling to `DenseLand` for **unbounded / sparse worlds**: same chunk-pool rendering, same shader path, same pool sizing math — but the world data lives in a hash-map of chunks keyed by chunk coordinate instead of a dense `mapSize`-shaped grid. Memory scales with **populated chunks**, not with how far the camera can travel. Ideal for procedural worlds, streaming, or hand-authored open worlds that don't fit in memory.
 
-Both `TilemapExplorer` and `SparsemapExplorer` are concrete typedefs of a shared `Explorer<T>` template constrained by the `TilemapLike` C++20 concept (see [include/explorer.h](include/explorer.h)); the per-frame chunk-sync pre-pass in [source/explorer_manager.cpp](source/explorer_manager.cpp) is written once and explicitly instantiated for both backends. The renderer's specialization point is the `chunkInBounds(chunkPos)` predicate — dense returns `chunkPos` ∈ `[0, chunkGridSize)`, sparse returns `mChunks.contains(chunkPos)`; `exploreCell` gates `chunkGeneration` and `chunkDataInto` behind it so those two methods are always called on present chunks. The user-facing surface diverges further — `Sparsemap::chunkGeneration(missing)` returns `0`, `Sparsemap::chunkDataInto(missing, out)` zero-fills, and `Sparsemap::cell(missing)` returns `0`, whereas the dense `Tilemap` counterparts `debugCheck` on out-of-bounds — but that's a user-API convenience for ad-hoc reads against unbounded worlds, not a load-bearing contract for the chunk-sync pass. Each backend asserts conformance via `static_assert(TilemapLike<T>);` in its `.cpp` so a missing/changed method shows up as a clear concept error instead of an opaque template instantiation failure.
+Both `DenseLandExplorer` and `SparseLandExplorer` are concrete typedefs of a shared `Explorer<T>` template constrained by the `LandType` C++20 concept (see [include/explorer.h](include/explorer.h)); the per-frame chunk-sync pre-pass in [source/explorer_manager.cpp](source/explorer_manager.cpp) is written once and explicitly instantiated for both backends. The renderer's specialization point is the `chunkInBounds(chunkPos)` predicate — dense returns `chunkPos` ∈ `[0, chunkGridSize)`, sparse returns `mChunks.contains(chunkPos)`; `exploreCell` gates `chunkGeneration` and `chunkDataInto` behind it so those two methods are always called on present chunks. The user-facing surface diverges further — `SparseLand::chunkGeneration(missing)` returns `0`, `SparseLand::chunkDataInto(missing, out)` zero-fills, and `SparseLand::cell(missing)` returns `0`, whereas the dense `DenseLand` counterparts `debugCheck` on out-of-bounds — but that's a user-API convenience for ad-hoc reads against unbounded worlds, not a load-bearing contract for the chunk-sync pass. Each backend asserts conformance via `static_assert(LandType<T>);` in its `.cpp` so a missing/changed method shows up as a clear concept error instead of an opaque template instantiation failure.
 
 ```cpp
-// Register an empty Sparsemap (no mapSize) and a SparsemapExplorer (pooled renderer)
-// against the canvas. The explorer takes the SparsemapId it draws from.
-Nothofagus::SparsemapId sparsemapId = canvas.addSparsemap(
-    Nothofagus::Sparsemap(chunkSize, tileSize, palette,
+// Register an empty SparseLand (no mapSize) and a SparseLandExplorer (pooled renderer)
+// against the canvas. The explorer takes the SparseLandId it draws from.
+Nothofagus::SparseLandId sparseLandId = canvas.addSparseLand(
+    Nothofagus::SparseLand(chunkSize, tileSize, palette,
         std::span<const std::vector<std::uint8_t>>(tileGraphics)));
-Nothofagus::SparsemapExplorerId explorerId =
-    canvas.addSparsemapExplorer(Nothofagus::SparsemapExplorer(sparsemapId));
+Nothofagus::SparseLandExplorerId explorerId =
+    canvas.addSparseLandExplorer(Nothofagus::SparseLandExplorer(sparseLandId));
 
 // Bulk path: insert (or overwrite) a chunk at chunk coords. Cells span must
 // equal chunkSize.x * chunkSize.y (or be empty for zero-init).
-canvas.sparsemap(sparsemapId).addChunk({chunkX, chunkY},
+canvas.sparseLand(sparseLandId).addChunk({chunkX, chunkY},
     std::span<const std::uint8_t>(cells));
 
 // Ad-hoc edit path: lazy-creates the owning chunk (zero-init) if missing,
 // then writes the cell. Bumps the chunk's generation counter.
-canvas.sparsemap(sparsemapId).setCell({worldX, worldY}, layerIndex);
+canvas.sparseLand(sparseLandId).setCell({worldX, worldY}, layerIndex);
 
 // Streaming: drop a chunk once it leaves the camera's interest area. Pool
 // slots displaying it hide next frame via chunkInBounds.
-canvas.sparsemap(sparsemapId).removeChunk({chunkX, chunkY});
+canvas.sparseLand(sparseLandId).removeChunk({chunkX, chunkY});
 
-// Same camera API as TilemapExplorer.
-canvas.sparsemapExplorer(explorerId).setCamera({scrollX, scrollY});
+// Same camera API as DenseLandExplorer.
+canvas.sparseLandExplorer(explorerId).setCamera({scrollX, scrollY});
 ```
 
-**Differences from `Tilemap`:**
+**Differences from `DenseLand`:**
 - No `mapSize`. World is unbounded; chunks exist only where `addChunk` / `setCell` put them.
 - `setCell` is **lazy-creating** — writing into an unloaded chunk creates it (zero-initialised) instead of asserting. Convenient for editor flows.
 - `cell({worldX, worldY})` returns `0` if the owning chunk is missing (consistent with chunk-not-yet-loaded semantics).
@@ -548,11 +548,11 @@ canvas.sparsemapExplorer(explorerId).setCamera({scrollX, scrollY});
 - The internal cache is an `IndirectTexture mCacheTemplate` carrying atlas + palette only (no `setMap` call). Slot textures still clone via `IndirectTexture(other, chunkSize)`; that constructor only needs atlas + palette + tileSize from the source.
 
 **Lifecycle rules:**
-- `addSparsemap` registers the world data and returns a `SparsemapId`; `addSparsemapExplorer(SparsemapExplorer(sparsemapId))` registers the pooled renderer against that id.
-- **Tear down explorers before their sparsemaps.** `removeSparsemap` fires a `debugCheck` if any `SparsemapExplorer` still references it.
-- `removeSparsemapExplorer(explorerId)` removes all pool bellotas and textures it owns.
-- Multiple `SparsemapExplorer` instances may reference the same `Sparsemap`; each polls per-chunk generation counters independently.
-- The `Sparsemap` constructor `debugCheck`s the same `chunkSize * tileSize` int-range bound as `Tilemap`.
+- `addSparseLand` registers the world data and returns a `SparseLandId`; `addSparseLandExplorer(SparseLandExplorer(sparseLandId))` registers the pooled renderer against that id.
+- **Tear down explorers before their sparse lands.** `removeSparseLand` fires a `debugCheck` if any `SparseLandExplorer` still references it.
+- `removeSparseLandExplorer(explorerId)` removes all pool bellotas and textures it owns.
+- Multiple `SparseLandExplorer` instances may reference the same `SparseLand`; each polls per-chunk generation counters independently.
+- The `SparseLand` constructor `debugCheck`s the same `chunkSize * tileSize` int-range bound as `DenseLand`.
 
 **Deferred (sparse-specific):** streaming callback API (`onPatchNeeded(worldAabb)` / `onPatchEvictable`); explicit eviction policies; per-chunk metadata for tagging streamed-from-disk chunks; partial uploads inside a chunk.
 - **Custom meshes are forbidden on tile-map textures.** The tile-map shader treats incoming UVs as `[0, 1]` over the full tile-map extent and quantises to cell indices, so only the engine-generated auto-quad's UVs sample correctly. `addBellota`, `setMesh`, and `setTexture` enforce the restriction via `debugCheck`.
@@ -817,8 +817,8 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_screenshot.cpp` | `takeScreenshot()` — capture frame as DirectTexture, display thumbnail |
 | `hello_headless.cpp` | Headless mode + `tick()` — no window, manual frame stepping, screenshot to terminal |
 | `hello_tilemap.cpp` | Tile-map mode of `IndirectTexture` — `setMap` + `setCell` over a layered atlas |
-| `hello_tilemap_huge.cpp` | Huge tilemaps via `Tilemap` + `TilemapExplorer` pool — WASD camera, teleport, recreate, live memory breakdown, stress controls (auto-pan + edits/frame) |
-| `hello_sparsemap.cpp` | Sparse tilemaps via `Sparsemap` + `SparsemapExplorer` pool — WASD camera, simulated streaming (load/unload chunks around the camera), manual `addChunk`/`removeChunk`, lazy-create `setCell` editor |
+| `hello_dense_land.cpp` | Dense lands via `DenseLand` + `DenseLandExplorer` pool — WASD camera, teleport, recreate, live memory breakdown, stress controls (auto-pan + edits/frame) |
+| `hello_sparse_land.cpp` | Sparse lands via `SparseLand` + `SparseLandExplorer` pool — WASD camera, simulated streaming (load/unload chunks around the camera), manual `addChunk`/`removeChunk`, lazy-create `setCell` editor |
 | `hello_mesh.cpp` | Custom triangle meshes via `addMesh` + `Bellota(Transform, TextureId, MeshId)` — register geometry once, attach to bellotas, swap with `setMesh` |
 | `hello_render_to_texture.cpp` | `addRenderTarget` / `renderTo` — sprites drawn into an off-screen texture sampled by another bellota |
 | `hello_nested_render_targets.cpp` | Nested RTTs — one render target's output feeds another |
@@ -835,7 +835,7 @@ Enable with `-DNOTHOFAGUS_BUILD_TESTS=ON`. Two independent groups, each behind i
 | Visual (pixel-level golden-image comparison) | [tests/visual/](tests/visual/) | `NOTHOFAGUS_BUILD_TESTS_VISUAL` | Catch2 + render backend + golden-image infrastructure |
 | Nonvisual (CPU-only data/logic checks) | [tests/nonvisual/](tests/nonvisual/) | `NOTHOFAGUS_BUILD_TESTS_NONVISUAL` | Catch2 only |
 
-Run via CTest from the build directory. Both groups use Catch2 (`catch_discover_tests` registers each `TEST_CASE` as a separate CTest entry); Catch2 is added once at the `tests/CMakeLists.txt` orchestrator level when either sub-option is enabled. The visual group additionally requires a render backend and the shared test-helpers lib in [tests/nothofagus_test_helpers/](tests/nothofagus_test_helpers/) (target `nothofagus_test_helpers`); the test cases themselves live in [tests/visual/rendering_tests.cpp](tests/visual/rendering_tests.cpp). The nonvisual group builds without any render backend (use it from CI lanes that don't have a display server). The nonvisual files are [tests/nonvisual/tilemap_tests.cpp](tests/nonvisual/tilemap_tests.cpp) — pure-data tests for `Tilemap`, `IndirectTexture::setMapBulk`, and the `TilemapExplorer` pool-grid-size formula (mirrored from source) — and [tests/nonvisual/sparsemap_tests.cpp](tests/nonvisual/sparsemap_tests.cpp) — pure-data tests for `Sparsemap` (chunk lifecycle, lazy `setCell`, `chunkDataInto` zero-fill for missing chunks, independent per-chunk generation bumps).
+Run via CTest from the build directory. Both groups use Catch2 (`catch_discover_tests` registers each `TEST_CASE` as a separate CTest entry); Catch2 is added once at the `tests/CMakeLists.txt` orchestrator level when either sub-option is enabled. The visual group additionally requires a render backend and the shared test-helpers lib in [tests/nothofagus_test_helpers/](tests/nothofagus_test_helpers/) (target `nothofagus_test_helpers`); the test cases themselves live in [tests/visual/rendering_tests.cpp](tests/visual/rendering_tests.cpp). The nonvisual group builds without any render backend (use it from CI lanes that don't have a display server). The nonvisual files are [tests/nonvisual/dense_land_tests.cpp](tests/nonvisual/dense_land_tests.cpp) — pure-data tests for `DenseLand`, `IndirectTexture::setMapBulk`, and the `DenseLandExplorer` pool-grid-size formula (mirrored from source) — and [tests/nonvisual/sparse_land_tests.cpp](tests/nonvisual/sparse_land_tests.cpp) — pure-data tests for `SparseLand` (chunk lifecycle, lazy `setCell`, `chunkDataInto` zero-fill for missing chunks, independent per-chunk generation bumps).
 
 ### Golden images (PNG) and the Visual Tests Explorer
 
