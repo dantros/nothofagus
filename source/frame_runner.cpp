@@ -183,6 +183,7 @@ static void sortByDepthOffset(const BellotaContainer& bellotas, std::vector<cons
 
     for (const auto& [bellotaIndex, bellotaPack] : bellotas)
     {
+        if (not bellotaPack.bellota.visible()) continue;   // hidden ones never enter the sort
         sortedBellotas.push_back(&bellotaPack);
     }
 
@@ -206,7 +207,9 @@ static void drawBellotaPacks(
 {
     for (const BellotaPack* packPtr : sortedBellotaPacks)
     {
-        if (!packPtr->bellota.visible()) continue;
+        // Callers (sortByDepthOffset / the RTT pre-pass gather) pre-filter hidden
+        // bellotas, so this list is visible-only by invariant — no visible() check here.
+        debugCheck(packPtr->bellota.visible());
         if (!packPtr->bellota.meshId().has_value()) continue;
         const MeshPack& meshPack = meshes.at(packPtr->bellota.meshId().value().id);
         if (!meshPack.dmeshOpt.has_value()) continue;
@@ -324,8 +327,10 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
             std::vector<const BellotaPack*> renderTargetSortedPacks;
             for (const BellotaId bellotaId : bellotaIds)
             {
-                if (assets.bellotas().contains(bellotaId.id))
-                    renderTargetSortedPacks.push_back(&assets.bellotas().at(bellotaId.id));
+                if (not assets.bellotas().contains(bellotaId.id)) continue;
+                const BellotaPack& pack = assets.bellotas().at(bellotaId.id);
+                if (not pack.bellota.visible()) continue;   // hidden ones never enter the sort
+                renderTargetSortedPacks.push_back(&pack);
             }
             std::sort(renderTargetSortedPacks.begin(), renderTargetSortedPacks.end(),
                 [](const BellotaPack* lhs, const BellotaPack* rhs)
