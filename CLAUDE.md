@@ -43,6 +43,7 @@ cmake --install build/windows-debug-glfw-opengl-examples
 - `NOTHOFAGUS_HEADLESS_VULKAN` — pure offscreen Vulkan rendering with no window or display server (default OFF; requires `NOTHOFAGUS_BACKEND_VULKAN=ON`). Replaces the window backend with `HeadlessBackend` and the Vulkan presentation policy with `HeadlessVulkanPresentation`. Intended for CI/CD rendering tests.
 - `NOTHOFAGUS_ENABLE_TRACY` — wire in the Tracy profiler (default OFF).
 - `NOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER` — build the windowed Visual Tests Explorer tool under `tests/visual_tests_explorer/` (default OFF; pulls in `stb_image_plus` + the `nothofagus_test_helpers` lib).
+- `NOTHOFAGUS_BUILD_README_SCREENSHOTS` — build the `generate_readme_screenshots` tool under `tools/generate_readme_screenshots/` (default OFF; pulls in `nothofagus_test_helpers` for PNG I/O, same standalone pattern as the Visual Tests Explorer). A re-runnable headless utility that renders one PNG per advertised feature into `media/feature_*.png` for embedding in `README.md`. **Build it against a Vulkan preset** (e.g. `linux-release-headless-vulkan`): the OpenGL `GL_FRONT` screenshot path returns blank in a hidden window, so headless capture needs the Vulkan offscreen-image path. The tool fixes `pixelSize=1` (the headless screenshot copies a `gameSize` region from the framebuffer origin, so any larger pixelSize captures only a corner) and nearest-neighbor upscales each capture for crisp display.
 
 ## Architecture
 

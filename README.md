@@ -156,6 +156,8 @@ Nothofagus::TextureId texId = canvas.addTexture(tex);
 canvas.addBellota({{{x, y}}, texId});
 ```
 
+<img src="media/feature_direct_texture.png" alt="Direct textures — raw RGBA sprites" width="480">
+
 → [examples/hello_direct_texture.cpp](examples/hello_direct_texture.cpp)
 
 ### Text rendering
@@ -179,6 +181,8 @@ Nothofagus::writeChar(glyph, 0xD, 0, 0, Nothofagus::FontType::Hiragana);
 
 canvas.addBellota({{{x, y}}, canvas.addTexture(banner)});
 ```
+
+<img src="media/feature_text.png" alt="In-game bitmap text rendering" width="480">
 
 → [examples/hello_text.cpp](examples/hello_text.cpp)
 
@@ -242,6 +246,8 @@ canvas.tilemap(tilemapId).setCell({worldX, worldY}, layerIndex);
 canvas.tilemapExplorer(explorerId).setCamera({scrollX, scrollY});
 ```
 
+<img src="media/feature_tilemap.png" alt="Palette-indexed tilemap checkerboard" width="420">
+
 → [examples/hello_tilemap.cpp](examples/hello_tilemap.cpp),
 [examples/hello_tilemap_huge.cpp](examples/hello_tilemap_huge.cpp),
 [examples/hello_sparsemap.cpp](examples/hello_sparsemap.cpp)
@@ -261,6 +267,8 @@ auto meshId = canvas.addMesh(mesh);
 canvas.addBellota({{{x, y}}, texId, meshId});
 ```
 
+<img src="media/feature_mesh.png" alt="Custom triangle, pentagon and quad meshes" width="480">
+
 → [examples/hello_mesh.cpp](examples/hello_mesh.cpp)
 
 ### Render to texture
@@ -277,6 +285,9 @@ canvas.run([&](float dt) {
     canvas.renderTo(renderTargetId, {sourceBellotaA, sourceBellotaB});
 });
 ```
+
+<img src="media/feature_render_to_texture.png" alt="Sprites rendered into an off-screen texture" width="420">
+<img src="media/feature_nested_render_targets.png" alt="Nested render targets feeding each other" width="420">
 
 → [examples/hello_render_to_texture.cpp](examples/hello_render_to_texture.cpp),
 [examples/hello_nested_render_targets.cpp](examples/hello_nested_render_targets.cpp)
@@ -327,6 +338,8 @@ canvas.run([&](float) {
 });
 ```
 
+<img src="media/feature_markdown.png" alt="Markdown rendered into an ImGui window" width="480">
+
 → [examples/hello_markdown.cpp](examples/hello_markdown.cpp)
 
 ### File browser
@@ -368,6 +381,8 @@ the canvas as a regular texture.
 Nothofagus::DirectTexture shot = canvas.takeScreenshot();
 Nothofagus::TextureData data = shot.generateTextureData();   // raw RGBA, top-to-bottom
 ```
+
+<img src="media/feature_screenshots.png" alt="Captured frame shown as a picture-in-picture thumbnail" width="420">
 
 → [examples/hello_screenshot.cpp](examples/hello_screenshot.cpp)
 

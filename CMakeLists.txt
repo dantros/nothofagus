@@ -327,6 +327,14 @@ if (${NOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER})
     add_subdirectory("tests/visual_tests_explorer")
 endif()
 
+# README screenshots: a re-runnable headless tool that renders one PNG per advertised
+# feature into media/ for embedding in README.md. Pulls in the shared test-helpers lib
+# for DirectTexture PNG I/O. OFF by default (dev utility, can be built without tests).
+option(NOTHOFAGUS_BUILD_README_SCREENSHOTS "Build the README screenshot generator tool?" OFF)
+if (${NOTHOFAGUS_BUILD_README_SCREENSHOTS})
+    add_subdirectory("tools/generate_readme_screenshots")
+endif()
+
 option(NOTHOFAGUS_BUILD_DOCS "Build Nothofagus documentation? [WIP]" OFF)
 if (${NOTHOFAGUS_BUILD_DOCS})
     find_package(Doxygen QUIET)
