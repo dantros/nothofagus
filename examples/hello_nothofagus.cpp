@@ -62,6 +62,38 @@ int main()
     Nothofagus::BellotaId bellotaId3 = canvas.addBellota({ {{50.0f, 50.0f}, 4.0}, textureId2 });
     Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {{100.0f, 50.0f}, 2.0}, textureId2 });
 
+    // "CG" crate, hand-encoded from cg_box.png (16x16). Static sprite — no animation.
+    // Palette ids: 0 transparent, 1 black outline/letters, 2 yellow, 3 brown shadow, 4 white highlight.
+    Nothofagus::ColorPallete cgBoxPallete{
+        {0.0,  0.0,  0.0,  0.0},   // 0 transparent
+        {0.0,  0.0,  0.0,  1.0},   // 1 black
+        {0.97, 0.85, 0.13, 1.0},   // 2 yellow
+        {0.53, 0.35, 0.09, 1.0},   // 3 brown shadow
+        {1.0,  1.0,  1.0,  1.0},   // 4 white highlight
+    };
+    Nothofagus::IndirectTexture cgBox({16, 16}, {0.0, 0.0, 0.0, 0.0});
+    cgBox.setPallete(cgBoxPallete)
+        .setPixels({
+            0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,
+            0,1,1,4,4,4,4,2,2,2,2,2,2,1,1,0,
+            1,1,4,4,2,2,2,2,2,2,2,2,2,2,1,1,
+            1,4,4,1,1,1,2,2,2,1,1,1,2,2,3,1,
+            1,4,1,1,1,1,1,2,1,1,1,1,1,2,3,1,
+            1,4,1,1,2,1,1,2,1,1,2,2,2,2,3,1,
+            1,4,1,1,2,2,1,2,1,2,2,2,2,2,3,1,
+            1,2,1,1,2,2,2,2,1,2,1,1,1,2,3,1,
+            1,2,1,1,2,2,2,2,1,2,1,1,1,2,3,1,
+            1,2,1,1,2,2,1,2,1,2,2,2,1,2,3,1,
+            1,2,1,1,1,1,1,2,1,1,1,1,1,2,3,1,
+            1,2,2,1,1,1,2,2,2,1,1,1,2,2,3,1,
+            1,2,2,2,2,2,2,2,2,2,2,2,2,2,3,1,
+            1,1,1,2,2,2,2,2,2,2,2,2,2,3,1,1,
+            0,1,1,3,3,3,3,3,3,3,3,3,3,1,1,0,
+            0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,
+        });
+    Nothofagus::TextureId cgBoxTextureId = canvas.addTexture(cgBox);
+    Nothofagus::BellotaId cgBoxBellotaId = canvas.addBellota({ {{120.0f, 75.0f}, 3.0}, cgBoxTextureId });
+
     float time = 0.0f;
     bool rotate = true;
     bool visible = true;
