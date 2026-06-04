@@ -57,69 +57,10 @@ int main()
     );
     Nothofagus::TextureId textureId2 = canvas.addTexture(texture2);
 
-
-    Nothofagus::ColorPallete cgBoxPallete{
-        {0.0,  0.0,  0.0,  0.0},   // 0 transparent
-        {0.0,  0.0,  0.0,  1.0},   // 1 black
-        {0.97, 0.85, 0.13, 1.0},   // 2 yellow
-        {0.53, 0.35, 0.09, 1.0},   // 3 brown shadow
-        {1.0,  1.0,  1.0,  1.0},   // 4 white highlight
-    };
-    Nothofagus::IndirectTexture cgBox({16, 16}, {0.0, 0.0, 0.0, 0.0});
-    cgBox.setPallete(cgBoxPallete)
-        .setPixels({
-            0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,
-            0,1,1,4,4,4,4,2,2,2,2,2,2,1,1,0,
-            1,1,4,4,2,2,2,2,2,2,2,2,2,2,1,1,
-            1,4,4,1,1,1,2,2,2,1,1,1,2,2,3,1,
-            1,4,1,1,1,1,1,2,1,1,1,1,1,2,3,1,
-            1,4,1,1,2,1,1,2,1,1,2,2,2,2,3,1,
-            1,4,1,1,2,2,1,2,1,2,2,2,2,2,3,1,
-            1,2,1,1,2,2,2,2,1,2,1,1,1,2,3,1,
-            1,2,1,1,2,2,2,2,1,2,1,1,1,2,3,1,
-            1,2,1,1,2,2,1,2,1,2,2,2,1,2,3,1,
-            1,2,1,1,1,1,1,2,1,1,1,1,1,2,3,1,
-            1,2,2,1,1,1,2,2,2,1,1,1,2,2,3,1,
-            1,2,2,2,2,2,2,2,2,2,2,2,2,2,3,1,
-            1,1,1,2,2,2,2,2,2,2,2,2,2,3,1,1,
-            0,1,1,3,3,3,3,3,3,3,3,3,3,1,1,0,
-            0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,
-        });
-    Nothofagus::TextureId cgBoxTextureId = canvas.addTexture(cgBox);
-
-    Nothofagus::ColorPallete booPallete{
-        {0.0, 0.0, 0.0, 0.0},  // 0 transparent
-        {0.0, 0.0, 0.0, 1.0},  // 1 black
-        {1.0, 1.0, 1.0, 1.0},  // 2 white body
-        {0.8, 0.8, 0.8, 1.0},  // 3 gray shading
-    };
-    Nothofagus::IndirectTexture booTexture({16, 16}, {0.0, 0.0, 0.0, 0.0});
-    booTexture.setPallete(booPallete)
-        .setPixels({
-            0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,
-            0,0,1,1,2,2,2,2,2,2,2,1,1,1,0,0,
-            0,0,1,2,2,2,2,2,2,2,2,2,3,1,1,0,
-            0,1,1,2,2,2,2,2,2,2,2,2,3,3,1,0,
-            0,1,2,2,1,1,2,2,2,2,2,1,1,3,1,0,
-            1,1,2,2,1,1,1,2,2,2,1,1,1,3,1,1,
-            1,2,2,2,1,1,2,1,2,1,1,2,1,3,3,1,
-            1,2,2,1,1,1,2,1,2,1,1,2,1,1,3,1,
-            1,2,2,2,1,1,1,2,2,2,1,1,1,3,3,1,
-            1,2,2,2,2,2,2,2,2,2,2,2,2,3,3,1,
-            1,2,2,2,2,2,2,2,2,2,2,2,3,3,3,1,
-            1,2,2,2,2,2,2,3,3,2,3,3,3,3,3,1,
-            1,2,2,3,2,2,3,3,3,3,3,3,3,3,3,1,
-            1,2,3,1,3,3,3,1,3,3,3,1,3,3,3,1,
-            1,2,1,1,1,3,1,1,1,3,1,1,1,3,1,1,
-            1,1,1,0,1,1,1,0,1,1,1,0,1,1,1,0,
-        });
-    Nothofagus::TextureId booTextureId = canvas.addTexture(booTexture);
-
     Nothofagus::BellotaId bellotaId1 = canvas.addBellota({{{10.0f, 10.0f}}, textureId1});
-    Nothofagus::BellotaId bellotaId2 = canvas.addBellota({{{20.0f, 10.0f}}, booTextureId});
+    Nothofagus::BellotaId bellotaId2 = canvas.addBellota({{{20.0f, 10.0f}}, textureId1});
     Nothofagus::BellotaId bellotaId3 = canvas.addBellota({ {{50.0f, 50.0f}, 4.0}, textureId2 });
-    // The static (non-rotating) green "N" is replaced by the CG crate.
-    Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {{100.0f, 50.0f}, 2.0}, cgBoxTextureId });
+    Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {{100.0f, 50.0f}, 2.0}, textureId2 });
 
     float time = 0.0f;
     bool rotate = true;
