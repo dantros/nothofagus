@@ -4,30 +4,20 @@
 #include <vector>
 #include <nothofagus.h>
 
-// Boo ghost animation demo.
-//
-// The sprite is hand-encoded from boo.png (16x16). Its eyes track the user's
-// active direction (left / right / up, recentering to a forward gaze when no
-// direction key is held), and the whole ghost bobs up and down across 2 frames
-// to fake a levitation float.
-//
-// Palette ids (index == palette slot): 0 transparent, 1 black, 2 white, 3 gray.
-// Array row 0 renders at the TOP of the sprite, so the grid below reads upright.
+template <std::size_t COL, std::size_t ROW>
+using Grid = std::array<Nothofagus::Pixel::ColorId, COL * ROW>;
 
-namespace
+std::array<Grid<16, 16>, 8> makeBooLayers()
 {
-    using Grid = std::array<Nothofagus::Pixel::ColorId, 16 * 16>;
-
-    // Forward-gaze Boo, quantized straight from boo.png.
-    constexpr Grid booBase{
+    constexpr Grid<16, 16> booBase{
         0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,
         0,0,1,1,2,2,2,2,2,2,2,1,1,0,0,0,
         0,0,1,2,2,2,2,2,2,2,2,2,3,1,0,0,
         0,1,1,2,2,2,2,2,2,2,2,2,3,3,1,0,
         0,1,2,2,1,1,2,2,2,2,2,1,1,3,1,0,
         1,1,2,2,1,1,1,2,2,2,1,1,1,3,1,1,
-        1,2,2,2,1,1,2,1,2,1,1,2,1,3,3,1,
-        1,2,2,1,1,1,2,1,2,1,1,2,1,1,3,1,
+        1,2,2,2,1,1,1,1,2,1,1,1,1,3,3,1,
+        1,2,2,1,1,1,1,1,2,1,1,1,1,1,3,1,
         1,2,2,2,1,1,1,2,2,2,1,1,1,3,3,1,
         1,2,2,2,2,2,2,2,2,2,2,2,2,3,3,1,
         1,2,2,2,2,2,2,2,2,2,2,2,3,3,3,1,
@@ -38,84 +28,99 @@ namespace
         1,1,1,0,1,1,1,0,1,1,1,0,1,1,1,0,
     };
 
-    Nothofagus::Pixel::ColorId& at(Grid& grid, int col, int row)
+    auto setPixelId = [](Grid<16, 16>& grid, int col, int row, Nothofagus::Pixel::ColorId pixelId)
+    {
+        grid[static_cast<std::size_t>(row) * 16 + static_cast<std::size_t>(col)] = pixelId;
+    };
+
+    auto getPixelId = [](const Grid<16, 2>& grid, int col, int row)
     {
         return grid[static_cast<std::size_t>(row) * 16 + static_cast<std::size_t>(col)];
-    }
+    };
 
-    // Clear the whole eye band to white so eyes can be redrawn cleanly anywhere.
-    void eraseEyes(Grid& grid)
-    {
-        for (int row = 4; row <= 8; ++row)
-            for (int col = 4; col <= 11; ++col)
-                at(grid, col, row) = 2;
-    }
+    Nothofagus::Pixel::ColorId eyeColor = 4;
 
-    // Stamp a 2x5 black eye, but only over white pixels so a shifted eye can
-    // never punch black into the transparent silhouette margin.
-    void drawEye(Grid& grid, int col, int row)
+    Grid<16, 16> idleBoo = booBase;
+    // left Eye
+    setPixelId(idleBoo, 5, 6, eyeColor);
+    setPixelId(idleBoo, 5, 7, eyeColor);
+
+    // right Eye
+    setPixelId(idleBoo, 11, 6, eyeColor);
+    setPixelId(idleBoo, 11, 7, eyeColor);
+
+    Grid<16, 16> rightBoo = booBase;
+    // left Eye
+    setPixelId(rightBoo, 6, 6, eyeColor);
+    setPixelId(rightBoo, 6, 7, eyeColor);
+
+    // right Eye
+    setPixelId(rightBoo, 12, 6, eyeColor);
+    setPixelId(rightBoo, 12, 7, eyeColor);
+
+    Grid<16, 16> leftBoo = booBase;
+    // left Eye
+    setPixelId(leftBoo, 4, 6, eyeColor);
+    setPixelId(leftBoo, 4, 7, eyeColor);
+
+    // right Eye
+    setPixelId(leftBoo, 10, 6, eyeColor);
+    setPixelId(leftBoo, 10, 7, eyeColor);
+
+    Grid<16, 16> upBoo = booBase;
+    // left Eye
+    setPixelId(upBoo, 5, 5, eyeColor);
+    setPixelId(upBoo, 5, 6, eyeColor);
+
+    // right Eye
+    setPixelId(upBoo, 11, 5, eyeColor);
+    setPixelId(upBoo, 11, 6, eyeColor);
+
+    Grid<16, 2> shiftedBottom{
+        1,1,3,1,1,1,3,1,1,1,3,1,1,1,3,1,
+        0,1,1,1,0,1,1,1,0,1,1,1,0,1,1,1,
+    };
+
+    auto overlayBottom = [&setPixelId, &getPixelId](const Grid<16, 16>& base, const Grid<16, 2>& bottom)
     {
-        for (int dy = 0; dy < 5; ++dy)
-            for (int dx = 0; dx < 2; ++dx)
+        Grid<16, 16> output = base;
+        for (std::size_t col = 0; col < 16; col++)
+        {
+            for (std::size_t row = 14; row < 16; row++)
             {
-                const int x = col + dx, y = row + dy;
-                if (x >= 0 && x < 16 && y >= 0 && y < 16 && at(grid, x, y) == 2)
-                    at(grid, x, y) = 1;
+                Nothofagus::Pixel::ColorId bottomColor = getPixelId(bottom, col, row - 14);
+                setPixelId(output, col, row, bottomColor);
             }
-    }
+        }
+        return output;
+    };
 
-    // Forward eyes sit at (4,4) and (10,4); offsets shift the gaze.
-    Grid makeFace(int dCol, int dRow)
-    {
-        Grid grid = booBase;
-        eraseEyes(grid);
-        drawEye(grid, 4 + dCol, 4 + dRow);
-        drawEye(grid, 10 + dCol, 4 + dRow);
-        return grid;
-    }
+    std::array<Grid<16, 16>, 8> layers{
+        idleBoo , overlayBottom(idleBoo , shiftedBottom),  // 0, 1
+        leftBoo , overlayBottom(leftBoo , shiftedBottom),  // 2, 3
+        rightBoo, overlayBottom(rightBoo, shiftedBottom),  // 4, 5
+        upBoo   , overlayBottom(upBoo   , shiftedBottom),  // 6, 7
+    };
 
-    // Levitation bob: the "high" frame is the ghost at rest (full sprite); the
-    // "low" frame sinks the whole ghost down one row, the vacated top row going
-    // transparent. Sinking (rather than rising) clips only the bottom fringe
-    // instead of the top-of-head outline, so the silhouette stays clean.
-    Grid levitate(const Grid& face, bool high)
-    {
-        if (high)
-            return face;
-        Grid shifted{};
-        for (int row = 0; row < 15; ++row)
-            for (int col = 0; col < 16; ++col)
-                at(shifted, col, row + 1) = face[static_cast<std::size_t>(row) * 16 + col];
-        return shifted;
-    }
+    return layers;
 }
 
 int main()
 {
-    spdlog::info("Boo Ghost Animation");
+    spdlog::info("Boo Animation");
 
-    Nothofagus::Canvas canvas({150, 100}, "Boo Ghost", {0.15, 0.15, 0.2}, 6);
+    Nothofagus::Canvas canvas({150, 100}, "Boo", {0.15, 0.15, 0.2}, 6);
 
     // id == palette index; id 0 stays transparent regardless of clear color.
     Nothofagus::ColorPallete pallete{
         {0.0, 0.0, 0.0, 0.0},  // 0 transparent
         {0.0, 0.0, 0.0, 1.0},  // 1 black  (outline / eyes / mouth)
         {1.0, 1.0, 1.0, 1.0},  // 2 white  (body)
-        {0.5, 0.5, 0.5, 1.0},  // 3 gray   (shading)
+        {0.8, 0.8, 0.8, 1.0},  // 3 gray   (shading)
+        {1.0, 1.0, 1.0, 1.0},  // 4 white  (eye color)
     };
 
-    // 8 layers = {forward, left, right, up} x {bob-low, bob-high}.
-    const Grid forwardFace = makeFace(0, 0);
-    const Grid leftFace    = makeFace(-1, 0);
-    const Grid rightFace   = makeFace(1, 0);
-    const Grid upFace      = makeFace(0, -1);
-
-    const std::array<Grid, 8> layers{
-        levitate(forwardFace, false), levitate(forwardFace, true),  // 0, 1
-        levitate(leftFace,    false), levitate(leftFace,    true),  // 2, 3
-        levitate(rightFace,   false), levitate(rightFace,   true),  // 4, 5
-        levitate(upFace,      false), levitate(upFace,      true),  // 6, 7
-    };
+    const std::array<Grid<16, 16>, 8> layers = makeBooLayers();
 
     Nothofagus::IndirectTexture texture({16, 16}, glm::vec4(0, 0, 0, 0), 8);
     texture.setPallete(pallete);
@@ -123,25 +128,25 @@ int main()
         texture.setPixels(std::span<const Nothofagus::Pixel::ColorId>(layers[layer]), layer);
 
     Nothofagus::TextureId textureId = canvas.addTexture(texture);
-    Nothofagus::BellotaId ghostId = canvas.addBellota({{{75.0f, 50.0f}}, textureId});
+    Nothofagus::BellotaId booId = canvas.addBellota({{{75.0f, 50.0f}}, textureId});
 
-    // Each state is a 2-frame loop over its levitation pair, so the ghost keeps
+    // Each state is a 2-frame loop over its levitation pair, so the boo keeps
     // bobbing in every gaze direction.
-    Nothofagus::AnimationState forward({0, 1}, {300.0f, 300.0f}, "forward");
-    Nothofagus::AnimationState left   ({2, 3}, {300.0f, 300.0f}, "left");
-    Nothofagus::AnimationState right  ({4, 5}, {300.0f, 300.0f}, "right");
-    Nothofagus::AnimationState up     ({6, 7}, {300.0f, 300.0f}, "up");
+    Nothofagus::AnimationState idle({0, 1}, {300.0f, 300.0f}, "forward");
+    Nothofagus::AnimationState left ({2, 3}, {300.0f, 300.0f}, "left");
+    Nothofagus::AnimationState right({4, 5}, {300.0f, 300.0f}, "right");
+    Nothofagus::AnimationState up   ({6, 7}, {300.0f, 300.0f}, "up");
 
-    Nothofagus::AnimationStateMachine machine(canvas.bellota(ghostId));
-    machine.addState("forward", &forward);
-    machine.addState("left",    &left);
-    machine.addState("right",   &right);
-    machine.addState("up",      &up);
-    machine.setState("forward");
+    Nothofagus::AnimationStateMachine machine(canvas.bellota(booId));
+    machine.addState("idle", &idle);
+    machine.addState("left", &left);
+    machine.addState("right", &right);
+    machine.addState("up", &up);
+    machine.setState("idle");
 
     auto update = [&](float dt)
     {
-        canvas.bellota(ghostId).transform().scale() = glm::vec2(5.0f, 5.0f);
+        canvas.bellota(booId).transform().scale() = glm::vec2(5.0f, 5.0f);
         machine.update(dt);
     };
 
@@ -152,27 +157,27 @@ int main()
     auto goLeft    = [&]() { machine.goToState("left"); };
     auto goRight   = [&]() { machine.goToState("right"); };
     auto goUp      = [&]() { machine.goToState("up"); };
-    auto goForward = [&]() { machine.goToState("forward"); };
+    auto goIdle    = [&]() { machine.goToState("idle"); };
 
     using Nothofagus::Key;
     using Nothofagus::DiscreteTrigger;
     for (Key key : {Key::LEFT, Key::A})
     {
         controller.registerAction({key, DiscreteTrigger::Press},   goLeft);
-        controller.registerAction({key, DiscreteTrigger::Release}, goForward);
+        controller.registerAction({key, DiscreteTrigger::Release}, goIdle);
     }
     for (Key key : {Key::RIGHT, Key::D})
     {
         controller.registerAction({key, DiscreteTrigger::Press},   goRight);
-        controller.registerAction({key, DiscreteTrigger::Release}, goForward);
+        controller.registerAction({key, DiscreteTrigger::Release}, goIdle);
     }
     for (Key key : {Key::UP, Key::W})
     {
         controller.registerAction({key, DiscreteTrigger::Press},   goUp);
-        controller.registerAction({key, DiscreteTrigger::Release}, goForward);
+        controller.registerAction({key, DiscreteTrigger::Release}, goIdle);
     }
-    controller.registerAction({Key::DOWN, DiscreteTrigger::Press}, goForward);
-    controller.registerAction({Key::S,    DiscreteTrigger::Press}, goForward);
+    controller.registerAction({Key::DOWN, DiscreteTrigger::Press}, goIdle);
+    controller.registerAction({Key::S,    DiscreteTrigger::Press}, goIdle);
 
     canvas.run(update, controller);
 
