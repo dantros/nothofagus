@@ -1,173 +1,182 @@
-#include <iostream>
+#include <array>
+#include <span>
 #include <string>
 #include <vector>
-#include <cmath>
 #include <nothofagus.h>
+
+template <std::size_t COL, std::size_t ROW>
+using Grid = std::array<Nothofagus::Pixel::ColorId, COL * ROW>;
+
+std::array<Grid<16, 16>, 8> makeBooLayers()
+{
+    constexpr Grid<16, 16> booBase{
+        0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,
+        0,0,1,1,2,2,2,2,2,2,2,1,1,1,0,0,
+        0,0,1,2,2,2,2,2,2,2,2,2,3,1,0,0,
+        0,1,1,2,2,2,2,2,2,2,2,2,3,1,1,0,
+        0,1,2,2,1,1,2,2,2,2,2,1,1,3,1,0,
+        1,1,2,2,1,1,1,2,2,2,1,1,1,3,1,1,
+        1,2,2,2,1,1,1,1,2,1,1,1,1,3,3,1,
+        1,2,2,1,1,1,1,1,2,1,1,1,1,1,3,1,
+        1,2,2,2,1,1,1,2,2,2,1,1,1,3,3,1,
+        1,2,2,2,2,2,2,2,2,2,2,2,2,3,3,1,
+        1,2,2,2,2,2,2,2,2,2,2,2,3,3,3,1,
+        1,2,2,2,2,2,2,3,3,2,3,3,3,3,3,1,
+        1,2,2,3,2,2,3,3,3,3,3,3,3,3,3,1,
+        1,2,3,1,3,3,3,1,3,3,3,1,3,3,3,1,
+        1,2,1,1,1,3,1,1,1,3,1,1,1,3,1,1,
+        1,1,1,0,1,1,1,0,1,1,1,0,1,1,1,0,
+    };
+
+    auto setPixelId = [](Grid<16, 16>& grid, int col, int row, Nothofagus::Pixel::ColorId pixelId)
+    {
+        grid[static_cast<std::size_t>(row) * 16 + static_cast<std::size_t>(col)] = pixelId;
+    };
+
+    auto getPixelId = [](const Grid<16, 2>& grid, int col, int row)
+    {
+        return grid[static_cast<std::size_t>(row) * 16 + static_cast<std::size_t>(col)];
+    };
+
+    Nothofagus::Pixel::ColorId eyeColor = 4;
+
+    Grid<16, 16> idleBoo = booBase;
+    // left Eye
+    setPixelId(idleBoo, 5, 6, eyeColor);
+    setPixelId(idleBoo, 5, 7, eyeColor);
+
+    // right Eye
+    setPixelId(idleBoo, 11, 6, eyeColor);
+    setPixelId(idleBoo, 11, 7, eyeColor);
+
+    Grid<16, 16> rightBoo = booBase;
+    // left Eye
+    setPixelId(rightBoo, 6, 6, eyeColor);
+    setPixelId(rightBoo, 6, 7, eyeColor);
+
+    // right Eye
+    setPixelId(rightBoo, 12, 6, eyeColor);
+    setPixelId(rightBoo, 12, 7, eyeColor);
+
+    Grid<16, 16> leftBoo = booBase;
+    // left Eye
+    setPixelId(leftBoo, 4, 6, eyeColor);
+    setPixelId(leftBoo, 4, 7, eyeColor);
+
+    // right Eye
+    setPixelId(leftBoo, 10, 6, eyeColor);
+    setPixelId(leftBoo, 10, 7, eyeColor);
+
+    Grid<16, 16> upBoo = booBase;
+    // left Eye
+    setPixelId(upBoo, 5, 5, eyeColor);
+    setPixelId(upBoo, 5, 6, eyeColor);
+
+    // right Eye
+    setPixelId(upBoo, 11, 5, eyeColor);
+    setPixelId(upBoo, 11, 6, eyeColor);
+
+    Grid<16, 2> shiftedBottom{
+        1,1,3,1,1,1,3,1,1,1,3,1,1,1,3,1,
+        0,1,1,1,0,1,1,1,0,1,1,1,0,1,1,1,
+    };
+
+    auto overlayBottom = [&setPixelId, &getPixelId](const Grid<16, 16>& base, const Grid<16, 2>& bottom)
+    {
+        Grid<16, 16> output = base;
+        for (std::size_t col = 0; col < 16; col++)
+        {
+            for (std::size_t row = 14; row < 16; row++)
+            {
+                Nothofagus::Pixel::ColorId bottomColor = getPixelId(bottom, col, row - 14);
+                setPixelId(output, col, row, bottomColor);
+            }
+        }
+        return output;
+    };
+
+    std::array<Grid<16, 16>, 8> layers{
+        idleBoo , overlayBottom(idleBoo , shiftedBottom),  // 0, 1
+        leftBoo , overlayBottom(leftBoo , shiftedBottom),  // 2, 3
+        rightBoo, overlayBottom(rightBoo, shiftedBottom),  // 4, 5
+        upBoo   , overlayBottom(upBoo   , shiftedBottom),  // 6, 7
+    };
+
+    return layers;
+}
 
 int main()
 {
-    // Initial log message using spdlog
-    spdlog::info("Animation State Machine");
+    spdlog::info("Boo Animation");
 
-    // Create a canvas for rendering with dimensions, title, background color, and pixel size
-    Nothofagus::Canvas canvas({150, 100}, "Hello Nothofagus", {0.7, 0.7, 0.7}, 6);
+    Nothofagus::Canvas canvas({150, 100}, "Boo - WASD to move the eyes", {0.15, 0.15, 0.2}, 6);
 
-    // Define a color palette with 7 colors (RGBA format)
+    // id == palette index; id 0 stays transparent regardless of clear color.
     Nothofagus::ColorPallete pallete{
-        {0.0, 0.0, 0.0, 1.0},  // Black
-        {1.0, 0.0, 0.0, 1.0},  // Red
-        {0.0, 1.0, 0.0, 1.0},  // Green
-        {0.0, 0.0, 1.0, 1.0},  // Blue
-        {1.0, 1.0, 0.0, 1.0},  // Yellow
-        {1.0, 0.0, 1.0, 1.0},  // Magenta
-        {1.0, 1.0, 1.0, 1.0}   // White
+        {0.0, 0.0, 0.0, 0.0},  // 0 transparent
+        {0.0, 0.0, 0.0, 1.0},  // 1 black  (outline / eyes / mouth)
+        {1.0, 1.0, 1.0, 1.0},  // 2 white  (body)
+        {0.8, 0.8, 0.8, 1.0},  // 3 gray   (shading)
+        {1.0, 1.0, 1.0, 1.0},  // 4 white  (eye color)
     };
-  
-    // Create a Texture with 4x4 textures and 7 layers
-    Nothofagus::IndirectTexture textureArray({4, 4}, glm::vec4(0,0,0,1), 10);
 
-    // Initialize each layer in the texture array with specific color indices
-    textureArray
-        .setPallete(pallete)
-        .setPixels({
-            0,1,1,0,
-            0,1,1,0,
-            0,0,0,0,
-            0,0,0,0
-        }, 0)
-        .setPixels({
-            0,0,0,0,
-            0,0,0,0,
-            0,1,1,0,
-            0,1,1,0
-        }, 1)
-        .setPixels({
-            3,3,0,0,
-            3,3,0,0,
-            0,0,0,0,
-            0,0,0,0
-        }, 2)
-        .setPixels({
-            4,4,0,0,
-            4,4,0,0,
-            0,0,0,0,
-            0,0,0,0
-            }, 3)
-        .setPixels({
-            0,0,3,3,
-            0,0,3,3,
-            0,0,0,0,
-            0,0,0,0
-        }, 4)
-        .setPixels({
-            0,0,4,4,
-            0,0,4,4,
-            0,0,0,0,
-            0,0,0,0
-        }, 5)
-        .setPixels({
-            0,0,0,0,
-            0,0,0,0,
-            5,5,0,0,
-            5,5,0,0
-        }, 6)
-        .setPixels({
-            0,0,0,0,
-            0,0,0,0,
-            6,6,0,0,
-            6,6,0,0
-        }, 7)
-        .setPixels({
-            0,0,0,0,
-            0,0,0,0,
-            0,0,5,5,
-            0,0,5,5
-            }, 8)
-        .setPixels({
-            0,0,0,0,
-            0,0,0,0,
-            0,0,6,6,
-            0,0,6,6
-            }, 9);
+    const std::array<Grid<16, 16>, 8> layers = makeBooLayers();
 
-    // Add the Texture to the canvas and create an Bellota using it
-    Nothofagus::TextureId textureId = canvas.addTexture(textureArray);
-    Nothofagus::BellotaId animatedBellotaId = canvas.addBellota({{{75.0f, 50.0f}}, textureId, 5});
+    Nothofagus::IndirectTexture texture({16, 16}, glm::vec4(0, 0, 0, 0), 8);
+    texture.setPallete(pallete);
+    for (std::size_t layer = 0; layer < layers.size(); ++layer)
+        texture.setPixels(std::span<const Nothofagus::Pixel::ColorId>(layers[layer]), layer);
 
-    // Define animation states (layers, times, names)
-    Nothofagus::AnimationState animation1({0}, {500.0f}, "W");
-    Nothofagus::AnimationState animation2({1}, {500.0f}, "S");
-    Nothofagus::AnimationState animation4({2, 3}, { 500.0f, 500.0f }, "Wleft");
-    Nothofagus::AnimationState animation5({4, 5}, { 500.0f, 500.0f }, "Wright");
-    Nothofagus::AnimationState animation6({6, 7}, { 500.0f, 500.0f }, "Sleft");
-    Nothofagus::AnimationState animation7({8, 9}, { 500.0f, 500.0f }, "Sright");
+    Nothofagus::TextureId textureId = canvas.addTexture(texture);
+    Nothofagus::BellotaId booId = canvas.addBellota({{{75.0f, 50.0f}}, textureId});
 
-    // Create an AnimationStateMachine associated with the Bellota
-    Nothofagus::AnimationStateMachine textureArrayAnimationTree(canvas.bellota(animatedBellotaId));
+    // Each state is a 2-frame loop over its levitation pair, so the boo keeps
+    // bobbing in every gaze direction.
+    Nothofagus::AnimationState idle({0, 1}, {300.0f, 300.0f}, "forward");
+    Nothofagus::AnimationState left ({2, 3}, {300.0f, 300.0f}, "left");
+    Nothofagus::AnimationState right({4, 5}, {300.0f, 300.0f}, "right");
+    Nothofagus::AnimationState up   ({6, 7}, {300.0f, 300.0f}, "up");
 
-    // Add animation states to the state machine
-    textureArrayAnimationTree.addState("W", &animation1);
-    textureArrayAnimationTree.addState("S", &animation2);
-    textureArrayAnimationTree.addState("Wleft", &animation4);
-    textureArrayAnimationTree.addState("Wright", &animation5);
-    textureArrayAnimationTree.addState("Sleft", &animation6);
-    textureArrayAnimationTree.addState("Sright", &animation7);
+    Nothofagus::AnimationStateMachine machine(canvas.bellota(booId));
+    machine.addState("idle", &idle);
+    machine.addState("left", &left);
+    machine.addState("right", &right);
+    machine.addState("up", &up);
+    machine.setState("idle");
 
-    // Define transitions for "right" movement
-    std::string right_t = "right";
-    textureArrayAnimationTree.newAnimationTransition("W", right_t, "Wright");
-    textureArrayAnimationTree.newAnimationTransition("Wleft", right_t, "Wright");
-    textureArrayAnimationTree.newAnimationTransition("Wright", right_t, "Wright");
-    textureArrayAnimationTree.newAnimationTransition("S", right_t, "Sright");
-    textureArrayAnimationTree.newAnimationTransition("Sleft", right_t, "Sright");
-    textureArrayAnimationTree.newAnimationTransition("Sright", right_t, "Sright");
-    
-    // Define transitions for "left" movement
-    std::string left_t = "left";
-    textureArrayAnimationTree.newAnimationTransition("W", left_t, "Wleft");
-    textureArrayAnimationTree.newAnimationTransition("Wright", left_t, "Wleft");
-    textureArrayAnimationTree.newAnimationTransition("Wleft", left_t, "Wleft");
-    textureArrayAnimationTree.newAnimationTransition("S", left_t, "Sleft");
-    textureArrayAnimationTree.newAnimationTransition("Sright", left_t, "Sleft");
-    textureArrayAnimationTree.newAnimationTransition("Sleft", left_t, "Sleft");
-    
-    // Set the initial animation state to "W"
-    textureArrayAnimationTree.setState("W");
-
-    // Game loop initialization
-    float time = 0.0f;
-
-    // Define the update function
     auto update = [&](float dt)
     {
-        time += dt;
-
-        // Update Bellota properties and AnimationStateMachine
-        Nothofagus::Bellota& animatedbellota = canvas.bellota(animatedBellotaId);
-        animatedbellota.transform().scale() = glm::vec2(10.0f, 10.0f);
-        textureArrayAnimationTree.update(dt);
+        canvas.bellota(booId).transform().scale() = glm::vec2(5.0f, 5.0f);
+        machine.update(dt);
     };
 
-    // Define input controller actions
+    // Hold a direction to look that way; release recenters the gaze. Arrows and
+    // WASD are aliases. (Known demo limitation: holding two direction keys and
+    // releasing one recenters even though the other is still down.)
     Nothofagus::Controller controller;
-    controller.registerAction({Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Press}, [&]()
-    {
-        textureArrayAnimationTree.goToState("W");
-    });
-    controller.registerAction({Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Press}, [&]()
-    {
-        textureArrayAnimationTree.goToState("S");
-    });
-    controller.registerAction({Nothofagus::Key::A, Nothofagus::DiscreteTrigger::Press}, [&]()
-    {
-        textureArrayAnimationTree.transition("left");
-    });
-    controller.registerAction({Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Press}, [&]()
-    {
-        textureArrayAnimationTree.transition("right");
-    });
+    auto goLeft    = [&]() { machine.goToState("left"); };
+    auto goRight   = [&]() { machine.goToState("right"); };
+    auto goUp      = [&]() { machine.goToState("up"); };
+    auto goIdle    = [&]() { machine.goToState("idle"); };
 
-    // Run the canvas with the update and controller logic
+    using Nothofagus::Key;
+    using Nothofagus::DiscreteTrigger;
+    for (Key key : {Key::LEFT, Key::A})
+    {
+        controller.registerAction({key, DiscreteTrigger::Press},   goLeft);
+    }
+    for (Key key : {Key::RIGHT, Key::D})
+    {
+        controller.registerAction({key, DiscreteTrigger::Press},   goRight);
+    }
+    for (Key key : {Key::UP, Key::W})
+    {
+        controller.registerAction({key, DiscreteTrigger::Press},   goUp);
+        controller.registerAction({key, DiscreteTrigger::Release}, goIdle);
+    }
+    controller.registerAction({Key::DOWN, DiscreteTrigger::Press}, goIdle);
+    controller.registerAction({Key::S,    DiscreteTrigger::Press}, goIdle);
+
     canvas.run(update, controller);
 
     return 0;
