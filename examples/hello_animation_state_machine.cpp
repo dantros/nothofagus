@@ -11,9 +11,9 @@ std::array<Grid<16, 16>, 8> makeBooLayers()
 {
     constexpr Grid<16, 16> booBase{
         0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,
-        0,0,1,1,2,2,2,2,2,2,2,1,1,0,0,0,
+        0,0,1,1,2,2,2,2,2,2,2,1,1,1,0,0,
         0,0,1,2,2,2,2,2,2,2,2,2,3,1,0,0,
-        0,1,1,2,2,2,2,2,2,2,2,2,3,3,1,0,
+        0,1,1,2,2,2,2,2,2,2,2,2,3,1,1,0,
         0,1,2,2,1,1,2,2,2,2,2,1,1,3,1,0,
         1,1,2,2,1,1,1,2,2,2,1,1,1,3,1,1,
         1,2,2,2,1,1,1,1,2,1,1,1,1,3,3,1,
@@ -109,7 +109,7 @@ int main()
 {
     spdlog::info("Boo Animation");
 
-    Nothofagus::Canvas canvas({150, 100}, "Boo", {0.15, 0.15, 0.2}, 6);
+    Nothofagus::Canvas canvas({150, 100}, "Boo - WASD to move the eyes", {0.15, 0.15, 0.2}, 6);
 
     // id == palette index; id 0 stays transparent regardless of clear color.
     Nothofagus::ColorPallete pallete{
@@ -164,12 +164,10 @@ int main()
     for (Key key : {Key::LEFT, Key::A})
     {
         controller.registerAction({key, DiscreteTrigger::Press},   goLeft);
-        controller.registerAction({key, DiscreteTrigger::Release}, goIdle);
     }
     for (Key key : {Key::RIGHT, Key::D})
     {
         controller.registerAction({key, DiscreteTrigger::Press},   goRight);
-        controller.registerAction({key, DiscreteTrigger::Release}, goIdle);
     }
     for (Key key : {Key::UP, Key::W})
     {
