@@ -10,9 +10,6 @@ jobs:
   rendering-tests:
     runs-on: ubuntu-latest
 
-    env:
-      GOLDEN_DIR: ${{ github.workspace }}/tests/visual/golden_headless_vulkan
-
     steps:
     - uses: actions/checkout@v4
       with:
@@ -71,7 +68,7 @@ jobs:
         echo "  cmake --preset linux-release-headless-vulkan-tests"
         echo "  cmake --build build/linux-release-headless-vulkan-tests --target rendering_tests"
         echo "  NOTHOFAGUS_RENDER_BACKEND=swiftshader UPDATE_GOLDEN=1 ./build/linux-release-headless-vulkan-tests/tests/visual/rendering_tests"
-        echo "Then commit the updated golden_headless_vulkan/*.png files."
+        echo "Then commit the updated golden/*.png files."
         UPDATE_GOLDEN=1 ./build/tests/visual/rendering_tests
         echo "--- Updated golden files ---"
-        ls -la tests/visual/golden_headless_vulkan/
+        ls -la tests/visual/golden/

@@ -7,17 +7,11 @@ target_link_libraries(rendering_tests PRIVATE nothofagus nothofagus_test_helpers
 # Point tests at the golden directory (source tree, so updates persist) and at a
 # directory to dump "actual" renders into for the Visual Tests Explorer.
 #
-# The default golden set is preset-aware: a headless (pure-offscreen) build is
-# the deterministic SwiftShader/CI lane and compares against golden_headless_vulkan/,
-# while windowed/GPU builds compare against golden/. The GOLDEN_DIR env var still
-# overrides either at runtime.
-if(NOTHOFAGUS_HEADLESS_VULKAN)
-    set(_nothofagus_golden_dir "${CMAKE_CURRENT_SOURCE_DIR}/golden_headless_vulkan")
-else()
-    set(_nothofagus_golden_dir "${CMAKE_CURRENT_SOURCE_DIR}/golden")
-endif()
+# There is a single canonical golden set, authored with SwiftShader (deterministic
+# CPU rasterizer). Every backend compares against it; the GOLDEN_DIR env var still
+# overrides at runtime.
 target_compile_definitions(rendering_tests PRIVATE
-    NOTHOFAGUS_GOLDEN_DIR="${_nothofagus_golden_dir}"
+    NOTHOFAGUS_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
     NOTHOFAGUS_ACTUAL_DIR="${CMAKE_CURRENT_SOURCE_DIR}/actual"
 )
 

@@ -319,8 +319,7 @@
                 "NOTHOFAGUS_BUILD_TESTS": "ON",
                 "NOTHOFAGUS_BUILD_TESTS_VISUAL": "ON",
                 "NOTHOFAGUS_BUILD_TESTS_NONVISUAL": "ON",
-                "NOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER": "ON",
-                "NOTHOFAGUS_FETCH_SWIFTSHADER": "ON"
+                "NOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER": "ON"
             }
         },
         {
@@ -341,8 +340,7 @@
                 "NOTHOFAGUS_BUILD_TESTS": "ON",
                 "NOTHOFAGUS_BUILD_TESTS_VISUAL": "ON",
                 "NOTHOFAGUS_BUILD_TESTS_NONVISUAL": "ON",
-                "NOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER": "ON",
-                "NOTHOFAGUS_FETCH_SWIFTSHADER": "ON"
+                "NOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER": "ON"
             }
         },
         {
