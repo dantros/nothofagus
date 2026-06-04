@@ -57,11 +57,6 @@ int main()
     );
     Nothofagus::TextureId textureId2 = canvas.addTexture(texture2);
 
-    Nothofagus::BellotaId bellotaId1 = canvas.addBellota({{{10.0f, 10.0f}}, textureId1});
-    Nothofagus::BellotaId bellotaId2 = canvas.addBellota({{{20.0f, 10.0f}}, textureId1});
-    Nothofagus::BellotaId bellotaId3 = canvas.addBellota({ {{50.0f, 50.0f}, 4.0}, textureId2 });
-    Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {{100.0f, 50.0f}, 2.0}, textureId2 });
-
     // "CG" crate, hand-encoded from cg_box.png (16x16). Static sprite — no animation.
     // Palette ids: 0 transparent, 1 black outline/letters, 2 yellow, 3 brown shadow, 4 white highlight.
     Nothofagus::ColorPallete cgBoxPallete{
@@ -92,7 +87,12 @@ int main()
             0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,
         });
     Nothofagus::TextureId cgBoxTextureId = canvas.addTexture(cgBox);
-    Nothofagus::BellotaId cgBoxBellotaId = canvas.addBellota({ {{120.0f, 75.0f}, 3.0}, cgBoxTextureId });
+
+    Nothofagus::BellotaId bellotaId1 = canvas.addBellota({{{10.0f, 10.0f}}, textureId1});
+    Nothofagus::BellotaId bellotaId2 = canvas.addBellota({{{20.0f, 10.0f}}, textureId1});
+    Nothofagus::BellotaId bellotaId3 = canvas.addBellota({ {{50.0f, 50.0f}, 4.0}, textureId2 });
+    // The static (non-rotating) green "N" is replaced by the CG crate.
+    Nothofagus::BellotaId bellotaId4 = canvas.addBellota({ {{100.0f, 50.0f}, 2.0}, cgBoxTextureId });
 
     float time = 0.0f;
     bool rotate = true;
