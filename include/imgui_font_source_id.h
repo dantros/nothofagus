@@ -30,4 +30,15 @@ enum class GlyphRange
     Vietnamese,
 };
 
+/// The optional built-in CJK font scripts. Each is embedded only when the
+/// matching NOTHOFAGUS_EMBED_CJK_* CMake option is ON; Canvas::embeddedCjkFontSource
+/// returns std::nullopt for a script that was not compiled in.
+enum class CjkScript
+{
+    SimplifiedChinese,
+    TraditionalChinese,
+    Japanese,
+    Korean,
+};
+
 }
