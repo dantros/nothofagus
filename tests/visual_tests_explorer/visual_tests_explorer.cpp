@@ -122,6 +122,7 @@ public:
                      !vulkanBin.empty() && swiftshaderAvailable};
 
         setupColumnHeaders();
+        setupRowHeaders();
         rescan();
     }
 
@@ -219,8 +220,8 @@ private:
     }
 
     // Paints a label with the bundled font8x8 bitmap font into an IndirectTexture and
-    // adds it as a plain bellota — in-game text, not ImGui.
-    Nothofagus::BellotaId addLabel(const std::string& text, float x, float y)
+    // adds it as a plain bellota — in-game text, not ImGui. angle is in degrees.
+    Nothofagus::BellotaId addLabel(const std::string& text, float x, float y, float angle = 0.0f)
     {
         const int width = static_cast<int>(8 * text.size());
         Nothofagus::IndirectTexture label({width, 8}, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -228,7 +229,7 @@ private:
                                                   {1.0f, 1.0f, 1.0f, 1.0f}}); // 1: white glyph
         Nothofagus::writeText(label, text);
         const Nothofagus::TextureId texId = mCanvas.addTexture(label);
-        return mCanvas.addBellota(Nothofagus::Bellota(Nothofagus::Transform({x, y}, 1.0f), texId));
+        return mCanvas.addBellota(Nothofagus::Bellota(Nothofagus::Transform({x, y}, 1.0f, angle), texId));
     }
 
     // One static header label per backend column (created once; persists across
@@ -239,6 +240,17 @@ private:
         const float headerY = mCanvas.screenSize().height * 0.95f;
         for (int i = 0; i < kLaneCount; ++i)
             mHeaderBellotas.push_back(addLabel(mLanes[i].name, cols[i], headerY));
+    }
+
+    // One static row label down the left edge (rotated 90° so the vertical text is
+    // narrow), aligned to the golden / actual / diff row centers used by layoutGrid().
+    void setupRowHeaders()
+    {
+        const auto& size = mCanvas.screenSize();
+        const float x = size.width * 0.03f;
+        mHeaderBellotas.push_back(addLabel("golden", x, size.height * 0.76f, 90.0f));
+        mHeaderBellotas.push_back(addLabel("actual", x, size.height * 0.45f, 90.0f));
+        mHeaderBellotas.push_back(addLabel("diff",   x, size.height * 0.15f, 90.0f));
     }
 
     // Grid under the header row: golden centered on the top row; each lane's actual in
