@@ -275,8 +275,9 @@ private:
                 Nothofagus::Transform({x, y}, scale), texId)));
         };
 
-        // Golden centered horizontally on the top row.
-        place(mGolden, size.width * 0.5f, rowGoldenY);
+        // Golden sits above the swiftshader column: it is the swiftshader-authored
+        // reference, so the swiftshader actual directly below it should match exactly.
+        place(mGolden, cols[kSwiftShaderLane], rowGoldenY);
 
         for (int i = 0; i < kLaneCount; ++i)
         {
