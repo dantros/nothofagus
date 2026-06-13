@@ -18,6 +18,7 @@
 #include <canvas.h>
 #include <texture.h>
 #include <bellota.h>
+#include <text.h>
 #include <direct_texture_io.h>
 #include <direct_texture_compare.h>
 
@@ -106,7 +107,7 @@ class VisualTestsExplorer
 {
 public:
     VisualTestsExplorer() :
-        mCanvas({540, 420}, "Nothofagus Visual Tests Explorer", {0.12f, 0.12f, 0.14f}, 2),
+        mCanvas({540, 470}, "Nothofagus Visual Tests Explorer", {0.12f, 0.12f, 0.14f}, 2),
         mGoldenDir(VTE_GOLDEN_DIR)
     {
         const std::string openglBin = VTE_OPENGL_TESTS_BIN;
@@ -120,6 +121,7 @@ public:
         mLanes[2] = {"vulkan swiftshader", vulkanBin, "swiftshader", VTE_ACTUAL_DIR_VULKAN_SWIFTSHADER,
                      !vulkanBin.empty() && swiftshaderAvailable};
 
+        setupColumnHeaders();
         rescan();
     }
 
@@ -209,18 +211,46 @@ private:
         layoutGrid();
     }
 
-    // 3x3 grid: golden centered on the top row; each lane's actual in row 2 and its
-    // diff in row 3, aligned to the lane's column. Unavailable/empty cells just leave
-    // their reserved space blank.
+    // Horizontal center of each backend column.
+    std::array<float, kLaneCount> columnXs() const
+    {
+        const auto& size = mCanvas.screenSize();
+        return {size.width * 1.0f / 6.0f, size.width * 3.0f / 6.0f, size.width * 5.0f / 6.0f};
+    }
+
+    // Paints a label with the bundled font8x8 bitmap font into an IndirectTexture and
+    // adds it as a plain bellota — in-game text, not ImGui.
+    Nothofagus::BellotaId addLabel(const std::string& text, float x, float y)
+    {
+        const int width = static_cast<int>(8 * text.size());
+        Nothofagus::IndirectTexture label({width, 8}, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
+        label.setPallete(Nothofagus::ColorPallete{{0.0f, 0.0f, 0.0f, 0.0f},   // 0: transparent bg
+                                                  {1.0f, 1.0f, 1.0f, 1.0f}}); // 1: white glyph
+        Nothofagus::writeText(label, text);
+        const Nothofagus::TextureId texId = mCanvas.addTexture(label);
+        return mCanvas.addBellota(Nothofagus::Bellota(Nothofagus::Transform({x, y}, 1.0f), texId));
+    }
+
+    // One static header label per backend column (created once; persists across
+    // selections, so it is kept out of the per-selection mBellotas list).
+    void setupColumnHeaders()
+    {
+        const auto cols = columnXs();
+        const float headerY = mCanvas.screenSize().height * 0.95f;
+        for (int i = 0; i < kLaneCount; ++i)
+            mHeaderBellotas.push_back(addLabel(mLanes[i].name, cols[i], headerY));
+    }
+
+    // Grid under the header row: golden centered on the top row; each lane's actual in
+    // the middle row and its diff in the bottom row, aligned to the lane's column.
+    // Unavailable/empty cells just leave their reserved space blank.
     void layoutGrid()
     {
         const auto& size = mCanvas.screenSize();
-        const float colX[kLaneCount] = {size.width * 1.0f / 6.0f,
-                                        size.width * 3.0f / 6.0f,
-                                        size.width * 5.0f / 6.0f};
-        const float rowGoldenY = size.height * 5.0f / 6.0f;
-        const float rowActualY = size.height * 3.0f / 6.0f;
-        const float rowDiffY   = size.height * 1.0f / 6.0f;
+        const auto cols = columnXs();
+        const float rowGoldenY = size.height * 0.76f;
+        const float rowActualY = size.height * 0.45f;
+        const float rowDiffY   = size.height * 0.15f;
         constexpr int displayBox = 120;
 
         auto place = [&](std::optional<Nothofagus::DirectTexture>& tex, float x, float y)
@@ -238,8 +268,8 @@ private:
 
         for (int i = 0; i < kLaneCount; ++i)
         {
-            place(mActuals[i], colX[i], rowActualY);
-            place(mDiffs[i],   colX[i], rowDiffY);
+            place(mActuals[i], cols[i], rowActualY);
+            place(mDiffs[i],   cols[i], rowDiffY);
         }
     }
 
@@ -438,7 +468,8 @@ private:
     std::optional<Nothofagus::DirectTexture> mGolden;
     std::array<std::optional<Nothofagus::DirectTexture>, kLaneCount> mActuals;
     std::array<std::optional<Nothofagus::DirectTexture>, kLaneCount> mDiffs;
-    std::vector<Nothofagus::BellotaId> mBellotas;
+    std::vector<Nothofagus::BellotaId> mBellotas;        // per-selection grid images
+    std::vector<Nothofagus::BellotaId> mHeaderBellotas;  // static column-name labels
     std::string mLoadError;
 };
 
