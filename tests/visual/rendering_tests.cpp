@@ -3,6 +3,8 @@
 #include <texture.h>
 #include <bellota.h>
 #include <mesh.h>
+#include <imgui_overlay.h>
+#include <imgui.h>
 #include "direct_texture_io.h"
 #include "direct_texture_compare.h"
 #include <string>
@@ -444,4 +446,82 @@ TEST_CASE("setMesh swaps geometry mid-frame", "[rendering][mesh]")
         canvas.tick(16.0f);
 
     checkAgainstGolden("setMesh_swap_geometry", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// ImGui overlay bars (header + footer)
+//
+// Equivalent of the engine_header / engine_footer overlay bars: a dark bar
+// pinned to the top of the game viewport and one pinned to the bottom, each with
+// horizontally + vertically centered text. The bars are positioned through
+// computeImguiOverlayViewport(), the single framebuffer-px -> ImGui-display
+// conversion point. These goldens lock the overlay layout (bar height, top/bottom
+// placement, text centering) so the recurring "fix one case, break another"
+// scaling churn is caught across the GL/VK, GLFW/SDL3, win/linux matrix. The
+// HiDPI/pillarbox math itself is pinned deterministically by the nonvisual
+// imgui_overlay_tests (headless contentScale is always 1.0).
+// ---------------------------------------------------------------------------
+static void drawOverlayBars(Nothofagus::Canvas& canvas,
+                            const std::string& headerText,
+                            const std::string& footerText)
+{
+    const Nothofagus::ViewportRect viewport = canvas.gameViewport();
+    const ImGuiIO& io = ImGui::GetIO();
+
+    const Nothofagus::ImguiOverlayRect rect = Nothofagus::computeImguiOverlayViewport(
+        viewport.x, viewport.y, viewport.width, viewport.height,
+        io.DisplaySize.x, io.DisplaySize.y,
+        io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
+
+    const float fontSize = ImGui::GetFontSize();
+    const float barHeight = fontSize * 1.875f;
+    const ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoNav |
+        ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_NoSavedSettings;
+
+    auto drawBar = [&](const char* id, float yTop, const std::string& text)
+    {
+        ImGui::SetNextWindowPos(ImVec2(rect.x, yTop), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(rect.width, barHeight), ImGuiCond_Always);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.08f, 0.08f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        ImGui::Begin(id, nullptr, flags);
+        const ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
+        ImGui::SetCursorPos(ImVec2((rect.width - textSize.x) * 0.5f, (barHeight - textSize.y) * 0.5f));
+        ImGui::TextUnformatted(text.c_str());
+        ImGui::End();
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor(1);
+    };
+
+    drawBar("##test_header", rect.y, headerText);
+    drawBar("##test_footer", rect.y + rect.height - barHeight, footerText);
+}
+
+TEST_CASE("ImGui overlay bars render centered", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(100, 100);
+
+    for (int i = 0; i < 3; ++i)
+        canvas.tick(16.0f, [&](float) { drawOverlayBars(canvas, "HEADER", "FOOTER"); });
+
+    checkAgainstGolden("imgui_overlay_basic", canvas.takeScreenshot());
+}
+
+TEST_CASE("ImGui overlay bars track pillarbox offset", "[rendering][imgui]")
+{
+    // 200x100 framebuffer, 100x100 logical canvas -> pillarbox (viewport.x = 50).
+    // The screenshot captures only the 100x100 game viewport; the bars must fill
+    // its full width, proving they tracked the horizontal offset.
+    Nothofagus::Canvas canvas({200, 100}, "test", {0.0f, 0.0f, 0.0f}, 1, 14, true);
+    canvas.setScreenSize({100, 100});
+
+    for (int i = 0; i < 3; ++i)
+        canvas.tick(16.0f, [&](float) { drawOverlayBars(canvas, "HEADER", "FOOTER"); });
+
+    checkAgainstGolden("imgui_overlay_pillarbox", canvas.takeScreenshot());
 }
