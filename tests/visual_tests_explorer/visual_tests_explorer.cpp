@@ -114,12 +114,12 @@ public:
         const std::string vulkanBin = VTE_VULKAN_TESTS_BIN;
         const bool swiftshaderAvailable = (VTE_SWIFTSHADER_AVAILABLE != 0);
 
-        mLanes[0] = {"opengl gpu",         openglBin, "auto",        VTE_ACTUAL_DIR_OPENGL_GPU,
-                     !openglBin.empty()};
+        mLanes[0] = {"vulkan swiftshader", vulkanBin, "swiftshader", VTE_ACTUAL_DIR_VULKAN_SWIFTSHADER,
+                     !vulkanBin.empty() && swiftshaderAvailable};
         mLanes[1] = {"vulkan gpu",         vulkanBin, "gpu",         VTE_ACTUAL_DIR_VULKAN_GPU,
                      !vulkanBin.empty()};
-        mLanes[2] = {"vulkan swiftshader", vulkanBin, "swiftshader", VTE_ACTUAL_DIR_VULKAN_SWIFTSHADER,
-                     !vulkanBin.empty() && swiftshaderAvailable};
+        mLanes[2] = {"opengl gpu",         openglBin, "auto",        VTE_ACTUAL_DIR_OPENGL_GPU,
+                     !openglBin.empty()};
 
         setupColumnHeaders();
         setupRowHeaders();
@@ -132,7 +132,7 @@ public:
     }
 
 private:
-    static constexpr int kSwiftShaderLane = 2;
+    static constexpr int kSwiftShaderLane = 0;
 
     std::string goldenPath(const std::string& name) const { return mGoldenDir + "/" + name + ".png"; }
     std::string actualPath(const Lane& lane, const std::string& name) const
