@@ -690,7 +690,9 @@ ScreenshotPixels OpenGLBackend::takeScreenshot(ViewportRect gameViewport, glm::i
         gameViewport.x, gameViewport.y,
         gameViewport.x + gameViewport.width, gameViewport.y + gameViewport.height,
         0, gameHeight, gameWidth, 0,    // inverted dest Y → flip to top-to-bottom
-        GL_COLOR_BUFFER_BIT, GL_LINEAR
+        GL_COLOR_BUFFER_BIT, GL_NEAREST // point-sample (matches Vulkan's VK_FILTER_NEAREST);
+                                        // avoids inventing intermediate colors on any
+                                        // non-1:1 capture, preserving crisp pixel-art edges
     );
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, tempFbo);

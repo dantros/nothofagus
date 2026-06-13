@@ -782,7 +782,9 @@ std::span<std::uint8_t> span = data.getDataSpan(); // width * height * 4 bytes, 
 Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 ```
 
-**OpenGL note:** reads from `GL_BACK` (the just-rendered frame) — valid only while an OpenGL context is current (i.e. inside `canvas.run()`/`tick()`). Reading the back buffer (rather than `GL_FRONT`) is what makes screenshots work in hidden-window/offscreen mode (`headless=true`), where the never-presented front buffer reads back as all-zero.
+**OpenGL note:** reads from `GL_BACK` (the just-rendered frame, point-sampled with `GL_NEAREST`) — valid only while an OpenGL context is current (i.e. inside `canvas.run()`/`tick()`). Reading the back buffer (rather than `GL_FRONT`) is what makes screenshots work in hidden-window/offscreen mode (`headless=true`), where the never-presented front buffer reads back as all-zero.
+
+**Headless render resolution:** hidden windows (`headless=true`) opt out of HiDPI/high-pixel-density, so they render at exactly the logical canvas resolution (`screenSize × pixelSize`) regardless of the display's content scale. This keeps offscreen captures deterministic and pixel-identical across machines (and matches the windowless headless-Vulkan renderer). Visible windows still use the display's pixel density for on-screen crispness.
 
 **Vulkan windowed:** blits from the swapchain image through an intermediate R8G8B8A8 image (handles B8G8R8A8 format conversion) to a CPU-visible staging buffer.
 

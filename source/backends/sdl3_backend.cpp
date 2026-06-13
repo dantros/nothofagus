@@ -23,15 +23,21 @@ Sdl3Backend::Sdl3Backend(const std::string& title, int width, int height, bool v
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD);
 
 #if defined(NOTHOFAGUS_BACKEND_VULKAN)
-    SDL_WindowFlags windowFlags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+    SDL_WindowFlags windowFlags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
 #else
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
-    SDL_WindowFlags windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+    SDL_WindowFlags windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
 #endif
-    if (!visible)
+    // Visible windows render at the display's pixel density for on-screen crispness.
+    // Hidden windows exist only for offscreen capture (headless=true): keep them at
+    // native logical resolution (no HiDPI supersampling) so screenshots are
+    // deterministic and match the headless renderer, then flag them hidden.
+    if (visible)
+        windowFlags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
+    else
         windowFlags |= SDL_WINDOW_HIDDEN;
 
     mSdlWindow = SDL_CreateWindow(
