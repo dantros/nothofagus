@@ -768,7 +768,7 @@ Gamepad button events are dispatched in `processInputs()` (same frame-deferred p
 
 ### Screenshot
 
-`takeScreenshot()` reads the front buffer (the last fully rendered and swapped frame) and returns a `DirectTexture` with the game viewport's RGBA pixels, flipped to top-to-bottom row order.
+`takeScreenshot()` captures the most recently rendered frame and returns a `DirectTexture` with the game viewport's RGBA pixels, flipped to top-to-bottom row order.
 
 ```cpp
 // Call from within the update() callback:
@@ -782,7 +782,7 @@ std::span<std::uint8_t> span = data.getDataSpan(); // width * height * 4 bytes, 
 Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 ```
 
-**OpenGL note:** reads from `GL_FRONT` — valid only while an OpenGL context is current (i.e. inside `canvas.run()`). On the very first frame before any swap, the front buffer content is undefined.
+**OpenGL note:** reads from `GL_BACK` (the just-rendered frame) — valid only while an OpenGL context is current (i.e. inside `canvas.run()`/`tick()`). Reading the back buffer (rather than `GL_FRONT`) is what makes screenshots work in hidden-window/offscreen mode (`headless=true`), where the never-presented front buffer reads back as all-zero.
 
 **Vulkan windowed:** blits from the swapchain image through an intermediate R8G8B8A8 image (handles B8G8R8A8 format conversion) to a CPU-visible staging buffer.
 
