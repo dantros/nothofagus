@@ -70,6 +70,12 @@ add_executable(hello_imgui_rtt
 set_property(TARGET hello_imgui_rtt PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_imgui_rtt PRIVATE nothofagus)
 
+add_executable(hello_imgui_overlay
+    "hello_imgui_overlay.cpp"
+)
+set_property(TARGET hello_imgui_overlay PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_imgui_overlay PRIVATE nothofagus)
+
 add_executable(hello_custom_font
     "hello_custom_font.cpp"
 )

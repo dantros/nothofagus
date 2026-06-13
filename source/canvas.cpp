@@ -124,6 +124,18 @@ void Canvas::setWindowTitle(const std::string& title)           { mImplPtr->fram
 ScreenSize Canvas::windowSize() const                            { return mImplPtr->frameRunner.windowSize(); }
 ViewportRect Canvas::gameViewport() const                       { return mImplPtr->frameRunner.gameViewport(); }
 
+ImguiOverlayRect Canvas::imguiOverlayViewport() const
+{
+    const ViewportRect viewport = mImplPtr->frameRunner.gameViewport();
+    const ImGuiIO& io = ImGui::GetIO();
+    return computeImguiOverlayViewport(
+        viewport.x, viewport.y, viewport.width, viewport.height,
+        io.DisplaySize.x, io.DisplaySize.y,
+        io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
+}
+
+float Canvas::imguiBaseFontSize() const                          { return mImplPtr->imguiRtt.fonts().imguiFontSize(); }
+
 // ---------------------------------------------------------------------------
 // Bellotas — forward to AssetRegistry; remove gates against DenseLandExplorer pool
 // ---------------------------------------------------------------------------
@@ -286,12 +298,12 @@ ImguiFontId Canvas::defaultImguiFontId() const
 
 MarkdownStyle Canvas::defaultMarkdownStyle(float bodySizePx)
 {
-    // Match the main-canvas HiDPI font recipe (imguiFontSize * contentScale^2,
-    // see addMainHiDpiFont) so markdown text is sized like the rest of the
-    // main-canvas UI. Baking at the raw logical bodySizePx would render tiny on
-    // HiDPI displays, where the ambient UI font is DPI-scaled.
-    const float scale = mImplPtr->frameRunner.contentScale();
-    const float body  = bodySizePx * scale * scale;
+    // Match the main-canvas UI font recipe (logical point size, see
+    // addMainHiDpiFont): ImGui 1.92's dynamic atlas rasterizes at the displayed
+    // pixel density, so baking at the raw logical bodySizePx is crisp on HiDPI
+    // and sizes markdown like the rest of the main-canvas UI. (The old
+    // `* contentScale^2` recipe over-inflated text on HiDPI displays.)
+    const float body = bodySizePx;
 
     MarkdownStyle style;
     style.regular    = bakeImguiFont(defaultImguiFontSourceId(),    body);

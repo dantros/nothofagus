@@ -465,16 +465,12 @@ static void drawOverlayBars(Nothofagus::Canvas& canvas,
                             const std::string& headerText,
                             const std::string& footerText)
 {
-    const Nothofagus::ViewportRect viewport = canvas.gameViewport();
-    const ImGuiIO& io = ImGui::GetIO();
-
-    const Nothofagus::ImguiOverlayRect rect = Nothofagus::computeImguiOverlayViewport(
-        viewport.x, viewport.y, viewport.width, viewport.height,
-        io.DisplaySize.x, io.DisplaySize.y,
-        io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
-
-    const float fontSize = ImGui::GetFontSize();
-    const float barHeight = fontSize * 1.875f;
+    // Position + size entirely through the public Canvas overlay API so this
+    // golden also guards the live accessors. Bar height comes from
+    // imguiBaseFontSize() (not GetFontSize()) so it stays contentScale-independent
+    // and the same golden passes on every lane.
+    const Nothofagus::ImguiOverlayRect rect = canvas.imguiOverlayViewport();
+    const float barHeight = canvas.imguiBaseFontSize() * 1.875f;
     const ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoNav |

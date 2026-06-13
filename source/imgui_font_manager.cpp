@@ -31,11 +31,21 @@ const ImWchar* glyphRangesFor(GlyphRange range)
     return nullptr;
 }
 
-/// Adds the main HiDPI ImGui font directly to the atlas (not tracked in the
-/// IndexedContainer). The size recipe - `imguiFontSize * contentScale *
-/// contentScale` - bakes glyphs at the framebuffer resolution so they remain
-/// crisp and OS-DPI-scaled on the main-canvas UI. The regular face is a
-/// stb-compressed blob, so it goes through AddFontFromMemoryCompressedTTF,
+/// Adds the main ImGui UI font directly to the atlas (not tracked in the
+/// IndexedContainer). Baked at the logical `imguiFontSize` (points).
+///
+/// ImGui 1.92's dynamic font atlas (ImGuiBackendFlags_RendererHasTextures, set
+/// by every render backend here) rasterizes glyphs at the actual displayed
+/// pixel density each frame, so HiDPI crispness is automatic — the bake size is
+/// the *layout* size, not a pre-scaled pixel size. Baking at `imguiFontSize`
+/// keeps UI text at a fixed fraction of the game canvas, scaling together with
+/// the letterboxed sprites instead of by OS DPI, and makes `GetFontSize()`
+/// return `imguiFontSize` on every backend / contentScale. The previous
+/// `* contentScale * contentScale` recipe over-inflated text on HiDPI displays.
+///
+/// (`contentScale` is retained in the signature so the plumbing is ready for a
+/// future opt-in DPI scale; it no longer multiplies the size.) The regular face
+/// is a stb-compressed blob, so it goes through AddFontFromMemoryCompressedTTF,
 /// which always decompresses into a fresh atlas-owned buffer - the static
 /// compressed source stays available for every atlas rebuild.
 void addMainHiDpiFont(const void* fontData,
@@ -43,12 +53,13 @@ void addMainHiDpiFont(const void* fontData,
                       float       imguiFontSize,
                       float       contentScale)
 {
+    (void)contentScale;
     ImFontConfig fontConfig;
     fontConfig.FontDataOwnedByAtlas = false;
     ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(
         fontData,
         static_cast<int>(fontDataLen),
-        imguiFontSize * contentScale * contentScale,
+        imguiFontSize,
         &fontConfig
     );
 }
