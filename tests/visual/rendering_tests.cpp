@@ -641,7 +641,7 @@ TEST_CASE("ImGui standard UI at content scale 1x", "[rendering][imgui]")
 
 TEST_CASE("ImGui standard UI scales font and metrics at 2x", "[rendering][imgui]")
 {
-    auto canvas = makeCanvas(120, 90);
+    auto canvas = makeCanvas(240, 180);
     canvas.setContentScaleOverride(2.0f);
 
     for (int i = 0; i < kImguiWarmupFrames; ++i)

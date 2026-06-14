@@ -86,15 +86,20 @@ void setEnvVar(const char* key, const std::string& value)
 #endif
 }
 
-// Integer scale that fits an image of the given size into a target box, never
-// below 1 (small pixel-art goldens are scaled up, large ones down).
-int fitScale(glm::ivec2 size, int box)
+// Scale that fits an image of the given size into a target box. Small pixel-art
+// goldens get an integer up-scale (>= 1) for crisp nearest-neighbor sampling;
+// images larger than the box get a fractional down-scale so they still fit
+// within the cell instead of overflowing the 3x3 grid.
+float fitScale(glm::ivec2 size, int box)
 {
     if (size.x <= 0 || size.y <= 0)
-        return 1;
+        return 1.0f;
+    const int longest = std::max(size.x, size.y);
+    if (longest > box)
+        return static_cast<float>(box) / static_cast<float>(longest); // shrink to fit
     const int byWidth  = std::max(1, box / size.x);
     const int byHeight = std::max(1, box / size.y);
-    return std::max(1, std::min(byWidth, byHeight));
+    return static_cast<float>(std::max(1, std::min(byWidth, byHeight)));
 }
 
 struct Entry
@@ -270,7 +275,7 @@ private:
             if (!tex.has_value())
                 return;
             const Nothofagus::TextureId texId = mCanvas.addTexture(tex.value());
-            const float scale = static_cast<float>(fitScale(tex.value().size(), displayBox));
+            const float scale = fitScale(tex.value().size(), displayBox);
             mBellotas.push_back(mCanvas.addBellota(Nothofagus::Bellota(
                 Nothofagus::Transform({x, y}, scale), texId)));
         };
