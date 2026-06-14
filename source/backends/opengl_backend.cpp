@@ -677,17 +677,22 @@ ScreenshotPixels OpenGLBackend::takeScreenshot(ViewportRect gameViewport, glm::i
     glBindFramebuffer(GL_FRAMEBUFFER, tempFbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tempColorTex, 0);
 
-    // Blit game viewport from the front buffer into the temp FBO at game resolution.
-    // Inverting the destination Y range converts from OpenGL's bottom-to-top row order
-    // to top-to-bottom order.
+    // Blit game viewport from the back buffer into the temp FBO at game resolution.
+    // We read GL_BACK (the just-rendered frame), not GL_FRONT: a hidden window
+    // (headless=true) is never presented by the compositor, so its front buffer is
+    // empty/undefined and reads back as all-zero. The back buffer holds the rendered
+    // frame regardless of window visibility. Inverting the destination Y range
+    // converts from OpenGL's bottom-to-top row order to top-to-bottom order.
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-    glReadBuffer(GL_FRONT);
+    glReadBuffer(GL_BACK);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, tempFbo);
     glBlitFramebuffer(
         gameViewport.x, gameViewport.y,
         gameViewport.x + gameViewport.width, gameViewport.y + gameViewport.height,
         0, gameHeight, gameWidth, 0,    // inverted dest Y → flip to top-to-bottom
-        GL_COLOR_BUFFER_BIT, GL_LINEAR
+        GL_COLOR_BUFFER_BIT, GL_NEAREST // point-sample (matches Vulkan's VK_FILTER_NEAREST);
+                                        // avoids inventing intermediate colors on any
+                                        // non-1:1 capture, preserving crisp pixel-art edges
     );
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, tempFbo);
