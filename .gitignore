@@ -50,4 +50,6 @@ imgui.ini
 *.spv
 
 # Actual renders dumped by the visual tests for the golden viewer
+# (actual/ plus per-backend lanes like actual_swiftshader/ and actual_gpu/)
 tests/visual/actual/
+tests/visual/actual_*/

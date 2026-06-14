@@ -10,9 +10,6 @@ jobs:
   rendering-tests:
     runs-on: ubuntu-latest
 
-    env:
-      GOLDEN_DIR: ${{ github.workspace }}/tests/visual/golden_headless_vulkan
-
     steps:
     - uses: actions/checkout@v4
       with:
@@ -25,37 +22,20 @@ jobs:
         vulkan-components: Vulkan-Headers, Vulkan-Loader, SPIRV-Tools, Glslang
         vulkan-use-cache: true
 
-    - name: Download and register prebuilt SwiftShader ICD
-      # Fetches a SwiftShader Vulkan ICD built from a pinned upstream commit
-      # (https://github.com/dantros/swiftshader_prebuilts), verifies its SHA256,
-      # and registers it as the system's Vulkan ICD so rendering_tests runs
-      # against deterministic CPU-rasterizer pixels (no GPU-driver rounding noise).
-      #
-      # To bump the SwiftShader version: publish a new prebuilt release with the
-      # new commit SHA in its filename + tag, then update the URL and HASH below
-      # (and re-run any golden regen needed on the consumer side).
-      env:
-        SWIFTSHADER_URL:    "https://github.com/dantros/swiftshader_prebuilts/releases/download/swiftshader-d26a3e66-linux-x86_64/libvk_swiftshader-d26a3e66-linux-x86_64.so"
-        SWIFTSHADER_SHA256: "fbf976da70759946eaf3cd97cbff52b8aece93b8bd80c9f05112082040d85d92"
-      run: |
-        mkdir -p ${{ runner.temp }}/swiftshader
-        curl -fsSL -o ${{ runner.temp }}/swiftshader/libvk_swiftshader.so "$SWIFTSHADER_URL"
-        echo "$SWIFTSHADER_SHA256  ${{ runner.temp }}/swiftshader/libvk_swiftshader.so" | sha256sum -c -
-        sudo mkdir -p /etc/vulkan/icd.d
-        echo '{
-          "file_format_version": "1.0.0",
-          "ICD": {
-            "library_path": "${{ runner.temp }}/swiftshader/libvk_swiftshader.so",
-            "api_version": "1.3.0"
-          }
-        }' | sudo tee /etc/vulkan/icd.d/swiftshader.json
-
     - name: Configure
+      # NOTHOFAGUS_FETCH_SWIFTSHADER downloads + SHA256-verifies the pinned
+      # prebuilt SwiftShader ICD at configure time (coordinates live in
+      # cmake/swiftshader_version.cmake — the single source of truth shared with
+      # local builds). The test binary self-selects it at runtime via
+      # NOTHOFAGUS_RENDER_BACKEND=swiftshader, so no system ICD registration is
+      # needed. This lane is byte-identical to a local
+      # linux-release-headless-vulkan-tests build.
       run: >
         cmake -B build
         -DCMAKE_BUILD_TYPE=Release
         -DNOTHOFAGUS_BACKEND_VULKAN=ON
         -DNOTHOFAGUS_HEADLESS_VULKAN=ON
+        -DNOTHOFAGUS_FETCH_SWIFTSHADER=ON
         -DNOTHOFAGUS_BUILD_TESTS=ON
         -DNOTHOFAGUS_BUILD_TESTS_VISUAL=ON
         -DNOTHOFAGUS_BUILD_TESTS_NONVISUAL=ON
@@ -71,18 +51,24 @@ jobs:
         ./build/tests/nonvisual/sparse_land_tests
 
     - name: Run tests against Vulkan golden files
+      env:
+        NOTHOFAGUS_RENDER_BACKEND: swiftshader
       run: ./build/tests/visual/rendering_tests
 
     - name: Update Vulkan golden files if missing
       if: failure()
+      env:
+        NOTHOFAGUS_RENDER_BACKEND: swiftshader
       run: |
         echo "Tests failed — regenerating Vulkan golden PNGs."
         echo "Goldens are PNG images (via stb_image_plus); comparison is tolerance-based."
         echo "To inspect golden/actual/diff visually, build the Visual Tests Explorer tool"
         echo "(-DNOTHOFAGUS_BUILD_VISUAL_TESTS_EXPLORER=ON) after running the tests with DUMP_ACTUAL=1."
         echo "If a rendering change is expected, regenerate locally:"
-        echo "  GOLDEN_DIR=tests/visual/golden_headless_vulkan UPDATE_GOLDEN=1 ./build/tests/visual/rendering_tests"
-        echo "Then commit the updated golden_headless_vulkan/*.png files."
+        echo "  cmake --preset linux-release-headless-vulkan-tests"
+        echo "  cmake --build build/linux-release-headless-vulkan-tests --target rendering_tests"
+        echo "  NOTHOFAGUS_RENDER_BACKEND=swiftshader UPDATE_GOLDEN=1 ./build/linux-release-headless-vulkan-tests/tests/visual/rendering_tests"
+        echo "Then commit the updated golden/*.png files."
         UPDATE_GOLDEN=1 ./build/tests/visual/rendering_tests
         echo "--- Updated golden files ---"
-        ls -la tests/visual/golden_headless_vulkan/
+        ls -la tests/visual/golden/

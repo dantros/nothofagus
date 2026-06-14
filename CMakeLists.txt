@@ -8,6 +8,7 @@ project(nothofagus_project CXX C)
 option(NOTHOFAGUS_BACKEND_VULKAN "Use Vulkan backend instead of OpenGL" OFF)
 option(NOTHOFAGUS_HEADLESS_VULKAN "Pure offscreen Vulkan rendering (no window/display server)" OFF)
 option(NOTHOFAGUS_VMA_USE_CL "Windows only: compile VMA implementation unit with MSVC cl.exe (avoids clang-cl warnings)" OFF)
+option(NOTHOFAGUS_FETCH_SWIFTSHADER "Download a prebuilt SwiftShader Vulkan ICD at configure time for deterministic CPU rendering" OFF)
 
 if(NOTHOFAGUS_HEADLESS_VULKAN AND NOT NOTHOFAGUS_BACKEND_VULKAN)
     message(FATAL_ERROR "NOTHOFAGUS_HEADLESS_VULKAN requires NOTHOFAGUS_BACKEND_VULKAN=ON")
@@ -218,6 +219,14 @@ add_dependencies(nothofagus nothofagus_fonts)
 if(NOTHOFAGUS_BACKEND_VULKAN)
     find_package(Vulkan REQUIRED)
     add_subdirectory("third_party/vk-bootstrap")
+
+    # Optionally fetch a prebuilt SwiftShader Vulkan ICD for deterministic CPU
+    # rendering (used by the visual tests to match CI). Invoked at directory
+    # scope so the resulting paths reach the sibling tests/ subdirectories.
+    if(NOTHOFAGUS_FETCH_SWIFTSHADER)
+        include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/fetch_swiftshader.cmake")
+        nothofagus_fetch_swiftshader(NOTHOFAGUS_SWIFTSHADER_LIB NOTHOFAGUS_SWIFTSHADER_ICD)
+    endif()
 
     # VMA: header-only interface target
     add_library(VulkanMemoryAllocator INTERFACE)

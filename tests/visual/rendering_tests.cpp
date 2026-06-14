@@ -1,4 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/reporters/catch_reporter_event_listener.hpp>
+#include <catch2/reporters/catch_reporter_registrars.hpp>
 #include <canvas.h>
 #include <texture.h>
 #include <bellota.h>
@@ -10,6 +12,69 @@
 #include <string>
 #include <cstdlib>
 #include <filesystem>
+#include <iostream>
+
+// Path to the SwiftShader ICD JSON, baked in by CMake when
+// NOTHOFAGUS_FETCH_SWIFTSHADER fetched a prebuilt. Empty when unavailable.
+#ifndef NOTHOFAGUS_SWIFTSHADER_ICD
+    #define NOTHOFAGUS_SWIFTSHADER_ICD ""
+#endif
+
+// Portable set/unset of an environment variable (POSIX setenv/unsetenv vs Windows _putenv_s).
+static void setEnvVar(const char* key, const char* value)
+{
+#if defined(_WIN32)
+    _putenv_s(key, value ? value : "");
+#else
+    if (value != nullptr && value[0] != '\0')
+        ::setenv(key, value, 1);
+    else
+        ::unsetenv(key);
+#endif
+}
+
+// Forces the Vulkan loader to a specific ICD before the first Canvas (and thus
+// the first Vulkan call) is constructed, so the same binary renders with either
+// SwiftShader (deterministic CPU) or the system GPU. Selected by the
+// NOTHOFAGUS_RENDER_BACKEND env var: "swiftshader" | "gpu" | "auto" (default).
+//
+// Registered as a Catch2 listener so testRunStarting runs once before any test
+// case constructs a Canvas — including the few that build one without makeCanvas.
+struct RenderBackendSelector : Catch::EventListenerBase
+{
+    using Catch::EventListenerBase::EventListenerBase;
+
+    void testRunStarting(const Catch::TestRunInfo&) override
+    {
+        const char* env = std::getenv("NOTHOFAGUS_RENDER_BACKEND");
+        const std::string backend = (env != nullptr && env[0] != '\0') ? env : "auto";
+
+        if (backend == "swiftshader")
+        {
+            const std::string icd = NOTHOFAGUS_SWIFTSHADER_ICD;
+            if (icd.empty())
+            {
+                std::cerr << "[render-backend] NOTHOFAGUS_RENDER_BACKEND=swiftshader requested but no "
+                             "SwiftShader ICD was built in (configure with NOTHOFAGUS_FETCH_SWIFTSHADER=ON "
+                             "on a supported platform); using the default Vulkan ICD instead.\n";
+                return;
+            }
+            setEnvVar("VK_ICD_FILENAMES", icd.c_str());
+            setEnvVar("VK_DRIVER_FILES", icd.c_str());
+            std::cerr << "[render-backend] swiftshader ICD: " << icd << "\n";
+        }
+        else if (backend == "gpu")
+        {
+            // Clear any inherited ICD override (e.g. from the Visual Tests Explorer)
+            // so the loader enumerates the real system GPU drivers.
+            setEnvVar("VK_ICD_FILENAMES", "");
+            setEnvVar("VK_DRIVER_FILES", "");
+            std::cerr << "[render-backend] gpu (system Vulkan ICDs)\n";
+        }
+        // "auto": leave the loader environment untouched.
+    }
+};
+CATCH_REGISTER_LISTENER(RenderBackendSelector)
 
 // Default golden directory is set by CMake. Override at runtime with GOLDEN_DIR env var
 // to target a different set (e.g. golden_mesa/ for software rendering).
