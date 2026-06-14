@@ -560,17 +560,25 @@ static void drawOverlayBars(Nothofagus::Canvas& canvas,
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        // Bars are thinner than ImGui's default WindowMinSize (32 px, and
+        // 32 * contentScale on HiDPI); without this the windows inflate to that
+        // minimum — the top header shows the full inflated height while the
+        // bottom footer's surplus is clipped off-screen, so they look uneven.
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(0.0f, 0.0f));
         ImGui::Begin(id, nullptr, flags);
         const ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
         ImGui::SetCursorPos(ImVec2((rect.width - textSize.x) * 0.5f, (barHeight - textSize.y) * 0.5f));
         ImGui::TextUnformatted(text.c_str());
         ImGui::End();
-        ImGui::PopStyleVar(3);
+        ImGui::PopStyleVar(4);
         ImGui::PopStyleColor(1);
     };
 
     drawBar("##test_header", rect.y, headerText);
-    drawBar("##test_footer", rect.y + rect.height - barHeight, footerText);
+    // An empty footerText draws the header only, leaving the bottom of the
+    // viewport visible (used by the scaled case to inspect the lower region).
+    if (!footerText.empty())
+        drawBar("##test_footer", rect.y + rect.height - barHeight, footerText);
 }
 
 TEST_CASE("ImGui overlay bars render centered", "[rendering][imgui]")
@@ -655,8 +663,9 @@ TEST_CASE("ImGui overlay bars scale with content scale", "[rendering][imgui]")
     auto canvas = makeCanvas(100, 100);
     canvas.setContentScaleOverride(2.0f);
 
+    // Header only (empty footer) so the bottom of the viewport stays visible.
     for (int i = 0; i < kImguiWarmupFrames; ++i)
-        canvas.tick(16.0f, [&](float) { drawOverlayBars(canvas, "HEADER", "FOOTER"); });
+        canvas.tick(16.0f, [&](float) { drawOverlayBars(canvas, "HEADER", ""); });
 
     checkAgainstGolden("imgui_overlay_scaled", canvas.takeScreenshot());
 }
