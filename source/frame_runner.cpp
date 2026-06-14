@@ -471,6 +471,11 @@ ScreenSize getPrimaryMonitorSize()
     return SelectedWindowBackend::getPrimaryMonitorSize();
 }
 
+float getPrimaryMonitorContentScale()
+{
+    return SelectedWindowBackend::getPrimaryMonitorContentScale();
+}
+
 // Explicit instantiations — co-located with the matching extern template
 // declarations in frame_runner.h. Any third backend added later only needs a
 // `static_assert(LandType<X>);` in its source + a line here and a matching

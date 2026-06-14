@@ -92,4 +92,9 @@ ScreenSize HeadlessBackend::getPrimaryMonitorSize()
     return {1920u, 1080u};
 }
 
+float HeadlessBackend::getPrimaryMonitorContentScale()
+{
+    return 1.0f;
+}
+
 } // namespace Nothofagus

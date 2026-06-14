@@ -55,6 +55,7 @@ public:
     void setWindowTitle(const std::string& title);
 
     static ScreenSize getPrimaryMonitorSize();
+    static float getPrimaryMonitorContentScale();
 
 private:
     SDL_Window*   mSdlWindow    = nullptr;

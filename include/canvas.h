@@ -50,6 +50,14 @@ constexpr static float DEFAULT_IMGUI_FONT_SIZE{14};
 /// Safe to call before constructing a Canvas — initialises GLFW internally (idempotent).
 ScreenSize getPrimaryMonitorSize();
 
+/// @brief Returns the OS content (DPI) scale of the primary monitor.
+/// Safe to call before constructing a Canvas — initialises GLFW/SDL internally
+/// (idempotent). Returns 1.0 if the monitor cannot be queried. Note: this is the
+/// primary monitor's scale read before any window exists, so it can differ from a
+/// Canvas's live contentScale() if the window opens on a different-DPI monitor or
+/// a contentScale override is set.
+float getPrimaryMonitorContentScale();
+
 /**
  * @class Canvas
  * @brief A class representing the main drawing surface where objects like Bellotas, and textures are rendered.

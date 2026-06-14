@@ -346,4 +346,18 @@ ScreenSize GlfwBackend::getPrimaryMonitorSize()
     return {static_cast<unsigned int>(mode->width), static_cast<unsigned int>(mode->height)};
 }
 
+float GlfwBackend::getPrimaryMonitorContentScale()
+{
+    glfwInit();  // idempotent — safe if Canvas has already initialised it
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    if (!monitor)
+    {
+        spdlog::warn("getPrimaryMonitorContentScale: could not query primary monitor, returning 1.0");
+        return 1.0f;
+    }
+    float scaleX = 1.0f, scaleY = 1.0f;
+    glfwGetMonitorContentScale(monitor, &scaleX, &scaleY);
+    return (scaleX > 0.0f) ? scaleX : 1.0f;
+}
+
 } // namespace Nothofagus
