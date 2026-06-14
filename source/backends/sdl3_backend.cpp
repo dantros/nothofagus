@@ -344,4 +344,12 @@ ScreenSize Sdl3Backend::getPrimaryMonitorSize()
     return {static_cast<unsigned int>(mode->w), static_cast<unsigned int>(mode->h)};
 }
 
+float Sdl3Backend::getPrimaryMonitorContentScale()
+{
+    SDL_Init(SDL_INIT_VIDEO);  // idempotent — safe if Canvas has already initialised it
+    SDL_DisplayID primary = SDL_GetPrimaryDisplay();
+    const float scale = SDL_GetDisplayContentScale(primary);
+    return (scale > 0.0f) ? scale : 1.0f;
+}
+
 } // namespace Nothofagus

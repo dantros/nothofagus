@@ -66,6 +66,7 @@ public:
     void setWindowTitle(const std::string& title);
 
     static ScreenSize getPrimaryMonitorSize();
+    static float getPrimaryMonitorContentScale();
 
 private:
     GLFWwindow*       mGlfwWindow = nullptr;
