@@ -575,7 +575,10 @@ static void drawOverlayBars(Nothofagus::Canvas& canvas,
     };
 
     drawBar("##test_header", rect.y, headerText);
-    drawBar("##test_footer", rect.y + rect.height - barHeight, footerText);
+    // An empty footerText draws the header only, leaving the bottom of the
+    // viewport visible (used by the scaled case to inspect the lower region).
+    if (!footerText.empty())
+        drawBar("##test_footer", rect.y + rect.height - barHeight, footerText);
 }
 
 TEST_CASE("ImGui overlay bars render centered", "[rendering][imgui]")
@@ -660,8 +663,9 @@ TEST_CASE("ImGui overlay bars scale with content scale", "[rendering][imgui]")
     auto canvas = makeCanvas(100, 100);
     canvas.setContentScaleOverride(2.0f);
 
+    // Header only (empty footer) so the bottom of the viewport stays visible.
     for (int i = 0; i < kImguiWarmupFrames; ++i)
-        canvas.tick(16.0f, [&](float) { drawOverlayBars(canvas, "HEADER", "FOOTER"); });
+        canvas.tick(16.0f, [&](float) { drawOverlayBars(canvas, "HEADER", ""); });
 
     checkAgainstGolden("imgui_overlay_scaled", canvas.takeScreenshot());
 }
