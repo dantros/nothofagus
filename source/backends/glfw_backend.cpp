@@ -99,8 +99,16 @@ GlfwBackend::GlfwBackend(const std::string& title, int width, int height, bool v
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #endif
 
+    // Hidden windows exist only for offscreen capture (headless=true): render them at
+    // native logical resolution (no HiDPI framebuffer scaling) so screenshots are
+    // deterministic and match the headless renderer. Visible windows keep the display's
+    // pixel density for on-screen crispness.
     if (!visible)
+    {
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+        glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_FALSE);
+        glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
+    }
 
     mGlfwWindow = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
     if (!mGlfwWindow)
