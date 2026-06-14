@@ -345,33 +345,40 @@ canvas.setAutoRemoveUnusedMeshes(false);
 
 ### In-game text rendering
 
-`writeText` / `writeChar` paint glyphs from the bundled `font8x8` bitmap font directly into an `IndirectTexture`, so the rendered text becomes part of your palette and draws through the regular bellota pipeline. This is **distinct from ImGui text** — ImGui handles tool-UI text (with `MarkdownRenderer` layered on top for prose); these helpers are for text that lives *inside the game*.
+`makeTextTexture` builds in-game text from the bundled `font8x8` bitmap font as a **tile-map `IndirectTexture`** — the font glyphs are the texture's layers and the string is its cell grid, so the whole string renders as **one bellota / one draw call**. The text draws through the regular bellota pipeline (transforms, depth, tint), distinct from ImGui text (which handles tool-UI text, with `MarkdownRenderer` for prose).
 
 ```cpp
-// Banner: text characters wide × 8 high, palette index 0 = transparent,
-// palette index 1 = the glyph color. writeText assumes 8-pixel-wide cells.
-std::string text = "- Nothofagus -";
-Nothofagus::IndirectTexture banner({8 * text.size(), 8}, {0.5, 0.5, 0.5, 1.0});
-banner.setPallete({{0,0,0,0.8}, {1,1,1,1}});
-Nothofagus::writeText(banner, text);
+// Banner: one tile-map text texture. fgColor = glyph color (palette index 1),
+// bgColor = background (index 0). '\n' splits the string into rows (multi-line).
+Nothofagus::IndirectTexture banner = Nothofagus::makeTextTexture(
+    "- Nothofagus -", Nothofagus::FontType::Basic,
+    {1, 1, 1, 1},      // fgColor
+    {0, 0, 0, 0.8});   // bgColor
+canvas.addBellota({{{x, y}}, canvas.addTexture(banner)});
 
-// Single glyph from a non-default font. Glyph index 0xD from the Hiragana
-// page, written at offset (i0=0, j0=0) into an 8×8 texture.
+// Re-spell in place — only the cell grid re-uploads (the glyph atlas is untouched).
+// Same line/column count → the bellota does not need re-adding.
+Nothofagus::setText(std::get<Nothofagus::IndirectTexture>(canvas.texture(texId)), "- Acorn -");
+canvas.markTextureAsDirty(texId);
+
+// writeChar remains the per-glyph primitive: paint one glyph into an 8×8 texture,
+// e.g. for independently transformable / animated character sprites.
 Nothofagus::IndirectTexture glyph({8, 8}, {0.5, 0.5, 0.5, 1.0});
 glyph.setPallete({{0,0,0,0}, {0,0,0,1}});
 Nothofagus::writeChar(glyph, 0xD, 0, 0, Nothofagus::FontType::Hiragana);
-
-canvas.addBellota({{{x, y}}, canvas.addTexture(banner)});
 ```
 
 **Signatures** ([include/text.h](include/text.h)):
 
 ```cpp
-void writeChar(IndirectTexture& texture, std::uint8_t a,
-               std::size_t i0 = 0, std::size_t j0 = 0,
-               FontType fontType = FontType::Basic);
+IndirectTexture makeTextTexture(std::string text, FontType fontType = FontType::Basic,
+                                glm::vec4 fgColor = {1,1,1,1}, glm::vec4 bgColor = {0,0,0,0});
 
-void writeText(IndirectTexture& texture, std::string text,
+void setText(IndirectTexture& texture, std::string text, FontType fontType = FontType::Basic);
+
+std::size_t fontPageSize(FontType fontType);   // glyph count of a font page
+
+void writeChar(IndirectTexture& texture, std::uint8_t a,
                std::size_t i0 = 0, std::size_t j0 = 0,
                FontType fontType = FontType::Basic);
 ```
@@ -379,9 +386,10 @@ void writeText(IndirectTexture& texture, std::string text,
 **`FontType` enum:** `Basic` (default Latin), `Control`, `ExtLatin`, `Greek`, `Misc`, `Box`, `Block`, `Hiragana`, `Sga` (Standard Galactic Alphabet).
 
 **Constraints / behavior:**
-- The destination `IndirectTexture` must have a palette with at least two entries — index `0` is the background (transparent or otherwise), any non-zero index is the glyph foreground. `writeText` and `writeChar` toggle pixels between indices `0` and `1` of the bound palette.
-- Cells are 8×8; the `i0`, `j0` offsets are in palette-index coordinates and let you compose multi-line layouts by writing several calls into the same texture.
-- The text helpers do not allocate — they mutate an existing `IndirectTexture`. Add the texture to the canvas after writing.
+- A text texture is an 8×8 tile in tile-map mode (`world size = 8*cols × 8*rows`), so it is a tile-map texture: **custom meshes are forbidden on it** (see [Tile maps](#tile-maps)). Glyph color comes from the 2-entry palette (`bgColor`, `fgColor`); recolor by swapping the palette, no atlas touch.
+- Cell row 0 is the top line; characters outside the font page (and short-line padding) map to a blank glyph.
+- `setText` is the cheap-update path: it rewrites only the cell grid (`setMapBulk`). When the line/column count changes, the world size changes too, so a bellota already displaying the texture must be re-added (its auto-quad is sized at `addBellota`). `fontType` must match the atlas the texture was built with.
+- `writeChar` mutates an existing `IndirectTexture` in place (layer 0) and does not allocate — it is the glyph primitive used to build atlases and to render per-glyph sprites; it is *not* tile-map based.
 
 ### Animations
 
@@ -829,7 +837,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_animation_state_machine.cpp` | Full FSM with WASD transitions |
 | `hello_direct_texture.cpp` | DirectTexture (raw RGBA) |
 | `hello_layers.cpp` | Depth-based layering |
-| `hello_text.cpp` | In-game text rendering via `writeText` / `writeChar` |
+| `hello_text.cpp` | In-game text rendering via `makeTextTexture` / `setText` (tile-map text) + the `writeChar` per-glyph primitive |
 | `hello_tint.cpp` | Color tinting |
 | `test_keyboard.cpp` | Keyboard input handling |
 | `test_gamepad.cpp` | Gamepad input: stick movement, D-pad, buttons, ImGui status |
@@ -902,7 +910,7 @@ Third-party libraries are vendored via `git subtree` directly under [third_party
 - **md4c** — CommonMark parser used by `imgui_md`
 - **imgui-filebrowser** — `ImGui::FileBrowser` widget
 - **spdlog** — logging
-- **font8x8** — embedded bitmap font (used by `writeText` / `writeChar`)
+- **font8x8** — embedded bitmap font (used by `makeTextTexture` / `writeChar`)
 - **vk-bootstrap** — Vulkan device + instance bootstrap
 - **VulkanMemoryAllocator** — GPU memory allocator for Vulkan
 - **Catch2** — test framework (only pulled in when `NOTHOFAGUS_BUILD_TESTS=ON`)
