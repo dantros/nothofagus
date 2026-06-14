@@ -560,12 +560,17 @@ static void drawOverlayBars(Nothofagus::Canvas& canvas,
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        // Bars are thinner than ImGui's default WindowMinSize (32 px, and
+        // 32 * contentScale on HiDPI); without this the windows inflate to that
+        // minimum — the top header shows the full inflated height while the
+        // bottom footer's surplus is clipped off-screen, so they look uneven.
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(0.0f, 0.0f));
         ImGui::Begin(id, nullptr, flags);
         const ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
         ImGui::SetCursorPos(ImVec2((rect.width - textSize.x) * 0.5f, (barHeight - textSize.y) * 0.5f));
         ImGui::TextUnformatted(text.c_str());
         ImGui::End();
-        ImGui::PopStyleVar(3);
+        ImGui::PopStyleVar(4);
         ImGui::PopStyleColor(1);
     };
 

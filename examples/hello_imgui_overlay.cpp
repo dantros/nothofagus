@@ -10,14 +10,15 @@
 // Two pieces do the work:
 //   canvas.imguiOverlayViewport() -> the game viewport in ImGui display points
 //                                    (top-left origin), already DPI-converted.
-//   canvas.imguiBaseFontSize()    -> the logical base font size, so the bar
-//                                    height is contentScale-independent.
+//   canvas.imguiScaledFontSize()  -> the DPI-scaled base font size, so the bar
+//                                    grows with the standard UI on HiDPI and the
+//                                    bar/text proportion stays constant.
 static void drawOverlayBars(Nothofagus::Canvas& canvas,
                             const std::string& headerText,
                             const std::string& footerText)
 {
     const Nothofagus::ImguiOverlayRect rect = canvas.imguiOverlayViewport();
-    const float barHeight = canvas.imguiBaseFontSize() * 1.875f;
+    const float barHeight = canvas.imguiScaledFontSize() * 1.875f;
 
     const ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
@@ -33,12 +34,17 @@ static void drawOverlayBars(Nothofagus::Canvas& canvas,
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        // Bars are thinner than ImGui's default WindowMinSize (32 px, and
+        // 32 * contentScale on HiDPI); without this the windows inflate to that
+        // minimum — the top header shows the full inflated height while the
+        // bottom footer's surplus is clipped off-screen, so they look uneven.
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(0.0f, 0.0f));
         ImGui::Begin(id, nullptr, flags);
         const ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
         ImGui::SetCursorPos(ImVec2((rect.width - textSize.x) * 0.5f, (barHeight - textSize.y) * 0.5f));
         ImGui::TextUnformatted(text.c_str());
         ImGui::End();
-        ImGui::PopStyleVar(3);
+        ImGui::PopStyleVar(4);
         ImGui::PopStyleColor(1);
     };
 
