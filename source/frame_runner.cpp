@@ -85,6 +85,15 @@ FrameRunner::~FrameRunner()
     // body runs they're already torn down, leaving us to shut the backend.
     mBackend.shutdown(); // detaches the ImGui renderer backend (ImGui_Impl*_Shutdown).
 
+    // Tear the window backend down now (instead of waiting for member destruction)
+    // so its destructor shuts down the ImGui *platform* backend
+    // (ImGui_ImplGlfw/SDL3_Shutdown) before we destroy the context below. ImGui
+    // asserts/crashes if a context is destroyed while a platform backend is still
+    // attached ("Forgot to shutdown Platform backend?"). Headless has no platform
+    // backend, so this is a plain window teardown there. Order is unchanged
+    // otherwise: renderer shutdown -> window/surface teardown -> context destroy.
+    mWindow.reset();
+
     // Destroy the main ImGui context this FrameRunner created in its ctor. Without
     // this each Canvas leaks a context (and its dynamic font atlas / GPU textures);
     // in a process that builds many canvases (e.g. the test suite) that
