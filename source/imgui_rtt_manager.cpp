@@ -149,10 +149,10 @@ void ImguiRttManager::refreshSecondaryContextDefaultFont()
     ImGui::SetCurrentContext(mainCtx);
 }
 
-void ImguiRttManager::drainPendingFontOps(float contentScale)
+void ImguiRttManager::drainPendingFontOps()
 {
     if (!mFonts.hasPendingOps()) return;
-    mFonts.drainPendingOpsAndRebuildAtlas(contentScale);
+    mFonts.drainPendingOpsAndRebuildAtlas();
     refreshSecondaryContextDefaultFont();
     mBackend.rebuildImguiFontTexture();
 }

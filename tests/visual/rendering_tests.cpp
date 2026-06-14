@@ -5,6 +5,8 @@
 #include <texture.h>
 #include <bellota.h>
 #include <mesh.h>
+#include <imgui_overlay.h>
+#include <imgui.h>
 #include "direct_texture_io.h"
 #include "direct_texture_compare.h"
 #include <string>
@@ -509,4 +511,152 @@ TEST_CASE("setMesh swaps geometry mid-frame", "[rendering][mesh]")
         canvas.tick(16.0f);
 
     checkAgainstGolden("setMesh_swap_geometry", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// ImGui overlay bars (header + footer)
+//
+// Equivalent of the engine_header / engine_footer overlay bars: a dark bar
+// pinned to the top of the game viewport and one pinned to the bottom, each with
+// horizontally + vertically centered text. The bars are positioned through
+// computeImguiOverlayViewport(), the single framebuffer-px -> ImGui-display
+// conversion point. These goldens lock the overlay layout (bar height, top/bottom
+// placement, text centering) so the recurring "fix one case, break another"
+// scaling churn is caught across the GL/VK, GLFW/SDL3, win/linux matrix. The
+// HiDPI/pillarbox math itself is pinned deterministically by the nonvisual
+// imgui_overlay_tests (headless contentScale is always 1.0).
+// ---------------------------------------------------------------------------
+// ImGui 1.92's dynamic font atlas rasterizes glyphs on demand and uploads the
+// font texture incrementally, so a freshly-constructed canvas needs several
+// frames before every glyph is resident and the rendered output is stable. A
+// cold single-case run with too few warmup frames captures a half-populated
+// atlas (and the exact frame it settles is process-state dependent), so all
+// ImGui goldens warm up by this many frames before the captured frame.
+static constexpr int kImguiWarmupFrames = 16;
+
+static void drawOverlayBars(Nothofagus::Canvas& canvas,
+                            const std::string& headerText,
+                            const std::string& footerText)
+{
+    // Position + size entirely through the public Canvas overlay API so this
+    // golden also guards the live accessors. Bar height comes from
+    // imguiScaledFontSize() (base * content scale) so screen overlays grow with
+    // the standard UI on HiDPI. At the default scale of 1 this equals
+    // imguiBaseFontSize(), so the basic/pillarbox goldens are unchanged; the
+    // imgui_overlay_scaled case exercises scale != 1 via setContentScaleOverride.
+    const Nothofagus::ImguiOverlayRect rect = canvas.imguiOverlayViewport();
+    const float barHeight = canvas.imguiScaledFontSize() * 1.875f;
+    const ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoNav |
+        ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_NoSavedSettings;
+
+    auto drawBar = [&](const char* id, float yTop, const std::string& text)
+    {
+        ImGui::SetNextWindowPos(ImVec2(rect.x, yTop), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(rect.width, barHeight), ImGuiCond_Always);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.08f, 0.08f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        ImGui::Begin(id, nullptr, flags);
+        const ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
+        ImGui::SetCursorPos(ImVec2((rect.width - textSize.x) * 0.5f, (barHeight - textSize.y) * 0.5f));
+        ImGui::TextUnformatted(text.c_str());
+        ImGui::End();
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor(1);
+    };
+
+    drawBar("##test_header", rect.y, headerText);
+    drawBar("##test_footer", rect.y + rect.height - barHeight, footerText);
+}
+
+TEST_CASE("ImGui overlay bars render centered", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(100, 100);
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) { drawOverlayBars(canvas, "HEADER", "FOOTER"); });
+
+    checkAgainstGolden("imgui_overlay_basic", canvas.takeScreenshot());
+}
+
+TEST_CASE("ImGui overlay bars track pillarbox offset", "[rendering][imgui]")
+{
+    // 200x100 framebuffer, 100x100 logical canvas -> pillarbox (viewport.x = 50).
+    // The screenshot captures only the 100x100 game viewport; the bars must fill
+    // its full width, proving they tracked the horizontal offset.
+    Nothofagus::Canvas canvas({200, 100}, "test", {0.0f, 0.0f, 0.0f}, 1, 14, true);
+    canvas.setScreenSize({100, 100});
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) { drawOverlayBars(canvas, "HEADER", "FOOTER"); });
+
+    checkAgainstGolden("imgui_overlay_pillarbox", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// OS DPI scaling of the standard-UI (main) context.
+//
+// setContentScaleOverride() makes the content scale deterministic and
+// independent of the host monitor, so these goldens can prove that the main
+// context honors the OS scale: at 2x both the font AND the widget metrics
+// (window/frame padding, the framed button, the checkbox) render twice as large
+// within the same fixed headless framebuffer. The HiDPI policy math is also
+// pinned by the nonvisual imgui_scale tests (headless contentScale is 1.0).
+// ---------------------------------------------------------------------------
+static void drawStandardUi(Nothofagus::Canvas& canvas)
+{
+    // Fill the game viewport with one borderless panel of native-style widgets,
+    // positioned/sized through the overlay API (top-left origin, points).
+    const Nothofagus::ImguiOverlayRect rect = canvas.imguiOverlayViewport();
+    ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(rect.width, rect.height), ImGuiCond_Always);
+
+    const ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoNav |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoSavedSettings;
+
+    ImGui::Begin("##std_ui", nullptr, flags);
+    ImGui::TextUnformatted("UI");
+    ImGui::Button("Btn");
+    bool checkOn = true; // fixed state -> deterministic render (no input in headless)
+    ImGui::Checkbox("On", &checkOn);
+    ImGui::End();
+}
+
+TEST_CASE("ImGui standard UI at content scale 1x", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(120, 90);
+    canvas.setContentScaleOverride(1.0f);
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) { drawStandardUi(canvas); });
+
+    checkAgainstGolden("imgui_dpi_scale_1x", canvas.takeScreenshot());
+}
+
+TEST_CASE("ImGui standard UI scales font and metrics at 2x", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(240, 180);
+    canvas.setContentScaleOverride(2.0f);
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) { drawStandardUi(canvas); });
+
+    checkAgainstGolden("imgui_dpi_scale_2x", canvas.takeScreenshot());
+}
+
+TEST_CASE("ImGui overlay bars scale with content scale", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(100, 100);
+    canvas.setContentScaleOverride(2.0f);
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) { drawOverlayBars(canvas, "HEADER", "FOOTER"); });
+
+    checkAgainstGolden("imgui_overlay_scaled", canvas.takeScreenshot());
 }

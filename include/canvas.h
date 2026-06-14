@@ -11,6 +11,7 @@
 #include "controller.h"
 #include "tint.h"
 #include "screen_size.h"
+#include "imgui_overlay.h"
 #include "imgui_draw_callback.h"
 #include "imgui_font_id.h"
 #include "imgui_font_source_id.h"
@@ -104,6 +105,38 @@ public:
 
     /// Returns the current game viewport in framebuffer pixels (letterboxed or pillarboxed).
     ViewportRect gameViewport() const;
+
+    /// The game viewport expressed in ImGui display coordinates (top-left
+    /// origin, "points"), ready for ImGui::SetNextWindowPos/Size. Converts
+    /// gameViewport() (framebuffer pixels) through the live DisplaySize /
+    /// DisplayFramebufferScale, so an overlay placed at this rect tracks the
+    /// pillarboxed/letterboxed canvas on any backend or contentScale. Call
+    /// inside a run()/tick() update or renderImguiTo() callback (ImGui must be
+    /// in a frame).
+    ImguiOverlayRect imguiOverlayViewport() const;
+
+    /// The logical base ImGui font size (points) the canvas was built with —
+    /// the authoritative, contentScale-independent unit for sizing overlay
+    /// bars (e.g. barHeight = imguiBaseFontSize() * ratio), decoupled from any
+    /// font pushed during the frame.
+    float imguiBaseFontSize() const;
+
+    /// imguiBaseFontSize() pre-multiplied by the effective content scale
+    /// (contentScale()). The main (standard-UI) context auto-scales its *text* by
+    /// the OS DPI, but manually-computed dimensions (e.g. an overlay bar height) do
+    /// not — size them from this so screen-space overlays grow with the UI on HiDPI.
+    float imguiScaledFontSize() const;
+
+    /// Effective OS content (DPI) scale applied to the main standard-UI ImGui
+    /// context: the override if one was set, else the window backend's reported
+    /// scale (always 1.0 in headless). Standard-UI fonts and widget metrics scale
+    /// by this; diegetic RTT contexts are unaffected.
+    float contentScale() const;
+
+    /// Override the OS content scale used by the main context. Drives an
+    /// accessibility/zoom knob and is the deterministic seam used by the visual
+    /// tests. Pass std::nullopt to revert to the backend-reported value.
+    void setContentScaleOverride(std::optional<float> scale);
 
     /**
      * @brief Add a Bellota to the canvas.

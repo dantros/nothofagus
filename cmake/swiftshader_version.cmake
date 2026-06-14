@@ -4,12 +4,12 @@
 #
 # SwiftShader is a software (CPU) Vulkan ICD. Rendering the visual tests against
 # it gives deterministic pixels that do not vary with GPU drivers, which is why
-# CI authors its golden_headless_vulkan/ set with it.
+# CI authors the canonical tests/visual/golden/ set with it.
 #
 # To bump the SwiftShader version: publish a new prebuilt release at
 # https://github.com/dantros/swiftshader_prebuilts with the new upstream commit
 # SHA in its tag + filename, then update all three variables below together and
-# regenerate the golden_headless_vulkan/ PNGs.
+# regenerate the tests/visual/golden/ PNGs.
 
 set(NOTHOFAGUS_SWIFTSHADER_TAG "swiftshader-d26a3e66-linux-x86_64")
 set(NOTHOFAGUS_SWIFTSHADER_URL

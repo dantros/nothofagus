@@ -11,6 +11,10 @@
 #include <vector>
 #include <utility>
 #include <cstddef>
+#include <optional>
+#include <memory>
+
+struct ImGuiStyle; // global-scope (Dear ImGui); held by unique_ptr to keep imgui.h out of this header.
 
 namespace Nothofagus
 {
@@ -66,8 +70,14 @@ public:
     // ----- Backend access (internal, never reaches the public canvas.h surface) -----
     ActiveBackend&       backend()       noexcept { return mBackend; }
     const ActiveBackend& backend() const noexcept { return mBackend; }
-    /// Window content scale (DPI factor) — only valid after construction.
+    /// Effective content scale (DPI factor) used to scale the main standard-UI
+    /// ImGui context: the override if set, else the window backend's OS scale.
+    /// Only valid after construction.
     float                contentScale() const;
+    /// Override the OS content scale (e.g. for accessibility/zoom or deterministic
+    /// tests). Pass std::nullopt to revert to the backend-reported value.
+    void                 setContentScaleOverride(std::optional<float> scale)                 { mContentScaleOverride = scale; }
+    std::optional<float> contentScaleOverride() const                                        { return mContentScaleOverride; }
 
     // ----- Cross-cutting predicates used by Canvas's remove-gates -----
     bool isExplorerManagedBellota(std::size_t bellotaId) const
@@ -141,6 +151,10 @@ private:
     void ensureSessionStarted(Controller& controller);
     void runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
                      float deltaTimeMS, std::function<void(float)> update, Controller& controller);
+    /// Apply the current effective content scale to the main ImGui context:
+    /// FontScaleDpi (fonts, every frame) + ScaleAllSizes from the pristine base
+    /// style (metrics, only when the scale changed). Main context must be current.
+    void applyMainContextScale();
 
     ScreenSize mScreenSize; ///< The screen size of the canvas.
     std::string mTitle; ///< The title of the canvas window.
@@ -167,6 +181,10 @@ private:
 
     AABox mLastWindowedAABox;
     ViewportRect mGameViewport; ///< Current letterboxed game viewport (set each frame in run()).
+
+    std::optional<float> mContentScaleOverride; ///< When set, replaces the backend OS content scale.
+    std::unique_ptr<ImGuiStyle> mBaseStyle;     ///< Pristine (scale-1) style sizes; reference for ScaleAllSizes.
+    float mAppliedScale{1.0f};                   ///< Last scale applied to the main context's metrics.
 };
 
 }

@@ -43,12 +43,13 @@ jobs:
         -S ${{ github.workspace }}
 
     - name: Build
-      run: cmake --build build --config Release --target rendering_tests dense_land_tests sparse_land_tests
+      run: cmake --build build --config Release --target rendering_tests dense_land_tests sparse_land_tests imgui_overlay_tests
 
     - name: Run nonvisual tests
       run: |
         ./build/tests/nonvisual/dense_land_tests
         ./build/tests/nonvisual/sparse_land_tests
+        ./build/tests/nonvisual/imgui_overlay_tests
 
     - name: Run tests against Vulkan golden files
       env:

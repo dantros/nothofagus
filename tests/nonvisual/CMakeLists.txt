@@ -10,6 +10,13 @@ add_executable(sparse_land_tests
 set_property(TARGET sparse_land_tests PROPERTY CXX_STANDARD 20)
 target_link_libraries(sparse_land_tests PRIVATE nothofagus Catch2::Catch2WithMain)
 
+add_executable(imgui_overlay_tests
+    "imgui_overlay_tests.cpp"
+)
+set_property(TARGET imgui_overlay_tests PROPERTY CXX_STANDARD 20)
+target_link_libraries(imgui_overlay_tests PRIVATE nothofagus Catch2::Catch2WithMain)
+
 include(Catch)
 catch_discover_tests(dense_land_tests)
 catch_discover_tests(sparse_land_tests)
+catch_discover_tests(imgui_overlay_tests)

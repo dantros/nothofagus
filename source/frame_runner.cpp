@@ -14,6 +14,7 @@
 #include <glm/gtx/matrix_transform_2d.hpp>
 #include <glm/ext.hpp>
 #include <imgui.h>
+#include "imgui_overlay.h"
 #include "backends/window_backend.h"
 #include <cmath>
 #include <optional>
@@ -60,6 +61,11 @@ FrameRunner::FrameRunner(
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
+    // Snapshot the pristine (scale-1) style. applyMainContextScale() re-derives the
+    // live style's spacing/padding from this reference via ScaleAllSizes whenever the
+    // effective content scale changes, so repeated scaling never compounds.
+    mBaseStyle = std::make_unique<ImGuiStyle>(ImGui::GetStyle());
+
     // ImGui platform init (GLFW or SDL3 side).
     mWindow->initImGuiPlatform();
 
@@ -77,13 +83,55 @@ FrameRunner::~FrameRunner()
     // working. Canvas's dtor is responsible for draining `mImguiRtt` and
     // `mAssets` GPU resources BEFORE destroying FrameRunner — by the time this
     // body runs they're already torn down, leaving us to shut the backend.
-    mBackend.shutdown();
+    mBackend.shutdown(); // detaches the ImGui renderer backend (ImGui_Impl*_Shutdown).
+
+    // Tear the window backend down now (instead of waiting for member destruction)
+    // so its destructor shuts down the ImGui *platform* backend
+    // (ImGui_ImplGlfw/SDL3_Shutdown) before we destroy the context below. ImGui
+    // asserts/crashes if a context is destroyed while a platform backend is still
+    // attached ("Forgot to shutdown Platform backend?"). Headless has no platform
+    // backend, so this is a plain window teardown there. Order is unchanged
+    // otherwise: renderer shutdown -> window/surface teardown -> context destroy.
+    mWindow.reset();
+
+    // Destroy the main ImGui context this FrameRunner created in its ctor. Without
+    // this each Canvas leaks a context (and its dynamic font atlas / GPU textures);
+    // in a process that builds many canvases (e.g. the test suite) that
+    // accumulation perturbs ImGui's global state and makes rendering flaky. The RTT
+    // secondary contexts are already destroyed by ImguiRttManager before we run.
+    if (ImGui::GetCurrentContext() != nullptr)
+        ImGui::DestroyContext();
 }
 
 float FrameRunner::contentScale() const
 {
     debugCheck(mWindow != nullptr, "FrameRunner::contentScale called before window init");
-    return mWindow->contentScale();
+    return effectiveContentScale(mContentScaleOverride.value_or(0.0f), mWindow->contentScale());
+}
+
+void FrameRunner::applyMainContextScale()
+{
+    // Standard UI (the main context) honors the OS content scale so apps built on
+    // Nothofagus look native on HiDPI displays. Fonts scale via FontScaleDpi (the
+    // 1.92 dynamic atlas re-rasterizes at the displayed density); widget metrics
+    // (padding/spacing/rounding) scale via ScaleAllSizes. RTT secondary contexts
+    // keep their own style (FontScaleDpi == 1), so this never leaks into diegetic UI.
+    const float scale = contentScale();
+    if (scale == mAppliedScale)
+        return; // Steady state: touch nothing so the dynamic font atlas stays stable.
+
+    // Re-derive sizes from the pristine base (preserving live colors + the
+    // app-controlled FontScaleMain zoom), then scale metrics. ScaleAllSizes is
+    // destructive and warns against factors < 1, so clamp the metrics factor.
+    ImGuiStyle& style = ImGui::GetStyle();
+    ImGuiStyle scaled = *mBaseStyle;
+    std::copy(std::begin(style.Colors), std::end(style.Colors), std::begin(scaled.Colors));
+    scaled.FontScaleMain = style.FontScaleMain;
+    const float metricsScale = (scale > 1.0f) ? scale : 1.0f;
+    scaled.ScaleAllSizes(metricsScale);
+    style = scaled;
+    style.FontScaleDpi = scale;
+    mAppliedScale = scale;
 }
 
 std::size_t FrameRunner::getCurrentMonitor() const
@@ -241,7 +289,7 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
     // the previous frame's ImGui::Render() and this frame's ImGui::NewFrame().
     // Must run BEFORE mBackend.imguiNewFrame() so ImGui_Impl*_NewFrame()'s
     // lazy font-texture re-upload picks up the rebuilt atlas.
-    imguiRtt.drainPendingFontOps(mWindow->contentScale());
+    imguiRtt.drainPendingFontOps();
 
     // Get current framebuffer size and compute letterboxed viewport
     auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
@@ -252,6 +300,7 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
     // Start the Dear ImGui frame
     mBackend.imguiNewFrame();
     mWindow->newImGuiFrame();
+    applyMainContextScale(); // DPI-scale the main (standard-UI) context before NewFrame.
     ImGui::NewFrame();
 
     {

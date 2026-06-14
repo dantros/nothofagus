@@ -74,27 +74,36 @@ public:
     ImguiFontManager(const EmbeddedFontFamily& family,
                      float                     imguiFontSize) noexcept;
 
+    /// The logical base UI font size (points) the canvas was constructed with.
+    /// With the dynamic-atlas recipe this is also the main context's
+    /// `ImGui::GetFontSize()` on every backend / contentScale; overlays size
+    /// themselves from it so layout is contentScale-independent.
+    float imguiFontSize() const noexcept { return mImguiFontSize; }
+
     /// One-time setup. Registers all five built-in faces as font sources
     /// (regular's id is exposed via defaultSourceId(); the rest via
     /// boldSourceId()/italicSourceId()/boldItalicSourceId()/monoSourceId()),
-    /// adds the main HiDPI font to the shared atlas at `imguiFontSize *
-    /// contentScale * contentScale` from the regular face, then bakes a font
-    /// at the unscaled `imguiFontSize` from the regular source and registers
-    /// it as the secondary-context default. Call from FrameRunner's
-    /// constructor body after backend initImGuiRenderer.
-    void initialize(float contentScale);
+    /// adds the main UI font to the shared atlas at the logical `imguiFontSize`
+    /// from the regular face, then bakes a font at the same `imguiFontSize` from
+    /// the regular source and registers it as the secondary-context default. Call
+    /// from FrameRunner's constructor body after backend initImGuiRenderer.
+    ///
+    /// HiDPI is handled at the main *context* level (FrameRunner sets
+    /// style.FontScaleDpi from the OS content scale), so fonts are baked at their
+    /// logical sizes here and never pre-multiplied by the scale.
+    void initialize();
 
     /// True if there are queued ops awaiting drain.
     bool hasPendingOps() const noexcept;
 
     /// Drain entry point. Apply pending RemoveSource ops (cascade-drop every
     /// entry attributed to each victim source, then drop the source itself),
-    /// apply pending Remove ops, ImFontAtlas::Clear(), re-add the main HiDPI
-    /// font (imguiFontSize * contentScale^2), then rebakeAll() so every
+    /// apply pending Remove ops, ImFontAtlas::Clear(), re-add the main UI
+    /// font (logical imguiFontSize), then rebakeAll() so every
     /// surviving entry gets a fresh ImFont*. Does NOT touch secondary
     /// contexts or the GPU font texture - those are ImguiRttManager's
     /// responsibility.
-    void drainPendingOpsAndRebuildAtlas(float contentScale);
+    void drainPendingOpsAndRebuildAtlas();
 
     // --- Per-id surface (atlas-locking-aware) -------------------------------
 

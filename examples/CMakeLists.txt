@@ -70,6 +70,12 @@ add_executable(hello_imgui_rtt
 set_property(TARGET hello_imgui_rtt PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_imgui_rtt PRIVATE nothofagus)
 
+add_executable(hello_imgui_overlay
+    "hello_imgui_overlay.cpp"
+)
+set_property(TARGET hello_imgui_overlay PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_imgui_overlay PRIVATE nothofagus)
+
 add_executable(hello_custom_font
     "hello_custom_font.cpp"
 )
@@ -130,3 +136,9 @@ add_executable(hello_markdown
 )
 set_property(TARGET hello_markdown PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_markdown PRIVATE nothofagus)
+
+add_executable(hello_dpi_scaling
+    "hello_dpi_scaling.cpp"
+)
+set_property(TARGET hello_dpi_scaling PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_dpi_scaling PRIVATE nothofagus)
