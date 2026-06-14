@@ -30,9 +30,9 @@ glm::vec2 generateRandomPosition(unsigned int width, unsigned int height)
 
 Nothofagus::TextureId addTextureWithText(Nothofagus::Canvas& canvas, Nothofagus::ColorPallete pallete, const std::string& text)
 {
-    Nothofagus::IndirectTexture texture({10 * text.size(), 10}, {0.5, 0.5, 0.5, 1.0});
-    texture.setPallete(pallete);
-    Nothofagus::writeText(texture, text, 1,1, Nothofagus::FontType::Basic);
+    const glm::vec4 bgColor = pallete.colors.empty() ? glm::vec4(0.0f) : pallete.colors[0];
+    const glm::vec4 fgColor = pallete.colors.size() > 1 ? pallete.colors[1] : glm::vec4(1.0f);
+    Nothofagus::IndirectTexture texture = Nothofagus::makeTextTexture(text, Nothofagus::FontType::Basic, fgColor, bgColor);
     return canvas.addTexture(texture);
 }
 

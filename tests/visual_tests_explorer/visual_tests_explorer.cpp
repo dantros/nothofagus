@@ -228,11 +228,10 @@ private:
     // adds it as a plain bellota — in-game text, not ImGui. angle is in degrees.
     Nothofagus::BellotaId addLabel(const std::string& text, float x, float y, float angle = 0.0f)
     {
-        const int width = static_cast<int>(8 * text.size());
-        Nothofagus::IndirectTexture label({width, 8}, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
-        label.setPallete(Nothofagus::ColorPallete{{0.0f, 0.0f, 0.0f, 0.0f},   // 0: transparent bg
-                                                  {1.0f, 1.0f, 1.0f, 1.0f}}); // 1: white glyph
-        Nothofagus::writeText(label, text);
+        Nothofagus::IndirectTexture label = Nothofagus::makeTextTexture(
+            text, Nothofagus::FontType::Basic,
+            {1.0f, 1.0f, 1.0f, 1.0f},   // white glyph
+            {0.0f, 0.0f, 0.0f, 0.0f});  // transparent bg
         const Nothofagus::TextureId texId = mCanvas.addTexture(label);
         return mCanvas.addBellota(Nothofagus::Bellota(Nothofagus::Transform({x, y}, 1.0f, angle), texId));
     }

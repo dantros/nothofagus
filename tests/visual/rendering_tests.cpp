@@ -3,6 +3,7 @@
 #include <catch2/reporters/catch_reporter_registrars.hpp>
 #include <canvas.h>
 #include <texture.h>
+#include <text.h>
 #include <bellota.h>
 #include <mesh.h>
 #include <imgui_overlay.h>
@@ -668,4 +669,48 @@ TEST_CASE("ImGui overlay bars scale with content scale", "[rendering][imgui]")
         canvas.tick(16.0f, [&](float) { drawOverlayBars(canvas, "HEADER", ""); });
 
     checkAgainstGolden("imgui_overlay_scaled", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// Test: tile-map text — makeTextTexture renders a single-line string as one
+// bellota / one draw call (glyph atlas as layers, string as the cell grid).
+// ---------------------------------------------------------------------------
+TEST_CASE("Tilemap text renders a single line", "[rendering][text]")
+{
+    auto canvas = makeCanvas(40, 10);
+
+    // White glyphs on a transparent background; "Hi" = 2 cells -> 16x8 world.
+    Nothofagus::IndirectTexture textTex = Nothofagus::makeTextTexture(
+        "Hi", Nothofagus::FontType::Basic, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f});
+    auto texId = canvas.addTexture(textTex);
+    canvas.addBellota(Nothofagus::Bellota({glm::vec2(20.0f, 5.0f)}, texId));
+
+    for (int i = 0; i < 3; ++i)
+        canvas.tick(16.0f);
+
+    checkAgainstGolden("tilemap_text_single_line", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// Test: multi-line tile-map text — '\n' splits into tile-map rows, line 0 on top.
+// Also exercises setText, which rewrites only the cell grid in place.
+// ---------------------------------------------------------------------------
+TEST_CASE("Tilemap text renders multiple lines", "[rendering][text]")
+{
+    auto canvas = makeCanvas(40, 30);
+
+    // 2x2 cells -> 16x16 world. Built with placeholder text, then re-spelled via
+    // setText to the same dimensions (the cheap map-only update path).
+    Nothofagus::IndirectTexture textTex = Nothofagus::makeTextTexture(
+        "..\n..", Nothofagus::FontType::Basic, {0.2f, 1.0f, 0.4f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f});
+    auto texId = canvas.addTexture(textTex);
+    canvas.addBellota(Nothofagus::Bellota({glm::vec2(20.0f, 15.0f)}, texId));
+
+    Nothofagus::setText(std::get<Nothofagus::IndirectTexture>(canvas.texture(texId)), "AB\nCD");
+    canvas.markTextureAsDirty(texId);
+
+    for (int i = 0; i < 3; ++i)
+        canvas.tick(16.0f);
+
+    checkAgainstGolden("tilemap_text_multi_line", canvas.takeScreenshot());
 }
