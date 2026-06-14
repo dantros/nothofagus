@@ -3,6 +3,7 @@
 
 using Nothofagus::computeImguiOverlayViewport;
 using Nothofagus::ImguiOverlayRect;
+using Nothofagus::effectiveContentScale;
 
 // These tests pin down the framebuffer-pixels -> ImGui-display-points conversion
 // that overlay bars (header/footer) depend on. They are backend-independent and
@@ -137,4 +138,47 @@ TEST_CASE("Overlay viewport guards non-positive scale", "[imgui_overlay]")
     REQUIRE(rect.y      == 0.0f);
     REQUIRE(rect.width  == 80.0f);
     REQUIRE(rect.height == 60.0f);
+}
+
+// ---------------------------------------------------------------------------
+// effectiveContentScale: the policy that drives main-context DPI scaling.
+// An explicit override wins; otherwise the backend's OS scale; non-positive
+// inputs (zeroed override, backend reporting 0) fall back to 1.0 so the UI
+// never collapses. These pin the policy the visual goldens rely on, with no
+// render backend needed (headless contentScale is always 1.0).
+// ---------------------------------------------------------------------------
+TEST_CASE("effectiveContentScale prefers the override", "[imgui_scale]")
+{
+    REQUIRE(effectiveContentScale(2.0f, 1.0f) == 2.0f);   // override wins over backend
+    REQUIRE(effectiveContentScale(0.75f, 3.0f) == 0.75f); // even a smaller override wins
+}
+
+TEST_CASE("effectiveContentScale falls back to the backend scale", "[imgui_scale]")
+{
+    REQUIRE(effectiveContentScale(0.0f, 1.5f) == 1.5f);   // no override -> backend value
+    REQUIRE(effectiveContentScale(0.0f, 1.0f) == 1.0f);
+}
+
+TEST_CASE("effectiveContentScale guards non-positive inputs", "[imgui_scale]")
+{
+    REQUIRE(effectiveContentScale(0.0f, 0.0f) == 1.0f);    // both absent -> 1.0
+    REQUIRE(effectiveContentScale(-2.0f, 0.0f) == 1.0f);   // negative override ignored
+    REQUIRE(effectiveContentScale(0.0f, -1.0f) == 1.0f);   // negative backend ignored
+}
+
+// ---------------------------------------------------------------------------
+// Scaled overlay bar height: screen-space overlays size their bar height from
+// the scaled base font (imguiScaledFontSize == base * effectiveScale) so they
+// grow with the standard UI on HiDPI. This mirrors Canvas::imguiScaledFontSize.
+// ---------------------------------------------------------------------------
+TEST_CASE("Scaled overlay bar height tracks the content scale", "[imgui_scale]")
+{
+    constexpr float baseFontSize = 14.0f;
+    constexpr float barRatio     = 1.875f;
+
+    auto barHeight = [&](float scale) { return baseFontSize * scale * barRatio; };
+
+    REQUIRE(barHeight(effectiveContentScale(0.0f, 1.0f)) == 14.0f * 1.875f);        // scale 1
+    REQUIRE(barHeight(effectiveContentScale(2.0f, 1.0f)) == 14.0f * 2.0f * 1.875f); // override 2
+    REQUIRE(barHeight(effectiveContentScale(0.0f, 1.5f)) == 14.0f * 1.5f * 1.875f); // backend 1.5
 }

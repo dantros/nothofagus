@@ -48,4 +48,18 @@ inline ImguiOverlayRect computeImguiOverlayViewport(
     return { x, y, width, height };
 }
 
+/// Resolve the effective content scale used to DPI-scale the main (standard-UI)
+/// ImGui context: an explicit override wins, otherwise the backend's OS content
+/// scale. Non-positive inputs are treated as "no value" so a zeroed override or a
+/// backend that reports 0 falls back to 1.0 rather than collapsing the UI.
+///
+/// Pure and header-only so the nonvisual (no-render-backend) test group can pin
+/// this policy without constructing a Canvas.
+inline float effectiveContentScale(float overrideScale, float backendScale)
+{
+    if (overrideScale > 0.0f) return overrideScale;
+    if (backendScale  > 0.0f) return backendScale;
+    return 1.0f;
+}
+
 } // namespace Nothofagus

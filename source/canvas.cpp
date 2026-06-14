@@ -74,9 +74,11 @@ struct Canvas::Implementation
                    makeEmbeddedFontFamily(),
                    imguiFontSize)
     {
-        // Main HiDPI font bake — needs the backend's ImGui renderer to be live,
-        // which it is once FrameRunner's ctor has returned.
-        imguiRtt.fonts().initialize(frameRunner.contentScale());
+        // Main UI font bake — needs the backend's ImGui renderer to be live,
+        // which it is once FrameRunner's ctor has returned. HiDPI is applied at
+        // the context level each frame (FrameRunner::applyMainContextScale), so
+        // fonts are baked at their logical sizes here.
+        imguiRtt.fonts().initialize();
     }
 
     FrameRunner      frameRunner;
@@ -135,6 +137,9 @@ ImguiOverlayRect Canvas::imguiOverlayViewport() const
 }
 
 float Canvas::imguiBaseFontSize() const                          { return mImplPtr->imguiRtt.fonts().imguiFontSize(); }
+float Canvas::imguiScaledFontSize() const                        { return imguiBaseFontSize() * contentScale(); }
+float Canvas::contentScale() const                               { return mImplPtr->frameRunner.contentScale(); }
+void Canvas::setContentScaleOverride(std::optional<float> scale) { mImplPtr->frameRunner.setContentScaleOverride(scale); }
 
 // ---------------------------------------------------------------------------
 // Bellotas — forward to AssetRegistry; remove gates against DenseLandExplorer pool

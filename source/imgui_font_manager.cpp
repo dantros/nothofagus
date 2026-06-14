@@ -34,26 +34,19 @@ const ImWchar* glyphRangesFor(GlyphRange range)
 /// Adds the main ImGui UI font directly to the atlas (not tracked in the
 /// IndexedContainer). Baked at the logical `imguiFontSize` (points).
 ///
-/// ImGui 1.92's dynamic font atlas (ImGuiBackendFlags_RendererHasTextures, set
-/// by every render backend here) rasterizes glyphs at the actual displayed
-/// pixel density each frame, so HiDPI crispness is automatic — the bake size is
-/// the *layout* size, not a pre-scaled pixel size. Baking at `imguiFontSize`
-/// keeps UI text at a fixed fraction of the game canvas, scaling together with
-/// the letterboxed sprites instead of by OS DPI, and makes `GetFontSize()`
-/// return `imguiFontSize` on every backend / contentScale. The previous
-/// `* contentScale * contentScale` recipe over-inflated text on HiDPI displays.
-///
-/// (`contentScale` is retained in the signature so the plumbing is ready for a
-/// future opt-in DPI scale; it no longer multiplies the size.) The regular face
-/// is a stb-compressed blob, so it goes through AddFontFromMemoryCompressedTTF,
-/// which always decompresses into a fresh atlas-owned buffer - the static
-/// compressed source stays available for every atlas rebuild.
+/// HiDPI is handled at the main *context* level: FrameRunner sets
+/// `style.FontScaleDpi` from the OS content scale, and ImGui 1.92's dynamic atlas
+/// (ImGuiBackendFlags_RendererHasTextures, set by every render backend here)
+/// re-rasterizes glyphs at the displayed density each frame. So the bake size is
+/// the *logical layout* size — `GetFontSize()` then reports `imguiFontSize *
+/// FontScaleMain * FontScaleDpi`. The regular face is a stb-compressed blob, so
+/// it goes through AddFontFromMemoryCompressedTTF, which always decompresses into
+/// a fresh atlas-owned buffer — the static compressed source stays available for
+/// every atlas rebuild.
 void addMainHiDpiFont(const void* fontData,
                       std::size_t fontDataLen,
-                      float       imguiFontSize,
-                      float       contentScale)
+                      float       imguiFontSize)
 {
-    (void)contentScale;
     ImFontConfig fontConfig;
     fontConfig.FontDataOwnedByAtlas = false;
     ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(
@@ -107,7 +100,7 @@ ImFont* ImguiFontManager::bakeOne(const FontSource& source, float sizePx) const
     return font;
 }
 
-void ImguiFontManager::initialize(float contentScale)
+void ImguiFontManager::initialize()
 {
     // Register each built-in face as a non-owning font source. externalData /
     // externalLen point straight at the embedded binary blobs so nothing is
@@ -138,7 +131,7 @@ void ImguiFontManager::initialize(float contentScale)
 
     // Main HiDPI font and the secondary-context default are both built from
     // the regular face (unchanged behavior from the single-font setup).
-    addMainHiDpiFont(mFamily.regular.data, mFamily.regular.len, mImguiFontSize, contentScale);
+    addMainHiDpiFont(mFamily.regular.data, mFamily.regular.len, mImguiFontSize);
     setDefaultSize(mImguiFontSize);
 }
 
@@ -147,7 +140,7 @@ bool ImguiFontManager::hasPendingOps() const noexcept
     return !mPendingFontOps.empty();
 }
 
-void ImguiFontManager::drainPendingOpsAndRebuildAtlas(float contentScale)
+void ImguiFontManager::drainPendingOpsAndRebuildAtlas()
 {
     if (mPendingFontOps.empty()) return;
 
@@ -184,7 +177,7 @@ void ImguiFontManager::drainPendingOpsAndRebuildAtlas(float contentScale)
     ImGui::GetIO().Fonts->Clear();
 
     // 3. Re-add the main HiDPI font using the same recipe as initialize().
-    addMainHiDpiFont(mFamily.regular.data, mFamily.regular.len, mImguiFontSize, contentScale);
+    addMainHiDpiFont(mFamily.regular.data, mFamily.regular.len, mImguiFontSize);
 
     // 4. Re-bake every surviving entry from its attributed source; ids and
     //    entry slots stay put, only each entry's currentImFont is patched

@@ -84,12 +84,14 @@ public:
     /// (regular's id is exposed via defaultSourceId(); the rest via
     /// boldSourceId()/italicSourceId()/boldItalicSourceId()/monoSourceId()),
     /// adds the main UI font to the shared atlas at the logical `imguiFontSize`
-    /// from the regular face (ImGui 1.92's dynamic atlas handles HiDPI density,
-    /// so no contentScale pre-multiply), then bakes a font at the same
-    /// `imguiFontSize` from the regular source and registers it as the
-    /// secondary-context default. Call from FrameRunner's constructor body
-    /// after backend initImGuiRenderer.
-    void initialize(float contentScale);
+    /// from the regular face, then bakes a font at the same `imguiFontSize` from
+    /// the regular source and registers it as the secondary-context default. Call
+    /// from FrameRunner's constructor body after backend initImGuiRenderer.
+    ///
+    /// HiDPI is handled at the main *context* level (FrameRunner sets
+    /// style.FontScaleDpi from the OS content scale), so fonts are baked at their
+    /// logical sizes here and never pre-multiplied by the scale.
+    void initialize();
 
     /// True if there are queued ops awaiting drain.
     bool hasPendingOps() const noexcept;
@@ -101,7 +103,7 @@ public:
     /// surviving entry gets a fresh ImFont*. Does NOT touch secondary
     /// contexts or the GPU font texture - those are ImguiRttManager's
     /// responsibility.
-    void drainPendingOpsAndRebuildAtlas(float contentScale);
+    void drainPendingOpsAndRebuildAtlas();
 
     // --- Per-id surface (atlas-locking-aware) -------------------------------
 

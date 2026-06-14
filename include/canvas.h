@@ -121,6 +121,23 @@ public:
     /// font pushed during the frame.
     float imguiBaseFontSize() const;
 
+    /// imguiBaseFontSize() pre-multiplied by the effective content scale
+    /// (contentScale()). The main (standard-UI) context auto-scales its *text* by
+    /// the OS DPI, but manually-computed dimensions (e.g. an overlay bar height) do
+    /// not — size them from this so screen-space overlays grow with the UI on HiDPI.
+    float imguiScaledFontSize() const;
+
+    /// Effective OS content (DPI) scale applied to the main standard-UI ImGui
+    /// context: the override if one was set, else the window backend's reported
+    /// scale (always 1.0 in headless). Standard-UI fonts and widget metrics scale
+    /// by this; diegetic RTT contexts are unaffected.
+    float contentScale() const;
+
+    /// Override the OS content scale used by the main context. Drives an
+    /// accessibility/zoom knob and is the deterministic seam used by the visual
+    /// tests. Pass std::nullopt to revert to the backend-reported value.
+    void setContentScaleOverride(std::optional<float> scale);
+
     /**
      * @brief Add a Bellota to the canvas.
      * @param bellota The Bellota object to add.
