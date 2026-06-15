@@ -414,7 +414,6 @@ void imgui_md::SPAN_DEL(bool e)
 
 void imgui_md::render_text(const char* str, const char* str_end)
 {
-	const float scale = ImGui::GetIO().FontGlobalScale;
 	const ImGuiStyle& s = ImGui::GetStyle();
 	bool is_lf = false;
 
@@ -432,8 +431,13 @@ void imgui_md::render_text(const char* str, const char* str_end)
 				wl -= ImGui::GetCursorPosX();
 			}
 
-			te = ImGui::GetFont()->CalcWordWrapPositionA(
-				scale, str, str_end, wl);
+			// ImGui 1.92 renders text at GetFontSize() (= size * FontScaleMain *
+			// FontScaleDpi). Wrap at that same size so the layout matches the
+			// rendered width; the legacy CalcWordWrapPositionA(scale, ...) wrapped
+			// at LegacySize * FontGlobalScale (deprecated, pinned to 1.0), which
+			// ignored DPI/main scaling and clipped the last word on HiDPI displays.
+			te = ImGui::GetFont()->CalcWordWrapPosition(
+				ImGui::GetFontSize(), str, str_end, wl);
 
 			if (te == str)++te;
 		}
