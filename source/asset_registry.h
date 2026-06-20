@@ -14,6 +14,7 @@
 #include "backends/render_backend_select.h"
 
 #include <glm/glm.hpp>
+#include <vector>
 
 namespace Nothofagus
 {
@@ -59,6 +60,20 @@ public:
     const Texture& texture(TextureId textureId) const;
     void clearUnusedTextures();
 
+    /// Detect-only counterpart to clearUnusedTextures(): returns the non-proxy
+    /// textures currently unreferenced by any bellota and removes them from the
+    /// usage monitor, WITHOUT freeing GPU resources. The caller (the deferred-
+    /// free path) frees each later via freeRetiredTexture() once no in-flight
+    /// render snapshot still references it. Proxy textures are skipped (they are
+    /// RT-owned) and the unused set is cleared afterwards — identical monitor
+    /// side effects to clearUnusedTextures(), minus the immediate free.
+    std::vector<TextureId> collectUnusedTextures();
+
+    /// Free GPU resources for a texture returned by collectUnusedTextures() and
+    /// erase it from the container. Does not touch the usage monitor — that was
+    /// already done by collectUnusedTextures().
+    void freeRetiredTexture(TextureId textureId);
+
     // ---------- Meshes ----------
     MeshId addMesh(const Mesh& mesh);
     MeshId addMesh(Mesh&& mesh);
@@ -67,6 +82,17 @@ public:
     const Mesh& mesh(MeshId meshId) const;
     const Mesh& mesh(BellotaId bellotaId) const;
     void clearUnusedMeshes();
+
+    /// Detect-only counterpart to clearUnusedMeshes(): returns the meshes
+    /// currently unreferenced by any bellota and removes them from the usage
+    /// monitor, WITHOUT freeing GPU resources. Auto-quads and user meshes are
+    /// treated alike (same eligibility as clearUnusedMeshes). Free each later
+    /// via freeRetiredMesh().
+    std::vector<MeshId> collectUnusedMeshes();
+
+    /// Free GPU resources for a mesh returned by collectUnusedMeshes() and erase
+    /// it from the container. Does not touch the usage monitor.
+    void freeRetiredMesh(MeshId meshId);
 
     // ---------- Render targets ----------
     RenderTargetId addRenderTarget(ScreenSize size);
