@@ -648,6 +648,12 @@ void FrameRunner::beginThreadedSession(Controller& controller)
         applyMainContextScale();
         ImGui::NewFrame();
         ImGui::Render();
+        // Open the main render pass before endFrame closes it. A real frame reaches
+        // beginMainPass via renderSnapshotContents; this priming frame draws nothing
+        // but must still produce a balanced begin/end pass — otherwise the Vulkan
+        // backend's endFrame issues vkCmdEndRenderPass with no active pass (the GL
+        // backend has no render-pass concept, so it was unaffected).
+        mBackend.beginMainPass(viewport);
         mBackend.endFrame(ImGui::GetDrawData(), fbW, fbH);
     }
 
