@@ -93,13 +93,20 @@ int main()
         simTime += dt;
         if (dt > 0.0f) lastFps = 0.9f * lastFps + 0.1f * (1000.0f / dt);
 
+        // While the cursor is over the panel, freeze world activity (demonstrates
+        // imguiWantsMouse(): UI focus suppresses the world). Crucially this gates
+        // *aging/despawn together with spawning* — gating only spawning would let
+        // the population drain to nothing while you interact with the controls.
+        const bool worldActive = !canvas.imguiWantsMouse();
+
         // --- Simulation: animate + age/despawn ---
         for (std::size_t i = 0; i < sprites.size();)
         {
             Sprite& sprite = sprites[i];
-            sprite.age += dt;
+            if (worldActive) sprite.age += dt;
+            const bool expired  = worldActive && sprite.age >= sprite.lifespan;
             const bool overTarget = static_cast<int>(i) >= targetCount;
-            if (sprite.age >= sprite.lifespan || overTarget)
+            if (expired || overTarget)
             {
                 canvas.despawnBellota(sprite.id);
                 sprite = sprites.back();
@@ -117,9 +124,8 @@ int main()
             ++i;
         }
 
-        // Refill toward the target — paused while the cursor is over the panel
-        // (demonstrates imguiWantsMouse(): UI focus suppresses world activity).
-        if (spawning && !canvas.imguiWantsMouse())
+        // Refill toward the target — paused (with aging, above) while interacting.
+        if (spawning && worldActive)
         {
             int budget = 3;
             while (static_cast<int>(sprites.size()) < targetCount && budget-- > 0)
