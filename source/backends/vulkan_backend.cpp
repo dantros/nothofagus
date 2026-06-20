@@ -452,13 +452,14 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
     }
     {
         VkDescriptorPoolSize imguiPoolSizes[2]{
-            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 100},
+            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                 kImguiImageDescriptorPoolSize + kImguiImageDescriptorHeadroom},
             {VK_DESCRIPTOR_TYPE_SAMPLER,       IMGUI_IMPL_VULKAN_MINIMUM_SAMPLER_POOL_SIZE},
         };
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-        poolInfo.maxSets       = 100;
+        poolInfo.maxSets       = kImguiImageDescriptorPoolSize + kImguiImageDescriptorHeadroom;
         poolInfo.poolSizeCount = 2;
         poolInfo.pPoolSizes    = imguiPoolSizes;
         if (vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &mImguiDescriptorPool) != VK_SUCCESS)
@@ -772,13 +773,18 @@ void VulkanBackend::flushPendingDeletions(FrameData& frame)
     for (auto& pending : frame.pendingFlat2DDeletions)
     {
         if (pending.descriptorSet != VK_NULL_HANDLE)
+        {
             ImGui_ImplVulkan_RemoveTexture(pending.descriptorSet);
+            if (mFlat2DDescriptorsLive > 0) --mFlat2DDescriptorsLive;
+        }
         if (pending.sampler != VK_NULL_HANDLE)
             vkDestroySampler(mDevice, pending.sampler, nullptr);
         if (pending.imageView != VK_NULL_HANDLE)
             vkDestroyImageView(mDevice, pending.imageView, nullptr);
     }
     frame.pendingFlat2DDeletions.clear();
+    if (mFlat2DDescriptorsLive < kImguiImageDescriptorPoolSize)
+        mLoggedFlat2DExhaustion = false;   // recovered -> let it warn again next time
 
     for (auto& pending : frame.pendingRenderTargetDeletions)
     {
@@ -1727,7 +1733,24 @@ std::uint64_t VulkanBackend::acquireFlat2DImguiHandle(DRenderTarget renderTarget
 
     auto existing = mFlat2Ds.find(renderTarget.id);
     if (existing != mFlat2Ds.end() && existing->second.descriptorSet != VK_NULL_HANDLE)
-        return (std::uint64_t)existing->second.descriptorSet;
+        return (std::uint64_t)existing->second.descriptorSet;   // reuse, no new alloc
+
+    // ImGui_ImplVulkan_AddTexture aborts (check_vk_result) if the pool is exhausted, so we
+    // must refuse *before* calling it. Over the budget -> log once + no-op (return 0). The
+    // image manager treats a 0 handle as "not ready" and simply draws nothing for that
+    // visual that frame; nothing crashes, and it recovers once descriptors free up.
+    if (mFlat2DDescriptorsLive >= kImguiImageDescriptorPoolSize)
+    {
+        if (not mLoggedFlat2DExhaustion)
+        {
+            spdlog::error("imguiVisual: ImGui image descriptor budget reached ({} live, cap {}). "
+                          "Extra images are skipped until some are released. Raise "
+                          "kImguiImageDescriptorPoolSize in vulkan_backend.h if you need more.",
+                          mFlat2DDescriptorsLive, kImguiImageDescriptorPoolSize);
+            mLoggedFlat2DExhaustion = true;
+        }
+        return 0;
+    }
 
     VulkanRenderTarget& rt = rtIt->second;
 
@@ -1752,6 +1775,7 @@ std::uint64_t VulkanBackend::acquireFlat2DImguiHandle(DRenderTarget renderTarget
         ImGui_ImplVulkan_AddTexture(sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     mFlat2Ds[renderTarget.id] = Flat2D{view, sampler, descriptorSet};
+    ++mFlat2DDescriptorsLive;
     return (std::uint64_t)descriptorSet;
 }
 

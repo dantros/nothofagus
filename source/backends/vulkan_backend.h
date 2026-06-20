@@ -30,6 +30,18 @@ namespace Nothofagus
 
 static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
+// Budget for ImGui image descriptors used by Canvas::imguiVisual (one VK_DESCRIPTOR_TYPE_
+// SAMPLED_IMAGE set per on-screen visual). Vulkan-only: descriptor pools don't exist on
+// the OpenGL backend, which has no comparable cap. Each set is tiny (~tens of bytes), so
+// the whole reservation is ~tens of KB regardless of how many images you actually show.
+// Past this many concurrent images, imguiVisual logs once and no-ops the extra images
+// instead of aborting. Raise this if you need to display more at once.
+constexpr std::uint32_t kImguiImageDescriptorPoolSize = 1024;
+
+// Small extra headroom in the pool itself for ImGui's own atlas/sampler descriptors, so
+// imguiVisual images (capped at kImguiImageDescriptorPoolSize) can never starve them.
+constexpr std::uint32_t kImguiImageDescriptorHeadroom = 16;
+
 struct PendingBufferDeletion
 {
     VkBuffer      buffer;
@@ -225,6 +237,8 @@ private:
     // Per-render-target flat-2D ImGui companion (lazy). Keyed by DRenderTarget::id.
     struct Flat2D { VkImageView view = VK_NULL_HANDLE; VkSampler sampler = VK_NULL_HANDLE; VkDescriptorSet descriptorSet = VK_NULL_HANDLE; };
     std::unordered_map<std::size_t, Flat2D> mFlat2Ds;
+    std::uint32_t mFlat2DDescriptorsLive   = 0;     ///< live ImGui image descriptor sets (pool occupancy).
+    bool          mLoggedFlat2DExhaustion  = false; ///< rate-limit the exhaustion error to once per spell.
 
     // --- Per-frame state (set in beginFrame/beginRttPass, consumed by draw calls and endFrame) ---
     glm::vec3       mClearColor              = {};
