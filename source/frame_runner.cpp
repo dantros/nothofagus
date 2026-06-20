@@ -204,10 +204,10 @@ static glm::mat3 computeWorldTransformMat(const ScreenSize& screenSize)
     return glm::scale(worldTransformMat, worldScale);
 }
 
-static SpriteDrawParams makeSpriteDrawParams(const BellotaPack& pack, const glm::mat3& worldTransform)
+static DrawItem makeDrawItem(const BellotaPack& pack)
 {
     const Bellota& bellota = pack.bellota;
-    const glm::mat3 totalTransform = worldTransform * bellota.transform().toMat3();
+    debugCheck(bellota.meshId().has_value(), "BellotaPack is missing a MeshId — invariant broken");
     glm::vec3 tintColor{1.0f, 1.0f, 1.0f};
     float tintIntensity = 0.0f;
     if (pack.tintOpt.has_value())
@@ -215,55 +215,62 @@ static SpriteDrawParams makeSpriteDrawParams(const BellotaPack& pack, const glm:
         tintColor     = pack.tintOpt.value().color;
         tintIntensity = pack.tintOpt.value().intensity;
     }
-    return SpriteDrawParams{
-        totalTransform,
+    return DrawItem{
+        bellota.transform().toMat3(),
+        bellota.texture(),
+        bellota.meshId().value(),
         static_cast<int>(bellota.currentLayer()),
         tintColor,
         tintIntensity,
-        bellota.opacity()
+        bellota.opacity(),
+        bellota.depthOffset()
     };
 }
 
-static void sortByDepthOffset(const BellotaContainer& bellotas, std::vector<const BellotaPack*>& sortedBellotas)
+// Project the visible bellotas into a depth-sorted POD draw list. Iterating the
+// same container in the same order as before and sorting on the same key keeps
+// the resulting draw order identical to the previous pointer-based path.
+static void buildMainDraws(const BellotaContainer& bellotas, std::vector<DrawItem>& out)
 {
-    // Per spec, clear does not change the underlaying memory allocation (capacity)
-    sortedBellotas.clear();
+    out.clear(); // keeps capacity per spec
 
     for (const auto& [bellotaIndex, bellotaPack] : bellotas)
     {
-        if (not bellotaPack.bellota.visible()) continue;   // hidden ones never enter the sort
-        sortedBellotas.push_back(&bellotaPack);
+        if (not bellotaPack.bellota.visible()) continue; // hidden ones never enter the sort
+        out.push_back(makeDrawItem(bellotaPack));
     }
 
-    std::sort(sortedBellotas.begin(), sortedBellotas.end(),
-        [](const BellotaPack* lhs, const BellotaPack* rhs)
+    std::sort(out.begin(), out.end(),
+        [](const DrawItem& lhs, const DrawItem& rhs)
         {
-            debugCheck(lhs != nullptr and rhs != nullptr, "invalid pointers");
-            const auto lhsDepthOffset = lhs->bellota.depthOffset();
-            const auto rhsDepthOffset = rhs->bellota.depthOffset();
-            return lhsDepthOffset < rhsDepthOffset;
+            return lhs.depthOffset < rhs.depthOffset;
         }
     );
 }
 
-static void drawBellotaPacks(
-    std::span<const BellotaPack* const> sortedBellotaPacks,
+// Render a POD draw list. Resolves each item's texture/mesh id to its GPU handle
+// at draw time — the snapshot only carries ids because handles do not exist yet
+// at commit time.
+static void drawItems(
+    std::span<const DrawItem> items,
     const TextureContainer& textures,
     const MeshContainer& meshes,
     const glm::mat3& worldTransform,
     ActiveBackend& backend)
 {
-    for (const BellotaPack* packPtr : sortedBellotaPacks)
+    for (const DrawItem& item : items)
     {
-        // Callers (sortByDepthOffset / the RTT pre-pass gather) pre-filter hidden
-        // bellotas, so this list is visible-only by invariant — no visible() check here.
-        debugCheck(packPtr->bellota.visible());
-        if (!packPtr->bellota.meshId().has_value()) continue;
-        const MeshPack& meshPack = meshes.at(packPtr->bellota.meshId().value().id);
+        const MeshPack& meshPack = meshes.at(item.mesh.id);
         if (!meshPack.dmeshOpt.has_value()) continue;
-        const TexturePack& texturePack = textures.at(packPtr->bellota.texture().id);
+        const TexturePack& texturePack = textures.at(item.texture.id);
         if (!texturePack.dtextureOpt.has_value()) continue;
-        SpriteDrawParams drawParams = makeSpriteDrawParams(*packPtr, worldTransform);
+        SpriteDrawParams drawParams{
+            worldTransform * item.bellotaTransform,
+            item.layer,
+            item.tintColor,
+            item.tintIntensity,
+            item.opacity
+        };
         drawParams.mode = texturePack.mode;
         if ((texturePack.mode == TextureMode::Indirect || texturePack.mode == TextureMode::TileMap)
             && texturePack.dpaletteTextureOpt.has_value())
@@ -279,6 +286,17 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
 {
     ZoneScopedN("runOneFrame");
 
+    const RenderSnapshot& snapshot = buildSnapshot(canvas, assets, imguiRtt, deltaTimeMS, update, controller);
+    renderSnapshot(assets, imguiRtt, snapshot, deltaTimeMS, controller);
+
+    FrameMark;
+}
+
+const RenderSnapshot& FrameRunner::buildSnapshot(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                                                 float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+{
+    ZoneScopedN("buildSnapshot");
+
     {
         ZoneScopedN("Input");
         controller.processInputs();
@@ -291,10 +309,17 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
     // lazy font-texture re-upload picks up the rebuilt atlas.
     imguiRtt.drainPendingFontOps();
 
-    // Get current framebuffer size and compute letterboxed viewport
+    // Get current framebuffer size and compute letterboxed viewport. Stored so
+    // renderSnapshot can reuse the exact same values (one getFramebufferSize per
+    // frame). gameViewport() is read by user code during update (overlay
+    // positioning), so it must be set before update().
     auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
+    mFramebufferWidth = framebufferWidth;
+    mFramebufferHeight = framebufferHeight;
     mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, mScreenSize.width, mScreenSize.height);
 
+    // M1: GPU-frame setup + ImGui NewFrame stay inline here (the user update
+    // issues ImGui calls). These migrate to the render side at the thread flip.
     mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
 
     // Start the Dear ImGui frame
@@ -318,13 +343,91 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
         mSparseLandManager.updateExplorers(canvas);
     }
 
-    const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
+    // Stamp this frame's commit number, then detect unused resources and enqueue
+    // them for deferred free (the actual GPU free happens in renderSnapshot, once
+    // no in-flight snapshot references them). At depth-0 this is the same frame.
+    mSnapshot.commitSeq = ++mCommitSeq;
+    mSnapshot.clearColor = mClearColor;
 
     if (mAutoTextureGC)
-        assets.clearUnusedTextures();
+        for (TextureId textureId : assets.collectUnusedTextures())
+            mPendingTextureFrees.push_back({textureId, mCommitSeq});
 
     if (mAutoMeshGC)
-        assets.clearUnusedMeshes();
+        for (MeshId meshId : assets.collectUnusedMeshes())
+            mPendingMeshFrees.push_back({meshId, mCommitSeq});
+
+    {
+        ZoneScopedN("DepthSort");
+        buildMainDraws(assets.bellotas(), mSnapshot.draws);
+    }
+
+    {
+        ZoneScopedN("RttGather");
+        buildRttPasses(assets, mSnapshot.rttPasses);
+    }
+
+    return mSnapshot;
+}
+
+void FrameRunner::buildRttPasses(AssetRegistry& assets, std::vector<RttPass>& out)
+{
+    out.clear();
+    for (auto& [renderTargetId, bellotaIds] : mPendingRttPasses)
+    {
+        RttPass pass;
+        pass.target = renderTargetId;
+        for (const BellotaId bellotaId : bellotaIds)
+        {
+            if (not assets.bellotas().contains(bellotaId.id)) continue;
+            const BellotaPack& pack = assets.bellotas().at(bellotaId.id);
+            if (not pack.bellota.visible()) continue;   // hidden ones never enter the sort
+            pass.draws.push_back(makeDrawItem(pack));
+        }
+        std::sort(pass.draws.begin(), pass.draws.end(),
+            [](const DrawItem& lhs, const DrawItem& rhs)
+            {
+                return lhs.depthOffset < rhs.depthOffset;
+            }
+        );
+        out.push_back(std::move(pass));
+    }
+    mPendingRttPasses.clear();
+}
+
+void FrameRunner::drainPendingFrees(AssetRegistry& assets, std::uint64_t lastRenderedSeq)
+{
+    std::erase_if(mPendingTextureFrees, [&](const PendingTextureFree& pending)
+    {
+        if (pending.retireSeq <= lastRenderedSeq)
+        {
+            assets.freeRetiredTexture(pending.id);
+            return true;
+        }
+        return false;
+    });
+    std::erase_if(mPendingMeshFrees, [&](const PendingMeshFree& pending)
+    {
+        if (pending.retireSeq <= lastRenderedSeq)
+        {
+            assets.freeRetiredMesh(pending.id);
+            return true;
+        }
+        return false;
+    });
+}
+
+void FrameRunner::renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                                 const RenderSnapshot& snapshot, float deltaTimeMS, Controller& controller)
+{
+    ZoneScopedN("renderSnapshot");
+
+    // Deferred free: release resources retired no later than the last fully
+    // rendered snapshot. At depth-0 (single thread) the snapshot we are about to
+    // render IS the latest commit, so frees happen this frame, before upload —
+    // identical timing to the old clearUnused* path.
+    mLastRenderedSeq = snapshot.commitSeq;
+    drainPendingFrees(assets, mLastRenderedSeq);
 
     {
         ZoneScopedN("TextureUpload");
@@ -344,21 +447,18 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
             meshPack.syncToGpu(mBackend);
     }
 
-    {
-        ZoneScopedN("DepthSort");
-        sortByDepthOffset(assets.bellotas(), mSortedBellotaPacks);
-    }
+    const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
 
     {
         ZoneScopedN("RttPasses");
-        // RTT pre-passes — render requested bellotas into their render targets
-        // before drawing to the main framebuffer.
-        for (auto& [renderTargetId, bellotaIds] : mPendingRttPasses)
+        // RTT pre-passes — render the snapshot's RTT draw lists into their render
+        // targets before drawing to the main framebuffer.
+        for (const RttPass& pass : snapshot.rttPasses)
         {
-            if (not assets.renderTargets().contains(renderTargetId.id))
+            if (not assets.renderTargets().contains(pass.target.id))
                 continue;
 
-            RenderTargetPack& renderTargetPack = assets.renderTargets().at(renderTargetId.id);
+            RenderTargetPack& renderTargetPack = assets.renderTargets().at(pass.target.id);
             if (not renderTargetPack.dRenderTargetOpt.has_value())
                 continue;
 
@@ -373,26 +473,10 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
             renderTargetWorldTransform = glm::scale(renderTargetWorldTransform,
                 glm::vec2(2.0f / renderTargetSize.x, 2.0f / renderTargetSize.y));
 
-            std::vector<const BellotaPack*> renderTargetSortedPacks;
-            for (const BellotaId bellotaId : bellotaIds)
-            {
-                if (not assets.bellotas().contains(bellotaId.id)) continue;
-                const BellotaPack& pack = assets.bellotas().at(bellotaId.id);
-                if (not pack.bellota.visible()) continue;   // hidden ones never enter the sort
-                renderTargetSortedPacks.push_back(&pack);
-            }
-            std::sort(renderTargetSortedPacks.begin(), renderTargetSortedPacks.end(),
-                [](const BellotaPack* lhs, const BellotaPack* rhs)
-                {
-                    return lhs->bellota.depthOffset() < rhs->bellota.depthOffset();
-                }
-            );
-
-            drawBellotaPacks(renderTargetSortedPacks, assets.textures(), assets.meshes(), renderTargetWorldTransform, mBackend);
+            drawItems(pass.draws, assets.textures(), assets.meshes(), renderTargetWorldTransform, mBackend);
 
             mBackend.endRttPass();
         }
-        mPendingRttPasses.clear();
 
         // ImGui-to-RTT passes — each uses a secondary ImGuiContext owned by the
         // render target, rendered with a pipeline compiled against the RTT render
@@ -405,7 +489,7 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
 
     {
         ZoneScopedN("MainDraw");
-        drawBellotaPacks(mSortedBellotaPacks, assets.textures(), assets.meshes(), worldTransformMat, mBackend);
+        drawItems(snapshot.draws, assets.textures(), assets.meshes(), worldTransformMat, mBackend);
     }
 
     if (mStats)
@@ -421,15 +505,13 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
     {
         ZoneScopedN("ImGuiRender");
         ImGui::Render();
-        mBackend.endFrame(ImGui::GetDrawData(), framebufferWidth, framebufferHeight);
+        mBackend.endFrame(ImGui::GetDrawData(), mFramebufferWidth, mFramebufferHeight);
     }
 
     {
         ZoneScopedN("SwapBuffers");
         mWindow->endFrame(controller, mScreenSize);
     }
-
-    FrameMark;
 }
 
 void FrameRunner::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
@@ -441,7 +523,7 @@ void FrameRunner::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& im
     mWindow->beginSession(controller);
     if (!mSessionStarted)
     {
-        mSortedBellotaPacks.reserve(assets.bellotas().size() * 2);
+        mSnapshot.draws.reserve(assets.bellotas().size() * 2);
         mSessionStarted = true;
     }
 
