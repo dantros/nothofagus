@@ -595,6 +595,42 @@ public:
     void tick(float deltaTime, std::function<void(float)> update);
     void tick(float deltaTime);
 
+    // ----- Threaded driver (two-thread sim/render split) -----
+    //
+    // Opt-in alternative to run()/tick(). The application owns both loops;
+    // nothofagus spawns no threads. Run `commit()` on a simulation thread and
+    // `renderFrame()` on the main thread:
+    //
+    //   canvas.beginThreadedSession(controller);                 // main thread
+    //   std::thread sim([&]{
+    //       while (canvas.isThreadedRunning())
+    //           canvas.commit(dt, update);                       // sim thread
+    //   });
+    //   while (canvas.isThreadedRunning())
+    //       canvas.renderFrame(controller);                      // main thread
+    //   sim.join();
+    //
+    // The sim thread mutates the scene and commits a snapshot; the main thread
+    // draws the previous snapshot, so render of frame N overlaps sim of N+1.
+    //
+    // Phase-A constraints: create all textures/meshes/bellotas up front (before
+    // the threads start); at runtime the sim may only mutate existing bellota
+    // values (transform, tint, opacity, layer). No ImGui on the threaded path,
+    // and no runtime resource create/destroy or explorers yet. `run()`/`tick()`
+    // remain the unrestricted single-threaded path.
+
+    /// Main thread: start a threaded session (binds input, marks it running).
+    void beginThreadedSession(Controller& controller);
+
+    /// Thread-safe: true until the window is closed. Drives both loop conditions.
+    bool isThreadedRunning() const;
+
+    /// Sim thread: run `update(deltaTime)` and publish a frame snapshot.
+    void commit(float deltaTime, std::function<void(float)> update);
+
+    /// Main thread: render the latest published snapshot and pump window/input.
+    void renderFrame(Controller& controller);
+
     /// Enable or disable automatic removal of unreferenced textures each frame.
     /// Enabled by default. Disable during bulk asset loading to prevent premature removal.
     void setAutoRemoveUnusedTextures(bool enabled);

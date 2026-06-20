@@ -379,6 +379,30 @@ void Canvas::close()
     mImplPtr->frameRunner.close();
 }
 
+// ---------------------------------------------------------------------------
+// Threaded driver (two-thread sim/render split) — forward to FrameRunner
+// ---------------------------------------------------------------------------
+
+void Canvas::beginThreadedSession(Controller& controller)
+{
+    mImplPtr->frameRunner.beginThreadedSession(controller);
+}
+
+bool Canvas::isThreadedRunning() const
+{
+    return mImplPtr->frameRunner.threadedRunning();
+}
+
+void Canvas::commit(float deltaTime, std::function<void(float)> update)
+{
+    mImplPtr->frameRunner.commitFrame(mImplPtr->assets, deltaTime, std::move(update));
+}
+
+void Canvas::renderFrame(Controller& controller)
+{
+    mImplPtr->frameRunner.renderFrameThreaded(mImplPtr->assets, mImplPtr->imguiRtt, controller);
+}
+
 DirectTexture Canvas::takeScreenshot() const
 {
     return mImplPtr->frameRunner.takeScreenshot();

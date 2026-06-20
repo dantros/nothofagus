@@ -548,6 +548,97 @@ void FrameRunner::close()
     mWindow->requestClose();
 }
 
+// ---------------------------------------------------------------------------
+// Threaded driver (M2 Phase A)
+// ---------------------------------------------------------------------------
+
+void FrameRunner::beginThreadedSession(Controller& controller)
+{
+    // Bind input callbacks + reset the close flag (same as run()'s session start).
+    mWindow->beginSession(controller);
+    if (!mSessionStarted)
+    {
+        mSnapshot.draws.reserve(64);
+        mSessionStarted = true;
+    }
+    mLastRenderTimeValid = false;
+    mThreadedRunning.store(true, std::memory_order_release);
+}
+
+void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS, std::function<void(float)> update)
+{
+    // Sim thread: pure CPU. No GPU, no ImGui, no input, no explorers, no resource
+    // GC (Phase A keeps resources static at runtime; the render side owns the GPU
+    // containers exclusively). Only existing bellota *values* may be mutated by
+    // `update`.
+    ZoneScopedN("commitFrame");
+
+    {
+        ZoneScopedN("UserUpdate");
+        update(deltaTimeMS);
+    }
+
+    RenderSnapshot& snapshot = mTripleBuffer.writeSlot();
+    snapshot.commitSeq = ++mCommitSeq;
+    snapshot.clearColor = mClearColor;
+
+    {
+        ZoneScopedN("DepthSort");
+        buildMainDraws(assets.bellotas(), snapshot.draws);
+    }
+    {
+        ZoneScopedN("RttGather");
+        buildRttPasses(assets, snapshot.rttPasses);
+    }
+
+    mTripleBuffer.publish();
+}
+
+void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& imguiRtt, Controller& controller)
+{
+    // Main thread: owns the GL/window context and does all GPU work.
+    ZoneScopedN("renderFrameThreaded");
+
+    // Dispatch input events queued by the previous frame's poll (main thread, so
+    // any action callback — e.g. Escape → close() — runs here safely).
+    {
+        ZoneScopedN("Input");
+        controller.processInputs();
+    }
+
+    imguiRtt.drainPendingFontOps();
+
+    // Pick up the freshest published snapshot (keeps the previous one if none new).
+    mTripleBuffer.acquire();
+    const RenderSnapshot& snapshot = mTripleBuffer.readSlot();
+
+    auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
+    mFramebufferWidth = framebufferWidth;
+    mFramebufferHeight = framebufferHeight;
+    mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, mScreenSize.width, mScreenSize.height);
+
+    mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
+
+    // Empty main ImGui frame — the threaded path runs no user ImGui in Phase A,
+    // but a NewFrame/Render pair yields valid (empty) draw data so the shared
+    // present path works. ImGui stays entirely on this (render) thread.
+    mBackend.imguiNewFrame();
+    mWindow->newImGuiFrame();
+    applyMainContextScale();
+    ImGui::NewFrame();
+
+    const float now = mWindow->getTime();
+    const float deltaTimeMS = mLastRenderTimeValid ? (now - mLastRenderTime) * 1000.0f : 0.0f;
+    mLastRenderTime = now;
+    mLastRenderTimeValid = true;
+
+    renderSnapshot(assets, imguiRtt, snapshot, deltaTimeMS, controller);
+
+    mThreadedRunning.store(mWindow->isRunning(), std::memory_order_release);
+
+    FrameMark;
+}
+
 ScreenSize getPrimaryMonitorSize()
 {
     return SelectedWindowBackend::getPrimaryMonitorSize();

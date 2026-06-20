@@ -7,6 +7,7 @@
 #include "explorer_manager.h"
 #include "bellota_container.h"
 #include "render_snapshot.h"
+#include "snapshot_buffers.h"
 #include "aa_box.h"
 #include "backends/render_backend_select.h"
 #include <vector>
@@ -15,6 +16,8 @@
 #include <cstdint>
 #include <optional>
 #include <memory>
+#include <atomic>
+#include <functional>
 
 struct ImGuiStyle; // global-scope (Dear ImGui); held by unique_ptr to keep imgui.h out of this header.
 
@@ -149,6 +152,27 @@ public:
     /// Captures the last rendered frame visible to the user as a DirectTexture (RGBA).
     DirectTexture takeScreenshot() const;
 
+    // ----- Threaded driver (M2 Phase A) -----
+    // The app runs two threads: `commitFrame` on a sim thread and
+    // `renderFrameThreaded` on the main thread. nothofagus spawns nothing.
+    // Constraints in Phase A: resources are created up front; at runtime the sim
+    // only mutates existing bellota values. No ImGui, explorers, or runtime
+    // resource create/destroy on the threaded path yet (Phase B / M3).
+
+    /// Main thread: bind input, reset the close flag, mark the threaded session live.
+    void beginThreadedSession(Controller& controller);
+
+    /// Thread-safe: true until the window is closed. Read by the sim loop.
+    bool threadedRunning() const { return mThreadedRunning.load(std::memory_order_acquire); }
+
+    /// Sim thread: run the user update, project the scene into a free snapshot
+    /// slot, and publish it. No GPU, ImGui, or input.
+    void commitFrame(AssetRegistry& assets, float deltaTimeMS, std::function<void(float)> update);
+
+    /// Main thread: acquire the latest published snapshot and render it (GPU
+    /// upload + draw + present), poll window/input, and refresh the running flag.
+    void renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& imguiRtt, Controller& controller);
+
 private:
     void ensureSessionStarted(Controller& controller);
     void runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
@@ -219,6 +243,12 @@ private:
 
     int mFramebufferWidth{0};   ///< Framebuffer size captured in buildSnapshot, reused by renderSnapshot.
     int mFramebufferHeight{0};
+
+    // ----- Threaded driver state (M2 Phase A) -----
+    SnapshotTripleBuffer mTripleBuffer;            ///< sim→render snapshot hand-off (lock-free).
+    std::atomic<bool> mThreadedRunning{false};     ///< true while the threaded session is live.
+    float mLastRenderTime{0.0f};                   ///< previous renderFrameThreaded timestamp (for the stats dt).
+    bool  mLastRenderTimeValid{false};
 
     struct Window; ///< Forward declaration for window management.
     std::unique_ptr<Window> mWindow; ///< Pointer to the window object.
