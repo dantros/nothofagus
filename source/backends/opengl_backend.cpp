@@ -450,6 +450,77 @@ void OpenGLBackend::freeRenderTarget(DRenderTarget renderTarget, DTexture proxyT
         it->second.clear();
         mRenderTargets.erase(it);
     }
+
+    // Drop any flat-2D companion that was created for this render target.
+    auto flatIt = mFlat2Ds.find(renderTarget.id);
+    if (flatIt != mFlat2Ds.end())
+    {
+        if (flatIt->second.fbo != 0)     glDeleteFramebuffers(1, &flatIt->second.fbo);
+        if (flatIt->second.texture != 0) glDeleteTextures(1, &flatIt->second.texture);
+        mFlat2Ds.erase(flatIt);
+    }
+}
+
+std::uint64_t OpenGLBackend::acquireFlat2DImguiHandle(DRenderTarget renderTarget)
+{
+    auto rtIt = mRenderTargets.find(renderTarget.id);
+    if (rtIt == mRenderTargets.end()) return 0;
+    const glm::ivec2 size = rtIt->second.size;
+
+    Flat2D& flat = mFlat2Ds[renderTarget.id];
+    if (flat.texture == 0 || flat.size != size)
+    {
+        if (flat.fbo != 0)     glDeleteFramebuffers(1, &flat.fbo);
+        if (flat.texture != 0) glDeleteTextures(1, &flat.texture);
+
+        // Flat GL_TEXTURE_2D that ImGui can sample directly (ImGui binds GL_TEXTURE_2D).
+        glGenTextures(1, &flat.texture);
+        glBindTexture(GL_TEXTURE_2D, flat.texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        glGenFramebuffers(1, &flat.fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, flat.fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, flat.texture, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        flat.size = size;
+    }
+    return static_cast<std::uint64_t>(flat.texture);
+}
+
+void OpenGLBackend::resolveRenderTargetFlat2D(DRenderTarget renderTarget)
+{
+    auto rtIt = mRenderTargets.find(renderTarget.id);
+    auto flatIt = mFlat2Ds.find(renderTarget.id);
+    if (rtIt == mRenderTargets.end() || flatIt == mFlat2Ds.end()) return;
+
+    const glm::ivec2 size = rtIt->second.size;
+
+    // Blit the RTT's color attachment (array layer 0, bound in its FBO) into the flat
+    // GL_TEXTURE_2D, flipping vertically so the flat texture is top-down — ImGui's UV
+    // origin is top-left, while GL framebuffers are bottom-up.
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, rtIt->second.fbo);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, flatIt->second.fbo);
+    glBlitFramebuffer(0, 0, size.x, size.y,
+                      0, size.y, size.x, 0,   // dst Y flipped
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+}
+
+void OpenGLBackend::releaseFlat2DImguiHandle(DRenderTarget renderTarget, std::uint64_t /*handle*/)
+{
+    auto flatIt = mFlat2Ds.find(renderTarget.id);
+    if (flatIt == mFlat2Ds.end()) return;
+    if (flatIt->second.fbo != 0)     glDeleteFramebuffers(1, &flatIt->second.fbo);
+    if (flatIt->second.texture != 0) glDeleteTextures(1, &flatIt->second.texture);
+    mFlat2Ds.erase(flatIt);
 }
 
 void OpenGLBackend::beginFrame(glm::vec3 clearColor, ViewportRect gameViewport,

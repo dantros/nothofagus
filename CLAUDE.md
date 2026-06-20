@@ -651,6 +651,55 @@ canvas.renderImguiTo(renderTargetId, canvas.defaultImguiFontId(), [&] { ... });
 - **Input is not forwarded** to the secondary context — widgets render correctly but mouse/keyboard events only reach the main context. Forwarding canvas-space mouse coords into the RTT's `IO.MousePos` is a natural follow-up.
 - Each secondary context has its own ID stack, window state, and widget values — widgets with the same name in different RTTs do not collide, and neither inherits state from the main UI.
 
+#### Draw a Visual inside ImGui — `Canvas::imguiVisual`
+
+The inverse of "render ImGui into an RTT": sample an engine sprite *from* an ImGui window
+(`ImGui::Image`). Engine textures are 2D *arrays* / palette-indexed, which ImGui can't sample, so
+the entry point renders into an internal render target (RGBA, via the normal sprite path — Direct /
+Indirect / tile-map / animation all resolve) and exposes that RTT's color attachment to ImGui as a
+flat-2D handle (`ImTextureID`). This is the `ImguiImageManager` ([source/imgui_image_manager.h](source/imgui_image_manager.h)),
+a sibling of `ImguiRttManager`.
+
+```cpp
+canvas.run([&](float) {
+    ImGui::Begin("inventory");
+    canvas.imguiVisual(canvas.bellota(swordId).visual(), {64.0f, 64.0f}); // a bellota's look
+    canvas.imguiVisual(Nothofagus::Visual{potionTexId}, {32.0f, 32.0f});  // a standalone visual
+    ImGui::End();
+});
+```
+
+```cpp
+void imguiVisual(const Visual& visual, glm::vec2 sizePx);   // include/canvas.h
+```
+
+**The entry point is a `Visual`, not a `Bellota`** — placement (transform / depth) is meaningless in
+an ImGui cell, so only the appearance is drawn (`Visual` = texture + optional mesh + current layer +
+visible + opacity; tint is a `BellotaPack` field and is *not* part of a Visual, so it is excluded).
+Pass `canvas.bellota(id).visual()` for a bellota's current look, or a standalone `Visual{texId}`.
+
+**Behavior / rules:**
+- **Sizing honors a custom mesh.** The internal RTT is sized to the AABB of the visual's mesh
+  (auto-quad → texture size; a custom triangle/polygon mesh → its full extent, no clipping). UVs come
+  from the mesh, so the texture samples correctly either way. `sizePx` is the ImGui display size,
+  independent of the RTT resolution — resizing the displayed image never re-creates GPU resources.
+- **Opacity** modulates the drawn image (applied as the ImGui widget alpha); `visible()==false` draws
+  an empty cell of `sizePx`.
+- **One-frame warm-up.** Sim/render-split aware: `imguiVisual` runs on the sim side and bakes a
+  stable handle into the ImGui draw list; the handle is created on the render side (after the internal
+  RTT is drawn) and read back the next frame. So the first frame a given visual is shown reserves
+  layout only and the image appears the following frame. Internal RTTs are keyed by
+  `(TextureId, MeshId, currentLayer)`; an entry unused for a few frames is garbage-collected (its RTT
+  + handle freed, its texture/mesh pin released). All GPU work is render-side and id-driven — nothing
+  is created from the user callback.
+- **Backends.** OpenGL keeps a flat `GL_TEXTURE_2D` companion blitted (Y-flipped) from the RTT array
+  texture each frame, since ImGui binds `GL_TEXTURE_2D`; Vulkan adds a `VK_IMAGE_VIEW_TYPE_2D` view of
+  the RTT color image + `ImGui_ImplVulkan_AddTexture` (no copy). Both via three render-agnostic
+  `RenderBackend` methods (`acquireFlat2DImguiHandle` / `resolveRenderTargetFlat2D` /
+  `releaseFlat2DImguiHandle`).
+- **v1 scope:** works in the main UI context. Same-frame display (no warm-up) and calling
+  `imguiVisual` inside a `renderImguiTo` diegetic panel are planned follow-ups.
+
 ### ImGui fonts — `ImguiFontManager`, `ImguiFontSourceId`, `ImguiFontId`
 
 `ImguiFontManager` ([source/imgui_font_manager.h](source/imgui_font_manager.h), held by `ImguiRttManager`) owns the entire ImGui-font lifecycle for a Canvas: the main HiDPI font (used by main-canvas UI), the secondary-context default font, every registered TTF buffer, every baked `(source, size)` pair, and the deferred bake/remove queue + atlas-rebuild flow. Two `IndexedContainer`s back the manager — one of `FontSource` (each registered TTF buffer + its `GlyphRange`) keyed by `ImguiFontSourceId` ([include/imgui_font_source_id.h](include/imgui_font_source_id.h)), and one of `FontEntry` (each baked size, with a per-entry `sourceId`) keyed by `ImguiFontId` ([include/imgui_font_id.h](include/imgui_font_id.h)). Atlas glyphs are owned by the shared `ImFontAtlas`; the manager stores non-owning observer pointers and `rebakeAll()` patches them in place across rebuilds.
@@ -851,6 +900,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_render_to_texture.cpp` | `addRenderTarget` / `renderTo` — sprites drawn into an off-screen texture sampled by another bellota |
 | `hello_nested_render_targets.cpp` | Nested RTTs — one render target's output feeds another |
 | `hello_imgui_rtt.cpp` | `renderImguiTo` — diegetic ImGui panel drawn into an RTT, sampled by a rotating bellota |
+| `hello_imgui_visual.cpp` | `imguiVisual` — draw a Visual's appearance inside an ImGui window (`ImGui::Image`): animated paletted visual, custom-mesh (triangle) visual with AABB fit, standalone `Visual{textureId}`, opacity slider |
 | `hello_imgui_overlay.cpp` | `imguiOverlayViewport()` + `imguiBaseFontSize()` — header/footer ImGui bars pinned to the canvas, tracking pillarbox/letterbox + DPI on resize |
 | `hello_custom_font.cpp` | User-supplied TTF via `addImguiFontSource` — typeable path field, editable text, integer min/max + slider for size, default-vs-user side-by-side with `TextWrapped`; also demonstrates the `imgui-filebrowser` integration. When built with `-DNOTHOFAGUS_EMBED_CJK*`, adds macro-guarded blocks rendering Chinese/Japanese/Korean sample text via `embeddedCjkFontSource(...)` |
 | `hello_markdown.cpp` | `MarkdownRenderer` — headings, lists, code blocks, tables, blockquotes, strikethrough, link callback; true bold/italic/bold-italic/mono faces via `canvas.defaultMarkdownStyle(...)` |

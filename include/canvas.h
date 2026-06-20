@@ -309,6 +309,27 @@ public:
     void renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback);
 
     /**
+     * @brief Draw a Visual's appearance inside the current ImGui window (`ImGui::Image`).
+     *
+     * The entry point is a Visual (texture + optional mesh + current layer + opacity),
+     * NOT a Bellota — placement (transform / depth) is meaningless in an ImGui cell, so
+     * the image aligns to the GUI/text layout and is drawn at @p sizePx (logical pixels).
+     * Pass `canvas.bellota(id).visual()` to show a bellota's current appearance, or a
+     * standalone `Visual{textureId}`.
+     *
+     * Works for every texture kind: the Visual is rendered into an engine-managed
+     * off-screen target (Direct / Indirect / tile-map / animation frame all resolve
+     * correctly) and exposed to ImGui. A custom mesh is honored — the image is sized to
+     * the mesh's bounding box. Opacity modulates the drawn image; visibility=false draws
+     * an empty cell.
+     *
+     * Call inside an active ImGui frame (a run()/tick() update callback). The first frame
+     * a given Visual is shown reserves layout only and appears on the next frame
+     * (one-frame warm-up).
+     */
+    void imguiVisual(const Visual& visual, glm::vec2 sizePx);
+
+    /**
      * @brief Register a TTF buffer as a new font source.
      *
      * Bytes are copied internally; the caller's span only needs to live

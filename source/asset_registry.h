@@ -100,6 +100,16 @@ public:
     TextureId renderTargetTexture(RenderTargetId renderTargetId) const;
     void setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor);
 
+    // ---------- Non-bellota resource pinning ----------
+    /// Pin / unpin a texture or mesh against auto-GC on behalf of an owner that is
+    /// not a bellota (e.g. ImguiImageManager displaying a Visual). Implemented as a
+    /// reference from a reserved sentinel BellotaId, so the existing usage-monitor
+    /// logic keeps the resource out of the "unused" set until released. Idempotent.
+    void retainTexture(TextureId textureId);
+    void releaseTexture(TextureId textureId);
+    void retainMesh(MeshId meshId);
+    void releaseMesh(MeshId meshId);
+
     // ---------- Container accessors (frame loop / destructor / managers) ----------
     BellotaContainer& bellotas() { return mBellotas; }
     const BellotaContainer& bellotas() const { return mBellotas; }

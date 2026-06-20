@@ -38,6 +38,7 @@ extern template class ExplorerManager<SparseLand>;
 // at namespace scope stay out of the public-API surface.
 class AssetRegistry;
 class ImguiRttManager;
+class ImguiImageManager;
 
 /**
  * @class FrameRunner
@@ -138,12 +139,14 @@ public:
 
     // ----- Lifecycle -----
     /// Runs the main loop. Threads through the Canvas-owned asset registry and
-    /// ImGui RTT manager so runOneFrame doesn't need direct member access.
+    /// ImGui RTT / image managers so runOneFrame doesn't need direct member access.
     void run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+             ImguiImageManager& imguiImages,
              std::function<void(float deltaTime)> update, Controller& controller);
 
     /// Execute a single frame with a caller-supplied delta time (in milliseconds).
     void tick(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+              ImguiImageManager& imguiImages,
               float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
     /// Captures the last rendered frame visible to the user as a DirectTexture (RGBA).
@@ -152,6 +155,7 @@ public:
 private:
     void ensureSessionStarted(Controller& controller);
     void runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                     ImguiImageManager& imguiImages,
                      float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
     /// Simulation/commit half of a frame: runs input + the user update +
@@ -165,12 +169,14 @@ private:
     /// at the thread-flip milestone; for now it stays here to keep the
     /// single-threaded frame byte-identical.
     const RenderSnapshot& buildSnapshot(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                                        ImguiImageManager& imguiImages,
                                         float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
     /// Render/consume half of a frame: drains deferred frees, uploads dirty GPU
     /// resources, draws the snapshot's RTT passes and main pass, renders ImGui,
     /// and presents. Touches no `Bellota` — only the POD snapshot.
     void renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                        ImguiImageManager& imguiImages,
                         const RenderSnapshot& snapshot, float deltaTimeMS, Controller& controller);
 
     /// Gather the queued RTT passes (`mPendingRttPasses`) into POD draw lists on

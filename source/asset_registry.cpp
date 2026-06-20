@@ -5,6 +5,7 @@
 
 #include <utility>
 #include <unordered_set>
+#include <limits>
 
 namespace Nothofagus
 {
@@ -367,6 +368,41 @@ TextureId AssetRegistry::renderTargetTexture(RenderTargetId renderTargetId) cons
 void AssetRegistry::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor)
 {
     mRenderTargets.at(renderTargetId.id).renderTarget.mClearColor = clearColor;
+}
+
+// ---------------------------------------------------------------------------
+// Non-bellota resource pinning
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    // Reserved owner for non-bellota pins; never collides with a real bellota id
+    // (those are dense indices from the bellota container, starting at 0).
+    constexpr BellotaId kPinOwner{(std::numeric_limits<std::size_t>::max)()};
+}
+
+void AssetRegistry::retainTexture(TextureId textureId)
+{
+    debugCheck(mTextures.contains(textureId.id), "retainTexture: unknown TextureId");
+    if (not mTextureUsageMonitor.hasEntry(kPinOwner, textureId))
+        mTextureUsageMonitor.addEntry(kPinOwner, textureId);
+}
+
+void AssetRegistry::releaseTexture(TextureId textureId)
+{
+    mTextureUsageMonitor.removeEntry(kPinOwner, textureId);
+}
+
+void AssetRegistry::retainMesh(MeshId meshId)
+{
+    debugCheck(mMeshes.contains(meshId.id), "retainMesh: unknown MeshId");
+    if (not mMeshUsageMonitor.hasEntry(kPinOwner, meshId))
+        mMeshUsageMonitor.addEntry(kPinOwner, meshId);
+}
+
+void AssetRegistry::releaseMesh(MeshId meshId)
+{
+    mMeshUsageMonitor.removeEntry(kPinOwner, meshId);
 }
 
 // ---------------------------------------------------------------------------
