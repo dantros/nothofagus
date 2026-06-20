@@ -6,6 +6,7 @@
 #include <text.h>
 #include <bellota.h>
 #include <mesh.h>
+#include <markdown_renderer.h>
 #include <imgui_overlay.h>
 #include <imgui.h>
 #include "direct_texture_io.h"
@@ -604,6 +605,37 @@ TEST_CASE("ImGui overlay bars track pillarbox offset", "[rendering][imgui]")
         canvas.tick(16.0f, [&](float) { drawOverlayBars(canvas, "HEADER", "FOOTER"); });
 
     checkAgainstGolden("imgui_overlay_pillarbox", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// Markdown tables: columns size proportionally and long cells wrap inside their
+// own column. The canvas is deliberately narrow so the long cells must wrap,
+// pinning the table layout (proportional columns, in-column wrapping, header).
+// ---------------------------------------------------------------------------
+TEST_CASE("Markdown tables render with wrapped columns", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(220, 160);
+
+    Nothofagus::MarkdownRenderer markdown(canvas);
+    markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));   // bake before ticking
+
+    static constexpr const char* kTable =
+        "| field | notes |\n"
+        "|-------|-------|\n"
+        "| short | A long cell that must wrap inside its column. |\n"
+        "| again | Second long row sharing the column width. |\n";
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) {
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(220.0f, 160.0f), ImGuiCond_Always);
+            ImGui::Begin("md", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            markdown.print(kTable);
+            ImGui::End();
+        });
+
+    checkAgainstGolden("markdown_tables", canvas.takeScreenshot());
 }
 
 // ---------------------------------------------------------------------------
