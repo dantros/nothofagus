@@ -58,6 +58,18 @@ int main()
         });
     const Nothofagus::TextureId textureId = canvas.addTexture(texture);
 
+    // Anchor bellota: a single, hidden, never-despawned bellota that holds a
+    // permanent reference to the shared sprite texture. The engine auto-GCs any
+    // texture left unreferenced by every bellota, and the sprite population can
+    // momentarily drop to zero (all sprites aging out, or "clear all"). Without
+    // this anchor, the texture would be reclaimed and the next spawn reusing
+    // textureId would reference a freed texture. Keeping one hidden bellota alive
+    // for the whole program pins textureId. It is intentionally never added to
+    // `sprites`, so the despawn/aging logic can never destroy it.
+    const Nothofagus::BellotaId textureAnchorId =
+        canvas.addBellota({{{0.0f, 0.0f}}, textureId});
+    canvas.bellota(textureAnchorId).visual().visible() = false;
+
     struct Sprite
     {
         Nothofagus::BellotaId id;
