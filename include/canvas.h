@@ -650,6 +650,13 @@ public:
     /// frame still references them (deferred free) — no use-after-free.
     void despawnBellota(BellotaId bellotaId);
 
+    /// Whether the threaded ImGui UI captured the mouse / keyboard on the most
+    /// recent commit. Read these in the game `update` (which runs before the UI
+    /// frame) to skip world interaction while a widget has focus. Thread-safe;
+    /// the value is one frame old by construction.
+    bool imguiWantsMouse() const;
+    bool imguiWantsKeyboard() const;
+
     /// Enable or disable automatic removal of unreferenced textures each frame.
     /// Enabled by default. Disable during bulk asset loading to prevent premature removal.
     void setAutoRemoveUnusedTextures(bool enabled);

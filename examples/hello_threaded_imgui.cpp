@@ -75,6 +75,7 @@ int main()
     float waveSpeed     = 1.0f;
     bool  spawning      = true;
     float lastFps       = 0.0f;
+    char  noteBuf[64]   = "type here (Ctrl+C/V works)";
 
     auto spawnOne = [&]()
     {
@@ -116,7 +117,9 @@ int main()
             ++i;
         }
 
-        if (spawning)
+        // Refill toward the target — paused while the cursor is over the panel
+        // (demonstrates imguiWantsMouse(): UI focus suppresses world activity).
+        if (spawning && !canvas.imguiWantsMouse())
         {
             int budget = 3;
             while (static_cast<int>(sprites.size()) < targetCount && budget-- > 0)
@@ -139,6 +142,18 @@ int main()
         ImGui::Checkbox("spawning", &spawning);
         if (ImGui::Button("clear all"))
             targetCount = 0;
+
+        // Text input (exercises keyboard + the in-process clipboard).
+        ImGui::InputText("note", noteBuf, sizeof(noteBuf));
+
+        // Keyboard shortcut: Space toggles spawning — but not while typing into a
+        // text field (so the space character goes to the InputText instead).
+        if (!ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Space))
+            spawning = !spawning;
+
+        ImGui::TextDisabled("space: toggle spawning   capture m/k: %d/%d",
+                            ImGui::GetIO().WantCaptureMouse ? 1 : 0,
+                            ImGui::GetIO().WantCaptureKeyboard ? 1 : 0);
         ImGui::End();
     };
 

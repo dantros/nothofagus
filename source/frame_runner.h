@@ -167,6 +167,11 @@ public:
     /// Thread-safe: true until the window is closed. Read by the sim loop.
     bool threadedRunning() const { return mThreadedRunning.load(std::memory_order_acquire); }
 
+    /// Thread-safe: whether the threaded ImGui UI captured the mouse / keyboard on
+    /// the most recent commit (so host game logic can ignore that input).
+    bool threadedWantsMouse() const { return mImguiWantsMouse.load(std::memory_order_acquire); }
+    bool threadedWantsKeyboard() const { return mImguiWantsKeyboard.load(std::memory_order_acquire); }
+
     /// Sim thread: run the user `update` (game logic, lock-free), then — under the
     /// ImGui mutex — run `uiCallback` as an ImGui frame on the sim-UI context and
     /// clone its draw data, and project the scene into a free snapshot slot, then
@@ -297,9 +302,26 @@ private:
         float mouseX{0.0f}, mouseY{0.0f};
         bool  mouseDown[3]{false, false, false};
         float wheelX{0.0f}, wheelY{0.0f};   // accumulated on render, consumed+reset on sim
+
+        // Keyboard (M4). Sized generously to avoid pulling imgui.h into this header;
+        // a static_assert in the .cpp verifies it covers ImGuiKey_NamedKey_COUNT.
+        static constexpr int kKeyCount = 256;
+        bool keyDown[kKeyCount]{};           // indexed by (ImGuiKey - ImGuiKey_NamedKey_BEGIN)
+        bool keyCtrl{false}, keyShift{false}, keyAlt{false}, keySuper{false};
+        static constexpr int kMaxTextChars = 32;
+        unsigned int textChars[kMaxTextChars]{}; // chars typed this frame (consumed on sim)
+        int  textCharCount{0};
+        bool focused{true};
     };
     ThreadedImguiInput mThreadedImguiInput;
     std::mutex mThreadedImguiInputMutex;
+
+    /// Set from the sim-UI frame each commit; read by the host's game update (and
+    /// available via Canvas) so world interaction can be suppressed while an ImGui
+    /// widget has focus. One frame stale by construction (game update runs before
+    /// the UI frame), which is the correct, expected behavior.
+    std::atomic<bool> mImguiWantsMouse{false};
+    std::atomic<bool> mImguiWantsKeyboard{false};
 
     /// Serializes all access to the (shared) ImGui font atlas between the sim-UI
     /// context (NewFrame + widgets + Render + clone, on the sim thread) and the

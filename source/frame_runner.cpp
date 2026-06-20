@@ -28,6 +28,28 @@
 namespace Nothofagus
 {
 
+namespace
+{
+// In-process clipboard for the sim-UI ImGui context. GLFW's clipboard is
+// main-thread-only, so the sim thread cannot use it; this gives working
+// copy/paste within the app's own text fields. (OS-clipboard integration across
+// the thread boundary is a documented follow-up.) Accessed only on the sim thread
+// (ImGui calls these during the sim UI frame), so no synchronization is needed.
+std::string& threadedClipboardStorage()
+{
+    static std::string storage;
+    return storage;
+}
+const char* threadedGetClipboardText(ImGuiContext*)
+{
+    return threadedClipboardStorage().c_str();
+}
+void threadedSetClipboardText(ImGuiContext*, const char* text)
+{
+    threadedClipboardStorage() = (text != nullptr) ? text : "";
+}
+}
+
 // Window is the selected backend type. Forward declared in frame_runner.h;
 // defined here so the backend headers are only included from this translation unit.
 struct FrameRunner::Window : public SelectedWindowBackend
@@ -607,6 +629,12 @@ void FrameRunner::beginThreadedSession(Controller& controller)
         simIo.BackendFlags           |= ImGuiBackendFlags_RendererHasTextures; // atlas uploaded render-side
         simIo.DisplaySize             = ImVec2(static_cast<float>(mScreenSize.width),
                                                static_cast<float>(mScreenSize.height));
+        // Enable keyboard nav and wire an in-process clipboard so InputText
+        // copy/paste works on the sim thread (GLFW clipboard is main-thread-only).
+        simIo.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        ImGuiPlatformIO& simPlatformIo = ImGui::GetPlatformIO();
+        simPlatformIo.Platform_GetClipboardTextFn = threadedGetClipboardText;
+        simPlatformIo.Platform_SetClipboardTextFn = threadedSetClipboardText;
         ImGui::SetCurrentContext(mainContext); // restore the render thread's context
 
         // Prime the font atlas on the render thread (uploads the texture) before
@@ -664,23 +692,44 @@ void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
             input = mThreadedImguiInput;
             mThreadedImguiInput.wheelX = 0.0f; // consume accumulated wheel
             mThreadedImguiInput.wheelY = 0.0f;
+            mThreadedImguiInput.textCharCount = 0; // consume typed characters
         }
         const float displayWidth  = input.displayWidth  > 0.0f ? input.displayWidth  : static_cast<float>(mScreenSize.width);
         const float displayHeight = input.displayHeight > 0.0f ? input.displayHeight : static_cast<float>(mScreenSize.height);
         io.DisplaySize = ImVec2(displayWidth, displayHeight);
         io.DisplayFramebufferScale = ImVec2(input.framebufferScaleX, input.framebufferScaleY);
+
+        // Focus first: a loss releases held keys/mouse, avoiding stuck input.
+        io.AddFocusEvent(input.focused);
+
         io.AddMousePosEvent(input.mouseX, input.mouseY);
         io.AddMouseButtonEvent(0, input.mouseDown[0]);
         io.AddMouseButtonEvent(1, input.mouseDown[1]);
         io.AddMouseButtonEvent(2, input.mouseDown[2]);
         if (input.wheelX != 0.0f || input.wheelY != 0.0f)
             io.AddMouseWheelEvent(input.wheelX, input.wheelY);
+
+        // Keyboard: replay key state (ImGui dedups to changes), modifiers, text.
+        for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_MouseLeft; ++key)
+            io.AddKeyEvent(static_cast<ImGuiKey>(key), input.keyDown[key - ImGuiKey_NamedKey_BEGIN]);
+        io.AddKeyEvent(ImGuiMod_Ctrl,  input.keyCtrl);
+        io.AddKeyEvent(ImGuiMod_Shift, input.keyShift);
+        io.AddKeyEvent(ImGuiMod_Alt,   input.keyAlt);
+        io.AddKeyEvent(ImGuiMod_Super, input.keySuper);
+        for (int i = 0; i < input.textCharCount; ++i)
+            io.AddInputCharacter(input.textChars[i]);
+
         io.DeltaTime = std::max(deltaTimeMS * 0.001f, 1e-6f);
 
         ImGui::NewFrame();
         if (uiCallback)
             uiCallback(deltaTimeMS); // user ImGui widgets, on the sim thread
         ImGui::Render();
+
+        // Publish what the UI captured this frame so the host's game update (which
+        // runs before this section) can ignore that input next frame.
+        mImguiWantsMouse.store(io.WantCaptureMouse, std::memory_order_release);
+        mImguiWantsKeyboard.store(io.WantCaptureKeyboard, std::memory_order_release);
 
         if (!snapshot.mainUi)
             snapshot.mainUi = std::make_unique<ClonedImDrawData>();
@@ -780,7 +829,10 @@ void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& im
 
 void FrameRunner::harvestImguiInput()
 {
-    const ImGuiIO& io = ImGui::GetIO();
+    static_assert(ImGuiKey_NamedKey_COUNT <= ThreadedImguiInput::kKeyCount,
+                  "ThreadedImguiInput::kKeyCount too small for ImGuiKey_NamedKey_COUNT");
+
+    ImGuiIO& io = ImGui::GetIO();
     std::lock_guard<std::mutex> lock(mThreadedImguiInputMutex);
     mThreadedImguiInput.displayWidth       = io.DisplaySize.x;
     mThreadedImguiInput.displayHeight      = io.DisplaySize.y;
@@ -793,6 +845,31 @@ void FrameRunner::harvestImguiInput()
     mThreadedImguiInput.mouseDown[2]       = io.MouseDown[2];
     mThreadedImguiInput.wheelX            += io.MouseWheelH; // accumulate; sim consumes + resets
     mThreadedImguiInput.wheelY            += io.MouseWheel;
+
+    // Keyboard state (M4). Iterate the named-key range, skipping the mouse-button
+    // sub-range (handled above) and the reserved-mod entries — both live at the top
+    // of the range from ImGuiKey_MouseLeft onward. Gamepad keys are below that and
+    // harvested harmlessly (all up without a gamepad).
+    for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; ++key)
+    {
+        const int index = key - ImGuiKey_NamedKey_BEGIN;
+        mThreadedImguiInput.keyDown[index] =
+            (key < ImGuiKey_MouseLeft) ? ImGui::IsKeyDown(static_cast<ImGuiKey>(key)) : false;
+    }
+    mThreadedImguiInput.keyCtrl  = io.KeyCtrl;
+    mThreadedImguiInput.keyShift = io.KeyShift;
+    mThreadedImguiInput.keyAlt   = io.KeyAlt;
+    mThreadedImguiInput.keySuper = io.KeySuper;
+    mThreadedImguiInput.focused  = (io.AppFocusLost == false);
+
+    // Append this frame's typed characters (consumed + cleared by the sim).
+    for (int i = 0; i < io.InputQueueCharacters.Size; ++i)
+    {
+        if (mThreadedImguiInput.textCharCount >= ThreadedImguiInput::kMaxTextChars)
+            break;
+        mThreadedImguiInput.textChars[mThreadedImguiInput.textCharCount++] =
+            static_cast<unsigned int>(io.InputQueueCharacters[i]);
+    }
 }
 
 Nothofagus::BellotaId FrameRunner::threadedSpawnBellota(AssetRegistry& assets, const Bellota& bellota)

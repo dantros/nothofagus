@@ -418,6 +418,16 @@ void Canvas::despawnBellota(BellotaId bellotaId)
     mImplPtr->frameRunner.threadedDespawnBellota(mImplPtr->assets, bellotaId);
 }
 
+bool Canvas::imguiWantsMouse() const
+{
+    return mImplPtr->frameRunner.threadedWantsMouse();
+}
+
+bool Canvas::imguiWantsKeyboard() const
+{
+    return mImplPtr->frameRunner.threadedWantsKeyboard();
+}
+
 DirectTexture Canvas::takeScreenshot() const
 {
     return mImplPtr->frameRunner.takeScreenshot();
