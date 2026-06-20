@@ -8,7 +8,9 @@
 //   * a palette-indexed, animated visual (proves the RTT palette/animation resolve),
 //   * a custom-mesh (triangle) visual (proves the mesh-AABB fit — non-square),
 //   * a standalone Visual{textureId} (no bellota, no mesh — engine synthesizes a quad),
-//   * an opacity slider (one internal RTT reused; opacity applied as the image tint).
+//   * an opacity slider (one internal RTT reused; opacity applied as the image tint),
+//   * a render target as the source (renderTo -> imguiVisual), proving an RTT texture is
+//     sampled by imguiVisual exactly like a main-canvas bellota samples one.
 //
 // The entry point is a Visual, never a Bellota: placement (transform/depth) is
 // meaningless inside an ImGui layout, so only the appearance is drawn.
@@ -88,6 +90,18 @@ int main()
     Nothofagus::TextureId linearTexId  = canvas.addTexture(rgbaTex);
     canvas.setTextureMagFilter(linearTexId, Nothofagus::TextureSampleMode::Linear);
 
+    // Render-target source: draw an engine bellota into an off-screen RTT, then feed that
+    // RTT's *texture* to imguiVisual. The expected order is the same one the standard
+    // nested-RTT flow relies on — schedule renderTo(...) for the source each frame;
+    // imguiVisual's internal pass is appended after all user RTT passes, so the source is
+    // always rendered before it's sampled.
+    Nothofagus::RenderTargetId sceneRtId = canvas.addRenderTarget({48, 48});
+    canvas.setRenderTargetClearColor(sceneRtId, {0.05f, 0.06f, 0.12f, 1.0f});
+    Nothofagus::TextureId sceneRtTexId = canvas.renderTargetTexture(sceneRtId);
+    // A sprite living in the RTT's coordinate space (origin bottom-left, 48x48). It also
+    // shows on the main canvas (renderTo dual-renders), mirroring hello_render_to_texture.
+    Nothofagus::BellotaId sceneBellotaId = canvas.addBellota({{{24.0f, 24.0f}, 3.0f}, triTexId});
+
     using Size = Nothofagus::ImguiImageSize;
     using Fit  = Nothofagus::ImguiImageFit;
 
@@ -101,6 +115,11 @@ int main()
         elapsedMs += dt;
         const std::size_t frame = static_cast<std::size_t>(elapsedMs / 180.0f) % kFrames;
         canvas.bellota(animBellotaId).currentLayer() = frame;
+
+        // Spin the RTT sprite and schedule it into the off-screen target this frame, so the
+        // imguiVisual sampling sceneRtTexId below has fresh pixels to read.
+        canvas.bellota(sceneBellotaId).transform().angle() += dt * 0.05f;
+        canvas.renderTo(sceneRtId, {sceneBellotaId});
 
         ImGui::Begin("Visuals in ImGui");
 
@@ -144,6 +163,9 @@ int main()
         ImGui::TextUnformatted("Linear");
         canvas.imguiVisual(Nothofagus::Visual{linearTexId}, Size::scaled(scale));
         ImGui::EndGroup();
+
+        ImGui::TextUnformatted("Render target as source (renderTo -> imguiVisual) - same as a main bellota's RTT:");
+        canvas.imguiVisual(Nothofagus::Visual{sceneRtTexId}, Size::scaled(2.0f));
 
         ImGui::End();
     });
