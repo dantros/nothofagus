@@ -76,17 +76,17 @@ int main()
     Nothofagus::MeshId triMeshId = canvas.addMesh(makeTriangle(16.0f));
     Nothofagus::BellotaId triBellotaId = canvas.addBellota({{{140.0f, 70.0f}}, triTexId, triMeshId});
 
-    // Same graphic as the animated texture, but flagged Linear: imguiVisual follows the
-    // texture's magFilter, so this one renders smoothed while the Nearest default stays crisp.
-    Nothofagus::IndirectTexture smoothTex({8, 8}, glm::vec4(0.0f));
-    smoothTex.setPallete(pallete);
-    {
-        std::vector<std::uint8_t> px(64, 0);
-        for (int i = 0; i < 64; ++i) px[i] = static_cast<std::uint8_t>(i % 5);
-        smoothTex.setPixels(px, 0);
-    }
-    Nothofagus::TextureId smoothTexId = canvas.addTexture(smoothTex);
-    canvas.setTextureMagFilter(smoothTexId, Nothofagus::TextureSampleMode::Linear);
+    // Nearest-vs-Linear must use a DirectTexture (RGBA): paletted/IndirectTextures are
+    // integer-indexed (texelFetch) and forced to Nearest, so magFilter has no effect on
+    // them. A tiny 2x2 RGBA magnified shows hard pixels (Nearest) vs a smooth blend (Linear).
+    Nothofagus::DirectTexture rgbaTex(glm::ivec2{2, 2});
+    rgbaTex.setColor(0, 0, glm::vec4(1.0f, 0.2f, 0.2f, 1.0f)); // red
+    rgbaTex.setColor(1, 0, glm::vec4(0.2f, 1.0f, 0.3f, 1.0f)); // green
+    rgbaTex.setColor(0, 1, glm::vec4(0.3f, 0.5f, 1.0f, 1.0f)); // blue
+    rgbaTex.setColor(1, 1, glm::vec4(1.0f, 0.9f, 0.2f, 1.0f)); // yellow
+    Nothofagus::TextureId nearestTexId = canvas.addTexture(rgbaTex); // default Nearest
+    Nothofagus::TextureId linearTexId  = canvas.addTexture(rgbaTex);
+    canvas.setTextureMagFilter(linearTexId, Nothofagus::TextureSampleMode::Linear);
 
     using Size = Nothofagus::ImguiImageSize;
     using Fit  = Nothofagus::ImguiImageFit;
@@ -130,15 +130,15 @@ int main()
         canvas.imguiVisual(triVisual, Size::custom({120.0f, 80.0f}, Fit::Stretch));  // fills, distorts
         ImGui::EndGroup();
 
-        ImGui::TextUnformatted("Sampling follows the texture's magFilter (both scaled 8x):");
+        ImGui::TextUnformatted("RGBA texture magFilter (2x2 magnified) - Nearest vs Linear:");
         ImGui::BeginGroup();
         ImGui::TextUnformatted("Nearest (default)");
-        canvas.imguiVisual(Nothofagus::Visual{animTexId}, Size::scaled(scale));
+        canvas.imguiVisual(Nothofagus::Visual{nearestTexId}, Size::scaled(scale));
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("Linear");
-        canvas.imguiVisual(Nothofagus::Visual{smoothTexId}, Size::scaled(scale));
+        canvas.imguiVisual(Nothofagus::Visual{linearTexId}, Size::scaled(scale));
         ImGui::EndGroup();
 
         ImGui::SliderFloat("scale", &scale, 1.0f, 20.0f);
