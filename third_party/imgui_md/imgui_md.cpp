@@ -55,10 +55,6 @@ imgui_md::imgui_md()
 
 	m_md.syntax = nullptr;
 
-	////////////////////////////////////////////////////////////////////////////
-
-	m_table_last_pos = ImVec2(0, 0);
-
 }
 
 
@@ -163,61 +159,26 @@ void imgui_md::BLOCK_P(bool)
 	ImGui::NewLine();
 }
 
-void imgui_md::BLOCK_TABLE(const MD_BLOCK_TABLE_DETAIL*, bool e)
+void imgui_md::BLOCK_TABLE(const MD_BLOCK_TABLE_DETAIL* d, bool e)
 {
 	if (e) {
-		m_table_row_pos.clear();
-		m_table_col_pos.clear();
+		// Salt the id by the source-buffer address and a per-document index so
+		// several tables — and repeated print() calls into one window — never
+		// share an ImGui id. PushID is unconditional, so PopID must be too.
+		ImGui::PushID((const void*)m_doc_start);
+		ImGui::PushID(m_table_index);
+		++m_table_index;
 
-		m_table_last_pos = ImGui::GetCursorPos();
+		ImGuiTableFlags flags = ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg;
+		if (m_table_border) flags |= ImGuiTableFlags_Borders;
+
+		m_table_active = ImGui::BeginTable("md_table", (int)d->col_count, flags);
 	} else {
-
-		ImGui::NewLine();
-
-		if (m_table_border) {
-
-			m_table_last_pos.y = ImGui::GetCursorPos().y;
-
-			m_table_col_pos.push_back(m_table_last_pos.x);
-			m_table_row_pos.push_back(m_table_last_pos.y);
-
-			const ImVec2 wp = ImGui::GetWindowPos();
-			const ImVec2 sp = ImGui::GetStyle().ItemSpacing;
-			const float wx = wp.x + sp.x / 2;
-			const float wy = wp.y - sp.y / 2 - ImGui::GetScrollY();
-
-			for (int i = 0; i < m_table_col_pos.size(); ++i) {
-				m_table_col_pos[i] += wx;
-			}
-
-			for (int i = 0; i < m_table_row_pos.size(); ++i) {
-				m_table_row_pos[i] += wy;
-			}
-
-			////////////////////////////////////////////////////////////////////
-
-			const ImColor c = ImGui::GetStyle().Colors[ImGuiCol_TextDisabled];
-
-			ImDrawList* dl = ImGui::GetWindowDrawList();
-
-			const float xmin = m_table_col_pos.front();
-			const float xmax = m_table_col_pos.back();
-			for (int i = 0; i < m_table_row_pos.size(); ++i) {
-				const float p = m_table_row_pos[i];
-				dl->AddLine(ImVec2(xmin, p), ImVec2(xmax, p), c, 
-					i == 1 && m_table_header_highlight ? 2.0f : 1.0f);
-			}
-
-			const float ymin = m_table_row_pos.front();
-			const float ymax = m_table_row_pos.back();
-			for (int i = 0; i < m_table_col_pos.size(); ++i) {
-				const float p = m_table_col_pos[i];
-				dl->AddLine(ImVec2(p, ymin), ImVec2(p, ymax), c, 1.0f);
-			}
-		}
+		if (m_table_active) ImGui::EndTable();
+		m_table_active = false;
+		ImGui::PopID();
+		ImGui::PopID();
 	}
-
-
 }
 
 void imgui_md::BLOCK_THEAD(bool e)
@@ -233,51 +194,17 @@ void imgui_md::BLOCK_TBODY(bool e)
 
 void imgui_md::BLOCK_TR(bool e)
 {
-	ImGui::SetCursorPosY(m_table_last_pos.y);
-
-	if (e) {
-		m_table_next_column = 0;
-		ImGui::NewLine();
-		m_table_row_pos.push_back(ImGui::GetCursorPosY());
-	}
+	if (e && m_table_active) ImGui::TableNextRow();
 }
 
 void imgui_md::BLOCK_TH(const MD_BLOCK_TD_DETAIL* d, bool e)
 {
 	BLOCK_TD(d, e);
-
 }
 
 void imgui_md::BLOCK_TD(const MD_BLOCK_TD_DETAIL*, bool e)
 {
-	if (e) {
-
-		if (m_table_next_column < m_table_col_pos.size()) {
-			ImGui::SetCursorPosX(m_table_col_pos[m_table_next_column]);
-		} else {
-			m_table_col_pos.push_back(m_table_last_pos.x);
-		}
-
-		++m_table_next_column;
-
-		ImGui::Indent(m_table_col_pos[m_table_next_column - 1]);
-		ImGui::SetCursorPos(
-			ImVec2(m_table_col_pos[m_table_next_column - 1], m_table_row_pos.back()));
-
-	} else {
-		const ImVec2 p = ImGui::GetCursorPos();
-		ImGui::Unindent(m_table_col_pos[m_table_next_column - 1]);
-		ImGui::SetCursorPosX(p.x);
-		if (p.y > m_table_last_pos.y)m_table_last_pos.y = p.y;
-	}
-	ImGui::TextUnformatted(""); 
-	
-	if (!m_table_border && e && m_table_next_column==1 ) {
-		ImGui::SameLine(0.0f, 0.0f);
-	} else {
-		ImGui::SameLine();
-	}
-	
+	if (e && m_table_active) ImGui::TableNextColumn();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -423,13 +350,9 @@ void imgui_md::render_text(const char* str, const char* str_end)
 
 		if (!m_is_table_header) {
 
+			// Wrap to the width still available where the cursor sits — inside a
+			// table column that is the column's width, so cells wrap to fit.
 			float wl = ImGui::GetContentRegionAvail().x;
-
-			if (m_is_table_body) {
-				wl = (m_table_next_column < m_table_col_pos.size() ?
-					m_table_col_pos[m_table_next_column] : m_table_last_pos.x);
-				wl -= ImGui::GetCursorPosX();
-			}
 
 			// ImGui 1.92 renders text at GetFontSize() (= size * FontScaleMain *
 			// FontScaleDpi). Wrap at that same size so the layout matches the
@@ -639,11 +562,6 @@ int imgui_md::text(MD_TEXTTYPE type, const char* str, const char* str_end)
 		break;
 	}
 
-	if (m_is_table_header) {
-		const float x = ImGui::GetCursorPosX();
-		if (x > m_table_last_pos.x)m_table_last_pos.x = x;
-	}
-
 	return 0;
 }
 
@@ -752,6 +670,8 @@ int imgui_md::span(MD_SPANTYPE type, void* d, bool e)
 int imgui_md::print(const char* str, const char* str_end)
 {
 	if (str >= str_end)return 0;
+	m_doc_start = str;   // salt table ids; print() may run several times into one window
+	m_table_index = 0;
 	return md_parse(str, (MD_SIZE)(str_end - str), &m_md, this);
 }
 
