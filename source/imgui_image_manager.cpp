@@ -25,18 +25,53 @@ MeshId ImguiImageManager::ownedQuadFor(glm::ivec2 textureSize)
     return meshId;
 }
 
-void ImguiImageManager::imguiVisual(const Visual& visual, glm::vec2 sizePx)
+namespace
 {
-    const ImVec2 displaySize(sizePx.x, sizePx.y);
-
-    if (not visual.visible())
+    // AABB of a mesh's vertex positions (pixel units); {0,0}-{1,1} for an empty mesh.
+    void meshAabb(const Mesh& mesh, glm::vec2& outMin, glm::vec2& outExtent)
     {
-        ImGui::Dummy(displaySize);
-        return;
+        glm::vec2 lo{ std::numeric_limits<float>::max()};
+        glm::vec2 hi{-std::numeric_limits<float>::max()};
+        for (const Vertex& vertex : mesh.vertices)
+        {
+            lo = glm::min(lo, vertex.position);
+            hi = glm::max(hi, vertex.position);
+        }
+        if (mesh.vertices.empty()) { lo = glm::vec2(0.0f); hi = glm::vec2(1.0f); }
+        outMin = lo;
+        outExtent = glm::max(hi - lo, glm::vec2(1e-3f));
     }
 
+    glm::vec2 resolveTargetLogical(const ImguiImageSize& sizing, glm::vec2 naturalLogical)
+    {
+        glm::vec2 target = naturalLogical;
+        switch (sizing.mode)
+        {
+            case ImguiImageSize::Mode::Standard: target = naturalLogical;                break;
+            case ImguiImageSize::Mode::Scaled:   target = naturalLogical * sizing.value; break;
+            case ImguiImageSize::Mode::Custom:   target = sizing.value;                  break;
+        }
+        return glm::max(target, glm::vec2(1.0f));
+    }
+}
+
+void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize& sizing, float contentScale)
+{
     const TextureId texId = visual.texture();
     debugCheck(mAssets.textures().contains(texId.id), "imguiVisual: unknown TextureId");
+
+    // Natural size = the visual's real on-screen footprint (mesh AABB extent, logical px).
+    // For an invisible visual, reserve the layout without touching GPU/mesh resources:
+    // derive the size from the mesh (if any) or the texture, then bail.
+    if (not visual.visible())
+    {
+        glm::vec2 natural = visual.meshId().has_value()
+            ? [&]{ glm::vec2 mn, ext; meshAabb(mAssets.mesh(visual.meshId().value()), mn, ext); return ext; }()
+            : glm::max(glm::vec2(mAssets.textures().at(texId.id).mTextureSize), glm::vec2(1.0f));
+        const glm::vec2 target = resolveTargetLogical(sizing, natural);
+        ImGui::Dummy(ImVec2(target.x, target.y));
+        return;
+    }
 
     // Resolve the mesh: the visual's own mesh (auto-quad or custom) when present,
     // else a manager-owned quad sized to the texture (a standalone Visual{texId}).
@@ -52,34 +87,52 @@ void ImguiImageManager::imguiVisual(const Visual& visual, glm::vec2 sizePx)
         ownedQuad = true;
     }
 
+    glm::vec2 aabbMin, naturalLogical;
+    meshAabb(mAssets.mesh(meshId), aabbMin, naturalLogical);
+
+    const glm::vec2 targetLogical = resolveTargetLogical(sizing, naturalLogical);
+
+    // Rasterize the off-screen target at the same DPI density the font atlas uses, so a
+    // logical-pixel size stays crisp (mesh geometry rasterized at the displayed size).
+    const float scale = std::max(contentScale, 1e-3f);
+    const glm::ivec2 rttPhys{
+        std::max(1, static_cast<int>(std::ceil(targetLogical.x * scale))),
+        std::max(1, static_cast<int>(std::ceil(targetLogical.y * scale)))
+    };
+
+    // Content placement within the target (physical px): fill, or — for custom Fit —
+    // uniform-scaled and centered with transparent margins.
+    const bool fitCentered =
+        (sizing.mode == ImguiImageSize::Mode::Custom && sizing.fit == ImguiImageFit::Fit);
+    const glm::vec2 naturalPhys = naturalLogical * scale;
+    glm::vec2 contentPhys(rttPhys);
+    glm::vec2 offset(0.0f);
+    if (fitCentered)
+    {
+        const float f = std::min(static_cast<float>(rttPhys.x) / naturalPhys.x,
+                                 static_cast<float>(rttPhys.y) / naturalPhys.y);
+        contentPhys = naturalPhys * f;
+        offset = (glm::vec2(rttPhys) - contentPhys) * 0.5f;
+    }
+
+    // T maps the mesh AABB onto [offset, offset+contentPhys] in the RTT's pixel space:
+    //   q = (contentPhys / naturalLogical) * (p - aabbMin) + offset
+    // (column-major mat3; render side then applies rttNdc(rttPhys)).
+    const glm::vec2 sv = contentPhys / naturalLogical;
+    glm::mat3 transform(1.0f);
+    transform[0][0] = sv.x;
+    transform[1][1] = sv.y;
+    transform[2][0] = offset.x - sv.x * aabbMin.x;
+    transform[2][1] = offset.y - sv.y * aabbMin.y;
+
     const std::size_t layer = visual.currentLayer();
-    const Key key{texId.id, meshId.id, layer};
+    const Key key{texId.id, meshId.id, layer, rttPhys.x, rttPhys.y, fitCentered ? 1 : 0};
 
     auto it = mEntries.find(key);
     if (it == mEntries.end())
     {
-        // Size the internal RTT to the mesh's AABB (auto-quad → texture size; custom
-        // mesh → its full extent, no clipping). Vertices are in pixel units.
-        const Mesh& mesh = mAssets.mesh(meshId);
-        glm::vec2 aabbMin{ std::numeric_limits<float>::max()};
-        glm::vec2 aabbMax{-std::numeric_limits<float>::max()};
-        for (const Vertex& vertex : mesh.vertices)
-        {
-            aabbMin = glm::min(aabbMin, vertex.position);
-            aabbMax = glm::max(aabbMax, vertex.position);
-        }
-        if (mesh.vertices.empty())
-        {
-            aabbMin = glm::vec2(0.0f);
-            aabbMax = glm::vec2(1.0f);
-        }
-        const glm::ivec2 rttSize{
-            std::max(1, static_cast<int>(std::ceil(aabbMax.x - aabbMin.x))),
-            std::max(1, static_cast<int>(std::ceil(aabbMax.y - aabbMin.y)))
-        };
-
         const RenderTargetId rt = mAssets.addRenderTarget(
-            ScreenSize{static_cast<unsigned int>(rttSize.x), static_cast<unsigned int>(rttSize.y)});
+            ScreenSize{static_cast<unsigned int>(rttPhys.x), static_cast<unsigned int>(rttPhys.y)});
         mAssets.setRenderTargetClearColor(rt, glm::vec4(0.0f)); // transparent
 
         if (mTextureRefs[texId.id]++ == 0)  mAssets.retainTexture(texId);
@@ -90,14 +143,16 @@ void ImguiImageManager::imguiVisual(const Visual& visual, glm::vec2 sizePx)
         entry.texture   = texId;
         entry.mesh      = meshId;
         entry.layer     = static_cast<int>(layer);
-        entry.rttSize   = rttSize;
-        entry.aabbMin   = aabbMin;
+        entry.rttSize   = rttPhys;
+        entry.transform = transform;
         entry.ownedQuad = ownedQuad;
         it = mEntries.emplace(key, entry).first;
     }
 
     Entry& entry = it->second;
     entry.lastUsedFrame = mFrameCounter;
+
+    const ImVec2 displaySize(targetLogical.x, targetLogical.y);
 
     if (entry.handle != 0)
     {
@@ -140,14 +195,10 @@ void ImguiImageManager::appendInternalPasses(std::vector<RttPass>& out)
         if (entry.lastUsedFrame != mFrameCounter)
             continue;
 
-        // Fit transform: place the mesh's AABB at the RTT origin. The render side then
-        // applies rttNdc(rttSize), filling the target exactly.
-        glm::mat3 fit(1.0f);
-        fit[2][0] = -entry.aabbMin.x;
-        fit[2][1] = -entry.aabbMin.y;
-
+        // entry.transform maps the mesh AABB into the RTT's pixel space (fill or fit-
+        // centered); the render side then applies rttNdc(rttSize) over it.
         DrawItem item{};
-        item.bellotaTransform = fit;
+        item.bellotaTransform = entry.transform;
         item.texture          = entry.texture;
         item.mesh             = entry.mesh;
         item.layer            = entry.layer;

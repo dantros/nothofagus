@@ -61,11 +61,15 @@ int main()
     Nothofagus::TextureId animTexId = canvas.addTexture(animTex);
     Nothofagus::BellotaId animBellotaId = canvas.addBellota({{{60.0f, 70.0f}}, animTexId});
 
-    // Custom-mesh visual: a triangle (non-square AABB) sharing a small paletted texture.
+    // Custom-mesh visual: a triangle (non-square AABB) sampling a 4-color quadrant
+    // texture, so the texture mapping across the mesh's UVs is clearly visible.
     Nothofagus::IndirectTexture triTex({8, 8}, glm::vec4(0.0f));
     triTex.setPallete(pallete);
     {
-        std::vector<std::uint8_t> pixels(64, 2);
+        std::vector<std::uint8_t> pixels(64, 0);
+        for (int y = 0; y < 8; ++y)
+            for (int x = 0; x < 8; ++x)
+                pixels[y * 8 + x] = static_cast<std::uint8_t>(1 + (x / 4) + 2 * (y / 4)); // 1..4 quadrants
         triTex.setPixels(pixels, 0);
     }
     Nothofagus::TextureId triTexId = canvas.addTexture(triTex);
@@ -84,7 +88,11 @@ int main()
     Nothofagus::TextureId smoothTexId = canvas.addTexture(smoothTex);
     canvas.setTextureMagFilter(smoothTexId, Nothofagus::TextureSampleMode::Linear);
 
+    using Size = Nothofagus::ImguiImageSize;
+    using Fit  = Nothofagus::ImguiImageFit;
+
     float opacity = 1.0f;
+    float scale   = 8.0f;
     float elapsedMs = 0.0f;
 
     canvas.run([&](float dt)
@@ -96,28 +104,44 @@ int main()
 
         ImGui::Begin("Visuals in ImGui");
 
-        ImGui::TextUnformatted("Animated paletted visual:");
         Nothofagus::Visual animVisual = canvas.bellota(animBellotaId).visual();
         animVisual.opacity() = opacity;
-        canvas.imguiVisual(animVisual, {96.0f, 96.0f});
 
+        ImGui::TextUnformatted("standard() = real size; scaled() rasterizes at the upscaled size:");
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("standard");
+        canvas.imguiVisual(animVisual);                         // true 8x8 logical px
+        ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
-        ImGui::TextUnformatted("Custom-mesh visual:");
-        canvas.imguiVisual(canvas.bellota(triBellotaId).visual(), {96.0f, 96.0f});
+        ImGui::TextUnformatted("scaled");
+        canvas.imguiVisual(animVisual, Size::scaled(scale));    // crisp NxN
         ImGui::EndGroup();
 
-        ImGui::TextUnformatted("Sampling follows the texture's magFilter:");
+        ImGui::TextUnformatted("Custom-mesh (triangle) at custom size, Fit vs Stretch:");
+        Nothofagus::Visual triVisual = canvas.bellota(triBellotaId).visual();
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("custom Fit");
+        canvas.imguiVisual(triVisual, Size::custom({120.0f, 80.0f}, Fit::Fit));      // letterboxed, crisp edges
+        ImGui::EndGroup();
+        ImGui::SameLine();
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("custom Stretch");
+        canvas.imguiVisual(triVisual, Size::custom({120.0f, 80.0f}, Fit::Stretch));  // fills, distorts
+        ImGui::EndGroup();
+
+        ImGui::TextUnformatted("Sampling follows the texture's magFilter (both scaled 8x):");
         ImGui::BeginGroup();
         ImGui::TextUnformatted("Nearest (default)");
-        canvas.imguiVisual(Nothofagus::Visual{animTexId}, {96.0f, 96.0f});
+        canvas.imguiVisual(Nothofagus::Visual{animTexId}, Size::scaled(scale));
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("Linear");
-        canvas.imguiVisual(Nothofagus::Visual{smoothTexId}, {96.0f, 96.0f});
+        canvas.imguiVisual(Nothofagus::Visual{smoothTexId}, Size::scaled(scale));
         ImGui::EndGroup();
 
+        ImGui::SliderFloat("scale", &scale, 1.0f, 20.0f);
         ImGui::SliderFloat("opacity", &opacity, 0.0f, 1.0f);
         ImGui::End();
     });

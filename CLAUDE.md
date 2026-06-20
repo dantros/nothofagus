@@ -663,14 +663,16 @@ a sibling of `ImguiRttManager`.
 ```cpp
 canvas.run([&](float) {
     ImGui::Begin("inventory");
-    canvas.imguiVisual(canvas.bellota(swordId).visual(), {64.0f, 64.0f}); // a bellota's look
-    canvas.imguiVisual(Nothofagus::Visual{potionTexId}, {32.0f, 32.0f});  // a standalone visual
+    canvas.imguiVisual(canvas.bellota(swordId).visual());                          // real on-screen size
+    canvas.imguiVisual(Nothofagus::Visual{potionTexId}, ImguiImageSize::scaled(4)); // 4x, crisp
+    canvas.imguiVisual(portrait, ImguiImageSize::custom({120, 80}, ImguiImageFit::Fit)); // fit a box
     ImGui::End();
 });
 ```
 
 ```cpp
-void imguiVisual(const Visual& visual, glm::vec2 sizePx);   // include/canvas.h
+// include/canvas.h + include/imgui_image_size.h
+void imguiVisual(const Visual& visual, const ImguiImageSize& sizing = ImguiImageSize::standard());
 ```
 
 **The entry point is a `Visual`, not a `Bellota`** — placement (transform / depth) is meaningless in
@@ -679,25 +681,34 @@ visible + opacity; tint is a `BellotaPack` field and is *not* part of a Visual, 
 Pass `canvas.bellota(id).visual()` for a bellota's current look, or a standalone `Visual{texId}`.
 
 **Behavior / rules:**
-- **Sizing honors a custom mesh.** The internal RTT is sized to the AABB of the visual's mesh
-  (auto-quad → texture size; a custom triangle/polygon mesh → its full extent, no clipping). UVs come
-  from the mesh, so the texture samples correctly either way. `sizePx` is the ImGui display size,
-  independent of the RTT resolution — resizing the displayed image never re-creates GPU resources.
+- **Sizing (`ImguiImageSize`, all in logical pixels → scales with OS DPI).** The default,
+  `standard()`, is the visual's **real on-screen size** — its mesh AABB extent with no scale transform
+  (auto-quad → texture size; custom mesh → its full extent). `scaled(float)` / `scaled(vec2)` multiply
+  that; `custom(size, ImguiImageFit::Fit|Stretch)` renders at an explicit size (`Fit` =
+  uniform-scale + letterbox/pillarbox, `Stretch` = fill/distort). The off-screen target is
+  **rasterized at the chosen size × `contentScale()`** (the same DPI density the font atlas uses, via
+  `style.FontScaleDpi`), so **mesh geometry is rasterized at the displayed size — crisp edges, not
+  bitmap-upscaled** — and texture magnification happens through the engine sprite path honoring the
+  texture's own `magFilter`. A non-square custom mesh keeps its proportions under `Fit`.
 - **Opacity** modulates the drawn image (applied as the ImGui widget alpha); `visible()==false` draws
-  an empty cell of `sizePx`.
-- **Sampling follows the texture's `magFilter`** (default `Nearest` → crisp pixel art when upscaled;
-  set `Linear` via `setTextureMagFilter` for smoothing). ImGui's own image sampler is global-per-draw
-  and defaults to LINEAR (it ignores the texture's filter, and the Vulkan backend ignores the sampler
-  passed to `ImGui_ImplVulkan_AddTexture`), so `imguiVisual` selects the filter per image via ImGui
-  1.92's standard `DrawCallback_SetSamplerNearest` / `SetSamplerLinear` draw-callbacks (same path on
-  both backends) and restores Linear afterward so window text/widgets are unaffected.
+  an empty cell of the resolved size.
+- **Sampling follows the texture's `magFilter`** (default `Nearest` → crisp pixel art; set `Linear`
+  via `setTextureMagFilter` for smoothing). Texture magnification now happens *inside* the RTT through
+  the engine sprite path (which honors the texture's filter), and ImGui draws the RTT ~1:1. As a
+  belt-and-suspenders for any residual ImGui-side scaling, `imguiVisual` also pins ImGui's own
+  (global-per-draw, LINEAR-default) sampler to match via the standard
+  `DrawCallback_SetSamplerNearest` / `SetSamplerLinear` callbacks, restoring Linear afterward so
+  window text/widgets are unaffected. (ImGui ignores the sampler passed to
+  `ImGui_ImplVulkan_AddTexture`, hence the callback approach.)
 - **One-frame warm-up.** Sim/render-split aware: `imguiVisual` runs on the sim side and bakes a
   stable handle into the ImGui draw list; the handle is created on the render side (after the internal
   RTT is drawn) and read back the next frame. So the first frame a given visual is shown reserves
   layout only and the image appears the following frame. Internal RTTs are keyed by
-  `(TextureId, MeshId, currentLayer)`; an entry unused for a few frames is garbage-collected (its RTT
-  + handle freed, its texture/mesh pin released). All GPU work is render-side and id-driven — nothing
-  is created from the user callback.
+  `(TextureId, MeshId, currentLayer, rttPixelW, rttPixelH, fill/fit)` — so the same visual at
+  different sizes gets distinct crisp targets; an entry unused for a few frames is garbage-collected
+  (its RTT + handle freed, its texture/mesh pin released). Dragging a size slider therefore churns
+  RTTs (one per distinct pixel size) until they retire — acceptable; bucketing is a future tweak. All
+  GPU work is render-side and id-driven — nothing is created from the user callback.
 - **Backends.** OpenGL keeps a flat `GL_TEXTURE_2D` companion blitted (Y-flipped) from the RTT array
   texture each frame, since ImGui binds `GL_TEXTURE_2D`; Vulkan adds a `VK_IMAGE_VIEW_TYPE_2D` view of
   the RTT color image + `ImGui_ImplVulkan_AddTexture` (no copy). Both via three render-agnostic
@@ -906,7 +917,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_render_to_texture.cpp` | `addRenderTarget` / `renderTo` — sprites drawn into an off-screen texture sampled by another bellota |
 | `hello_nested_render_targets.cpp` | Nested RTTs — one render target's output feeds another |
 | `hello_imgui_rtt.cpp` | `renderImguiTo` — diegetic ImGui panel drawn into an RTT, sampled by a rotating bellota |
-| `hello_imgui_visual.cpp` | `imguiVisual` — draw a Visual's appearance inside an ImGui window (`ImGui::Image`): animated paletted visual, custom-mesh (triangle) visual with AABB fit, standalone `Visual{textureId}`, Nearest-vs-Linear sampling (via texture `magFilter`), opacity slider |
+| `hello_imgui_visual.cpp` | `imguiVisual` — draw a Visual inside an ImGui window (`ImGui::Image`): sizing modes (`standard` / `scaled` / `custom` with `Fit` vs `Stretch`), screen-resolution mesh rasterization, animated paletted + custom-mesh visuals, Nearest-vs-Linear sampling (texture `magFilter`), scale + opacity sliders |
 | `hello_imgui_overlay.cpp` | `imguiOverlayViewport()` + `imguiBaseFontSize()` — header/footer ImGui bars pinned to the canvas, tracking pillarbox/letterbox + DPI on resize |
 | `hello_custom_font.cpp` | User-supplied TTF via `addImguiFontSource` — typeable path field, editable text, integer min/max + slider for size, default-vs-user side-by-side with `TextWrapped`; also demonstrates the `imgui-filebrowser` integration. When built with `-DNOTHOFAGUS_EMBED_CJK*`, adds macro-guarded blocks rendering Chinese/Japanese/Korean sample text via `embeddedCjkFontSource(...)` |
 | `hello_markdown.cpp` | `MarkdownRenderer` — headings, lists, code blocks, tables, blockquotes, strikethrough, link callback; true bold/italic/bold-italic/mono faces via `canvas.defaultMarkdownStyle(...)` |

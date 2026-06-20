@@ -1,6 +1,7 @@
 #pragma once
 
 #include "visual.h"
+#include "imgui_image_size.h"          // ImguiImageSize / ImguiImageFit
 #include "render_snapshot.h"          // RttPass / DrawItem
 #include "texture_id.h"
 #include "mesh.h"                      // MeshId
@@ -45,9 +46,10 @@ public:
     /// Sim-side: bump the per-frame clock. Call once at the start of the build phase.
     void beginFrame() { ++mFrameCounter; }
 
-    /// Sim-side, user-facing: draw `visual` in the current ImGui window at `sizePx`
-    /// (logical px). Must be called inside an active ImGui frame.
-    void imguiVisual(const Visual& visual, glm::vec2 sizePx);
+    /// Sim-side, user-facing: draw `visual` in the current ImGui window, sized per
+    /// `sizing` (logical px). `contentScale` is the DPI density to rasterize the internal
+    /// render target at (the same value the font atlas uses). Call inside an ImGui frame.
+    void imguiVisual(const Visual& visual, const ImguiImageSize& sizing, float contentScale);
 
     /// Sim-side: append this frame's internal RTT passes (one per visual drawn) onto
     /// the snapshot's RTT pass list, after the user-scheduled RTT passes.
@@ -63,8 +65,10 @@ public:
     void releaseAll();
 
 private:
-    // Pixel-identity of a drawn visual: (textureId, meshId, layer) fixes the pixels.
-    using Key = std::tuple<std::size_t, std::size_t, std::size_t>;
+    // Identity of a drawn image: pixels (textureId, meshId, layer) + the rasterized
+    // physical size + whether the content fills or is fit-centered (so the same visual at
+    // different sizes / fit modes gets distinct render targets).
+    using Key = std::tuple<std::size_t, std::size_t, std::size_t, int, int, int>;
 
     struct Entry
     {
@@ -72,8 +76,8 @@ private:
         TextureId      texture{0};
         MeshId         mesh{0};
         int            layer = 0;
-        glm::ivec2     rttSize{1, 1};
-        glm::vec2      aabbMin{0.0f, 0.0f};
+        glm::ivec2     rttSize{1, 1};       ///< physical px the target is rasterized at.
+        glm::mat3      transform{1.0f};     ///< maps the mesh AABB into the RTT (pre rttNdc).
         std::uint64_t  handle = 0;          ///< ImTextureID; 0 until created render-side.
         std::uint64_t  lastUsedFrame = 0;
         bool           ownedQuad = false;   ///< mesh is a manager-synthesized quad.

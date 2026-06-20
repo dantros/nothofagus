@@ -15,6 +15,7 @@
 #include "imgui_draw_callback.h"
 #include "imgui_font_id.h"
 #include "imgui_font_source_id.h"
+#include "imgui_image_size.h"
 #include "markdown_renderer.h"
 #include <memory>
 #include <functional>
@@ -313,21 +314,28 @@ public:
      *
      * The entry point is a Visual (texture + optional mesh + current layer + opacity),
      * NOT a Bellota — placement (transform / depth) is meaningless in an ImGui cell, so
-     * the image aligns to the GUI/text layout and is drawn at @p sizePx (logical pixels).
-     * Pass `canvas.bellota(id).visual()` to show a bellota's current appearance, or a
-     * standalone `Visual{textureId}`.
+     * the image aligns to the GUI/text layout. Pass `canvas.bellota(id).visual()` to show
+     * a bellota's current appearance, or a standalone `Visual{textureId}`.
      *
      * Works for every texture kind: the Visual is rendered into an engine-managed
      * off-screen target (Direct / Indirect / tile-map / animation frame all resolve
-     * correctly) and exposed to ImGui. A custom mesh is honored — the image is sized to
-     * the mesh's bounding box. Opacity modulates the drawn image; visibility=false draws
-     * an empty cell.
+     * correctly) and exposed to ImGui. A custom mesh is honored. Opacity modulates the
+     * drawn image; visibility=false draws an empty cell.
      *
-     * Call inside an active ImGui frame (a run()/tick() update callback). The first frame
-     * a given Visual is shown reserves layout only and appears on the next frame
-     * (one-frame warm-up).
+     * @p sizing controls the size, in **logical pixels** (scales with OS DPI). The default
+     * (`ImguiImageSize::standard()`) is the visual's real on-screen size — its mesh's
+     * bounding box, with no scale transform. Use `ImguiImageSize::scaled(factor)` to
+     * up/downscale, or `ImguiImageSize::custom(size, ImguiImageFit::Fit|Stretch)` for an
+     * explicit size. The off-screen target is rasterized at the chosen size × contentScale,
+     * so mesh geometry stays crisp at the displayed size (not bitmap-upscaled), and texture
+     * magnification honors the texture's own `magFilter`.
+     *
+     * Call inside an active ImGui frame (a run()/tick() update callback). The first frame a
+     * given (Visual, size) is shown reserves layout only and appears next frame (one-frame
+     * warm-up).
      */
-    void imguiVisual(const Visual& visual, glm::vec2 sizePx);
+    void imguiVisual(const Visual& visual,
+                     const ImguiImageSize& sizing = ImguiImageSize::standard());
 
     /**
      * @brief Register a TTF buffer as a new font source.
