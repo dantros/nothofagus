@@ -652,8 +652,14 @@ public:
 
     /// Whether the threaded ImGui UI captured the mouse / keyboard on the most
     /// recent commit. Read these in the game `update` (which runs before the UI
-    /// frame) to skip world interaction while a widget has focus. Thread-safe;
-    /// the value is one frame old by construction.
+    /// frame) to skip world interaction while the UI is using that input.
+    /// Thread-safe; the value is one frame old by construction.
+    ///
+    /// imguiWantsMouse() is true while the cursor is over a UI window or a widget
+    /// is being dragged. imguiWantsKeyboard() is true only while the UI is actively
+    /// capturing keystrokes — a widget being edited (e.g. an InputText) or an open
+    /// modal — NOT merely because a panel is visible (keyboard nav stays enabled
+    /// but does not, on its own, claim the keyboard).
     bool imguiWantsMouse() const;
     bool imguiWantsKeyboard() const;
 

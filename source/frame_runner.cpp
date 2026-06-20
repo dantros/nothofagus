@@ -632,6 +632,14 @@ void FrameRunner::beginThreadedSession(Controller& controller)
         // Enable keyboard nav and wire an in-process clipboard so InputText
         // copy/paste works on the sim thread (GLFW clipboard is main-thread-only).
         simIo.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        // With keyboard nav on, ImGui would set io.WantCaptureKeyboard true whenever
+        // io.NavActive is true — i.e. merely because a window exists with nav focus,
+        // even when nothing is being typed. That makes imguiWantsKeyboard() stuck at
+        // true and useless for gating game input. Disabling nav keyboard *capture*
+        // keeps nav itself working (arrows/Tab/Enter move focus) but makes
+        // WantCaptureKeyboard reflect real capture only — an active widget (e.g. an
+        // InputText being edited) or an open modal.
+        simIo.ConfigNavCaptureKeyboard = false;
         ImGuiPlatformIO& simPlatformIo = ImGui::GetPlatformIO();
         simPlatformIo.Platform_GetClipboardTextFn = threadedGetClipboardText;
         simPlatformIo.Platform_SetClipboardTextFn = threadedSetClipboardText;
