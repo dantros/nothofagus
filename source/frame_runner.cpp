@@ -417,15 +417,19 @@ void FrameRunner::drainPendingFrees(AssetRegistry& assets, std::uint64_t lastRen
     });
 }
 
-void FrameRunner::renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRtt,
-                                 const RenderSnapshot& snapshot, float deltaTimeMS, Controller& controller)
+void FrameRunner::renderSnapshotContents(AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                                         const RenderSnapshot& snapshot, float deltaTimeMS)
 {
-    ZoneScopedN("renderSnapshot");
+    // Everything here touches the asset containers (`mTextures`/`mMeshes`,
+    // render targets) and the deferred-free queues. On the threaded path the
+    // caller holds `mThreadedAssetMutex` around this whole method so it cannot
+    // race the sim thread's structural spawns/despawns; on the single-threaded
+    // path there is no contention. The vsync swap is deliberately NOT here — it
+    // is done by the caller after releasing the lock.
 
-    // Deferred free: release resources retired no later than the last fully
-    // rendered snapshot. At depth-0 (single thread) the snapshot we are about to
-    // render IS the latest commit, so frees happen this frame, before upload —
-    // identical timing to the old clearUnused* path.
+    // Deferred free: release resources retired no later than the snapshot we are
+    // about to render. Single-threaded, that snapshot is the latest commit so
+    // frees happen this frame; threaded, the gate genuinely defers (render lags).
     mLastRenderedSeq = snapshot.commitSeq;
     drainPendingFrees(assets, mLastRenderedSeq);
 
@@ -491,6 +495,14 @@ void FrameRunner::renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRt
         ZoneScopedN("MainDraw");
         drawItems(snapshot.draws, assets.textures(), assets.meshes(), worldTransformMat, mBackend);
     }
+}
+
+void FrameRunner::renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                                 const RenderSnapshot& snapshot, float deltaTimeMS, Controller& controller)
+{
+    ZoneScopedN("renderSnapshot");
+
+    renderSnapshotContents(assets, imguiRtt, snapshot, deltaTimeMS);
 
     if (mStats)
     {
@@ -549,7 +561,8 @@ void FrameRunner::close()
 }
 
 // ---------------------------------------------------------------------------
-// Threaded driver (M2 Phase A)
+// Threaded driver (M2 Phase A: snapshot hand-off; Phase B: runtime resource
+// mutation guarded by mThreadedAssetMutex)
 // ---------------------------------------------------------------------------
 
 void FrameRunner::beginThreadedSession(Controller& controller)
@@ -567,11 +580,17 @@ void FrameRunner::beginThreadedSession(Controller& controller)
 
 void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS, std::function<void(float)> update)
 {
-    // Sim thread: pure CPU. No GPU, no ImGui, no input, no explorers, no resource
-    // GC (Phase A keeps resources static at runtime; the render side owns the GPU
-    // containers exclusively). Only existing bellota *values* may be mutated by
-    // `update`.
+    // Sim thread: CPU only. No GPU, no ImGui, no input. The user `update` mutates
+    // existing bellota values and may also spawn/despawn bellotas via
+    // Canvas::spawnBellota/despawnBellota (Phase B) — those take the asset mutex
+    // internally; everything here (bellota value writes, snapshot projection)
+    // touches only sim-owned state and stays lock-free.
     ZoneScopedN("commitFrame");
+
+    // Stamp the commit seq BEFORE `update` so spawn/despawn can tag retired
+    // resources with the commit at which they leave the scene (the first
+    // snapshot that no longer references them — this one).
+    const std::uint64_t commitSeq = ++mCommitSeq;
 
     {
         ZoneScopedN("UserUpdate");
@@ -579,7 +598,7 @@ void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS, std::fun
     }
 
     RenderSnapshot& snapshot = mTripleBuffer.writeSlot();
-    snapshot.commitSeq = ++mCommitSeq;
+    snapshot.commitSeq = commitSeq;
     snapshot.clearColor = mClearColor;
 
     {
@@ -619,9 +638,9 @@ void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& im
 
     mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
 
-    // Empty main ImGui frame — the threaded path runs no user ImGui in Phase A,
-    // but a NewFrame/Render pair yields valid (empty) draw data so the shared
-    // present path works. ImGui stays entirely on this (render) thread.
+    // Empty main ImGui frame — the threaded path runs no user ImGui yet, but a
+    // NewFrame/Render pair yields valid (empty) draw data so the shared present
+    // path works. ImGui stays entirely on this (render) thread.
     mBackend.imguiNewFrame();
     mWindow->newImGuiFrame();
     applyMainContextScale();
@@ -632,11 +651,63 @@ void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& im
     mLastRenderTime = now;
     mLastRenderTimeValid = true;
 
-    renderSnapshot(assets, imguiRtt, snapshot, deltaTimeMS, controller);
+    // Container-touching section (deferred frees, GPU upload, id→handle resolve +
+    // draw submission). Guarded against the sim thread's spawn/despawn. The lock
+    // is released BEFORE the vsync swap so a slow present never stalls the sim.
+    {
+        ZoneScopedN("AssetLockedRender");
+        std::lock_guard<std::mutex> lock(mThreadedAssetMutex);
+        renderSnapshotContents(assets, imguiRtt, snapshot, deltaTimeMS);
+    }
+
+    if (mStats)
+    {
+        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Appearing);
+        ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+        ImGui::Begin("stats", NULL, ImGuiWindowFlags_NoTitleBar);
+        ImGui::Text("%.2f fps", deltaTimeMS > 0.0f ? 1000.0f / deltaTimeMS : 0.0f);
+        ImGui::Text("%.2f ms", deltaTimeMS);
+        ImGui::End();
+    }
+
+    {
+        ZoneScopedN("ImGuiRender");
+        ImGui::Render();
+        mBackend.endFrame(ImGui::GetDrawData(), mFramebufferWidth, mFramebufferHeight);
+    }
+
+    {
+        ZoneScopedN("SwapBuffers");
+        mWindow->endFrame(controller, mScreenSize);
+    }
 
     mThreadedRunning.store(mWindow->isRunning(), std::memory_order_release);
 
     FrameMark;
+}
+
+Nothofagus::BellotaId FrameRunner::threadedSpawnBellota(AssetRegistry& assets, const Bellota& bellota)
+{
+    // Sim thread: structural mutation of the (render-shared) asset containers —
+    // adds the bellota plus its auto-quad mesh and registers usage entries. The
+    // mutex serializes this against the render thread's container access.
+    std::lock_guard<std::mutex> lock(mThreadedAssetMutex);
+    return assets.addBellota(bellota);
+}
+
+void FrameRunner::threadedDespawnBellota(AssetRegistry& assets, BellotaId bellotaId)
+{
+    // Sim thread: remove the bellota, then detect any texture/mesh it orphaned
+    // (typically its auto-quad mesh) and queue them for deferred GPU free. The
+    // actual free happens on the render thread once no in-flight snapshot still
+    // references them (retireSeq <= lastRenderedSeq). Tag with the current commit
+    // seq: the snapshot built this commit no longer references the removed bellota.
+    std::lock_guard<std::mutex> lock(mThreadedAssetMutex);
+    assets.removeBellota(bellotaId);
+    for (TextureId textureId : assets.collectUnusedTextures())
+        mPendingTextureFrees.push_back({textureId, mCommitSeq});
+    for (MeshId meshId : assets.collectUnusedMeshes())
+        mPendingMeshFrees.push_back({meshId, mCommitSeq});
 }
 
 ScreenSize getPrimaryMonitorSize()

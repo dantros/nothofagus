@@ -18,6 +18,7 @@
 #include <memory>
 #include <atomic>
 #include <functional>
+#include <mutex>
 
 struct ImGuiStyle; // global-scope (Dear ImGui); held by unique_ptr to keep imgui.h out of this header.
 
@@ -173,6 +174,14 @@ public:
     /// upload + draw + present), poll window/input, and refresh the running flag.
     void renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& imguiRtt, Controller& controller);
 
+    /// Sim thread (Phase B): add a bellota at runtime, guarded against the render
+    /// thread's container access. Returns the new id.
+    BellotaId threadedSpawnBellota(AssetRegistry& assets, const Bellota& bellota);
+
+    /// Sim thread (Phase B): remove a bellota at runtime and queue any resources
+    /// it orphaned for deferred GPU free on the render thread.
+    void threadedDespawnBellota(AssetRegistry& assets, BellotaId bellotaId);
+
 private:
     void ensureSessionStarted(Controller& controller);
     void runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
@@ -196,6 +205,13 @@ private:
     /// and presents. Touches no `Bellota` — only the POD snapshot.
     void renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRtt,
                         const RenderSnapshot& snapshot, float deltaTimeMS, Controller& controller);
+
+    /// The container-touching core of a rendered frame: deferred frees, GPU
+    /// upload, RTT passes, and the main draw. Excludes the vsync swap and the
+    /// ImGui render. On the threaded path the caller holds `mThreadedAssetMutex`
+    /// around this; single-threaded there is no contention.
+    void renderSnapshotContents(AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                                const RenderSnapshot& snapshot, float deltaTimeMS);
 
     /// Gather the queued RTT passes (`mPendingRttPasses`) into POD draw lists on
     /// `out` and clear the queue. CPU-only — GPU existence of each render target
@@ -249,6 +265,13 @@ private:
     std::atomic<bool> mThreadedRunning{false};     ///< true while the threaded session is live.
     float mLastRenderTime{0.0f};                   ///< previous renderFrameThreaded timestamp (for the stats dt).
     bool  mLastRenderTimeValid{false};
+
+    /// Phase B: serializes the sim thread's runtime structural mutations
+    /// (spawn/despawn → mTextures/mMeshes + usage monitors + pending-free queues)
+    /// against the render thread's container access (upload/resolve/free). Held
+    /// only for the fast container section — never across the vsync swap. Bellota
+    /// value mutation and the snapshot projection stay lock-free.
+    std::mutex mThreadedAssetMutex;
 
     struct Window; ///< Forward declaration for window management.
     std::unique_ptr<Window> mWindow; ///< Pointer to the window object.

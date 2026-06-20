@@ -631,6 +631,17 @@ public:
     /// Main thread: render the latest published snapshot and pump window/input.
     void renderFrame(Controller& controller);
 
+    /// Sim thread: add a bellota at runtime on the threaded path. Unlike
+    /// `addBellota`, this is safe to call from `commit()`'s update while the main
+    /// thread renders — it serializes structural changes against the renderer.
+    /// Returns the new id (usable immediately for value mutation via `bellota()`).
+    BellotaId spawnBellota(const Bellota& bellota);
+
+    /// Sim thread: remove a bellota at runtime on the threaded path. The GPU
+    /// resources it orphans are freed by the render thread once no in-flight
+    /// frame still references them (deferred free) — no use-after-free.
+    void despawnBellota(BellotaId bellotaId);
+
     /// Enable or disable automatic removal of unreferenced textures each frame.
     /// Enabled by default. Disable during bulk asset loading to prevent premature removal.
     void setAutoRemoveUnusedTextures(bool enabled);

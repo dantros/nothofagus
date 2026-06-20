@@ -403,6 +403,16 @@ void Canvas::renderFrame(Controller& controller)
     mImplPtr->frameRunner.renderFrameThreaded(mImplPtr->assets, mImplPtr->imguiRtt, controller);
 }
 
+BellotaId Canvas::spawnBellota(const Bellota& bellota)
+{
+    return mImplPtr->frameRunner.threadedSpawnBellota(mImplPtr->assets, bellota);
+}
+
+void Canvas::despawnBellota(BellotaId bellotaId)
+{
+    mImplPtr->frameRunner.threadedDespawnBellota(mImplPtr->assets, bellotaId);
+}
+
 DirectTexture Canvas::takeScreenshot() const
 {
     return mImplPtr->frameRunner.takeScreenshot();
