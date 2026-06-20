@@ -104,6 +104,10 @@ int main()
 
         ImGui::Begin("Visuals in ImGui");
 
+        ImGui::SliderFloat("scale", &scale, 1.0f, 20.0f);
+        ImGui::SliderFloat("opacity", &opacity, 0.0f, 1.0f);
+        ImGui::Separator();
+
         Nothofagus::Visual animVisual = canvas.bellota(animBellotaId).visual();
         animVisual.opacity() = opacity;
 
@@ -141,8 +145,6 @@ int main()
         canvas.imguiVisual(Nothofagus::Visual{linearTexId}, Size::scaled(scale));
         ImGui::EndGroup();
 
-        ImGui::SliderFloat("scale", &scale, 1.0f, 20.0f);
-        ImGui::SliderFloat("opacity", &opacity, 0.0f, 1.0f);
         ImGui::End();
     });
 
