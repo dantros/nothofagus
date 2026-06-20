@@ -140,10 +140,9 @@ private:
 	static void line(ImColor c, bool under);
 
 	//table state
-	int m_table_next_column = 0;
-	ImVec2 m_table_last_pos;
-	std::vector<float> m_table_col_pos;
-	std::vector<float> m_table_row_pos;
+	bool m_table_active = false;        //BeginTable succeeded for the current table
+	int m_table_index = 0;              //per-document table counter, for unique ids
+	const char* m_doc_start = nullptr;  //start of the buffer passed to the current print()
 
 	//list state
 	struct list_info
