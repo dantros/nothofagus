@@ -154,13 +154,32 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize& 
 
     const ImVec2 displaySize(targetLogical.x, targetLogical.y);
 
-    if (entry.handle != 0)
+    // Pick the handle to draw: this entry's own once it is ready, otherwise the most
+    // recently rendered handle for the SAME visual (same texture/mesh/size/fit, any
+    // layer). An animation that revisits a layer whose per-layer RTT was retired would
+    // otherwise re-enter the one-frame warm-up and flash an empty cell on every frame
+    // change; showing the previous ready frame instead keeps it smooth. Only a
+    // genuinely first-seen visual (nothing ready yet) still reserves a blank cell.
+    std::uint64_t drawHandle = entry.handle;
+    if (drawHandle == 0)
+    {
+        if (Entry* fallback = findReadyFallback(key, entry))
+        {
+            // Keep the borrowed entry alive and re-rendered this frame so its handle
+            // stays valid through the main ImGui pass (GC runs before it).
+            fallback->lastUsedFrame = mFrameCounter;
+            drawHandle = fallback->handle;
+        }
+    }
+
+    if (drawHandle != 0)
     {
         // ImGui's image sampler is global-per-draw and defaults to LINEAR (it does not
         // read the texture's own filter), so an upscaled image blurs. Honor the visual's
         // texture magFilter via ImGui 1.92's standard sampler draw-callbacks (same path on
         // OpenGL + Vulkan). Default Nearest -> crisp pixel art; restore Linear afterward so
-        // the window's text/widgets are unaffected.
+        // the window's text/widgets are unaffected. (A fallback handle is the same texture,
+        // so its magFilter matches.)
         const bool nearest =
             mAssets.textures().at(entry.texture.id).magFilter == TextureSampleMode::Nearest;
         ImDrawList* drawList = ImGui::GetWindowDrawList();
@@ -173,7 +192,7 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize& 
         const bool fade = visual.opacity() < 0.999f;
         if (fade)
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * visual.opacity());
-        ImGui::Image(static_cast<ImTextureID>(entry.handle), displaySize,
+        ImGui::Image(static_cast<ImTextureID>(drawHandle), displaySize,
                      ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f));
         if (fade)
             ImGui::PopStyleVar();
@@ -183,9 +202,28 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize& 
     }
     else
     {
-        // Warm-up: the handle is created render-side this frame; draw next frame.
+        // First-ever frame for this visual: nothing ready to show yet; reserve layout.
         ImGui::Dummy(displaySize);
     }
+}
+
+ImguiImageManager::Entry* ImguiImageManager::findReadyFallback(const Key& key, const Entry& want)
+{
+    // The same visual at the same displayed size/fit, differing only by layer: pick the
+    // entry with a ready handle that was rendered most recently. Used to bridge the
+    // per-layer warm-up gap for animations (see imguiVisual). nullptr if none qualifies.
+    Entry* best = nullptr;
+    for (auto& [candidateKey, candidate] : mEntries)
+    {
+        if (candidate.handle == 0)                            continue; // not yet ready
+        if (candidate.texture.id != want.texture.id)          continue;
+        if (candidate.mesh.id    != want.mesh.id)             continue;
+        if (candidate.rttSize    != want.rttSize)             continue; // same displayed size
+        if (std::get<5>(candidateKey) != std::get<5>(key))    continue; // same fill/fit mode
+        if (best == nullptr || candidate.lastUsedFrame > best->lastUsedFrame)
+            best = &candidate;
+    }
+    return best;
 }
 
 void ImguiImageManager::appendInternalPasses(std::vector<RttPass>& out)
