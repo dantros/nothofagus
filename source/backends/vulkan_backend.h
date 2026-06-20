@@ -83,13 +83,13 @@ struct PendingRenderTargetDeletion
     VmaAllocation depthAlloc;
 };
 
-// A flat-2D ImGui handle (descriptor set from ImGui_ImplVulkan_AddTexture + its 2D view
-// and sampler) queued for deletion once the GPU is no longer using it.
+// A flat-2D ImGui handle (descriptor set from ImGui_ImplVulkan_AddTexture + its 2D view)
+// queued for deletion once the GPU is no longer using it. No sampler: ImGui 1.92 samples
+// with its own sampler descriptors (driven by the DrawCallback_SetSampler* path).
 struct PendingFlat2DDeletion
 {
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     VkImageView     imageView     = VK_NULL_HANDLE;
-    VkSampler       sampler       = VK_NULL_HANDLE;
 };
 
 struct FrameData
@@ -235,7 +235,7 @@ private:
     std::size_t mNextId = 0;
 
     // Per-render-target flat-2D ImGui companion (lazy). Keyed by DRenderTarget::id.
-    struct Flat2D { VkImageView view = VK_NULL_HANDLE; VkSampler sampler = VK_NULL_HANDLE; VkDescriptorSet descriptorSet = VK_NULL_HANDLE; };
+    struct Flat2D { VkImageView view = VK_NULL_HANDLE; VkDescriptorSet descriptorSet = VK_NULL_HANDLE; };
     std::unordered_map<std::size_t, Flat2D> mFlat2Ds;
     std::uint32_t mFlat2DDescriptorsLive   = 0;     ///< live ImGui image descriptor sets (pool occupancy).
     bool          mLoggedFlat2DExhaustion  = false; ///< rate-limit the exhaustion error to once per spell.

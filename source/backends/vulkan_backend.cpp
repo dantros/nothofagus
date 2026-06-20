@@ -777,8 +777,6 @@ void VulkanBackend::flushPendingDeletions(FrameData& frame)
             ImGui_ImplVulkan_RemoveTexture(pending.descriptorSet);
             if (mFlat2DDescriptorsLive > 0) --mFlat2DDescriptorsLive;
         }
-        if (pending.sampler != VK_NULL_HANDLE)
-            vkDestroySampler(mDevice, pending.sampler, nullptr);
         if (pending.imageView != VK_NULL_HANDLE)
             vkDestroyImageView(mDevice, pending.imageView, nullptr);
     }
@@ -810,20 +808,19 @@ void VulkanBackend::shutdown()
     // Flat-2D ImGui handles must be removed while the ImGui Vulkan backend is still
     // alive (ImGui_ImplVulkan_RemoveTexture), and before ImGui_ImplVulkan_Shutdown().
     // Device is idle, so destroy immediately.
-    auto destroyFlat2D = [this](VkDescriptorSet set, VkImageView view, VkSampler sampler)
+    auto destroyFlat2D = [this](VkDescriptorSet set, VkImageView view)
     {
-        if (set     != VK_NULL_HANDLE) ImGui_ImplVulkan_RemoveTexture(set);
-        if (sampler != VK_NULL_HANDLE) vkDestroySampler(mDevice, sampler, nullptr);
-        if (view    != VK_NULL_HANDLE) vkDestroyImageView(mDevice, view, nullptr);
+        if (set  != VK_NULL_HANDLE) ImGui_ImplVulkan_RemoveTexture(set);
+        if (view != VK_NULL_HANDLE) vkDestroyImageView(mDevice, view, nullptr);
     };
     for (auto& frame : mFrames)
     {
         for (auto& pending : frame.pendingFlat2DDeletions)
-            destroyFlat2D(pending.descriptorSet, pending.imageView, pending.sampler);
+            destroyFlat2D(pending.descriptorSet, pending.imageView);
         frame.pendingFlat2DDeletions.clear();
     }
     for (auto& [id, flat] : mFlat2Ds)
-        destroyFlat2D(flat.descriptorSet, flat.view, flat.sampler);
+        destroyFlat2D(flat.descriptorSet, flat.view);
     mFlat2Ds.clear();
 
     ImGui_ImplVulkan_Shutdown();
@@ -1721,7 +1718,7 @@ void VulkanBackend::freeRenderTarget(DRenderTarget renderTarget, DTexture proxyT
     if (flatIt != mFlat2Ds.end())
     {
         mFrames[lastSubmittedSlot].pendingFlat2DDeletions.push_back(
-            {flatIt->second.descriptorSet, flatIt->second.view, flatIt->second.sampler});
+            {flatIt->second.descriptorSet, flatIt->second.view});
         mFlat2Ds.erase(flatIt);
     }
 }
@@ -1768,13 +1765,14 @@ std::uint64_t VulkanBackend::acquireFlat2DImguiHandle(DRenderTarget renderTarget
     VkImageView view = VK_NULL_HANDLE;
     vkCreateImageView(mDevice, &viewInfo, nullptr, &view);
 
-    VkSampler sampler = createSampler(TextureSampleMode::Nearest, TextureSampleMode::Nearest);
-
-    // The RT color image stays in SHADER_READ_ONLY_OPTIMAL between RTT passes.
+    // The RT color image stays in SHADER_READ_ONLY_OPTIMAL between RTT passes. No sampler:
+    // the 2-arg ImGui_ImplVulkan_AddTexture binds only a SAMPLED_IMAGE; ImGui supplies the
+    // sampler from its own descriptors (Nearest/Linear via the DrawCallback_SetSampler* path
+    // in ImguiImageManager). The obsolete 3-arg overload would just discard a sampler arg.
     VkDescriptorSet descriptorSet =
-        ImGui_ImplVulkan_AddTexture(sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        ImGui_ImplVulkan_AddTexture(view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    mFlat2Ds[renderTarget.id] = Flat2D{view, sampler, descriptorSet};
+    mFlat2Ds[renderTarget.id] = Flat2D{view, descriptorSet};
     ++mFlat2DDescriptorsLive;
     return (std::uint64_t)descriptorSet;
 }
@@ -1794,7 +1792,7 @@ void VulkanBackend::releaseFlat2DImguiHandle(DRenderTarget renderTarget, std::ui
     // referenced by an in-flight command buffer from a previous frame).
     const int lastSubmittedSlot = (mCurrentFrame - 1 + MAX_FRAMES_IN_FLIGHT) % MAX_FRAMES_IN_FLIGHT;
     mFrames[lastSubmittedSlot].pendingFlat2DDeletions.push_back(
-        {flatIt->second.descriptorSet, flatIt->second.view, flatIt->second.sampler});
+        {flatIt->second.descriptorSet, flatIt->second.view});
     mFlat2Ds.erase(flatIt);
 }
 
