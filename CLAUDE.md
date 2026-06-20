@@ -685,6 +685,12 @@ Pass `canvas.bellota(id).visual()` for a bellota's current look, or a standalone
   independent of the RTT resolution — resizing the displayed image never re-creates GPU resources.
 - **Opacity** modulates the drawn image (applied as the ImGui widget alpha); `visible()==false` draws
   an empty cell of `sizePx`.
+- **Sampling follows the texture's `magFilter`** (default `Nearest` → crisp pixel art when upscaled;
+  set `Linear` via `setTextureMagFilter` for smoothing). ImGui's own image sampler is global-per-draw
+  and defaults to LINEAR (it ignores the texture's filter, and the Vulkan backend ignores the sampler
+  passed to `ImGui_ImplVulkan_AddTexture`), so `imguiVisual` selects the filter per image via ImGui
+  1.92's standard `DrawCallback_SetSamplerNearest` / `SetSamplerLinear` draw-callbacks (same path on
+  both backends) and restores Linear afterward so window text/widgets are unaffected.
 - **One-frame warm-up.** Sim/render-split aware: `imguiVisual` runs on the sim side and bakes a
   stable handle into the ImGui draw list; the handle is created on the render side (after the internal
   RTT is drawn) and read back the next frame. So the first frame a given visual is shown reserves
@@ -900,7 +906,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_render_to_texture.cpp` | `addRenderTarget` / `renderTo` — sprites drawn into an off-screen texture sampled by another bellota |
 | `hello_nested_render_targets.cpp` | Nested RTTs — one render target's output feeds another |
 | `hello_imgui_rtt.cpp` | `renderImguiTo` — diegetic ImGui panel drawn into an RTT, sampled by a rotating bellota |
-| `hello_imgui_visual.cpp` | `imguiVisual` — draw a Visual's appearance inside an ImGui window (`ImGui::Image`): animated paletted visual, custom-mesh (triangle) visual with AABB fit, standalone `Visual{textureId}`, opacity slider |
+| `hello_imgui_visual.cpp` | `imguiVisual` — draw a Visual's appearance inside an ImGui window (`ImGui::Image`): animated paletted visual, custom-mesh (triangle) visual with AABB fit, standalone `Visual{textureId}`, Nearest-vs-Linear sampling (via texture `magFilter`), opacity slider |
 | `hello_imgui_overlay.cpp` | `imguiOverlayViewport()` + `imguiBaseFontSize()` — header/footer ImGui bars pinned to the canvas, tracking pillarbox/letterbox + DPI on resize |
 | `hello_custom_font.cpp` | User-supplied TTF via `addImguiFontSource` — typeable path field, editable text, integer min/max + slider for size, default-vs-user side-by-side with `TextWrapped`; also demonstrates the `imgui-filebrowser` integration. When built with `-DNOTHOFAGUS_EMBED_CJK*`, adds macro-guarded blocks rendering Chinese/Japanese/Korean sample text via `embeddedCjkFontSource(...)` |
 | `hello_markdown.cpp` | `MarkdownRenderer` — headings, lists, code blocks, tables, blockquotes, strikethrough, link callback; true bold/italic/bold-italic/mono faces via `canvas.defaultMarkdownStyle(...)` |

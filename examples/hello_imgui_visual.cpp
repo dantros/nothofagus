@@ -72,6 +72,18 @@ int main()
     Nothofagus::MeshId triMeshId = canvas.addMesh(makeTriangle(16.0f));
     Nothofagus::BellotaId triBellotaId = canvas.addBellota({{{140.0f, 70.0f}}, triTexId, triMeshId});
 
+    // Same graphic as the animated texture, but flagged Linear: imguiVisual follows the
+    // texture's magFilter, so this one renders smoothed while the Nearest default stays crisp.
+    Nothofagus::IndirectTexture smoothTex({8, 8}, glm::vec4(0.0f));
+    smoothTex.setPallete(pallete);
+    {
+        std::vector<std::uint8_t> px(64, 0);
+        for (int i = 0; i < 64; ++i) px[i] = static_cast<std::uint8_t>(i % 5);
+        smoothTex.setPixels(px, 0);
+    }
+    Nothofagus::TextureId smoothTexId = canvas.addTexture(smoothTex);
+    canvas.setTextureMagFilter(smoothTexId, Nothofagus::TextureSampleMode::Linear);
+
     float opacity = 1.0f;
     float elapsedMs = 0.0f;
 
@@ -95,8 +107,16 @@ int main()
         canvas.imguiVisual(canvas.bellota(triBellotaId).visual(), {96.0f, 96.0f});
         ImGui::EndGroup();
 
-        ImGui::TextUnformatted("Standalone Visual{textureId} (frame 0):");
-        canvas.imguiVisual(Nothofagus::Visual{animTexId}, {64.0f, 64.0f});
+        ImGui::TextUnformatted("Sampling follows the texture's magFilter:");
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("Nearest (default)");
+        canvas.imguiVisual(Nothofagus::Visual{animTexId}, {96.0f, 96.0f});
+        ImGui::EndGroup();
+        ImGui::SameLine();
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("Linear");
+        canvas.imguiVisual(Nothofagus::Visual{smoothTexId}, {96.0f, 96.0f});
+        ImGui::EndGroup();
 
         ImGui::SliderFloat("opacity", &opacity, 0.0f, 1.0f);
         ImGui::End();

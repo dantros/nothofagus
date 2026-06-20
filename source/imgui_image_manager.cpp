@@ -101,6 +101,18 @@ void ImguiImageManager::imguiVisual(const Visual& visual, glm::vec2 sizePx)
 
     if (entry.handle != 0)
     {
+        // ImGui's image sampler is global-per-draw and defaults to LINEAR (it does not
+        // read the texture's own filter), so an upscaled image blurs. Honor the visual's
+        // texture magFilter via ImGui 1.92's standard sampler draw-callbacks (same path on
+        // OpenGL + Vulkan). Default Nearest -> crisp pixel art; restore Linear afterward so
+        // the window's text/widgets are unaffected.
+        const bool nearest =
+            mAssets.textures().at(entry.texture.id).magFilter == TextureSampleMode::Nearest;
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        const ImGuiPlatformIO& platformIo = ImGui::GetPlatformIO();
+        if (nearest && platformIo.DrawCallback_SetSamplerNearest)
+            drawList->AddCallback(platformIo.DrawCallback_SetSamplerNearest, nullptr);
+
         // Opacity from the Visual modulates the drawn image via the widget alpha, so the
         // RTT pixels themselves stay opacity-independent (one RTT serves any opacity).
         const bool fade = visual.opacity() < 0.999f;
@@ -110,6 +122,9 @@ void ImguiImageManager::imguiVisual(const Visual& visual, glm::vec2 sizePx)
                      ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f));
         if (fade)
             ImGui::PopStyleVar();
+
+        if (nearest && platformIo.DrawCallback_SetSamplerLinear)
+            drawList->AddCallback(platformIo.DrawCallback_SetSamplerLinear, nullptr);
     }
     else
     {
