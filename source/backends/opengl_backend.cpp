@@ -470,6 +470,13 @@ std::uint64_t OpenGLBackend::acquireFlat2DImguiHandle(DRenderTarget renderTarget
     Flat2D& flat = mFlat2Ds[renderTarget.id];
     if (flat.texture == 0 || flat.size != size)
     {
+        // Save the caller's bindings so this helper is self-contained (it runs between
+        // RTT passes today, but must not assume what is bound) and restore them on exit.
+        GLint prevTex = 0, prevReadFbo = 0, prevDrawFbo = 0;
+        glGetIntegerv(GL_TEXTURE_BINDING_2D,       &prevTex);
+        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevReadFbo);
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevDrawFbo);
+
         if (flat.fbo != 0)     glDeleteFramebuffers(1, &flat.fbo);
         if (flat.texture != 0) glDeleteTextures(1, &flat.texture);
 
@@ -481,12 +488,14 @@ std::uint64_t OpenGLBackend::acquireFlat2DImguiHandle(DRenderTarget renderTarget
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glBindTexture(GL_TEXTURE_2D, 0);
 
         glGenFramebuffers(1, &flat.fbo);
         glBindFramebuffer(GL_FRAMEBUFFER, flat.fbo);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, flat.texture, 0);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(prevTex));
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(prevReadFbo));
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(prevDrawFbo));
 
         flat.size = size;
     }
@@ -501,6 +510,12 @@ void OpenGLBackend::resolveRenderTargetFlat2D(DRenderTarget renderTarget)
 
     const glm::ivec2 size = rtIt->second.size;
 
+    // Save the caller's framebuffer bindings and restore them on exit, so this helper
+    // doesn't depend on (or perturb) the surrounding bind state.
+    GLint prevReadFbo = 0, prevDrawFbo = 0;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevReadFbo);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevDrawFbo);
+
     // Blit the RTT's color attachment (array layer 0, bound in its FBO) into the flat
     // GL_TEXTURE_2D, flipping vertically so the flat texture is top-down — ImGui's UV
     // origin is top-left, while GL framebuffers are bottom-up.
@@ -510,8 +525,8 @@ void OpenGLBackend::resolveRenderTargetFlat2D(DRenderTarget renderTarget)
     glBlitFramebuffer(0, 0, size.x, size.y,
                       0, size.y, size.x, 0,   // dst Y flipped
                       GL_COLOR_BUFFER_BIT, GL_NEAREST);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(prevReadFbo));
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(prevDrawFbo));
 }
 
 void OpenGLBackend::releaseFlat2DImguiHandle(DRenderTarget renderTarget, std::uint64_t /*handle*/)
