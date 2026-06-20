@@ -5,12 +5,14 @@
 #include "sparse_land.h"
 #include "explorer.h"
 #include "explorer_manager.h"
-#include "bellota_container.h"   // for BellotaPack in mSortedBellotaPacks
+#include "bellota_container.h"
+#include "render_snapshot.h"
 #include "aa_box.h"
 #include "backends/render_backend_select.h"
 #include <vector>
 #include <utility>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <memory>
 
@@ -151,6 +153,34 @@ private:
     void ensureSessionStarted(Controller& controller);
     void runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
                      float deltaTimeMS, std::function<void(float)> update, Controller& controller);
+
+    /// Simulation/commit half of a frame: runs input + the user update +
+    /// explorers, detects unused resources (enqueuing them for deferred free),
+    /// and projects the live scene into the POD `mSnapshot` (depth-sorted main
+    /// draw list + RTT passes). Returns a reference to that snapshot.
+    ///
+    /// NOTE (Milestone 1): this also performs some GPU-frame setup inline
+    /// (`beginFrame`, ImGui `NewFrame`) because the user update issues ImGui
+    /// calls and reads `gameViewport()`. That setup migrates to the render side
+    /// at the thread-flip milestone; for now it stays here to keep the
+    /// single-threaded frame byte-identical.
+    const RenderSnapshot& buildSnapshot(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                                        float deltaTimeMS, std::function<void(float)> update, Controller& controller);
+
+    /// Render/consume half of a frame: drains deferred frees, uploads dirty GPU
+    /// resources, draws the snapshot's RTT passes and main pass, renders ImGui,
+    /// and presents. Touches no `Bellota` — only the POD snapshot.
+    void renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                        const RenderSnapshot& snapshot, float deltaTimeMS, Controller& controller);
+
+    /// Gather the queued RTT passes (`mPendingRttPasses`) into POD draw lists on
+    /// `out` and clear the queue. CPU-only — GPU existence of each render target
+    /// is checked later, on the render side.
+    void buildRttPasses(AssetRegistry& assets, std::vector<RttPass>& out);
+
+    /// Free every pending resource whose retire commit is no later than
+    /// `lastRenderedSeq` (i.e. no in-flight snapshot still references it).
+    void drainPendingFrees(AssetRegistry& assets, std::uint64_t lastRenderedSeq);
     /// Apply the current effective content scale to the main ImGui context:
     /// FontScaleDpi (fonts, every frame) + ScaleAllSizes from the pristine base
     /// style (metrics, only when the scale changed). Main context must be current.
@@ -174,7 +204,21 @@ private:
     bool mSessionStarted{false}; ///< True after ensureSessionStarted() has been called.
     bool mAutoTextureGC{true}; ///< When true, unreferenced textures are removed each frame.
     bool mAutoMeshGC{true};    ///< When true, unreferenced meshes are removed each frame.
-    std::vector<const BellotaPack*> mSortedBellotaPacks; ///< Reusable depth-sorted draw list.
+
+    RenderSnapshot mSnapshot;  ///< Reused POD projection of the scene (produced by buildSnapshot, consumed by renderSnapshot).
+    std::uint64_t mCommitSeq{0};        ///< Monotonic commit counter; stamped onto each snapshot.
+    std::uint64_t mLastRenderedSeq{0};  ///< Highest commit seq fully rendered; gates deferred frees.
+
+    /// A resource removed from the scene at commit `retireSeq`, awaiting GPU free.
+    /// Held until `mLastRenderedSeq >= retireSeq` so no in-flight snapshot can
+    /// still reference it (at depth-0 this is the same frame).
+    struct PendingTextureFree { TextureId id; std::uint64_t retireSeq; };
+    struct PendingMeshFree    { MeshId    id; std::uint64_t retireSeq; };
+    std::vector<PendingTextureFree> mPendingTextureFrees;
+    std::vector<PendingMeshFree>    mPendingMeshFrees;
+
+    int mFramebufferWidth{0};   ///< Framebuffer size captured in buildSnapshot, reused by renderSnapshot.
+    int mFramebufferHeight{0};
 
     struct Window; ///< Forward declaration for window management.
     std::unique_ptr<Window> mWindow; ///< Pointer to the window object.

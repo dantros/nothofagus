@@ -180,6 +180,30 @@ void AssetRegistry::clearUnusedTextures()
     mTextureUsageMonitor.clearUnusedIds();
 }
 
+std::vector<TextureId> AssetRegistry::collectUnusedTextures()
+{
+    std::vector<TextureId> collected;
+    const std::unordered_set<TextureId> unusedTextureIdsCopy = mTextureUsageMonitor.getUnusedIds();
+    for (TextureId textureId : unusedTextureIdsCopy)
+    {
+        // Proxy entries are owned by their RenderTargetPack — skip auto-cleanup.
+        if (mTextures.at(textureId.id).isProxy())
+            continue;
+        const bool removed = mTextureUsageMonitor.removeUnused(textureId);
+        debugCheck(removed, "collectUnusedTextures: texture vanished from the unused set unexpectedly");
+        collected.push_back(textureId);
+    }
+    // Clears whatever remains (the skipped proxies), matching clearUnusedTextures().
+    mTextureUsageMonitor.clearUnusedIds();
+    return collected;
+}
+
+void AssetRegistry::freeRetiredTexture(TextureId textureId)
+{
+    mTextures.at(textureId.id).freeGpuResources(mBackend);
+    mTextures.remove(textureId.id);
+}
+
 // ---------------------------------------------------------------------------
 // Meshes
 // ---------------------------------------------------------------------------
@@ -276,6 +300,25 @@ void AssetRegistry::clearUnusedMeshes()
         mMeshes.at(meshId.id).freeGpuResources(mBackend);
         mMeshes.remove(meshId.id);
     }
+}
+
+std::vector<MeshId> AssetRegistry::collectUnusedMeshes()
+{
+    std::vector<MeshId> collected;
+    const std::unordered_set<MeshId> unusedMeshIdsCopy = mMeshUsageMonitor.getUnusedIds();
+    for (MeshId meshId : unusedMeshIdsCopy)
+    {
+        const bool removed = mMeshUsageMonitor.removeUnused(meshId);
+        debugCheck(removed, "collectUnusedMeshes: mesh vanished from the unused set unexpectedly");
+        collected.push_back(meshId);
+    }
+    return collected;
+}
+
+void AssetRegistry::freeRetiredMesh(MeshId meshId)
+{
+    mMeshes.at(meshId.id).freeGpuResources(mBackend);
+    mMeshes.remove(meshId.id);
 }
 
 // ---------------------------------------------------------------------------
