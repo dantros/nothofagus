@@ -1763,7 +1763,12 @@ std::uint64_t VulkanBackend::acquireFlat2DImguiHandle(DRenderTarget renderTarget
     viewInfo.subresourceRange.layerCount     = 1;
 
     VkImageView view = VK_NULL_HANDLE;
-    vkCreateImageView(mDevice, &viewInfo, nullptr, &view);
+    if (vkCreateImageView(mDevice, &viewInfo, nullptr, &view) != VK_SUCCESS)
+    {
+        spdlog::error("imguiVisual: vkCreateImageView failed for the flat-2D handle; "
+                      "skipping this image (likely out of GPU memory).");
+        return 0;   // no-op: manager draws nothing for this visual, retries next frame
+    }
 
     // The RT color image stays in SHADER_READ_ONLY_OPTIMAL between RTT passes. No sampler:
     // the 2-arg ImGui_ImplVulkan_AddTexture binds only a SAMPLED_IMAGE; ImGui supplies the
