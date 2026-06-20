@@ -23,10 +23,10 @@ class ClonedImDrawData; // fwd-decl keeps imgui.h out of this header
  * `RenderSnapshot` — a flat, trivially-copyable display list. The render side
  * draws only from the snapshot and never touches a `Bellota`.
  *
- * In Milestone 1 the snapshot is built and consumed back-to-back on the same
- * thread (`FrameRunner::buildSnapshot` → `renderSnapshot`), so it carries no
- * concurrency cost yet; it exists to establish the POD data boundary. At the
- * thread-flip milestone the snapshot becomes the double-buffered hand-off.
+ * In Single mode the snapshot is built and consumed back-to-back on the same
+ * thread (`FrameRunner::produce(Single)` → `consume(Single)`), so it carries no
+ * concurrency cost; it exists to establish the POD data boundary. In Threaded
+ * mode the same POD becomes the triple-buffered sim→render hand-off.
  *
  * Resources are referenced by id (`TextureId`/`MeshId`/`RenderTargetId`), never
  * by GPU handle (`DTexture`/`DMesh`): a freshly created texture has no GPU

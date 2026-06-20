@@ -192,6 +192,13 @@ public:
     void threadedDespawnBellota(AssetRegistry& assets, BellotaId bellotaId);
 
 private:
+    /// Selects which orchestration a unified producer/consumer runs. `Single` is
+    /// the run()/tick() path (one thread; ImGui on the main context, live draw
+    /// data, no locks); `Threaded` is the commit()/renderFrame() path (sim/render
+    /// split; sim-UI context + cloned draw data, asset/ImGui mutexes). The two
+    /// share their leaf work and differ only in the mode-gated arms.
+    enum class FrameMode { Single, Threaded };
+
     /// Render thread (M3): snapshot the main context's processed ImGui input
     /// (mouse pos/buttons/wheel + display size/scale) into mThreadedImguiInput so
     /// the sim thread can feed it to the sim-UI context, making widgets interactive.
@@ -200,24 +207,33 @@ private:
     void runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
                      float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
-    /// Simulation/commit half of a frame: runs input + the user update +
-    /// explorers, detects unused resources (enqueuing them for deferred free),
-    /// and projects the live scene into the POD `mSnapshot` (depth-sorted main
-    /// draw list + RTT passes). Returns a reference to that snapshot.
-    ///
-    /// NOTE (Milestone 1): this also performs some GPU-frame setup inline
-    /// (`beginFrame`, ImGui `NewFrame`) because the user update issues ImGui
-    /// calls and reads `gameViewport()`. That setup migrates to the render side
-    /// at the thread-flip milestone; for now it stays here to keep the
-    /// single-threaded frame byte-identical.
-    const RenderSnapshot& buildSnapshot(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
-                                        float deltaTimeMS, std::function<void(float)> update, Controller& controller);
+    /// Unified producer for both modes. `Single` (run/tick) polls input, opens the
+    /// GPU + main ImGui frame, runs `update` (which issues main-context ImGui),
+    /// updates explorers, stamps the commit seq + GCs unused resources, projects
+    /// into the reused `mSnapshot`, and returns it. `Threaded` (commit) stamps the
+    /// seq first, runs `update` lock-free, then under `mImguiMutex` runs `uiCallback`
+    /// on the sim-UI context + clones its draw data into the triple-buffer write
+    /// slot, projects, publishes, and returns that slot. `canvas`, `imguiRtt`, and
+    /// `controller` are used only in `Single` (the sim thread has none) — pass
+    /// `nullptr` in `Threaded`; `uiCallback` is empty in `Single`.
+    const RenderSnapshot& produce(FrameMode mode, Canvas* canvas, AssetRegistry& assets,
+                                  ImguiRttManager* imguiRtt, float deltaTimeMS,
+                                  std::function<void(float)> update,
+                                  std::function<void(float)> uiCallback,
+                                  Controller* controller);
 
-    /// Render/consume half of a frame: drains deferred frees, uploads dirty GPU
-    /// resources, draws the snapshot's RTT passes and main pass, renders ImGui,
-    /// and presents. Touches no `Bellota` — only the POD snapshot.
-    void renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRtt,
-                        const RenderSnapshot& snapshot, float deltaTimeMS, Controller& controller);
+    /// Unified consumer for both modes. `Single` (run/tick): the GPU frame + main
+    /// ImGui frame were already opened by the producer, so this just runs the
+    /// render core, the optional stats overlay, the live-ImGui render, and the
+    /// swap — no locks. `Threaded` (renderFrame): the caller has already
+    /// acquired/read the snapshot; this dispatches queued input, opens the GPU
+    /// frame + an empty main ImGui frame (harvesting input for the sim), computes
+    /// wall-clock dt, runs the render core under `mThreadedAssetMutex`, renders the
+    /// sim's cloned draw data under `mImguiMutex`, swaps, and refreshes the running
+    /// flag. The `deltaTimeMS` argument is used only in `Single`; `Threaded`
+    /// recomputes it from the window clock.
+    void consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                 const RenderSnapshot& snapshot, float deltaTimeMS, Controller& controller);
 
     /// The container-touching core of a rendered frame: deferred frees, GPU
     /// upload, RTT passes, and the main draw. Excludes the vsync swap and the
@@ -239,6 +255,13 @@ private:
     /// style (metrics, only when the scale changed). Main context must be current.
     void applyMainContextScale();
 
+    /// Open a Dear ImGui frame on the main (render/standard-UI) context: backend
+    /// imguiNewFrame + window newImGuiFrame + DPI scale + ImGui::NewFrame, in that
+    /// order. Shared by the single-threaded producer, the threaded consumer, and
+    /// the threaded-session priming frame. Caller is responsible for `beginFrame`,
+    /// `drainPendingFontOps`, and any ImGui mutex around this call.
+    void beginMainImguiFrame();
+
     ScreenSize mScreenSize; ///< The screen size of the canvas.
     std::string mTitle; ///< The title of the canvas window.
     glm::vec3 mClearColor; ///< The background color of the canvas.
@@ -258,7 +281,7 @@ private:
     bool mAutoTextureGC{true}; ///< When true, unreferenced textures are removed each frame.
     bool mAutoMeshGC{true};    ///< When true, unreferenced meshes are removed each frame.
 
-    RenderSnapshot mSnapshot;  ///< Reused POD projection of the scene (produced by buildSnapshot, consumed by renderSnapshot).
+    RenderSnapshot mSnapshot;  ///< Reused POD projection of the scene for Single mode (produced + consumed by produce()/consume()).
     std::uint64_t mCommitSeq{0};        ///< Monotonic commit counter; stamped onto each snapshot.
     std::uint64_t mLastRenderedSeq{0};  ///< Highest commit seq fully rendered; gates deferred frees.
 
@@ -270,7 +293,7 @@ private:
     std::vector<PendingTextureFree> mPendingTextureFrees;
     std::vector<PendingMeshFree>    mPendingMeshFrees;
 
-    int mFramebufferWidth{0};   ///< Framebuffer size captured in buildSnapshot, reused by renderSnapshot.
+    int mFramebufferWidth{0};   ///< Framebuffer size captured in produce(), reused by consume().
     int mFramebufferHeight{0};
 
     // ----- Threaded driver state (M2 Phase A) -----

@@ -168,6 +168,14 @@ void FrameRunner::applyMainContextScale()
     mAppliedScale = scale;
 }
 
+void FrameRunner::beginMainImguiFrame()
+{
+    mBackend.imguiNewFrame();
+    mWindow->newImGuiFrame();
+    applyMainContextScale(); // DPI-scale the main (standard-UI) context before NewFrame.
+    ImGui::NewFrame();
+}
+
 std::size_t FrameRunner::getCurrentMonitor() const
 {
     return mWindow->getCurrentMonitor();
@@ -320,20 +328,123 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
 {
     ZoneScopedN("runOneFrame");
 
-    const RenderSnapshot& snapshot = buildSnapshot(canvas, assets, imguiRtt, deltaTimeMS, update, controller);
-    renderSnapshot(assets, imguiRtt, snapshot, deltaTimeMS, controller);
+    // Single-threaded frame: producer and consumer back-to-back on this thread.
+    const RenderSnapshot& snapshot = produce(FrameMode::Single, &canvas, assets, &imguiRtt,
+                                             deltaTimeMS, std::move(update), {}, &controller);
+    consume(FrameMode::Single, assets, imguiRtt, snapshot, deltaTimeMS, controller);
 
     FrameMark;
 }
 
-const RenderSnapshot& FrameRunner::buildSnapshot(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
-                                                 float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, AssetRegistry& assets,
+                                           ImguiRttManager* imguiRtt, float deltaTimeMS,
+                                           std::function<void(float)> update,
+                                           std::function<void(float)> uiCallback,
+                                           Controller* controller)
 {
+    if (mode == FrameMode::Threaded)
+    {
+        // Sim thread: CPU only, no GL.
+        ZoneScopedN("commitFrame");
+
+        // Stamp the commit seq BEFORE `update` so spawn/despawn can tag retired
+        // resources with the commit at which they leave the scene.
+        const std::uint64_t commitSeq = ++mCommitSeq;
+
+        // 1) Game logic — lock-free, so it overlaps the render thread's sprite work.
+        //    (spawn/despawn take the asset mutex internally; bellota value writes are
+        //    sim-exclusive.)
+        {
+            ZoneScopedN("UserUpdate");
+            update(deltaTimeMS);
+        }
+
+        RenderSnapshot& snapshot = mTripleBuffer.writeSlot();
+        snapshot.commitSeq = commitSeq;
+        snapshot.clearColor = mClearColor;
+
+        // 2) ImGui frame on the sim-UI context — under the ImGui mutex so it never
+        //    touches the shared font atlas concurrently with the render thread.
+        {
+            ZoneScopedN("SimImgui");
+            std::lock_guard<std::mutex> imguiLock(mImguiMutex);
+
+            ImGui::SetCurrentContext(mSimUiContext); // thread-local current context (sim thread)
+            ImGuiIO& io = ImGui::GetIO();
+            io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures; // must match the atlas owner
+
+            ThreadedImguiInput input;
+            {
+                std::lock_guard<std::mutex> inputLock(mThreadedImguiInputMutex);
+                input = mThreadedImguiInput;
+                mThreadedImguiInput.wheelX = 0.0f; // consume accumulated wheel
+                mThreadedImguiInput.wheelY = 0.0f;
+                mThreadedImguiInput.textCharCount = 0; // consume typed characters
+            }
+            const float displayWidth  = input.displayWidth  > 0.0f ? input.displayWidth  : static_cast<float>(mScreenSize.width);
+            const float displayHeight = input.displayHeight > 0.0f ? input.displayHeight : static_cast<float>(mScreenSize.height);
+            io.DisplaySize = ImVec2(displayWidth, displayHeight);
+            io.DisplayFramebufferScale = ImVec2(input.framebufferScaleX, input.framebufferScaleY);
+
+            // Focus first: a loss releases held keys/mouse, avoiding stuck input.
+            io.AddFocusEvent(input.focused);
+
+            io.AddMousePosEvent(input.mouseX, input.mouseY);
+            io.AddMouseButtonEvent(0, input.mouseDown[0]);
+            io.AddMouseButtonEvent(1, input.mouseDown[1]);
+            io.AddMouseButtonEvent(2, input.mouseDown[2]);
+            if (input.wheelX != 0.0f || input.wheelY != 0.0f)
+                io.AddMouseWheelEvent(input.wheelX, input.wheelY);
+
+            // Keyboard: replay key state (ImGui dedups to changes), modifiers, text.
+            for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_MouseLeft; ++key)
+                io.AddKeyEvent(static_cast<ImGuiKey>(key), input.keyDown[key - ImGuiKey_NamedKey_BEGIN]);
+            io.AddKeyEvent(ImGuiMod_Ctrl,  input.keyCtrl);
+            io.AddKeyEvent(ImGuiMod_Shift, input.keyShift);
+            io.AddKeyEvent(ImGuiMod_Alt,   input.keyAlt);
+            io.AddKeyEvent(ImGuiMod_Super, input.keySuper);
+            for (int i = 0; i < input.textCharCount; ++i)
+                io.AddInputCharacter(input.textChars[i]);
+
+            io.DeltaTime = std::max(deltaTimeMS * 0.001f, 1e-6f);
+
+            ImGui::NewFrame();
+            if (uiCallback)
+                uiCallback(deltaTimeMS); // user ImGui widgets, on the sim thread
+            ImGui::Render();
+
+            // Publish what the UI captured this frame so the host's game update (which
+            // runs before this section) can ignore that input next frame.
+            mImguiWantsMouse.store(io.WantCaptureMouse, std::memory_order_release);
+            mImguiWantsKeyboard.store(io.WantCaptureKeyboard, std::memory_order_release);
+
+            if (!snapshot.mainUi)
+                snapshot.mainUi = std::make_unique<ClonedImDrawData>();
+            snapshot.mainUi->cloneFrom(ImGui::GetDrawData());
+        }
+
+        // 3) Project the scene (POD) — lock-free; the write slot is producer-owned.
+        {
+            ZoneScopedN("DepthSort");
+            buildMainDraws(assets.bellotas(), snapshot.draws);
+        }
+        {
+            ZoneScopedN("RttGather");
+            buildRttPasses(assets, snapshot.rttPasses);
+        }
+
+        mTripleBuffer.publish();
+        return snapshot;
+    }
+
+    // FrameMode::Single — one thread; ImGui runs on the main context inside `update`
+    // and the consumer renders the live draw data, so the GPU + main ImGui frame are
+    // opened here (before `update`). canvas/imguiRtt/controller are non-null here.
     ZoneScopedN("buildSnapshot");
 
     {
         ZoneScopedN("Input");
-        controller.processInputs();
+        controller->processInputs();
     }
 
     // Drain any deferred ImGui font ops (bake-on-miss / remove) accumulated
@@ -341,10 +452,10 @@ const RenderSnapshot& FrameRunner::buildSnapshot(Canvas& canvas, AssetRegistry& 
     // the previous frame's ImGui::Render() and this frame's ImGui::NewFrame().
     // Must run BEFORE mBackend.imguiNewFrame() so ImGui_Impl*_NewFrame()'s
     // lazy font-texture re-upload picks up the rebuilt atlas.
-    imguiRtt.drainPendingFontOps();
+    imguiRtt->drainPendingFontOps();
 
     // Get current framebuffer size and compute letterboxed viewport. Stored so
-    // renderSnapshot can reuse the exact same values (one getFramebufferSize per
+    // the consumer can reuse the exact same values (one getFramebufferSize per
     // frame). gameViewport() is read by user code during update (overlay
     // positioning), so it must be set before update().
     auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
@@ -357,10 +468,7 @@ const RenderSnapshot& FrameRunner::buildSnapshot(Canvas& canvas, AssetRegistry& 
     mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
 
     // Start the Dear ImGui frame
-    mBackend.imguiNewFrame();
-    mWindow->newImGuiFrame();
-    applyMainContextScale(); // DPI-scale the main (standard-UI) context before NewFrame.
-    ImGui::NewFrame();
+    beginMainImguiFrame();
 
     {
         ZoneScopedN("UserUpdate");
@@ -369,16 +477,16 @@ const RenderSnapshot& FrameRunner::buildSnapshot(Canvas& canvas, AssetRegistry& 
 
     {
         ZoneScopedN("DenseLandExplorers");
-        mDenseLandManager.updateExplorers(canvas);
+        mDenseLandManager.updateExplorers(*canvas);
     }
 
     {
         ZoneScopedN("SparseLandExplorers");
-        mSparseLandManager.updateExplorers(canvas);
+        mSparseLandManager.updateExplorers(*canvas);
     }
 
     // Stamp this frame's commit number, then detect unused resources and enqueue
-    // them for deferred free (the actual GPU free happens in renderSnapshot, once
+    // them for deferred free (the actual GPU free happens in the consumer, once
     // no in-flight snapshot references them). At depth-0 this is the same frame.
     mSnapshot.commitSeq = ++mCommitSeq;
     mSnapshot.clearColor = mClearColor;
@@ -531,11 +639,81 @@ void FrameRunner::renderSnapshotContents(AssetRegistry& assets, ImguiRttManager&
     }
 }
 
-void FrameRunner::renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRtt,
-                                 const RenderSnapshot& snapshot, float deltaTimeMS, Controller& controller)
+void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                          const RenderSnapshot& snapshot, float deltaTimeMS, Controller& controller)
 {
-    ZoneScopedN("renderSnapshot");
+    if (mode == FrameMode::Threaded)
+    {
+        // Main thread: owns the GL/window context and does all GPU work. The caller
+        // has already acquired the freshest published snapshot into `snapshot`.
 
+        // Dispatch input events queued by the previous frame's poll (main thread, so
+        // any action callback — e.g. Escape → close() — runs here safely).
+        {
+            ZoneScopedN("Input");
+            controller.processInputs();
+        }
+
+        auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
+        mFramebufferWidth = framebufferWidth;
+        mFramebufferHeight = framebufferHeight;
+        mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, mScreenSize.width, mScreenSize.height);
+
+        mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
+
+        // Main-context ImGui frame on the render thread (under the ImGui mutex, so it
+        // never touches the shared font atlas concurrently with the sim-UI context).
+        // It does NOT draw user UI (that arrives as a clone) — it (a) drains pending
+        // font ops + lets ImGui_ImplGlfw process window input so we can harvest it for
+        // the sim, and (b) provides valid empty draw data for the frames before the
+        // first UI commit.
+        {
+            ZoneScopedN("RenderImguiNewFrame");
+            std::lock_guard<std::mutex> imguiLock(mImguiMutex);
+            imguiRtt.drainPendingFontOps();
+            beginMainImguiFrame();
+            harvestImguiInput(); // io.MousePos/Down/Wheel + DisplaySize are valid post-NewFrame
+            ImGui::Render();
+        }
+
+        const float now = mWindow->getTime();
+        deltaTimeMS = mLastRenderTimeValid ? (now - mLastRenderTime) * 1000.0f : 0.0f;
+        mLastRenderTime = now;
+        mLastRenderTimeValid = true;
+
+        // Container-touching section (deferred frees, GPU upload, id→handle resolve +
+        // draw submission). Guarded against the sim thread's spawn/despawn. The lock
+        // is released BEFORE the vsync swap so a slow present never stalls the sim.
+        {
+            ZoneScopedN("AssetLockedRender");
+            std::lock_guard<std::mutex> assetLock(mThreadedAssetMutex);
+            renderSnapshotContents(assets, imguiRtt, snapshot, deltaTimeMS);
+        }
+
+        {
+            ZoneScopedN("ImGuiRender");
+            // Render the sim's cloned UI if present; otherwise the main empty frame.
+            // Under the ImGui mutex: RenderDrawData applies font-atlas texture uploads
+            // (draw_data->Textures) which touch the shared atlas.
+            std::lock_guard<std::mutex> imguiLock(mImguiMutex);
+            ImDrawData* uiData = (snapshot.mainUi && snapshot.mainUi->hasData())
+                ? snapshot.mainUi->drawData()
+                : ImGui::GetDrawData();
+            uiData->Textures = &ImGui::GetPlatformIO().Textures;
+            mBackend.endFrame(uiData, mFramebufferWidth, mFramebufferHeight);
+        }
+
+        {
+            ZoneScopedN("SwapBuffers");
+            mWindow->endFrame(controller, mScreenSize);
+        }
+
+        mThreadedRunning.store(mWindow->isRunning(), std::memory_order_release);
+        return;
+    }
+
+    // FrameMode::Single — the producer (buildSnapshot) already opened the GPU frame
+    // and the main-context ImGui frame, so the consumer just renders + presents.
     renderSnapshotContents(assets, imguiRtt, snapshot, deltaTimeMS);
 
     if (mStats)
@@ -559,6 +737,7 @@ void FrameRunner::renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRt
         mWindow->endFrame(controller, mScreenSize);
     }
 }
+
 
 void FrameRunner::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
                              std::function<void(float deltaTime)> update, Controller& controller)
@@ -651,10 +830,7 @@ void FrameRunner::beginThreadedSession(Controller& controller)
         auto [fbW, fbH] = mWindow->getFramebufferSize();
         const ViewportRect viewport = computeLetterboxViewport(fbW, fbH, mScreenSize.width, mScreenSize.height);
         mBackend.beginFrame(mClearColor, viewport, fbW, fbH);
-        mBackend.imguiNewFrame();
-        mWindow->newImGuiFrame();
-        applyMainContextScale();
-        ImGui::NewFrame();
+        beginMainImguiFrame();
         ImGui::Render();
         // Open the main render pass before endFrame closes it. A real frame reaches
         // beginMainPass via renderSnapshotContents; this priming frame draws nothing
@@ -671,172 +847,22 @@ void FrameRunner::beginThreadedSession(Controller& controller)
 void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
                              std::function<void(float)> update, std::function<void(float)> uiCallback)
 {
-    // Sim thread: CPU only, no GL.
-    ZoneScopedN("commitFrame");
-
-    // Stamp the commit seq BEFORE `update` so spawn/despawn can tag retired
-    // resources with the commit at which they leave the scene.
-    const std::uint64_t commitSeq = ++mCommitSeq;
-
-    // 1) Game logic — lock-free, so it overlaps the render thread's sprite work.
-    //    (spawn/despawn take the asset mutex internally; bellota value writes are
-    //    sim-exclusive.)
-    {
-        ZoneScopedN("UserUpdate");
-        update(deltaTimeMS);
-    }
-
-    RenderSnapshot& snapshot = mTripleBuffer.writeSlot();
-    snapshot.commitSeq = commitSeq;
-    snapshot.clearColor = mClearColor;
-
-    // 2) ImGui frame on the sim-UI context — under the ImGui mutex so it never
-    //    touches the shared font atlas concurrently with the render thread.
-    {
-        ZoneScopedN("SimImgui");
-        std::lock_guard<std::mutex> imguiLock(mImguiMutex);
-
-        ImGui::SetCurrentContext(mSimUiContext); // thread-local current context (sim thread)
-        ImGuiIO& io = ImGui::GetIO();
-        io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures; // must match the atlas owner
-
-        ThreadedImguiInput input;
-        {
-            std::lock_guard<std::mutex> inputLock(mThreadedImguiInputMutex);
-            input = mThreadedImguiInput;
-            mThreadedImguiInput.wheelX = 0.0f; // consume accumulated wheel
-            mThreadedImguiInput.wheelY = 0.0f;
-            mThreadedImguiInput.textCharCount = 0; // consume typed characters
-        }
-        const float displayWidth  = input.displayWidth  > 0.0f ? input.displayWidth  : static_cast<float>(mScreenSize.width);
-        const float displayHeight = input.displayHeight > 0.0f ? input.displayHeight : static_cast<float>(mScreenSize.height);
-        io.DisplaySize = ImVec2(displayWidth, displayHeight);
-        io.DisplayFramebufferScale = ImVec2(input.framebufferScaleX, input.framebufferScaleY);
-
-        // Focus first: a loss releases held keys/mouse, avoiding stuck input.
-        io.AddFocusEvent(input.focused);
-
-        io.AddMousePosEvent(input.mouseX, input.mouseY);
-        io.AddMouseButtonEvent(0, input.mouseDown[0]);
-        io.AddMouseButtonEvent(1, input.mouseDown[1]);
-        io.AddMouseButtonEvent(2, input.mouseDown[2]);
-        if (input.wheelX != 0.0f || input.wheelY != 0.0f)
-            io.AddMouseWheelEvent(input.wheelX, input.wheelY);
-
-        // Keyboard: replay key state (ImGui dedups to changes), modifiers, text.
-        for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_MouseLeft; ++key)
-            io.AddKeyEvent(static_cast<ImGuiKey>(key), input.keyDown[key - ImGuiKey_NamedKey_BEGIN]);
-        io.AddKeyEvent(ImGuiMod_Ctrl,  input.keyCtrl);
-        io.AddKeyEvent(ImGuiMod_Shift, input.keyShift);
-        io.AddKeyEvent(ImGuiMod_Alt,   input.keyAlt);
-        io.AddKeyEvent(ImGuiMod_Super, input.keySuper);
-        for (int i = 0; i < input.textCharCount; ++i)
-            io.AddInputCharacter(input.textChars[i]);
-
-        io.DeltaTime = std::max(deltaTimeMS * 0.001f, 1e-6f);
-
-        ImGui::NewFrame();
-        if (uiCallback)
-            uiCallback(deltaTimeMS); // user ImGui widgets, on the sim thread
-        ImGui::Render();
-
-        // Publish what the UI captured this frame so the host's game update (which
-        // runs before this section) can ignore that input next frame.
-        mImguiWantsMouse.store(io.WantCaptureMouse, std::memory_order_release);
-        mImguiWantsKeyboard.store(io.WantCaptureKeyboard, std::memory_order_release);
-
-        if (!snapshot.mainUi)
-            snapshot.mainUi = std::make_unique<ClonedImDrawData>();
-        snapshot.mainUi->cloneFrom(ImGui::GetDrawData());
-    }
-
-    // 3) Project the scene (POD) — lock-free; the write slot is producer-owned.
-    {
-        ZoneScopedN("DepthSort");
-        buildMainDraws(assets.bellotas(), snapshot.draws);
-    }
-    {
-        ZoneScopedN("RttGather");
-        buildRttPasses(assets, snapshot.rttPasses);
-    }
-
-    mTripleBuffer.publish();
+    // Sim thread: CPU only, no GL. canvas/imguiRtt/controller are unused on this
+    // path (no explorers, font drain, or input poll on the sim thread).
+    produce(FrameMode::Threaded, nullptr, assets, nullptr, deltaTimeMS,
+            std::move(update), std::move(uiCallback), nullptr);
 }
 
 void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& imguiRtt, Controller& controller)
 {
-    // Main thread: owns the GL/window context and does all GPU work.
     ZoneScopedN("renderFrameThreaded");
-
-    // Dispatch input events queued by the previous frame's poll (main thread, so
-    // any action callback — e.g. Escape → close() — runs here safely).
-    {
-        ZoneScopedN("Input");
-        controller.processInputs();
-    }
 
     // Pick up the freshest published snapshot (keeps the previous one if none new).
     mTripleBuffer.acquire();
     const RenderSnapshot& snapshot = mTripleBuffer.readSlot();
 
-    auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
-    mFramebufferWidth = framebufferWidth;
-    mFramebufferHeight = framebufferHeight;
-    mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, mScreenSize.width, mScreenSize.height);
-
-    mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
-
-    // Main-context ImGui frame on the render thread (under the ImGui mutex, so it
-    // never touches the shared font atlas concurrently with the sim-UI context).
-    // It does NOT draw user UI (that arrives as a clone) — it (a) drains pending
-    // font ops + lets ImGui_ImplGlfw process window input so we can harvest it for
-    // the sim, and (b) provides valid empty draw data for the frames before the
-    // first UI commit.
-    {
-        ZoneScopedN("RenderImguiNewFrame");
-        std::lock_guard<std::mutex> imguiLock(mImguiMutex);
-        imguiRtt.drainPendingFontOps();
-        mBackend.imguiNewFrame();
-        mWindow->newImGuiFrame();
-        applyMainContextScale();
-        ImGui::NewFrame();
-        harvestImguiInput(); // io.MousePos/Down/Wheel + DisplaySize are valid post-NewFrame
-        ImGui::Render();
-    }
-
-    const float now = mWindow->getTime();
-    const float deltaTimeMS = mLastRenderTimeValid ? (now - mLastRenderTime) * 1000.0f : 0.0f;
-    mLastRenderTime = now;
-    mLastRenderTimeValid = true;
-
-    // Container-touching section (deferred frees, GPU upload, id→handle resolve +
-    // draw submission). Guarded against the sim thread's spawn/despawn. The lock
-    // is released BEFORE the vsync swap so a slow present never stalls the sim.
-    {
-        ZoneScopedN("AssetLockedRender");
-        std::lock_guard<std::mutex> assetLock(mThreadedAssetMutex);
-        renderSnapshotContents(assets, imguiRtt, snapshot, deltaTimeMS);
-    }
-
-    {
-        ZoneScopedN("ImGuiRender");
-        // Render the sim's cloned UI if present; otherwise the main empty frame.
-        // Under the ImGui mutex: RenderDrawData applies font-atlas texture uploads
-        // (draw_data->Textures) which touch the shared atlas.
-        std::lock_guard<std::mutex> imguiLock(mImguiMutex);
-        ImDrawData* uiData = (snapshot.mainUi && snapshot.mainUi->hasData())
-            ? snapshot.mainUi->drawData()
-            : ImGui::GetDrawData();
-        uiData->Textures = &ImGui::GetPlatformIO().Textures;
-        mBackend.endFrame(uiData, mFramebufferWidth, mFramebufferHeight);
-    }
-
-    {
-        ZoneScopedN("SwapBuffers");
-        mWindow->endFrame(controller, mScreenSize);
-    }
-
-    mThreadedRunning.store(mWindow->isRunning(), std::memory_order_release);
+    // dt is recomputed from the window clock inside the Threaded arm.
+    consume(FrameMode::Threaded, assets, imguiRtt, snapshot, 0.0f, controller);
 
     FrameMark;
 }
