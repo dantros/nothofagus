@@ -20,7 +20,8 @@
 #include <functional>
 #include <mutex>
 
-struct ImGuiStyle; // global-scope (Dear ImGui); held by unique_ptr to keep imgui.h out of this header.
+struct ImGuiStyle;   // global-scope (Dear ImGui); held by unique_ptr to keep imgui.h out of this header.
+struct ImGuiContext; // global-scope; the sim-thread UI context (M3) is held as an opaque pointer.
 
 namespace Nothofagus
 {
@@ -166,9 +167,12 @@ public:
     /// Thread-safe: true until the window is closed. Read by the sim loop.
     bool threadedRunning() const { return mThreadedRunning.load(std::memory_order_acquire); }
 
-    /// Sim thread: run the user update, project the scene into a free snapshot
-    /// slot, and publish it. No GPU, ImGui, or input.
-    void commitFrame(AssetRegistry& assets, float deltaTimeMS, std::function<void(float)> update);
+    /// Sim thread: run the user `update` (game logic, lock-free), then — under the
+    /// ImGui mutex — run `uiCallback` as an ImGui frame on the sim-UI context and
+    /// clone its draw data, and project the scene into a free snapshot slot, then
+    /// publish. `uiCallback` may be empty (no ImGui). No GL.
+    void commitFrame(AssetRegistry& assets, float deltaTimeMS,
+                     std::function<void(float)> update, std::function<void(float)> uiCallback);
 
     /// Main thread: acquire the latest published snapshot and render it (GPU
     /// upload + draw + present), poll window/input, and refresh the running flag.
@@ -183,6 +187,10 @@ public:
     void threadedDespawnBellota(AssetRegistry& assets, BellotaId bellotaId);
 
 private:
+    /// Render thread (M3): snapshot the main context's processed ImGui input
+    /// (mouse pos/buttons/wheel + display size/scale) into mThreadedImguiInput so
+    /// the sim thread can feed it to the sim-UI context, making widgets interactive.
+    void harvestImguiInput();
     void ensureSessionStarted(Controller& controller);
     void runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
                      float deltaTimeMS, std::function<void(float)> update, Controller& controller);
@@ -272,6 +280,35 @@ private:
     /// only for the fast container section — never across the vsync swap. Bellota
     /// value mutation and the snapshot projection stay lock-free.
     std::mutex mThreadedAssetMutex;
+
+    // ----- M3: interactive ImGui on the threaded path -----
+    /// Dedicated ImGui context driven on the sim thread (NewFrame/widgets/Render),
+    /// sharing the main font atlas. Null until the threaded session starts. The
+    /// render thread keeps the original (renderer-bearing) context; thread-local
+    /// GImGui (see imconfig.h) lets the two be current on the two threads at once.
+    ImGuiContext* mSimUiContext{nullptr};
+
+    /// Main-context ImGui input snapshotted on the render thread and consumed by
+    /// the sim thread, so sim-thread widgets are interactive. Guarded by its mutex.
+    struct ThreadedImguiInput
+    {
+        float displayWidth{0.0f}, displayHeight{0.0f};
+        float framebufferScaleX{1.0f}, framebufferScaleY{1.0f};
+        float mouseX{0.0f}, mouseY{0.0f};
+        bool  mouseDown[3]{false, false, false};
+        float wheelX{0.0f}, wheelY{0.0f};   // accumulated on render, consumed+reset on sim
+    };
+    ThreadedImguiInput mThreadedImguiInput;
+    std::mutex mThreadedImguiInputMutex;
+
+    /// Serializes all access to the (shared) ImGui font atlas between the sim-UI
+    /// context (NewFrame + widgets + Render + clone, on the sim thread) and the
+    /// render/main context (NewFrame + RenderDrawData + atlas rebuild, on the
+    /// render thread). ImGui 1.92's dynamic atlas is mutated every NewFrame and
+    /// during glyph baking, so the two threads' ImGui sections must be mutually
+    /// exclusive. Held only for the short ImGui sections — the game-sim update and
+    /// the sprite render (mThreadedAssetMutex) run outside it and still overlap.
+    std::mutex mImguiMutex;
 
     struct Window; ///< Forward declaration for window management.
     std::unique_ptr<Window> mWindow; ///< Pointer to the window object.

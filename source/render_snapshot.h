@@ -3,12 +3,15 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <cstdint>
+#include <memory>
 #include "texture_id.h"
 #include "mesh.h"           // MeshId
 #include "render_target.h"  // RenderTargetId
 
 namespace Nothofagus
 {
+
+class ClonedImDrawData; // fwd-decl keeps imgui.h out of this header
 
 /**
  * @file render_snapshot.h
@@ -62,6 +65,14 @@ struct RenderSnapshot
     std::vector<DrawItem> draws;          ///< main pass, depth-sorted at commit
     std::vector<RttPass>  rttPasses;      ///< insertion order preserved (nested-RTT dependency)
     glm::vec3             clearColor{0.0f};
+    /// Cloned main-context ImGui draw data produced on the sim thread (M3),
+    /// null until ImGui has been committed. Lazily allocated by the producer.
+    std::unique_ptr<ClonedImDrawData> mainUi;
+
+    RenderSnapshot();
+    ~RenderSnapshot();                                // out-of-line: ClonedImDrawData is incomplete here
+    RenderSnapshot(const RenderSnapshot&) = delete;   // owns unique_ptr; never copied
+    RenderSnapshot& operator=(const RenderSnapshot&) = delete;
 };
 
 }

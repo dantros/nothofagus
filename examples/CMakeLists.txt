@@ -149,3 +149,9 @@ add_executable(hello_threaded
 set_property(TARGET hello_threaded PROPERTY CXX_STANDARD 20)
 find_package(Threads REQUIRED)
 target_link_libraries(hello_threaded PRIVATE nothofagus Threads::Threads)
+
+add_executable(hello_threaded_imgui
+    "hello_threaded_imgui.cpp"
+)
+set_property(TARGET hello_threaded_imgui PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_threaded_imgui PRIVATE nothofagus Threads::Threads)

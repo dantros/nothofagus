@@ -14,6 +14,7 @@
 #include <glm/gtx/matrix_transform_2d.hpp>
 #include <glm/ext.hpp>
 #include <imgui.h>
+#include "imgui_draw_clone.h"
 #include "imgui_overlay.h"
 #include "backends/window_backend.h"
 #include <cmath>
@@ -83,6 +84,17 @@ FrameRunner::~FrameRunner()
     // working. Canvas's dtor is responsible for draining `mImguiRtt` and
     // `mAssets` GPU resources BEFORE destroying FrameRunner — by the time this
     // body runs they're already torn down, leaving us to shut the backend.
+    // Destroy the sim-UI context (M3) first — it shares (does not own) the main
+    // context's font atlas, so it must go before the main context is destroyed.
+    // It has no platform/renderer backend attached, so no backend teardown is
+    // needed. The caller has already joined the sim thread, so it is not current
+    // on any thread.
+    if (mSimUiContext != nullptr)
+    {
+        ImGui::DestroyContext(mSimUiContext);
+        mSimUiContext = nullptr;
+    }
+
     mBackend.shutdown(); // detaches the ImGui renderer backend (ImGui_Impl*_Shutdown).
 
     // Tear the window backend down now (instead of waiting for member destruction)
@@ -575,23 +587,58 @@ void FrameRunner::beginThreadedSession(Controller& controller)
         mSessionStarted = true;
     }
     mLastRenderTimeValid = false;
+
+    // M3: create the sim-thread UI context, sharing the main font atlas, so the
+    // user's ImGui widgets can run on the sim thread. It has no platform/renderer
+    // backend (the sim issues no GL); textures are flagged backend-managed and are
+    // actually uploaded on the render thread when the cloned draw data is rendered.
+    if (mSimUiContext == nullptr)
+    {
+        ImGuiContext* mainContext = ImGui::GetCurrentContext();
+        ImFontAtlas* sharedAtlas = ImGui::GetIO().Fonts;
+
+        mSimUiContext = ImGui::CreateContext(sharedAtlas);
+        // CreateContext restores the previous (main) context on return, so make
+        // the sim-UI context current explicitly before configuring its IO.
+        ImGui::SetCurrentContext(mSimUiContext);
+        ImGuiIO& simIo = ImGui::GetIO();
+        simIo.IniFilename             = nullptr;
+        simIo.BackendPlatformName     = "nothofagus_sim_ui";
+        simIo.BackendFlags           |= ImGuiBackendFlags_RendererHasTextures; // atlas uploaded render-side
+        simIo.DisplaySize             = ImVec2(static_cast<float>(mScreenSize.width),
+                                               static_cast<float>(mScreenSize.height));
+        ImGui::SetCurrentContext(mainContext); // restore the render thread's context
+
+        // Prime the font atlas on the render thread (uploads the texture) before
+        // any sim commit references it, so the shared atlas is ready and the sim's
+        // NewFrame/layout never races a first-time upload.
+        auto [fbW, fbH] = mWindow->getFramebufferSize();
+        const ViewportRect viewport = computeLetterboxViewport(fbW, fbH, mScreenSize.width, mScreenSize.height);
+        mBackend.beginFrame(mClearColor, viewport, fbW, fbH);
+        mBackend.imguiNewFrame();
+        mWindow->newImGuiFrame();
+        applyMainContextScale();
+        ImGui::NewFrame();
+        ImGui::Render();
+        mBackend.endFrame(ImGui::GetDrawData(), fbW, fbH);
+    }
+
     mThreadedRunning.store(true, std::memory_order_release);
 }
 
-void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS, std::function<void(float)> update)
+void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
+                             std::function<void(float)> update, std::function<void(float)> uiCallback)
 {
-    // Sim thread: CPU only. No GPU, no ImGui, no input. The user `update` mutates
-    // existing bellota values and may also spawn/despawn bellotas via
-    // Canvas::spawnBellota/despawnBellota (Phase B) — those take the asset mutex
-    // internally; everything here (bellota value writes, snapshot projection)
-    // touches only sim-owned state and stays lock-free.
+    // Sim thread: CPU only, no GL.
     ZoneScopedN("commitFrame");
 
     // Stamp the commit seq BEFORE `update` so spawn/despawn can tag retired
-    // resources with the commit at which they leave the scene (the first
-    // snapshot that no longer references them — this one).
+    // resources with the commit at which they leave the scene.
     const std::uint64_t commitSeq = ++mCommitSeq;
 
+    // 1) Game logic — lock-free, so it overlaps the render thread's sprite work.
+    //    (spawn/despawn take the asset mutex internally; bellota value writes are
+    //    sim-exclusive.)
     {
         ZoneScopedN("UserUpdate");
         update(deltaTimeMS);
@@ -601,6 +648,46 @@ void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS, std::fun
     snapshot.commitSeq = commitSeq;
     snapshot.clearColor = mClearColor;
 
+    // 2) ImGui frame on the sim-UI context — under the ImGui mutex so it never
+    //    touches the shared font atlas concurrently with the render thread.
+    {
+        ZoneScopedN("SimImgui");
+        std::lock_guard<std::mutex> imguiLock(mImguiMutex);
+
+        ImGui::SetCurrentContext(mSimUiContext); // thread-local current context (sim thread)
+        ImGuiIO& io = ImGui::GetIO();
+        io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures; // must match the atlas owner
+
+        ThreadedImguiInput input;
+        {
+            std::lock_guard<std::mutex> inputLock(mThreadedImguiInputMutex);
+            input = mThreadedImguiInput;
+            mThreadedImguiInput.wheelX = 0.0f; // consume accumulated wheel
+            mThreadedImguiInput.wheelY = 0.0f;
+        }
+        const float displayWidth  = input.displayWidth  > 0.0f ? input.displayWidth  : static_cast<float>(mScreenSize.width);
+        const float displayHeight = input.displayHeight > 0.0f ? input.displayHeight : static_cast<float>(mScreenSize.height);
+        io.DisplaySize = ImVec2(displayWidth, displayHeight);
+        io.DisplayFramebufferScale = ImVec2(input.framebufferScaleX, input.framebufferScaleY);
+        io.AddMousePosEvent(input.mouseX, input.mouseY);
+        io.AddMouseButtonEvent(0, input.mouseDown[0]);
+        io.AddMouseButtonEvent(1, input.mouseDown[1]);
+        io.AddMouseButtonEvent(2, input.mouseDown[2]);
+        if (input.wheelX != 0.0f || input.wheelY != 0.0f)
+            io.AddMouseWheelEvent(input.wheelX, input.wheelY);
+        io.DeltaTime = std::max(deltaTimeMS * 0.001f, 1e-6f);
+
+        ImGui::NewFrame();
+        if (uiCallback)
+            uiCallback(deltaTimeMS); // user ImGui widgets, on the sim thread
+        ImGui::Render();
+
+        if (!snapshot.mainUi)
+            snapshot.mainUi = std::make_unique<ClonedImDrawData>();
+        snapshot.mainUi->cloneFrom(ImGui::GetDrawData());
+    }
+
+    // 3) Project the scene (POD) — lock-free; the write slot is producer-owned.
     {
         ZoneScopedN("DepthSort");
         buildMainDraws(assets.bellotas(), snapshot.draws);
@@ -625,8 +712,6 @@ void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& im
         controller.processInputs();
     }
 
-    imguiRtt.drainPendingFontOps();
-
     // Pick up the freshest published snapshot (keeps the previous one if none new).
     mTripleBuffer.acquire();
     const RenderSnapshot& snapshot = mTripleBuffer.readSlot();
@@ -638,13 +723,23 @@ void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& im
 
     mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
 
-    // Empty main ImGui frame — the threaded path runs no user ImGui yet, but a
-    // NewFrame/Render pair yields valid (empty) draw data so the shared present
-    // path works. ImGui stays entirely on this (render) thread.
-    mBackend.imguiNewFrame();
-    mWindow->newImGuiFrame();
-    applyMainContextScale();
-    ImGui::NewFrame();
+    // Main-context ImGui frame on the render thread (under the ImGui mutex, so it
+    // never touches the shared font atlas concurrently with the sim-UI context).
+    // It does NOT draw user UI (that arrives as a clone) — it (a) drains pending
+    // font ops + lets ImGui_ImplGlfw process window input so we can harvest it for
+    // the sim, and (b) provides valid empty draw data for the frames before the
+    // first UI commit.
+    {
+        ZoneScopedN("RenderImguiNewFrame");
+        std::lock_guard<std::mutex> imguiLock(mImguiMutex);
+        imguiRtt.drainPendingFontOps();
+        mBackend.imguiNewFrame();
+        mWindow->newImGuiFrame();
+        applyMainContextScale();
+        ImGui::NewFrame();
+        harvestImguiInput(); // io.MousePos/Down/Wheel + DisplaySize are valid post-NewFrame
+        ImGui::Render();
+    }
 
     const float now = mWindow->getTime();
     const float deltaTimeMS = mLastRenderTimeValid ? (now - mLastRenderTime) * 1000.0f : 0.0f;
@@ -656,24 +751,21 @@ void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& im
     // is released BEFORE the vsync swap so a slow present never stalls the sim.
     {
         ZoneScopedN("AssetLockedRender");
-        std::lock_guard<std::mutex> lock(mThreadedAssetMutex);
+        std::lock_guard<std::mutex> assetLock(mThreadedAssetMutex);
         renderSnapshotContents(assets, imguiRtt, snapshot, deltaTimeMS);
-    }
-
-    if (mStats)
-    {
-        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Appearing);
-        ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
-        ImGui::Begin("stats", NULL, ImGuiWindowFlags_NoTitleBar);
-        ImGui::Text("%.2f fps", deltaTimeMS > 0.0f ? 1000.0f / deltaTimeMS : 0.0f);
-        ImGui::Text("%.2f ms", deltaTimeMS);
-        ImGui::End();
     }
 
     {
         ZoneScopedN("ImGuiRender");
-        ImGui::Render();
-        mBackend.endFrame(ImGui::GetDrawData(), mFramebufferWidth, mFramebufferHeight);
+        // Render the sim's cloned UI if present; otherwise the main empty frame.
+        // Under the ImGui mutex: RenderDrawData applies font-atlas texture uploads
+        // (draw_data->Textures) which touch the shared atlas.
+        std::lock_guard<std::mutex> imguiLock(mImguiMutex);
+        ImDrawData* uiData = (snapshot.mainUi && snapshot.mainUi->hasData())
+            ? snapshot.mainUi->drawData()
+            : ImGui::GetDrawData();
+        uiData->Textures = &ImGui::GetPlatformIO().Textures;
+        mBackend.endFrame(uiData, mFramebufferWidth, mFramebufferHeight);
     }
 
     {
@@ -684,6 +776,23 @@ void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& im
     mThreadedRunning.store(mWindow->isRunning(), std::memory_order_release);
 
     FrameMark;
+}
+
+void FrameRunner::harvestImguiInput()
+{
+    const ImGuiIO& io = ImGui::GetIO();
+    std::lock_guard<std::mutex> lock(mThreadedImguiInputMutex);
+    mThreadedImguiInput.displayWidth       = io.DisplaySize.x;
+    mThreadedImguiInput.displayHeight      = io.DisplaySize.y;
+    mThreadedImguiInput.framebufferScaleX  = io.DisplayFramebufferScale.x;
+    mThreadedImguiInput.framebufferScaleY  = io.DisplayFramebufferScale.y;
+    mThreadedImguiInput.mouseX             = io.MousePos.x;
+    mThreadedImguiInput.mouseY             = io.MousePos.y;
+    mThreadedImguiInput.mouseDown[0]       = io.MouseDown[0];
+    mThreadedImguiInput.mouseDown[1]       = io.MouseDown[1];
+    mThreadedImguiInput.mouseDown[2]       = io.MouseDown[2];
+    mThreadedImguiInput.wheelX            += io.MouseWheelH; // accumulate; sim consumes + resets
+    mThreadedImguiInput.wheelY            += io.MouseWheel;
 }
 
 Nothofagus::BellotaId FrameRunner::threadedSpawnBellota(AssetRegistry& assets, const Bellota& bellota)

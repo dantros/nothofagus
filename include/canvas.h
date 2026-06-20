@@ -625,8 +625,16 @@ public:
     /// Thread-safe: true until the window is closed. Drives both loop conditions.
     bool isThreadedRunning() const;
 
-    /// Sim thread: run `update(deltaTime)` and publish a frame snapshot.
+    /// Sim thread: run `update(deltaTime)` (game logic) and publish a frame
+    /// snapshot. No ImGui.
     void commit(float deltaTime, std::function<void(float)> update);
+
+    /// Sim thread: run `update(deltaTime)` (game logic, lock-free) then
+    /// `uiCallback(deltaTime)` as an interactive ImGui frame whose draw data is
+    /// cloned into the snapshot and rendered by the main thread. ImGui widgets in
+    /// `uiCallback` run on the sim thread and respond to the mouse (input is
+    /// marshalled render→sim). Keep ImGui calls in `uiCallback`, not `update`.
+    void commit(float deltaTime, std::function<void(float)> update, std::function<void(float)> uiCallback);
 
     /// Main thread: render the latest published snapshot and pump window/input.
     void renderFrame(Controller& controller);
