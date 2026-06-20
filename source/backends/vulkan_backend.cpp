@@ -765,6 +765,21 @@ void VulkanBackend::flushPendingDeletions(FrameData& frame)
     }
     frame.pendingTextureDeletions.clear();
 
+    // Flat-2D companions must be destroyed before the render targets: a flat-2D
+    // VkImageView is created from the RT's colorImage, and a view must not outlive
+    // its image (VUID-vkDestroyImage-image-01000). Both are queued to the same frame
+    // slot when an imguiVisual entry is retired, so the order here is what matters.
+    for (auto& pending : frame.pendingFlat2DDeletions)
+    {
+        if (pending.descriptorSet != VK_NULL_HANDLE)
+            ImGui_ImplVulkan_RemoveTexture(pending.descriptorSet);
+        if (pending.sampler != VK_NULL_HANDLE)
+            vkDestroySampler(mDevice, pending.sampler, nullptr);
+        if (pending.imageView != VK_NULL_HANDLE)
+            vkDestroyImageView(mDevice, pending.imageView, nullptr);
+    }
+    frame.pendingFlat2DDeletions.clear();
+
     for (auto& pending : frame.pendingRenderTargetDeletions)
     {
         vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &pending.proxyDescriptorSet);
@@ -776,17 +791,6 @@ void VulkanBackend::flushPendingDeletions(FrameData& frame)
         vmaDestroyImage(mAllocator, pending.depthImage, pending.depthAlloc);
     }
     frame.pendingRenderTargetDeletions.clear();
-
-    for (auto& pending : frame.pendingFlat2DDeletions)
-    {
-        if (pending.descriptorSet != VK_NULL_HANDLE)
-            ImGui_ImplVulkan_RemoveTexture(pending.descriptorSet);
-        if (pending.sampler != VK_NULL_HANDLE)
-            vkDestroySampler(mDevice, pending.sampler, nullptr);
-        if (pending.imageView != VK_NULL_HANDLE)
-            vkDestroyImageView(mDevice, pending.imageView, nullptr);
-    }
-    frame.pendingFlat2DDeletions.clear();
 }
 
 // ---------------------------------------------------------------------------
