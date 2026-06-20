@@ -84,8 +84,9 @@ private:
     };
 
     MeshId ownedQuadFor(glm::ivec2 textureSize);
-    /// Most-recently-rendered ready entry for the same visual (same texture/mesh/size/
-    /// fit, any layer) as `want`, to bridge the per-layer warm-up gap. nullptr if none.
+    /// Best ready entry for the same sprite (same texture/mesh) as `want`, preferring
+    /// matching layer, then size, then fit, then recency — to bridge the warm-up gap
+    /// for both animation (layer change) and size-slider (size change). nullptr if none.
     Entry* findReadyFallback(const Key& key, const Entry& want);
     void   freeEntryGpu(Entry& entry);   ///< render-side: free handle + RTT.
     void   unpinEntry(const Entry& entry);

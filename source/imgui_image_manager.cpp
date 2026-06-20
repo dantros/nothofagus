@@ -154,12 +154,12 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize& 
 
     const ImVec2 displaySize(targetLogical.x, targetLogical.y);
 
-    // Pick the handle to draw: this entry's own once it is ready, otherwise the most
-    // recently rendered handle for the SAME visual (same texture/mesh/size/fit, any
-    // layer). An animation that revisits a layer whose per-layer RTT was retired would
-    // otherwise re-enter the one-frame warm-up and flash an empty cell on every frame
-    // change; showing the previous ready frame instead keeps it smooth. Only a
-    // genuinely first-seen visual (nothing ready yet) still reserves a blank cell.
+    // Pick the handle to draw: this entry's own once it is ready, otherwise the best
+    // ready handle for the SAME sprite (same texture/mesh) — see findReadyFallback for
+    // the preference order. Without this, the per-frame warm-up flashes an empty cell on
+    // every animation step (layer changes) and on every size-slider tick (size changes),
+    // since each is a fresh Key. Only a genuinely first-seen sprite (nothing ready yet)
+    // still reserves a blank cell.
     std::uint64_t drawHandle = entry.handle;
     if (drawHandle == 0)
     {
@@ -209,19 +209,33 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize& 
 
 ImguiImageManager::Entry* ImguiImageManager::findReadyFallback(const Key& key, const Entry& want)
 {
-    // The same visual at the same displayed size/fit, differing only by layer: pick the
-    // entry with a ready handle that was rendered most recently. Used to bridge the
-    // per-layer warm-up gap for animations (see imguiVisual). nullptr if none qualifies.
+    // Any ready handle for the same sprite (same texture + mesh) beats a blank cell
+    // during warm-up. Prefer, in order: the same animation layer (correct frame), then
+    // the same rasterized size + fit (crisp, no stretch), then the most recently
+    // rendered. This bridges two warm-up cases: an animation revisiting a retired layer
+    // (same size, different layer), and a size-slider drag churning a new RTT every
+    // frame (same layer, different size) — the differently-sized handle is just drawn
+    // stretched to the target for the one bridge frame. nullptr if nothing is ready.
+    const int wantFit = std::get<5>(key);
     Entry* best = nullptr;
+    int bestScore = -1;
     for (auto& [candidateKey, candidate] : mEntries)
     {
-        if (candidate.handle == 0)                            continue; // not yet ready
-        if (candidate.texture.id != want.texture.id)          continue;
-        if (candidate.mesh.id    != want.mesh.id)             continue;
-        if (candidate.rttSize    != want.rttSize)             continue; // same displayed size
-        if (std::get<5>(candidateKey) != std::get<5>(key))    continue; // same fill/fit mode
-        if (best == nullptr || candidate.lastUsedFrame > best->lastUsedFrame)
+        if (candidate.handle == 0)                   continue; // not yet ready
+        if (candidate.texture.id != want.texture.id) continue;
+        if (candidate.mesh.id    != want.mesh.id)    continue;
+
+        int score = 0;
+        if (candidate.layer   == want.layer)      score += 4; // correct frame content
+        if (candidate.rttSize == want.rttSize)    score += 2; // crisp, no stretch
+        if (std::get<5>(candidateKey) == wantFit) score += 1; // same fill/fit placement
+
+        if (score > bestScore ||
+            (score == bestScore && best != nullptr && candidate.lastUsedFrame > best->lastUsedFrame))
+        {
             best = &candidate;
+            bestScore = score;
+        }
     }
     return best;
 }
