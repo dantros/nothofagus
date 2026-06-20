@@ -714,6 +714,13 @@ Pass `canvas.bellota(id).visual()` for a bellota's current look, or a standalone
   the RTT color image + `ImGui_ImplVulkan_AddTexture` (no copy). Both via three render-agnostic
   `RenderBackend` methods (`acquireFlat2DImguiHandle` / `resolveRenderTargetFlat2D` /
   `releaseFlat2DImguiHandle`).
+- **Vulkan image budget.** Each on-screen `imguiVisual` holds one ImGui descriptor set from a
+  fixed Vulkan pool sized by `kImguiImageDescriptorPoolSize`
+  ([source/backends/vulkan_backend.h](source/backends/vulkan_backend.h), default 1024; ~tens of
+  KB reserved). Past that many *concurrent* images the backend logs an error once and no-ops the
+  surplus (those visuals draw nothing) rather than aborting; it recovers as images leave the
+  screen. Raise the constant if you display more at once. OpenGL has no such limit — it binds GL
+  texture handles directly, with no descriptor pool.
 - **v1 scope:** works in the main UI context. Same-frame display (no warm-up) and calling
   `imguiVisual` inside a `renderImguiTo` diegetic panel are planned follow-ups.
 
