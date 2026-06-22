@@ -6,7 +6,7 @@
 namespace Nothofagus
 {
 
-/// How a Visual's content maps into a `Custom` / `DevicePixels` target box when the
+/// How a Visual's content maps into a `LogicalPixels` / `DevicePixels` target box when the
 /// content's aspect ratio differs from the box.
 enum class ImguiImageFit
 {
@@ -14,22 +14,21 @@ enum class ImguiImageFit
     Fit,     ///< Uniform scale to fit inside the target, centered (letterbox/pillarbox).
 };
 
-/// Sizing alternatives for `Canvas::imguiVisual`. `LogicalPixels` / `Scaled` / `Custom`
+/// Sizing alternatives for `Canvas::imguiVisual`. `Natural` / `Scaled` / `LogicalPixels`
 /// size in **logical pixels** (they scale with the OS DPI, like the rest of the UI) and
 /// rasterize the internal render target at size × content scale, so mesh geometry stays
 /// crisp at the displayed size instead of being bitmap-upscaled. `DevicePixels` instead
 /// sizes in **physical/device pixels**, bypassing OS DPI scaling for a 1:1 mapping.
 ///
-/// Each alternative carries exactly the data it needs — `fit` only exists where a target
-/// box can differ in aspect from the content, and a `factor` (multiplier) vs a `size`
-/// (absolute extent) are distinct fields rather than one overloaded value.
-/// `ImguiImageSize::Spec` is the variant over the four.
+/// `LogicalPixels` and `DevicePixels` are the same shape (an explicit `size` + a `fit`),
+/// differing only in units; `Natural` is the no-size default and `Scaled` a multiplier on
+/// it. `fit` exists only on the two explicit-size modes (where the box can differ in aspect
+/// from the content). `ImguiImageSize::Spec` is the variant over the four.
 namespace ImguiImageSize
 {
 
-/// The visual's natural size: its mesh AABB extent in logical px (no scaling). The default.
-/// Logical px scale with the OS DPI, so the image grows on HiDPI like the surrounding UI.
-struct LogicalPixels
+/// The visual's natural size: its mesh AABB extent, in logical px (DPI-scaled). The default.
+struct Natural
 {
 };
 
@@ -40,9 +39,9 @@ struct Scaled
     glm::vec2 factor{1.0f, 1.0f};
 };
 
-/// An explicit target size in logical px (DPI-scaled), with the content placed per `fit`.
+/// An explicit target size in **logical px** (DPI-scaled), with the content placed per `fit`.
 /// `Fit` letterboxes/pillarboxes to preserve the content's proportions; `Stretch` fills (distorts).
-struct Custom
+struct LogicalPixels
 {
     glm::vec2     size{1.0f, 1.0f};
     ImguiImageFit fit = ImguiImageFit::Fit;
@@ -60,8 +59,8 @@ struct DevicePixels
 };
 
 /// The sizing spec passed to `Canvas::imguiVisual` — a variant over the four alternatives.
-/// Default-constructs (via the first alternative) to `LogicalPixels`.
-using Spec = std::variant<LogicalPixels, Scaled, Custom, DevicePixels>;
+/// Default-constructs (via the first alternative) to `Natural`.
+using Spec = std::variant<Natural, Scaled, LogicalPixels, DevicePixels>;
 
 } // namespace ImguiImageSize
 

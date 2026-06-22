@@ -823,7 +823,7 @@ TEST_CASE("imguiVisual draws a scaled paletted visual", "[rendering][imgui]")
     checkAgainstGolden("imgui_visual_scaled", canvas.takeScreenshot());
 }
 
-TEST_CASE("imguiVisual custom size Fit vs Stretch on a custom mesh", "[rendering][imgui][mesh]")
+TEST_CASE("imguiVisual explicit logical size Fit vs Stretch on a custom mesh", "[rendering][imgui][mesh]")
 {
     auto canvas = makeCanvas(190, 64);
 
@@ -847,14 +847,14 @@ TEST_CASE("imguiVisual custom size Fit vs Stretch on a custom mesh", "[rendering
         canvas.tick(16.0f, [&](float) {
             beginFullViewportWindow(canvas, "##visual_fit_stretch");
             canvas.imguiVisual(triVisual,
-                Nothofagus::ImguiImageSize::Custom{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Fit});
+                Nothofagus::ImguiImageSize::LogicalPixels{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Fit});
             ImGui::SameLine();
             canvas.imguiVisual(triVisual,
-                Nothofagus::ImguiImageSize::Custom{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Stretch});
+                Nothofagus::ImguiImageSize::LogicalPixels{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Stretch});
             endFullViewportWindow();
         });
 
-    checkAgainstGolden("imgui_visual_custom_fit_stretch", canvas.takeScreenshot());
+    checkAgainstGolden("imgui_visual_logical_fit_stretch", canvas.takeScreenshot());
 }
 
 TEST_CASE("imguiVisual draws a DirectTexture honoring magFilter", "[rendering][imgui]")

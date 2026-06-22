@@ -322,21 +322,21 @@ public:
      * correctly) and exposed to ImGui. A custom mesh is honored. Opacity modulates the
      * drawn image; visibility=false draws an empty cell.
      *
-     * @p sizeSpec controls the size. The default (`ImguiImageSize::LogicalPixels{}`) is the
-     * visual's real on-screen size — its mesh's bounding box, with no scale transform — in
-     * logical pixels (scales with OS DPI). Use `ImguiImageSize::Scaled{factor}` to
-     * up/downscale, `ImguiImageSize::Custom{size, ImguiImageFit::Fit|Stretch}` for an explicit
-     * logical size, or `ImguiImageSize::DevicePixels{size, fit}` for an explicit size in
-     * physical/device pixels (1:1, bypassing OS DPI scaling). Logical-pixel targets are
-     * rasterized at size × contentScale, so mesh geometry stays crisp at the displayed size
-     * (not bitmap-upscaled), and texture magnification honors the texture's own `magFilter`.
+     * @p sizeSpec controls the size. The default (`ImguiImageSize::Natural{}`) is the visual's
+     * real on-screen size — its mesh's bounding box, with no scale transform — in logical
+     * pixels (scales with OS DPI). Use `ImguiImageSize::Scaled{factor}` to up/downscale,
+     * `ImguiImageSize::LogicalPixels{size, fit}` for an explicit logical size, or
+     * `ImguiImageSize::DevicePixels{size, fit}` for an explicit size in physical/device pixels
+     * (1:1, bypassing OS DPI scaling). Logical-pixel targets are rasterized at size ×
+     * contentScale, so mesh geometry stays crisp at the displayed size (not bitmap-upscaled),
+     * and texture magnification honors the texture's own `magFilter`.
      *
      * Call inside an active ImGui frame (a run()/tick() update callback). The first frame a
      * given (Visual, size) is shown reserves layout only and appears next frame (one-frame
      * warm-up).
      */
     void imguiVisual(const Visual& visual,
-                     const ImguiImageSize::Spec& sizeSpec = ImguiImageSize::LogicalPixels{});
+                     const ImguiImageSize::Spec& sizeSpec = ImguiImageSize::Natural{});
 
     /**
      * @brief Register a TTF buffer as a new font source.

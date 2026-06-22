@@ -76,9 +76,9 @@ namespace
             return ImageLayout{toPhysical(targetLogical * scale), naturalLogical * scale, targetLogical, fit};
         };
         return std::visit(overloaded{
-            [&](const ImguiImageSize::LogicalPixels&) { return logical(naturalLogical, false); },
-            [&](const ImguiImageSize::Scaled& s)      { return logical(naturalLogical * s.factor, false); },
-            [&](const ImguiImageSize::Custom& c)      { return logical(c.size, c.fit == ImguiImageFit::Fit); },
+            [&](const ImguiImageSize::Natural&)         { return logical(naturalLogical, false); },
+            [&](const ImguiImageSize::Scaled& s)        { return logical(naturalLogical * s.factor, false); },
+            [&](const ImguiImageSize::LogicalPixels& l) { return logical(l.size, l.fit == ImguiImageFit::Fit); },
             [&](const ImguiImageSize::DevicePixels& d) {
                 const glm::vec2 targetDevice = glm::max(d.size, glm::vec2(1.0f));
                 // naturalPhys is the natural extent in device px (1 texel -> 1 device px);

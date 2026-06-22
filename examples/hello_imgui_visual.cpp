@@ -127,10 +127,10 @@ int main()
         Nothofagus::Visual animVisual = canvas.bellota(animBellotaId).visual();
         animVisual.opacity() = opacity;
 
-        ImGui::TextUnformatted("LogicalPixels = real size (DPI-scaled); Scaled rasterizes at the upscaled size;");
+        ImGui::TextUnformatted("Natural = real size (DPI-scaled); Scaled rasterizes at the upscaled size;");
         ImGui::TextUnformatted("DevicePixels = exact physical pixels (1 texel -> 1 display pixel, ignores OS DPI):");
         ImGui::BeginGroup();
-        ImGui::TextUnformatted("logical");
+        ImGui::TextUnformatted("natural");
         canvas.imguiVisual(animVisual);                         // true 8x8 logical px (DPI-scaled)
         ImGui::EndGroup();
         ImGui::SameLine();
@@ -144,16 +144,16 @@ int main()
         canvas.imguiVisual(animVisual, Nothofagus::ImguiImageSize::DevicePixels{{32.0f, 32.0f}}); // exactly 32x32 screen px
         ImGui::EndGroup();
 
-        ImGui::TextUnformatted("Custom-mesh (triangle) at custom size, Fit vs Stretch:");
+        ImGui::TextUnformatted("Custom-mesh (triangle) at an explicit logical size, Fit vs Stretch:");
         Nothofagus::Visual triVisual = canvas.bellota(triBellotaId).visual();
         ImGui::BeginGroup();
-        ImGui::TextUnformatted("custom Fit");
-        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::Custom{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Fit});      // letterboxed, crisp edges
+        ImGui::TextUnformatted("logical Fit");
+        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::LogicalPixels{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Fit});      // letterboxed, crisp edges
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
-        ImGui::TextUnformatted("custom Stretch");
-        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::Custom{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Stretch});  // fills, distorts
+        ImGui::TextUnformatted("logical Stretch");
+        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::LogicalPixels{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Stretch});  // fills, distorts
         ImGui::EndGroup();
 
         ImGui::TextUnformatted("RGBA texture magFilter (2x2 magnified) - Nearest vs Linear:");
