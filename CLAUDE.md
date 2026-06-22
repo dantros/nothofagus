@@ -659,21 +659,21 @@ The inverse of "render ImGui into an RTT": sample an engine sprite *from* an ImG
 canvas.run([&](float) {
     ImGui::Begin("inventory");
     canvas.imguiVisual(canvas.bellota(swordId).visual());                          // real on-screen size
-    canvas.imguiVisual(Nothofagus::Visual{potionTexId}, ImguiImageSize::scaled(4)); // 4x, crisp
-    canvas.imguiVisual(portrait, ImguiImageSize::custom({120, 80}, ImguiImageFit::Fit)); // fit a box
+    canvas.imguiVisual(Nothofagus::Visual{potionTexId}, ImguiImageSize::Scaled{glm::vec2(4)}); // 4x, crisp
+    canvas.imguiVisual(portrait, ImguiImageSize::Custom{{120, 80}, ImguiImageFit::Fit}); // fit a box
     ImGui::End();
 });
 ```
 
 ```cpp
 // include/canvas.h + include/imgui_image_size.h
-void imguiVisual(const Visual& visual, const ImguiImageSize& sizing = ImguiImageSize::standard());
+void imguiVisual(const Visual& visual, const ImguiImageSize::Spec& sizeSpec = ImguiImageSize::Standard{});
 ```
 
 **The entry point is a `Visual`, not a `Bellota`** — placement (transform / depth) is meaningless in an ImGui cell, so only the appearance is drawn (`Visual` = texture + optional mesh + current layer + visible + opacity; tint is a `BellotaPack` field and is *not* part of a Visual, so it is excluded). Pass `canvas.bellota(id).visual()` for a bellota's current look, or a standalone `Visual{texId}`.
 
 **Behavior / rules:**
-- **Sizing (`ImguiImageSize`, all in logical pixels → scales with OS DPI).** The default, `standard()`, is the visual's **real on-screen size** — its mesh AABB extent with no scale transform (auto-quad → texture size; custom mesh → its full extent). `scaled(float)` / `scaled(vec2)` multiply that; `custom(size, ImguiImageFit::Fit|Stretch)` renders at an explicit size (`Fit` = uniform-scale + letterbox/pillarbox, `Stretch` = fill/distort). The off-screen target is **rasterized at the chosen size × `contentScale()`** (the same DPI density the font atlas uses, via `style.FontScaleDpi`), so **mesh geometry is rasterized at the displayed size — crisp edges, not bitmap-upscaled** — and texture magnification happens through the engine sprite path honoring the texture's own `magFilter`. A non-square custom mesh keeps its proportions under `Fit`.
+- **Size Specification (`ImguiImageSize::Spec` — a `std::variant<Standard, Scaled, Custom>`, all in logical pixels → scales with OS DPI).** The default, `ImguiImageSize::Standard{}`, is the visual's **real on-screen size** — its mesh AABB extent with no scale transform (auto-quad → texture size; custom mesh → its full extent). `ImguiImageSize::Scaled{factor}` (a `glm::vec2` multiplier) multiplies that; `ImguiImageSize::Custom{size, ImguiImageFit::Fit|Stretch}` renders at an explicit size (`Fit` = uniform-scale + letterbox/pillarbox, `Stretch` = fill/distort). The off-screen target is **rasterized at the chosen size × `contentScale()`** (the same DPI density the font atlas uses, via `style.FontScaleDpi`), so **mesh geometry is rasterized at the displayed size — crisp edges, not bitmap-upscaled** — and texture magnification happens through the engine sprite path honoring the texture's own `magFilter`. A non-square custom mesh keeps its proportions under `Fit`.
 - **Opacity** modulates the drawn image (applied as the ImGui widget alpha); `visible()==false` draws an empty cell of the resolved size.
 - **Sampling follows the texture's `magFilter`** (default `Nearest` → crisp pixel art; set `Linear` via `setTextureMagFilter` for smoothing). Texture magnification now happens *inside* the RTT through the engine sprite path (which honors the texture's filter), and ImGui draws the RTT ~1:1. As a belt-and-suspenders for any residual ImGui-side scaling, `imguiVisual` also pins ImGui's own (global-per-draw, LINEAR-default) sampler to match via the standard `DrawCallback_SetSamplerNearest` / `SetSamplerLinear` callbacks, restoring Linear afterward so window text/widgets are unaffected. (ImGui ignores the sampler passed to `ImGui_ImplVulkan_AddTexture`, hence the callback approach.)
 - **One-frame warm-up.** Sim/render-split aware: `imguiVisual` runs on the sim side and bakes a stable handle into the ImGui draw list; the handle is created on the render side (after the internal RTT is drawn) and read back the next frame. So the first frame a given visual is shown reserves layout only and the image appears the following frame. Internal RTTs are keyed by `(TextureId, MeshId, currentLayer, rttPixelW, rttPixelH, fill/fit)` — so the same visual at different sizes gets distinct crisp targets; an entry unused for a few frames is garbage-collected (its RTT + handle freed, its texture/mesh pin released). Dragging a size slider therefore churns RTTs (one per distinct pixel size) until they retire — acceptable; bucketing is a future tweak. All GPU work is render-side and id-driven — nothing is created from the user callback.
