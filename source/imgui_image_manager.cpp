@@ -141,8 +141,8 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize::
             ScreenSize{static_cast<unsigned int>(rttPhys.x), static_cast<unsigned int>(rttPhys.y)});
         mAssets.setRenderTargetClearColor(rt, glm::vec4(0.0f)); // transparent
 
-        if (mTextureRefs[texId.id]++ == 0)  mAssets.retainTexture(texId);
-        if (mMeshRefs[meshId.id]++  == 0)   mAssets.retainMesh(meshId);
+        mTexturePins.retain(texId,  [&](TextureId id) { mAssets.retainTexture(id); });
+        mMeshPins.retain(meshId,    [&](MeshId id)    { mAssets.retainMesh(id); });
 
         Entry entry;
         entry.rt        = rt;
@@ -324,23 +324,16 @@ void ImguiImageManager::freeEntryGpu(Entry& entry)
 
 void ImguiImageManager::unpinEntry(const Entry& entry)
 {
-    auto texIt = mTextureRefs.find(entry.texture.id);
-    if (texIt != mTextureRefs.end() && --texIt->second == 0)
-    {
-        mAssets.releaseTexture(entry.texture);
-        mTextureRefs.erase(texIt);
-    }
+    mTexturePins.release(entry.texture, [&](TextureId id) { mAssets.releaseTexture(id); });
 
-    auto meshIt = mMeshRefs.find(entry.mesh.id);
-    if (meshIt != mMeshRefs.end() && --meshIt->second == 0)
+    mMeshPins.release(entry.mesh, [&](MeshId id)
     {
-        mAssets.releaseMesh(entry.mesh);
-        mMeshRefs.erase(meshIt);
+        mAssets.releaseMesh(id);
         // If this was a shared owned-quad, drop it from the cache so it can be GC'd.
         if (entry.ownedQuad)
             for (auto cacheIt = mOwnedQuads.begin(); cacheIt != mOwnedQuads.end(); ++cacheIt)
-                if (cacheIt->second.id == entry.mesh.id) { mOwnedQuads.erase(cacheIt); break; }
-    }
+                if (cacheIt->second.id == id.id) { mOwnedQuads.erase(cacheIt); break; }
+    });
 }
 
 void ImguiImageManager::releaseAll()
@@ -351,8 +344,8 @@ void ImguiImageManager::releaseAll()
         unpinEntry(entry);
     }
     mEntries.clear();
-    mTextureRefs.clear();
-    mMeshRefs.clear();
+    mTexturePins.clear();
+    mMeshPins.clear();
     mOwnedQuads.clear();
 }
 
