@@ -351,6 +351,14 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
         // resources with the commit at which they leave the scene.
         const std::uint64_t commitSeq = ++mCommitSeq;
 
+        // M5: feed the sim controller from the latest gamepad snapshot (harvested
+        // render-side after the window poll) so the game `update` sees the gamepad.
+        if (controller != nullptr)
+        {
+            ZoneScopedN("FeedGamepad");
+            feedGamepadInput(*controller);
+        }
+
         // 1) Game logic — lock-free, so it overlaps the render thread's sprite work.
         //    (spawn/despawn take the asset mutex internally; bellota value writes are
         //    sim-exclusive.)
@@ -708,6 +716,13 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
             mWindow->endFrame(controller, mScreenSize);
         }
 
+        // M5: snapshot the render controller's freshly-polled gamepad state for the
+        // sim thread to replay onto its own controller next commit.
+        {
+            ZoneScopedN("HarvestGamepad");
+            harvestGamepadInput(controller);
+        }
+
         mThreadedRunning.store(mWindow->isRunning(), std::memory_order_release);
         return;
     }
@@ -853,6 +868,15 @@ void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
             std::move(update), std::move(uiCallback), nullptr);
 }
 
+void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
+                             std::function<void(float)> update, Controller& simController)
+{
+    // Sim thread (M5): feed the sim controller from the latest gamepad snapshot
+    // (inside produce, before update) so the game `update` sees the gamepad. No ImGui.
+    produce(FrameMode::Threaded, nullptr, assets, nullptr, deltaTimeMS,
+            std::move(update), {}, &simController);
+}
+
 void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& imguiRtt, Controller& controller)
 {
     ZoneScopedN("renderFrameThreaded");
@@ -910,6 +934,75 @@ void FrameRunner::harvestImguiInput()
         mThreadedImguiInput.textChars[mThreadedImguiInput.textCharCount++] =
             static_cast<unsigned int>(io.InputQueueCharacters[i]);
     }
+}
+
+void FrameRunner::harvestGamepadInput(Controller& renderController)
+{
+    static_assert(static_cast<int>(GamepadButton::DpadLeft) + 1 == GamepadSnapshot::kButtonCount,
+                  "GamepadSnapshot::kButtonCount out of sync with the GamepadButton enum");
+    static_assert(static_cast<int>(GamepadAxis::RightTrigger) + 1 == GamepadSnapshot::kAxisCount,
+                  "GamepadSnapshot::kAxisCount out of sync with the GamepadAxis enum");
+
+    // Read the render controller's normalized state into a local POD, then publish
+    // it with a single mutexed copy (keeps the critical section tiny).
+    GamepadSnapshot snapshot;
+    for (int id = 0; id < GamepadSnapshot::kMaxGamepads; ++id)
+    {
+        GamepadSnapshot::Pad& pad = snapshot.pads[id];
+        pad.connected = renderController.isGamepadConnected(id);
+        if (!pad.connected)
+            continue;
+        for (int b = 0; b < GamepadSnapshot::kButtonCount; ++b)
+            pad.buttons[b] = renderController.getGamepadButton(id, static_cast<GamepadButton>(b));
+        for (int a = 0; a < GamepadSnapshot::kAxisCount; ++a)
+            pad.axes[a] = renderController.getGamepadAxis(id, static_cast<GamepadAxis>(a));
+    }
+
+    std::lock_guard<std::mutex> lock(mThreadedGamepadMutex);
+    mThreadedGamepadState = snapshot;
+}
+
+void FrameRunner::feedGamepadInput(Controller& simController)
+{
+    GamepadSnapshot snapshot;
+    {
+        std::lock_guard<std::mutex> lock(mThreadedGamepadMutex);
+        snapshot = mThreadedGamepadState;
+    }
+
+    for (int id = 0; id < GamepadSnapshot::kMaxGamepads; ++id)
+    {
+        const GamepadSnapshot::Pad& pad = snapshot.pads[id];
+        const bool wasConnected = simController.isGamepadConnected(id);
+
+        if (pad.connected && !wasConnected)
+            simController.gamepadConnected(id);
+        else if (!pad.connected && wasConnected)
+            simController.gamepadDisconnected(id);
+
+        if (!pad.connected)
+            continue;
+
+        // Buttons: reconstruct press/release edges by diffing the snapshot against
+        // the sim controller's current state (activateGamepadButton sets state + queues
+        // the edge for processInputs() below).
+        for (int b = 0; b < GamepadSnapshot::kButtonCount; ++b)
+        {
+            const GamepadButton button = static_cast<GamepadButton>(b);
+            const bool pressed = pad.buttons[b];
+            if (pressed != simController.getGamepadButton(id, button))
+                simController.activateGamepadButton(
+                    {id, button, pressed ? DiscreteTrigger::Press : DiscreteTrigger::Release});
+        }
+
+        // Axes: set unconditionally — updateGamepadAxis fires the axis callback only
+        // when the value actually changes, so replaying a steady value is a no-op.
+        for (int a = 0; a < GamepadSnapshot::kAxisCount; ++a)
+            simController.updateGamepadAxis(id, static_cast<GamepadAxis>(a), pad.axes[a]);
+    }
+
+    // Dispatch the queued button edges to the game's registered callbacks.
+    simController.processInputs();
 }
 
 Nothofagus::BellotaId FrameRunner::threadedSpawnBellota(AssetRegistry& assets, const Bellota& bellota)

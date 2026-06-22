@@ -636,6 +636,15 @@ public:
     /// marshalled render→sim). Keep ImGui calls in `uiCallback`, not `update`.
     void commit(float deltaTime, std::function<void(float)> update, std::function<void(float)> uiCallback);
 
+    /// Sim thread: run `update(deltaTime)` (game logic) and publish a frame
+    /// snapshot, feeding `simController` from the gamepad first so the game can
+    /// poll it / receive its callbacks inside `update`. `simController` is the
+    /// game's controller, distinct from the render controller passed to
+    /// `beginThreadedSession`/`renderFrame` (which owns window input + `close`).
+    /// Gamepad state is marshalled render→sim (one frame stale by construction).
+    /// No ImGui.
+    void commit(float deltaTime, std::function<void(float)> update, Controller& simController);
+
     /// Main thread: render the latest published snapshot and pump window/input.
     void renderFrame(Controller& controller);
 

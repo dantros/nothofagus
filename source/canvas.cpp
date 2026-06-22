@@ -403,6 +403,11 @@ void Canvas::commit(float deltaTime, std::function<void(float)> update, std::fun
     mImplPtr->frameRunner.commitFrame(mImplPtr->assets, deltaTime, std::move(update), std::move(uiCallback));
 }
 
+void Canvas::commit(float deltaTime, std::function<void(float)> update, Controller& simController)
+{
+    mImplPtr->frameRunner.commitFrame(mImplPtr->assets, deltaTime, std::move(update), simController);
+}
+
 void Canvas::renderFrame(Controller& controller)
 {
     mImplPtr->frameRunner.renderFrameThreaded(mImplPtr->assets, mImplPtr->imguiRtt, controller);

@@ -179,6 +179,11 @@ public:
     void commitFrame(AssetRegistry& assets, float deltaTimeMS,
                      std::function<void(float)> update, std::function<void(float)> uiCallback);
 
+    /// Sim thread (M5): like commitFrame above but, before the user update, feeds
+    /// the given sim controller from the latest gamepad snapshot (no ImGui).
+    void commitFrame(AssetRegistry& assets, float deltaTimeMS,
+                     std::function<void(float)> update, Controller& simController);
+
     /// Main thread: acquire the latest published snapshot and render it (GPU
     /// upload + draw + present), poll window/input, and refresh the running flag.
     void renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& imguiRtt, Controller& controller);
@@ -203,6 +208,15 @@ private:
     /// (mouse pos/buttons/wheel + display size/scale) into mThreadedImguiInput so
     /// the sim thread can feed it to the sim-UI context, making widgets interactive.
     void harvestImguiInput();
+
+    /// Render thread (M5): snapshot the render controller's normalized gamepad
+    /// state into mThreadedGamepadState (called after the window poll).
+    void harvestGamepadInput(Controller& renderController);
+
+    /// Sim thread (M5): replay the latest gamepad snapshot onto the sim controller
+    /// (diff buttons/connection vs its current state, set axes, then dispatch the
+    /// queued button edges). Called before the user update.
+    void feedGamepadInput(Controller& simController);
     void ensureSessionStarted(Controller& controller);
     void runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
                      float deltaTimeMS, std::function<void(float)> update, Controller& controller);
@@ -338,6 +352,29 @@ private:
     };
     ThreadedImguiInput mThreadedImguiInput;
     std::mutex mThreadedImguiInputMutex;
+
+    // ----- M5: gamepad input on the sim thread -----
+    /// Normalized gamepad state snapshotted from the render controller on the
+    /// render thread (post window poll) and replayed onto the sim controller on
+    /// the sim thread, so a game whose logic runs in commit()'s update sees the
+    /// gamepad. POD (no GLFW): kMaxGamepads mirrors GLFW_JOYSTICK_LAST + 1, the
+    /// button/axis counts mirror the GamepadButton/GamepadAxis enums (a static
+    /// assert in the .cpp verifies). Guarded by its mutex.
+    struct GamepadSnapshot
+    {
+        static constexpr int kMaxGamepads = 16;
+        static constexpr int kButtonCount = 15;
+        static constexpr int kAxisCount   = 6;
+        struct Pad
+        {
+            bool  connected{false};
+            bool  buttons[kButtonCount]{};
+            float axes[kAxisCount]{};
+        };
+        Pad pads[kMaxGamepads]{};
+    };
+    GamepadSnapshot mThreadedGamepadState;
+    std::mutex mThreadedGamepadMutex;
 
     /// Set from the sim-UI frame each commit; read by the host's game update (and
     /// available via Canvas) so world interaction can be suppressed while an ImGui

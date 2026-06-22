@@ -155,3 +155,9 @@ add_executable(hello_threaded_imgui
 )
 set_property(TARGET hello_threaded_imgui PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_threaded_imgui PRIVATE nothofagus Threads::Threads)
+
+add_executable(hello_threaded_gamepad
+    "hello_threaded_gamepad.cpp"
+)
+set_property(TARGET hello_threaded_gamepad PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_threaded_gamepad PRIVATE nothofagus Threads::Threads)
