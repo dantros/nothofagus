@@ -6,6 +6,7 @@
 #include "texture_id.h"
 #include "mesh.h"                      // MeshId
 #include "render_target.h"            // RenderTargetId
+#include "ref_count.h"                // RefCount
 #include "backends/render_backend_select.h"  // ActiveBackend
 
 #include <glm/glm.hpp>
@@ -98,9 +99,10 @@ private:
     std::map<std::pair<int, int>, MeshId> mOwnedQuads;   ///< quad mesh per texture size (shared).
 
     // Reference counts for resource pins so a texture/mesh shared by several entries
-    // is released only when the last entry referencing it is retired.
-    std::map<std::size_t, int> mTextureRefs;
-    std::map<std::size_t, int> mMeshRefs;
+    // is retained on the AssetRegistry once and released only when the last entry
+    // referencing it is retired.
+    RefCount<TextureId> mTexturePins;
+    RefCount<MeshId>    mMeshPins;
 
     std::uint64_t mFrameCounter = 0;
     static constexpr std::uint64_t kRetireAfterFrames = 8;
