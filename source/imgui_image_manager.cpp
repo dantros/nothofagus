@@ -47,14 +47,46 @@ namespace
         outExtent = glm::max(hi - lo, glm::vec2(1e-3f));
     }
 
-    glm::vec2 resolveTargetLogical(const ImguiImageSize::Spec& sizeSpec, glm::vec2 naturalLogical)
+    glm::ivec2 toPhysical(glm::vec2 sizePx)
     {
-        const glm::vec2 target = std::visit(overloaded{
-            [&](const ImguiImageSize::Standard&) { return naturalLogical; },
-            [&](const ImguiImageSize::Scaled& scaled) { return naturalLogical * scaled.factor; },
-            [&](const ImguiImageSize::Custom& custom) { return custom.size; },
+        return glm::ivec2{
+            std::max(1, static_cast<int>(std::ceil(sizePx.x))),
+            std::max(1, static_cast<int>(std::ceil(sizePx.y))),
+        };
+    }
+
+    // Resolved geometry for a drawn image, independent of texture/handle bookkeeping.
+    struct ImageLayout
+    {
+        glm::ivec2 rttPhys{1, 1};       ///< physical px the off-screen target is rasterized at.
+        glm::vec2  naturalPhys{1.0f};   ///< the visual's natural extent in those same RTT px.
+        glm::vec2  displaySize{1.0f};   ///< logical points handed to ImGui (Image / layout size).
+        bool       fitCentered = false; ///< uniform-fit + center (else fill the box).
+    };
+
+    // Logical modes (LogicalPixels / Scaled / Custom) size in logical px and rasterize at
+    // size × contentScale, so the image is DPI-scaled like the rest of the UI; ImGui then
+    // re-applies DPI to displaySize, giving a 1:1 RTT->screen mapping. DevicePixels sizes in
+    // physical px directly (1 unit = 1 display pixel): the RTT is rasterized at that exact
+    // size and displaySize divides DPI back out, bypassing OS content scaling.
+    ImageLayout resolveLayout(const ImguiImageSize::Spec& sizeSpec, glm::vec2 naturalLogical, float scale)
+    {
+        const auto logical = [&](glm::vec2 targetLogical, bool fit) {
+            targetLogical = glm::max(targetLogical, glm::vec2(1.0f));
+            return ImageLayout{toPhysical(targetLogical * scale), naturalLogical * scale, targetLogical, fit};
+        };
+        return std::visit(overloaded{
+            [&](const ImguiImageSize::LogicalPixels&) { return logical(naturalLogical, false); },
+            [&](const ImguiImageSize::Scaled& s)      { return logical(naturalLogical * s.factor, false); },
+            [&](const ImguiImageSize::Custom& c)      { return logical(c.size, c.fit == ImguiImageFit::Fit); },
+            [&](const ImguiImageSize::DevicePixels& d) {
+                const glm::vec2 targetDevice = glm::max(d.size, glm::vec2(1.0f));
+                // naturalPhys is the natural extent in device px (1 texel -> 1 device px);
+                // displaySize divides DPI out so ImGui's re-multiply lands on targetDevice.
+                return ImageLayout{toPhysical(targetDevice), naturalLogical,
+                                   targetDevice / scale, d.fit == ImguiImageFit::Fit};
+            },
         }, sizeSpec);
-        return glm::max(target, glm::vec2(1.0f));
     }
 }
 
@@ -62,6 +94,10 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize::
 {
     const TextureId texId = visual.texture();
     debugCheck(mAssets.textures().contains(texId.id), "imguiVisual: unknown TextureId");
+
+    // DPI density to rasterize the off-screen target at (the same value the font atlas
+    // uses). DevicePixels deliberately bypasses it; see resolveLayout.
+    const float scale = std::max(contentScale, 1e-3f);
 
     // Natural size = the visual's real on-screen footprint (mesh AABB extent, logical px).
     // For an invisible visual, reserve the layout without touching GPU/mesh resources:
@@ -71,8 +107,8 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize::
         glm::vec2 natural = visual.meshId().has_value()
             ? [&]{ glm::vec2 mn, ext; meshAabb(mAssets.mesh(visual.meshId().value()), mn, ext); return ext; }()
             : glm::max(glm::vec2(mAssets.textures().at(texId.id).mTextureSize), glm::vec2(1.0f));
-        const glm::vec2 target = resolveTargetLogical(sizeSpec, natural);
-        ImGui::Dummy(ImVec2(target.x, target.y));
+        const glm::vec2 display = resolveLayout(sizeSpec, natural, scale).displaySize;
+        ImGui::Dummy(ImVec2(display.x, display.y));
         return;
     }
 
@@ -93,24 +129,15 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize::
     glm::vec2 aabbMin, naturalLogical;
     meshAabb(mAssets.mesh(meshId), aabbMin, naturalLogical);
 
-    const glm::vec2 targetLogical = resolveTargetLogical(sizeSpec, naturalLogical);
+    // Resolve the rasterization size, the natural extent in those RTT px, the ImGui layout
+    // size, and the fit mode — all per the chosen size spec (logical vs device pixels).
+    const ImageLayout layout = resolveLayout(sizeSpec, naturalLogical, scale);
+    const glm::ivec2 rttPhys = layout.rttPhys;
+    const glm::vec2 naturalPhys = layout.naturalPhys;
+    const bool fitCentered = layout.fitCentered;
 
-    // Rasterize the off-screen target at the same DPI density the font atlas uses, so a
-    // logical-pixel size stays crisp (mesh geometry rasterized at the displayed size).
-    const float scale = std::max(contentScale, 1e-3f);
-    const glm::ivec2 rttPhys{
-        std::max(1, static_cast<int>(std::ceil(targetLogical.x * scale))),
-        std::max(1, static_cast<int>(std::ceil(targetLogical.y * scale)))
-    };
-
-    // Content placement within the target (physical px): fill, or — for custom Fit —
+    // Content placement within the target (physical px): fill, or — for Fit —
     // uniform-scaled and centered with transparent margins.
-    const bool fitCentered = std::visit(overloaded{
-        [](const ImguiImageSize::Standard&) { return false; },
-        [](const ImguiImageSize::Scaled&)   { return false; },
-        [](const ImguiImageSize::Custom& custom) { return custom.fit == ImguiImageFit::Fit; },
-    }, sizeSpec);
-    const glm::vec2 naturalPhys = naturalLogical * scale;
     glm::vec2 contentPhys(rttPhys);
     glm::vec2 offset(0.0f);
     if (fitCentered)
@@ -158,7 +185,7 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize::
     Entry& entry = it->second;
     entry.lastUsedFrame = mFrameCounter;
 
-    const ImVec2 displaySize(targetLogical.x, targetLogical.y);
+    const ImVec2 displaySize(layout.displaySize.x, layout.displaySize.y);
 
     // Pick the handle to draw: this entry's own once it is ready, otherwise the best
     // ready handle for the SAME sprite (same texture/mesh) — see findReadyFallback for

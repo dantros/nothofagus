@@ -127,15 +127,21 @@ int main()
         Nothofagus::Visual animVisual = canvas.bellota(animBellotaId).visual();
         animVisual.opacity() = opacity;
 
-        ImGui::TextUnformatted("ImguiImageSize::Standard = real size; ImguiImageSize::Scaled rasterizes at the upscaled size:");
+        ImGui::TextUnformatted("LogicalPixels = real size (DPI-scaled); Scaled rasterizes at the upscaled size;");
+        ImGui::TextUnformatted("DevicePixels = exact physical pixels (1 texel -> 1 display pixel, ignores OS DPI):");
         ImGui::BeginGroup();
-        ImGui::TextUnformatted("standard");
-        canvas.imguiVisual(animVisual);                         // true 8x8 logical px
+        ImGui::TextUnformatted("logical");
+        canvas.imguiVisual(animVisual);                         // true 8x8 logical px (DPI-scaled)
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("scaled");
         canvas.imguiVisual(animVisual, Nothofagus::ImguiImageSize::Scaled{glm::vec2(scale)});    // crisp NxN
+        ImGui::EndGroup();
+        ImGui::SameLine();
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("device 32px");
+        canvas.imguiVisual(animVisual, Nothofagus::ImguiImageSize::DevicePixels{{32.0f, 32.0f}}); // exactly 32x32 screen px
         ImGui::EndGroup();
 
         ImGui::TextUnformatted("Custom-mesh (triangle) at custom size, Fit vs Stretch:");
