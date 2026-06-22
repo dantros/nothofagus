@@ -322,14 +322,14 @@ public:
      * correctly) and exposed to ImGui. A custom mesh is honored. Opacity modulates the
      * drawn image; visibility=false draws an empty cell.
      *
-     * @p sizeSpec controls the size. The default (`ImguiImageSize::Natural{}`) is the visual's
-     * real on-screen size — its mesh's bounding box, with no scale transform — in logical
-     * pixels (scales with OS DPI). Use `ImguiImageSize::Scaled{factor}` to up/downscale,
-     * `ImguiImageSize::LogicalPixels{size, fit}` for an explicit logical size, or
-     * `ImguiImageSize::DevicePixels{size, fit}` for an explicit size in physical/device pixels
-     * (1:1, bypassing OS DPI scaling). Logical-pixel targets are rasterized at size ×
-     * contentScale, so mesh geometry stays crisp at the displayed size (not bitmap-upscaled),
-     * and texture magnification honors the texture's own `magFilter`.
+     * @p sizeSpec has two orthogonal axes: the size source — `ImguiImageSize::Natural{}`
+     * (default; the visual's real size, its mesh's bounding box), `ImguiImageSize::Scaled{factor}`,
+     * or `ImguiImageSize::Explicit{size, fit}` — and the units (an `ImguiImageUnits` field on
+     * each, default `Logical`). `Logical` units scale with OS DPI and the target is rasterized
+     * at size × contentScale so mesh geometry stays crisp (not bitmap-upscaled); `Device` units
+     * are exact physical pixels (1 texel → 1 display pixel, bypassing OS DPI) — e.g.
+     * `Natural{ImguiImageUnits::Device}` shows a texture at its native resolution. Texture
+     * magnification honors the texture's own `magFilter`.
      *
      * Call inside an active ImGui frame (a run()/tick() update callback). The first frame a
      * given (Visual, size) is shown reserves layout only and appears next frame (one-frame

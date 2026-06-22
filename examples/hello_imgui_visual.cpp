@@ -127,33 +127,49 @@ int main()
         Nothofagus::Visual animVisual = canvas.bellota(animBellotaId).visual();
         animVisual.opacity() = opacity;
 
-        ImGui::TextUnformatted("Natural = real size (DPI-scaled); Scaled rasterizes at the upscaled size;");
-        ImGui::TextUnformatted("DevicePixels = exact physical pixels (1 texel -> 1 display pixel, ignores OS DPI):");
+        ImGui::TextUnformatted("Size source x units. Natural = real size; Scaled = xN; Device units = exact");
+        ImGui::TextUnformatted("physical px (1 texel -> 1 display pixel, ignores OS DPI):");
         ImGui::BeginGroup();
         ImGui::TextUnformatted("natural");
-        canvas.imguiVisual(animVisual);                         // true 8x8 logical px (DPI-scaled)
+        canvas.imguiVisual(animVisual);                         // Natural, Logical: true 8x8 logical px (DPI-scaled)
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("scaled");
-        canvas.imguiVisual(animVisual, Nothofagus::ImguiImageSize::Scaled{glm::vec2(scale)});    // crisp NxN
+        canvas.imguiVisual(animVisual, Nothofagus::ImguiImageSize::Scaled{glm::vec2(scale)});    // Scaled, Logical: crisp NxN
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
-        ImGui::TextUnformatted("device 32px");
-        canvas.imguiVisual(animVisual, Nothofagus::ImguiImageSize::DevicePixels{{32.0f, 32.0f}}); // exactly 32x32 screen px
+        ImGui::TextUnformatted("native (device)");
+        canvas.imguiVisual(animVisual, Nothofagus::ImguiImageSize::Natural{Nothofagus::ImguiImageUnits::Device}); // 1 texel -> 1 device px, no size needed
+        ImGui::EndGroup();
+        ImGui::SameLine();
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("zoom (device)");
+        canvas.imguiVisual(animVisual, Nothofagus::ImguiImageSize::Scaled{glm::vec2(4.0f), Nothofagus::ImguiImageUnits::Device}); // crisp 4x in device px
         ImGui::EndGroup();
 
-        ImGui::TextUnformatted("Custom-mesh (triangle) at an explicit logical size, Fit vs Stretch:");
+        ImGui::TextUnformatted("Custom-mesh (triangle) at an Explicit logical-px box, Fit vs Stretch:");
         Nothofagus::Visual triVisual = canvas.bellota(triBellotaId).visual();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("logical Fit");
-        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::LogicalPixels{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Fit});      // letterboxed, crisp edges
+        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::Explicit{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Fit});      // letterboxed, crisp edges
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("logical Stretch");
-        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::LogicalPixels{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Stretch});  // fills, distorts
+        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::Explicit{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Stretch});  // fills, distorts
+        ImGui::EndGroup();
+
+        ImGui::TextUnformatted("Same triangle at an Explicit device-px box (ignores OS DPI), Fit vs Stretch:");
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("device Fit");
+        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::Explicit{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Fit, Nothofagus::ImguiImageUnits::Device});      // letterboxed, exact device px
+        ImGui::EndGroup();
+        ImGui::SameLine();
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("device Stretch");
+        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::Explicit{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Stretch, Nothofagus::ImguiImageUnits::Device});  // fills the device box, distorts
         ImGui::EndGroup();
 
         ImGui::TextUnformatted("RGBA texture magFilter (2x2 magnified) - Nearest vs Linear:");

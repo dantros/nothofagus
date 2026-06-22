@@ -847,10 +847,10 @@ TEST_CASE("imguiVisual explicit logical size Fit vs Stretch on a custom mesh", "
         canvas.tick(16.0f, [&](float) {
             beginFullViewportWindow(canvas, "##visual_fit_stretch");
             canvas.imguiVisual(triVisual,
-                Nothofagus::ImguiImageSize::LogicalPixels{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Fit});
+                Nothofagus::ImguiImageSize::Explicit{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Fit});
             ImGui::SameLine();
             canvas.imguiVisual(triVisual,
-                Nothofagus::ImguiImageSize::LogicalPixels{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Stretch});
+                Nothofagus::ImguiImageSize::Explicit{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Stretch});
             endFullViewportWindow();
         });
 

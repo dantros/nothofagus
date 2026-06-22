@@ -64,29 +64,27 @@ namespace
         bool       fitCentered = false; ///< uniform-fit + center (else fill the box).
     };
 
-    // Logical modes (LogicalPixels / Scaled / Custom) size in logical px and rasterize at
-    // size × contentScale, so the image is DPI-scaled like the rest of the UI; ImGui then
-    // re-applies DPI to displaySize, giving a 1:1 RTT->screen mapping. DevicePixels sizes in
-    // physical px directly (1 unit = 1 display pixel): the RTT is rasterized at that exact
-    // size and displaySize divides DPI back out, bypassing OS content scaling.
+    // Resolve the two orthogonal axes (size source + units) into rasterization geometry.
+    // The size source picks the target extent (in its own units) and the fit; the units pick
+    // how that maps to the RTT and ImGui:
+    //  - Logical: rasterize at target × contentScale (DPI-scaled, crisp like the UI); ImGui
+    //    re-applies DPI to displaySize == target, giving a 1:1 RTT->screen mapping.
+    //  - Device: rasterize at the target px directly (1 texel -> 1 display pixel); displaySize
+    //    divides DPI back out so ImGui's re-multiply lands on the device size, bypassing DPI.
     ImageLayout resolveLayout(const ImguiImageSize::Spec& sizeSpec, glm::vec2 naturalLogical, float scale)
     {
-        const auto logical = [&](glm::vec2 targetLogical, bool fit) {
-            targetLogical = glm::max(targetLogical, glm::vec2(1.0f));
-            return ImageLayout{toPhysical(targetLogical * scale), naturalLogical * scale, targetLogical, fit};
-        };
-        return std::visit(overloaded{
-            [&](const ImguiImageSize::Natural&)         { return logical(naturalLogical, false); },
-            [&](const ImguiImageSize::Scaled& s)        { return logical(naturalLogical * s.factor, false); },
-            [&](const ImguiImageSize::LogicalPixels& l) { return logical(l.size, l.fit == ImguiImageFit::Fit); },
-            [&](const ImguiImageSize::DevicePixels& d) {
-                const glm::vec2 targetDevice = glm::max(d.size, glm::vec2(1.0f));
-                // naturalPhys is the natural extent in device px (1 texel -> 1 device px);
-                // displaySize divides DPI out so ImGui's re-multiply lands on targetDevice.
-                return ImageLayout{toPhysical(targetDevice), naturalLogical,
-                                   targetDevice / scale, d.fit == ImguiImageFit::Fit};
-            },
+        // (target extent in its own units, fit-centered, units) per size source.
+        struct Resolved { glm::vec2 target; bool fitCentered; ImguiImageUnits units; };
+        const Resolved r = std::visit(overloaded{
+            [&](const ImguiImageSize::Natural& n)  { return Resolved{naturalLogical, false, n.units}; },
+            [&](const ImguiImageSize::Scaled& s)   { return Resolved{naturalLogical * s.factor, false, s.units}; },
+            [&](const ImguiImageSize::Explicit& e) { return Resolved{e.size, e.fit == ImguiImageFit::Fit, e.units}; },
         }, sizeSpec);
+
+        const glm::vec2 target = glm::max(r.target, glm::vec2(1.0f));
+        if (r.units == ImguiImageUnits::Device)
+            return ImageLayout{toPhysical(target), naturalLogical, target / scale, r.fitCentered};
+        return ImageLayout{toPhysical(target * scale), naturalLogical * scale, target, r.fitCentered};
     }
 }
 
@@ -96,7 +94,7 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize::
     debugCheck(mAssets.textures().contains(texId.id), "imguiVisual: unknown TextureId");
 
     // DPI density to rasterize the off-screen target at (the same value the font atlas
-    // uses). DevicePixels deliberately bypasses it; see resolveLayout.
+    // uses). Device units deliberately bypass it; see resolveLayout.
     const float scale = std::max(contentScale, 1e-3f);
 
     // Natural size = the visual's real on-screen footprint (mesh AABB extent, logical px).

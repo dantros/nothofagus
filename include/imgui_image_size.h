@@ -6,61 +6,63 @@
 namespace Nothofagus
 {
 
-/// How a Visual's content maps into a `LogicalPixels` / `DevicePixels` target box when the
-/// content's aspect ratio differs from the box.
+/// How a Visual's content maps into an `Explicit` target box when the content's aspect
+/// ratio differs from the box.
 enum class ImguiImageFit
 {
     Stretch, ///< Map the content's bounding box onto the full target (may distort).
     Fit,     ///< Uniform scale to fit inside the target, centered (letterbox/pillarbox).
 };
 
-/// Sizing alternatives for `Canvas::imguiVisual`. `Natural` / `Scaled` / `LogicalPixels`
-/// size in **logical pixels** (they scale with the OS DPI, like the rest of the UI) and
-/// rasterize the internal render target at size × content scale, so mesh geometry stays
-/// crisp at the displayed size instead of being bitmap-upscaled. `DevicePixels` instead
-/// sizes in **physical/device pixels**, bypassing OS DPI scaling for a 1:1 mapping.
+/// The pixel units a size is expressed in — an orthogonal axis to the size source.
+enum class ImguiImageUnits
+{
+    Logical, ///< Logical pixels: scale with the OS DPI, like the rest of the UI.
+    Device,  ///< Physical/device pixels: 1 unit = 1 display pixel, bypassing OS DPI scaling.
+};
+
+/// Sizing alternatives for `Canvas::imguiVisual`, along two orthogonal axes: the **size
+/// source** (which variant alternative — `Natural` / `Scaled` / `Explicit`) and the
+/// **units** (the `ImguiImageUnits` field on each, default `Logical`).
 ///
-/// `LogicalPixels` and `DevicePixels` are the same shape (an explicit `size` + a `fit`),
-/// differing only in units; `Natural` is the no-size default and `Scaled` a multiplier on
-/// it. `fit` exists only on the two explicit-size modes (where the box can differ in aspect
-/// from the content). `ImguiImageSize::Spec` is the variant over the four.
+/// In `Logical` units the off-screen target is rasterized at size × content scale (the same
+/// DPI density the font atlas uses), so the image is DPI-scaled like the rest of the UI and
+/// mesh geometry stays crisp at the displayed size. In `Device` units the size is in physical
+/// pixels (1 texel → 1 display pixel), bypassing OS DPI — e.g. `Natural{Device}` shows a
+/// texture at its native resolution and `Scaled{4, Device}` is a crisp 4× pixel-art zoom.
+/// `ImguiImageSize::Spec` is the variant over the three size sources.
 namespace ImguiImageSize
 {
 
-/// The visual's natural size: its mesh AABB extent, in logical px (DPI-scaled). The default.
+/// The visual's natural size (its mesh AABB extent). In `Logical` units it is the real
+/// on-screen size (DPI-scaled); in `Device` units it is the texture's native resolution
+/// (1 texel → 1 display pixel). The default.
 struct Natural
 {
+    ImguiImageUnits units = ImguiImageUnits::Logical;
 };
 
-/// The natural size multiplied per-axis by `factor` before rasterization (up/downscale).
-/// Logical px (DPI-scaled).
+/// The natural size multiplied per-axis by `factor`. In `Device` units this is a crisp
+/// integer pixel-art zoom (exactly factor × native physical pixels).
 struct Scaled
 {
-    glm::vec2 factor{1.0f, 1.0f};
+    glm::vec2       factor{1.0f, 1.0f};
+    ImguiImageUnits units = ImguiImageUnits::Logical;
 };
 
-/// An explicit target size in **logical px** (DPI-scaled), with the content placed per `fit`.
-/// `Fit` letterboxes/pillarboxes to preserve the content's proportions; `Stretch` fills (distorts).
-struct LogicalPixels
+/// An explicit target size, with the content placed per `fit`. `Logical` units are
+/// DPI-scaled; `Device` units are exact physical pixels. `Fit` letterboxes/pillarboxes to
+/// preserve the content's proportions; `Stretch` fills the box (may distort).
+struct Explicit
 {
-    glm::vec2     size{1.0f, 1.0f};
-    ImguiImageFit fit = ImguiImageFit::Fit;
+    glm::vec2       size{1.0f, 1.0f};
+    ImguiImageFit   fit   = ImguiImageFit::Fit;
+    ImguiImageUnits units = ImguiImageUnits::Logical;
 };
 
-/// An explicit target size in **physical/device pixels** — 1 unit = 1 display pixel,
-/// bypassing OS DPI scaling. A 100×100 texture shown at `{100, 100}` occupies exactly
-/// 100×100 screen pixels on any display (so on HiDPI it appears physically smaller than a
-/// logical-pixel image of the same number). `fit` places the content when its aspect
-/// differs from the box.
-struct DevicePixels
-{
-    glm::vec2     size{1.0f, 1.0f};
-    ImguiImageFit fit = ImguiImageFit::Fit;
-};
-
-/// The sizing spec passed to `Canvas::imguiVisual` — a variant over the four alternatives.
-/// Default-constructs (via the first alternative) to `Natural`.
-using Spec = std::variant<Natural, Scaled, LogicalPixels, DevicePixels>;
+/// The sizing spec passed to `Canvas::imguiVisual` — a variant over the three size sources.
+/// Default-constructs (via the first alternative) to `Natural` in `Logical` units.
+using Spec = std::variant<Natural, Scaled, Explicit>;
 
 } // namespace ImguiImageSize
 
