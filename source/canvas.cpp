@@ -2,6 +2,7 @@
 #include "frame_runner.h"
 #include "asset_registry.h"
 #include "imgui_rtt_manager.h"
+#include "imgui_image_manager.h"
 #include "check.h"
 #include "embedded_fonts.h"
 #include <imgui.h>
@@ -72,7 +73,8 @@ struct Canvas::Implementation
           assets(frameRunner.backend()),
           imguiRtt(frameRunner.backend(), assets.renderTargets(),
                    makeEmbeddedFontFamily(),
-                   imguiFontSize)
+                   imguiFontSize),
+          imguiImages(frameRunner.backend(), assets)
     {
         // Main UI font bake — needs the backend's ImGui renderer to be live,
         // which it is once FrameRunner's ctor has returned. HiDPI is applied at
@@ -81,9 +83,10 @@ struct Canvas::Implementation
         imguiRtt.fonts().initialize();
     }
 
-    FrameRunner      frameRunner;
-    AssetRegistry    assets;
-    ImguiRttManager  imguiRtt;
+    FrameRunner       frameRunner;
+    AssetRegistry     assets;
+    ImguiRttManager   imguiRtt;
+    ImguiImageManager imguiImages;
 };
 
 Canvas::Canvas(
@@ -105,6 +108,7 @@ Canvas::~Canvas()
     // imguiRtt and assets explicitly here; the by-value members inside
     // Implementation then destroy in reverse declaration order
     // (imguiRtt → assets → frameRunner, where the last one shuts the backend down).
+    mImplPtr->imguiImages.releaseAll();
     mImplPtr->imguiRtt.releaseAll();
     mImplPtr->assets.freeAllGpuResources();
 }
@@ -263,6 +267,13 @@ void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, Im
         });
 }
 
+void Canvas::imguiVisual(const Visual& visual, const ImguiImageSize::Spec& sizeSpec)
+{
+    // Rasterize the off-screen image at the same DPI density the font atlas uses
+    // (style.FontScaleDpi == contentScale()), so logical-pixel sizes stay crisp.
+    mImplPtr->imguiImages.imguiVisual(visual, sizeSpec, mImplPtr->frameRunner.contentScale());
+}
+
 // ---------------------------------------------------------------------------
 // ImGui fonts — forward to mImplPtr->imguiRtt.fonts() (or wrap in imgui.h calls)
 // ---------------------------------------------------------------------------
@@ -343,35 +354,35 @@ void Canvas::run()
 {
     auto update = [](float){};
     Controller controller;
-    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, update, controller);
+    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, update, controller);
 }
 
 void Canvas::run(std::function<void(float deltaTime)> update)
 {
     Controller controller;
-    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, update, controller);
+    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, update, controller);
 }
 
 void Canvas::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
-    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, update, controller);
+    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, update, controller);
 }
 
 void Canvas::tick(float deltaTime, std::function<void(float)> update, Controller& controller)
 {
-    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, deltaTime, update, controller);
+    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, deltaTime, update, controller);
 }
 
 void Canvas::tick(float deltaTime, std::function<void(float)> update)
 {
     Controller controller;
-    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, deltaTime, update, controller);
+    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, deltaTime, update, controller);
 }
 
 void Canvas::tick(float deltaTime)
 {
     Controller controller;
-    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, deltaTime, [](float){}, controller);
+    mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, deltaTime, [](float){}, controller);
 }
 
 void Canvas::close()

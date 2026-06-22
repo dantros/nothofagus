@@ -452,13 +452,14 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
     }
     {
         VkDescriptorPoolSize imguiPoolSizes[2]{
-            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 100},
+            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                 kImguiImageDescriptorPoolSize + kImguiImageDescriptorHeadroom},
             {VK_DESCRIPTOR_TYPE_SAMPLER,       IMGUI_IMPL_VULKAN_MINIMUM_SAMPLER_POOL_SIZE},
         };
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-        poolInfo.maxSets       = 100;
+        poolInfo.maxSets       = kImguiImageDescriptorPoolSize + kImguiImageDescriptorHeadroom;
         poolInfo.poolSizeCount = 2;
         poolInfo.pPoolSizes    = imguiPoolSizes;
         if (vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &mImguiDescriptorPool) != VK_SUCCESS)
@@ -765,6 +766,24 @@ void VulkanBackend::flushPendingDeletions(FrameData& frame)
     }
     frame.pendingTextureDeletions.clear();
 
+    // Flat-2D companions must be destroyed before the render targets: a flat-2D
+    // VkImageView is created from the RT's colorImage, and a view must not outlive
+    // its image (VUID-vkDestroyImage-image-01000). Both are queued to the same frame
+    // slot when an imguiVisual entry is retired, so the order here is what matters.
+    for (auto& pending : frame.pendingFlat2DDeletions)
+    {
+        if (pending.descriptorSet != VK_NULL_HANDLE)
+        {
+            ImGui_ImplVulkan_RemoveTexture(pending.descriptorSet);
+            if (mFlat2DDescriptorsLive > 0) --mFlat2DDescriptorsLive;
+        }
+        if (pending.imageView != VK_NULL_HANDLE)
+            vkDestroyImageView(mDevice, pending.imageView, nullptr);
+    }
+    frame.pendingFlat2DDeletions.clear();
+    if (mFlat2DDescriptorsLive < kImguiImageDescriptorPoolSize)
+        mLoggedFlat2DExhaustion = false;   // recovered -> let it warn again next time
+
     for (auto& pending : frame.pendingRenderTargetDeletions)
     {
         vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &pending.proxyDescriptorSet);
@@ -785,6 +804,24 @@ void VulkanBackend::flushPendingDeletions(FrameData& frame)
 void VulkanBackend::shutdown()
 {
     vkDeviceWaitIdle(mDevice);
+
+    // Flat-2D ImGui handles must be removed while the ImGui Vulkan backend is still
+    // alive (ImGui_ImplVulkan_RemoveTexture), and before ImGui_ImplVulkan_Shutdown().
+    // Device is idle, so destroy immediately.
+    auto destroyFlat2D = [this](VkDescriptorSet set, VkImageView view)
+    {
+        if (set  != VK_NULL_HANDLE) ImGui_ImplVulkan_RemoveTexture(set);
+        if (view != VK_NULL_HANDLE) vkDestroyImageView(mDevice, view, nullptr);
+    };
+    for (auto& frame : mFrames)
+    {
+        for (auto& pending : frame.pendingFlat2DDeletions)
+            destroyFlat2D(pending.descriptorSet, pending.imageView);
+        frame.pendingFlat2DDeletions.clear();
+    }
+    for (auto& [id, flat] : mFlat2Ds)
+        destroyFlat2D(flat.descriptorSet, flat.view);
+    mFlat2Ds.clear();
 
     ImGui_ImplVulkan_Shutdown();
 
@@ -1674,6 +1711,94 @@ void VulkanBackend::freeRenderTarget(DRenderTarget renderTarget, DTexture proxyT
         rt.depthImage, rt.depthAlloc
     });
     mRenderTargets.erase(rtIt);
+
+    // Defensive: a flat-2D companion views this RT's color image, so it must not
+    // outlive it. Managers normally release it first; clean up any stragglers here.
+    auto flatIt = mFlat2Ds.find(renderTarget.id);
+    if (flatIt != mFlat2Ds.end())
+    {
+        mFrames[lastSubmittedSlot].pendingFlat2DDeletions.push_back(
+            {flatIt->second.descriptorSet, flatIt->second.view});
+        mFlat2Ds.erase(flatIt);
+    }
+}
+
+std::uint64_t VulkanBackend::acquireFlat2DImguiHandle(DRenderTarget renderTarget)
+{
+    auto rtIt = mRenderTargets.find(renderTarget.id);
+    if (rtIt == mRenderTargets.end()) return 0;
+
+    auto existing = mFlat2Ds.find(renderTarget.id);
+    if (existing != mFlat2Ds.end() && existing->second.descriptorSet != VK_NULL_HANDLE)
+        return (std::uint64_t)existing->second.descriptorSet;   // reuse, no new alloc
+
+    // ImGui_ImplVulkan_AddTexture aborts (check_vk_result) if the pool is exhausted, so we
+    // must refuse *before* calling it. Over the budget -> log once + no-op (return 0). The
+    // image manager treats a 0 handle as "not ready" and simply draws nothing for that
+    // visual that frame; nothing crashes, and it recovers once descriptors free up.
+    if (mFlat2DDescriptorsLive >= kImguiImageDescriptorPoolSize)
+    {
+        if (not mLoggedFlat2DExhaustion)
+        {
+            spdlog::error("imguiVisual: ImGui image descriptor budget reached ({} live, cap {}). "
+                          "Extra images are skipped until some are released. Raise "
+                          "kImguiImageDescriptorPoolSize in vulkan_backend.h if you need more.",
+                          mFlat2DDescriptorsLive, kImguiImageDescriptorPoolSize);
+            mLoggedFlat2DExhaustion = true;
+        }
+        return 0;
+    }
+
+    VulkanRenderTarget& rt = rtIt->second;
+
+    // A 2D (non-array) view of the RT color image (layer 0) — ImGui samples a flat 2D.
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image                           = rt.colorImage;
+    viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format                          = VK_FORMAT_R8G8B8A8_UNORM;
+    viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.levelCount     = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount     = 1;
+
+    VkImageView view = VK_NULL_HANDLE;
+    if (vkCreateImageView(mDevice, &viewInfo, nullptr, &view) != VK_SUCCESS)
+    {
+        spdlog::error("imguiVisual: vkCreateImageView failed for the flat-2D handle; "
+                      "skipping this image (likely out of GPU memory).");
+        return 0;   // no-op: manager draws nothing for this visual, retries next frame
+    }
+
+    // The RT color image stays in SHADER_READ_ONLY_OPTIMAL between RTT passes. No sampler:
+    // the 2-arg ImGui_ImplVulkan_AddTexture binds only a SAMPLED_IMAGE; ImGui supplies the
+    // sampler from its own descriptors (Nearest/Linear via the DrawCallback_SetSampler* path
+    // in ImguiImageManager). The obsolete 3-arg overload would just discard a sampler arg.
+    VkDescriptorSet descriptorSet =
+        ImGui_ImplVulkan_AddTexture(view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    mFlat2Ds[renderTarget.id] = Flat2D{view, descriptorSet};
+    ++mFlat2DDescriptorsLive;
+    return (std::uint64_t)descriptorSet;
+}
+
+void VulkanBackend::resolveRenderTargetFlat2D(DRenderTarget /*renderTarget*/)
+{
+    // No-op: the 2D view aliases the RT color image directly (no copy needed), and the
+    // image is left in SHADER_READ_ONLY_OPTIMAL by endRttPass.
+}
+
+void VulkanBackend::releaseFlat2DImguiHandle(DRenderTarget renderTarget, std::uint64_t /*handle*/)
+{
+    auto flatIt = mFlat2Ds.find(renderTarget.id);
+    if (flatIt == mFlat2Ds.end()) return;
+
+    // Defer destruction until the GPU is no longer using the descriptor (it may be
+    // referenced by an in-flight command buffer from a previous frame).
+    const int lastSubmittedSlot = (mCurrentFrame - 1 + MAX_FRAMES_IN_FLIGHT) % MAX_FRAMES_IN_FLIGHT;
+    mFrames[lastSubmittedSlot].pendingFlat2DDeletions.push_back(
+        {flatIt->second.descriptorSet, flatIt->second.view});
+    mFlat2Ds.erase(flatIt);
 }
 
 // ---------------------------------------------------------------------------

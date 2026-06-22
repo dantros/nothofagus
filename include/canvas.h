@@ -15,6 +15,7 @@
 #include "imgui_draw_callback.h"
 #include "imgui_font_id.h"
 #include "imgui_font_source_id.h"
+#include "imgui_image_size.h"
 #include "markdown_renderer.h"
 #include <memory>
 #include <functional>
@@ -307,6 +308,35 @@ public:
      * context. Widgets inside the RTT are displayed but not interactive.
      */
     void renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback);
+
+    /**
+     * @brief Draw a Visual's appearance inside the current ImGui window (`ImGui::Image`).
+     *
+     * The entry point is a Visual (texture + optional mesh + current layer + opacity),
+     * NOT a Bellota — placement (transform / depth) is meaningless in an ImGui cell, so
+     * the image aligns to the GUI/text layout. Pass `canvas.bellota(id).visual()` to show
+     * a bellota's current appearance, or a standalone `Visual{textureId}`.
+     *
+     * Works for every texture kind: the Visual is rendered into an engine-managed
+     * off-screen target (Direct / Indirect / tile-map / animation frame all resolve
+     * correctly) and exposed to ImGui. A custom mesh is honored. Opacity modulates the
+     * drawn image; visibility=false draws an empty cell.
+     *
+     * @p sizeSpec has two orthogonal axes: the size source — `ImguiImageSize::Natural{}`
+     * (default; the visual's real size, its mesh's bounding box), `ImguiImageSize::Scaled{factor}`,
+     * or `ImguiImageSize::Explicit{size, fit}` — and the units (an `ImguiImageUnits` field on
+     * each, default `Logical`). `Logical` units scale with OS DPI and the target is rasterized
+     * at size × contentScale so mesh geometry stays crisp (not bitmap-upscaled); `Device` units
+     * are exact physical pixels (1 texel → 1 display pixel, bypassing OS DPI) — e.g.
+     * `Natural{ImguiImageUnits::Device}` shows a texture at its native resolution. Texture
+     * magnification honors the texture's own `magFilter`.
+     *
+     * Call inside an active ImGui frame (a run()/tick() update callback). The first frame a
+     * given (Visual, size) is shown reserves layout only and appears next frame (one-frame
+     * warm-up).
+     */
+    void imguiVisual(const Visual& visual,
+                     const ImguiImageSize::Spec& sizeSpec = ImguiImageSize::Natural{});
 
     /**
      * @brief Register a TTF buffer as a new font source.

@@ -44,6 +44,7 @@ extern template class ExplorerManager<SparseLand>;
 // at namespace scope stay out of the public-API surface.
 class AssetRegistry;
 class ImguiRttManager;
+class ImguiImageManager;
 
 /**
  * @class FrameRunner
@@ -144,12 +145,14 @@ public:
 
     // ----- Lifecycle -----
     /// Runs the main loop. Threads through the Canvas-owned asset registry and
-    /// ImGui RTT manager so runOneFrame doesn't need direct member access.
+    /// ImGui RTT / image managers so runOneFrame doesn't need direct member access.
     void run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+             ImguiImageManager& imguiImages,
              std::function<void(float deltaTime)> update, Controller& controller);
 
     /// Execute a single frame with a caller-supplied delta time (in milliseconds).
     void tick(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+              ImguiImageManager& imguiImages,
               float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
     /// Captures the last rendered frame visible to the user as a DirectTexture (RGBA).
@@ -220,6 +223,7 @@ private:
     void feedGamepadInput(Controller& simController);
     void ensureSessionStarted(Controller& controller);
     void runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                     ImguiImageManager& imguiImages,
                      float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
     /// Unified producer for both modes. `Single` (run/tick) polls input, opens the
@@ -228,11 +232,12 @@ private:
     /// into the reused `mSnapshot`, and returns it. `Threaded` (commit) stamps the
     /// seq first, runs `update` lock-free, then under `mImguiMutex` runs `uiCallback`
     /// on the sim-UI context + clones its draw data into the triple-buffer write
-    /// slot, projects, publishes, and returns that slot. `canvas`, `imguiRtt`, and
-    /// `controller` are used only in `Single` (the sim thread has none) — pass
-    /// `nullptr` in `Threaded`; `uiCallback` is empty in `Single`.
+    /// slot, projects, publishes, and returns that slot. `canvas`, `imguiRtt`,
+    /// `imguiImages`, and `controller` are used only in `Single` (the sim thread has
+    /// none) — pass `nullptr` in `Threaded`; `uiCallback` is empty in `Single`.
     const RenderSnapshot& produce(FrameMode mode, Canvas* canvas, AssetRegistry& assets,
-                                  ImguiRttManager* imguiRtt, float deltaTimeMS,
+                                  ImguiRttManager* imguiRtt, ImguiImageManager* imguiImages,
+                                  float deltaTimeMS,
                                   std::function<void(float)> update,
                                   std::function<void(float)> uiCallback,
                                   Controller* controller);
@@ -246,15 +251,19 @@ private:
     /// wall-clock dt, runs the render core under `mThreadedAssetMutex`, renders the
     /// sim's cloned draw data under `mImguiMutex`, swaps, and refreshes the running
     /// flag. The `deltaTimeMS` argument is used only in `Single`; `Threaded`
-    /// recomputes it from the window clock.
+    /// recomputes it from the window clock. `imguiImages` is null in `Threaded`
+    /// (imguiVisual is single-threaded only for now).
     void consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                 ImguiImageManager* imguiImages,
                  const RenderSnapshot& snapshot, float deltaTimeMS, Controller& controller);
 
     /// The container-touching core of a rendered frame: deferred frees, GPU
-    /// upload, RTT passes, and the main draw. Excludes the vsync swap and the
-    /// ImGui render. On the threaded path the caller holds `mThreadedAssetMutex`
-    /// around this; single-threaded there is no contention.
+    /// upload, RTT passes (including imguiVisual's internal RTTs, resolved +
+    /// GC'd via `imguiImages` when non-null), and the main draw. Excludes the
+    /// vsync swap and the ImGui render. On the threaded path the caller holds
+    /// `mThreadedAssetMutex` around this; single-threaded there is no contention.
     void renderSnapshotContents(AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                                ImguiImageManager* imguiImages,
                                 const RenderSnapshot& snapshot, float deltaTimeMS);
 
     /// Gather the queued RTT passes (`mPendingRttPasses`) into POD draw lists on

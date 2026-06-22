@@ -89,6 +89,7 @@ add_library(nothofagus
     "source/mesh_container.cpp"
     "source/render_target_container.cpp"
     "source/imgui_rtt_manager.cpp"
+    "source/imgui_image_manager.cpp"
     "source/imgui_font_manager.cpp"
     ${NOTHOFAGUS_BACKEND_SRC}
     "source/bellota_to_mesh.cpp"

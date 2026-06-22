@@ -37,6 +37,12 @@ public:
     DTexture      getRenderTargetTexture(DRenderTarget renderTarget);
     void          freeRenderTarget(DRenderTarget renderTarget, DTexture proxyTexture);
 
+    // Flat-2D ImGui handle: a companion GL_TEXTURE_2D (+ FBO) blitted from the RTT's
+    // GL_TEXTURE_2D_ARRAY color attachment, since ImGui binds textures as GL_TEXTURE_2D.
+    std::uint64_t acquireFlat2DImguiHandle(DRenderTarget renderTarget);
+    void          resolveRenderTargetFlat2D(DRenderTarget renderTarget);
+    void          releaseFlat2DImguiHandle(DRenderTarget renderTarget, std::uint64_t handle);
+
     void beginFrame(glm::vec3 clearColor, ViewportRect gameViewport,
                     int framebufferWidth, int framebufferHeight);
     void imguiNewFrame();
@@ -101,6 +107,10 @@ private:
     std::unordered_map<std::size_t, OpenGLTexture>      mTextures;
     std::unordered_map<std::size_t, OpenGLRenderTarget> mRenderTargets;
     std::size_t mNextId = 0;
+
+    // Per-render-target flat-2D ImGui companions (lazy). Keyed by DRenderTarget::id.
+    struct Flat2D { unsigned int texture = 0; unsigned int fbo = 0; glm::ivec2 size{0, 0}; };
+    std::unordered_map<std::size_t, Flat2D> mFlat2Ds;
 
     unsigned int compileShader(unsigned int type, const std::string& source);
     unsigned int createShaderProgram(unsigned int vertexShader, unsigned int fragmentShader);

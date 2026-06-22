@@ -8,6 +8,7 @@
 #include "controller.h"
 #include "asset_registry.h"
 #include "imgui_rtt_manager.h"
+#include "imgui_image_manager.h"
 #include "cursor_mapping.h"
 #include "backends/render_backend_select.h"
 #define GLM_ENABLE_EXPERIMENTAL
@@ -324,20 +325,22 @@ static void drawItems(
 }
 
 void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                                     ImguiImageManager& imguiImages,
                                      float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ZoneScopedN("runOneFrame");
 
     // Single-threaded frame: producer and consumer back-to-back on this thread.
-    const RenderSnapshot& snapshot = produce(FrameMode::Single, &canvas, assets, &imguiRtt,
+    const RenderSnapshot& snapshot = produce(FrameMode::Single, &canvas, assets, &imguiRtt, &imguiImages,
                                              deltaTimeMS, std::move(update), {}, &controller);
-    consume(FrameMode::Single, assets, imguiRtt, snapshot, deltaTimeMS, controller);
+    consume(FrameMode::Single, assets, imguiRtt, &imguiImages, snapshot, deltaTimeMS, controller);
 
     FrameMark;
 }
 
 const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, AssetRegistry& assets,
-                                           ImguiRttManager* imguiRtt, float deltaTimeMS,
+                                           ImguiRttManager* imguiRtt, ImguiImageManager* imguiImages,
+                                           float deltaTimeMS,
                                            std::function<void(float)> update,
                                            std::function<void(float)> uiCallback,
                                            Controller* controller)
@@ -455,6 +458,9 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
         controller->processInputs();
     }
 
+    // Advance the ImGui-image clock before the user update issues imguiVisual() calls.
+    imguiImages->beginFrame();
+
     // Drain any deferred ImGui font ops (bake-on-miss / remove) accumulated
     // since the previous frame. Atlas is guaranteed unlocked here — between
     // the previous frame's ImGui::Render() and this frame's ImGui::NewFrame().
@@ -515,6 +521,8 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
     {
         ZoneScopedN("RttGather");
         buildRttPasses(assets, mSnapshot.rttPasses);
+        // Internal RTT passes for visuals drawn via imguiVisual() this frame.
+        imguiImages->appendInternalPasses(mSnapshot.rttPasses);
     }
 
     return mSnapshot;
@@ -568,6 +576,7 @@ void FrameRunner::drainPendingFrees(AssetRegistry& assets, std::uint64_t lastRen
 }
 
 void FrameRunner::renderSnapshotContents(AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                                         ImguiImageManager* imguiImages,
                                          const RenderSnapshot& snapshot, float deltaTimeMS)
 {
     // Everything here touches the asset containers (`mTextures`/`mMeshes`,
@@ -632,6 +641,13 @@ void FrameRunner::renderSnapshotContents(AssetRegistry& assets, ImguiRttManager&
             mBackend.endRttPass();
         }
 
+        // The internal RTTs for imguiVisual() were just drawn (they are ordinary RTT
+        // passes); refresh their flat-2D and (lazily) create the ImGui handles the main
+        // UI samples, then GC stale entries. Runs before the main ImGui render below.
+        // Null on the threaded path (imguiVisual is single-threaded only for now).
+        if (imguiImages)
+            imguiImages->resolveAndGarbageCollect();
+
         // ImGui-to-RTT passes — each uses a secondary ImGuiContext owned by the
         // render target, rendered with a pipeline compiled against the RTT render
         // pass (Vulkan) or into the RTT FBO (OpenGL). Lazy context creation on
@@ -648,6 +664,7 @@ void FrameRunner::renderSnapshotContents(AssetRegistry& assets, ImguiRttManager&
 }
 
 void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                          ImguiImageManager* imguiImages,
                           const RenderSnapshot& snapshot, float deltaTimeMS, Controller& controller)
 {
     if (mode == FrameMode::Threaded)
@@ -708,7 +725,7 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
         {
             ZoneScopedN("AssetLockedRender");
             std::lock_guard<std::mutex> assetLock(mThreadedAssetMutex);
-            renderSnapshotContents(assets, imguiRtt, snapshot, deltaTimeMS);
+            renderSnapshotContents(assets, imguiRtt, imguiImages, snapshot, deltaTimeMS);
         }
 
         {
@@ -742,7 +759,7 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
 
     // FrameMode::Single — the producer (buildSnapshot) already opened the GPU frame
     // and the main-context ImGui frame, so the consumer just renders + presents.
-    renderSnapshotContents(assets, imguiRtt, snapshot, deltaTimeMS);
+    renderSnapshotContents(assets, imguiRtt, imguiImages, snapshot, deltaTimeMS);
 
     if (mStats)
     {
@@ -768,6 +785,7 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
 
 
 void FrameRunner::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                             ImguiImageManager& imguiImages,
                              std::function<void(float deltaTime)> update, Controller& controller)
 {
     // Always call beginSession — it resets the window close flag and rebinds
@@ -785,15 +803,16 @@ void FrameRunner::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& im
     while (mWindow->isRunning())
     {
         performanceMonitor.update(mWindow->getTime());
-        runOneFrame(canvas, assets, imguiRtt, performanceMonitor.getMS(), update, controller);
+        runOneFrame(canvas, assets, imguiRtt, imguiImages, performanceMonitor.getMS(), update, controller);
     }
 }
 
 void FrameRunner::tick(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                              ImguiImageManager& imguiImages,
                               float deltaTimeMS, std::function<void(float)> update, Controller& controller)
 {
     ensureSessionStarted(controller);
-    runOneFrame(canvas, assets, imguiRtt, deltaTimeMS, update, controller);
+    runOneFrame(canvas, assets, imguiRtt, imguiImages, deltaTimeMS, update, controller);
 }
 
 void FrameRunner::close()
@@ -878,7 +897,7 @@ void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
 {
     // Sim thread: CPU only, no GL. canvas/imguiRtt/controller are unused on this
     // path (no explorers, font drain, or input poll on the sim thread).
-    produce(FrameMode::Threaded, nullptr, assets, nullptr, deltaTimeMS,
+    produce(FrameMode::Threaded, nullptr, assets, nullptr, nullptr, deltaTimeMS,
             std::move(update), std::move(uiCallback), nullptr);
 }
 
@@ -887,7 +906,7 @@ void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
 {
     // Sim thread (M5): feed the sim controller from the latest gamepad snapshot
     // (inside produce, before update) so the game `update` sees the gamepad. No ImGui.
-    produce(FrameMode::Threaded, nullptr, assets, nullptr, deltaTimeMS,
+    produce(FrameMode::Threaded, nullptr, assets, nullptr, nullptr, deltaTimeMS,
             std::move(update), {}, &simController);
 }
 
@@ -900,7 +919,7 @@ void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& im
     const RenderSnapshot& snapshot = mTripleBuffer.readSlot();
 
     // dt is recomputed from the window clock inside the Threaded arm.
-    consume(FrameMode::Threaded, assets, imguiRtt, snapshot, 0.0f, controller);
+    consume(FrameMode::Threaded, assets, imguiRtt, nullptr, snapshot, 0.0f, controller);
 
     FrameMark;
 }

@@ -42,7 +42,7 @@ namespace Nothofagus
     /* Check for the given condition to be valid on debug builds, throws otherwise. */
     inline void debugCheck(bool condition, const std::string& errorMessage)
     {
-        #ifdef _DEBUG
+        #ifndef NDEBUG
         runtimeCheck(condition, errorMessage);
         #endif
     }
