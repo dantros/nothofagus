@@ -856,3 +856,36 @@ TEST_CASE("imguiVisual custom size Fit vs Stretch on a custom mesh", "[rendering
 
     checkAgainstGolden("imgui_visual_custom_fit_stretch", canvas.takeScreenshot());
 }
+
+TEST_CASE("imguiVisual draws a DirectTexture honoring magFilter", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(110, 56);
+
+    // A raw RGBA DirectTexture (not paletted): 2x2 four-color quadrants. Unlike an
+    // IndirectTexture — which is integer-indexed (texelFetch) and forced to Nearest —
+    // an RGBA texture honors its magFilter, so magnifying the same source as Nearest
+    // vs Linear shows hard pixels vs a smooth blend. This golden locks the
+    // DirectTexture path through imguiVisual and the magFilter honoring inside it.
+    Nothofagus::DirectTexture rgbaTex(glm::ivec2{2, 2});
+    rgbaTex.setColor(0, 0, glm::vec4(1.0f, 0.2f, 0.2f, 1.0f)); // red
+    rgbaTex.setColor(1, 0, glm::vec4(0.2f, 1.0f, 0.3f, 1.0f)); // green
+    rgbaTex.setColor(0, 1, glm::vec4(0.3f, 0.5f, 1.0f, 1.0f)); // blue
+    rgbaTex.setColor(1, 1, glm::vec4(1.0f, 0.9f, 0.2f, 1.0f)); // yellow
+
+    auto nearestTexId = canvas.addTexture(rgbaTex);            // default Nearest
+    auto linearTexId  = canvas.addTexture(rgbaTex);
+    canvas.setTextureMagFilter(linearTexId, Nothofagus::TextureSampleMode::Linear);
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) {
+            beginFullViewportWindow(canvas, "##visual_direct_texture");
+            canvas.imguiVisual(Nothofagus::Visual{nearestTexId},
+                               Nothofagus::ImguiImageSize::Scaled{glm::vec2(20.0f)}); // crisp blocks
+            ImGui::SameLine();
+            canvas.imguiVisual(Nothofagus::Visual{linearTexId},
+                               Nothofagus::ImguiImageSize::Scaled{glm::vec2(20.0f)}); // smooth blend
+            endFullViewportWindow();
+        });
+
+    checkAgainstGolden("imgui_visual_direct_texture", canvas.takeScreenshot());
+}
