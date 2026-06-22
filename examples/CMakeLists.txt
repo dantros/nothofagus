@@ -58,6 +58,12 @@ add_executable(hello_render_to_texture
 set_property(TARGET hello_render_to_texture PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_render_to_texture PRIVATE nothofagus)
 
+add_executable(hello_imgui_visual
+    "hello_imgui_visual.cpp"
+)
+set_property(TARGET hello_imgui_visual PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_imgui_visual PRIVATE nothofagus)
+
 add_executable(hello_nested_render_targets
     "hello_nested_render_targets.cpp"
 )

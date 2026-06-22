@@ -56,7 +56,8 @@ concept RenderBackend = requires(
     const SpriteDrawParams& params,
     ImDrawData* imguiData,
     const std::vector<glm::vec4>& paletteColors,
-    std::span<const std::uint8_t> mapData)
+    std::span<const std::uint8_t> mapData,
+    std::uint64_t imguiTextureHandle)
 {
     // Lifecycle
     { backend.initialize(nativeWindowHandle, canvasSize) } -> std::same_as<void>;
@@ -82,6 +83,17 @@ concept RenderBackend = requires(
     // remove it from its internal texture map without calling glDeleteTextures on it
     // (the GL handle is owned by the render target's color attachment and freed by freeRenderTarget).
     { backend.freeRenderTarget(renderTarget, dtexture)         } -> std::same_as<void>;
+
+    // Flat-2D ImGui handle for a render target's color attachment. Engine textures
+    // and RTT color attachments are 2D *arrays*; ImGui samples a flat 2D, so each
+    // backend exposes a flat-2D-sampleable handle (an ImTextureID, carried as a raw
+    // uint64 to keep imgui.h out of this header). All render-side, keyed by DRenderTarget.
+    //   acquire  — create (once) + return the handle for the current ImGui context.
+    //   resolve  — refresh the flat-2D pixels from the RTT (OpenGL blit; no-op elsewhere).
+    //   release  — destroy the handle and any backing flat-2D resources.
+    { backend.acquireFlat2DImguiHandle(renderTarget)              } -> std::same_as<std::uint64_t>;
+    { backend.resolveRenderTargetFlat2D(renderTarget)            } -> std::same_as<void>;
+    { backend.releaseFlat2DImguiHandle(renderTarget, imguiTextureHandle) } -> std::same_as<void>;
 
     // Per-frame rendering
     { backend.beginFrame(clearColor3, viewport, framebufferWidth, framebufferHeight) } -> std::same_as<void>;
