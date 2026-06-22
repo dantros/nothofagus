@@ -12,6 +12,7 @@
 #include "direct_texture_io.h"
 #include "direct_texture_compare.h"
 #include <string>
+#include <vector>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -745,4 +746,113 @@ TEST_CASE("Tilemap text renders multiple lines", "[rendering][text]")
         canvas.tick(16.0f);
 
     checkAgainstGolden("tilemap_text_multi_line", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// imguiVisual — draw a Visual's appearance inside an ImGui window (ImGui::Image).
+//
+// The engine renders the (paletted, array) visual into an internal render target
+// and exposes that as a flat-2D handle to ImGui. These goldens lock the whole
+// path: the off-screen rasterization at the resolved size, the size modes
+// (Scaled / Custom Fit / Custom Stretch), and the texture's magFilter honoring
+// (Nearest -> crisp pixel-art magnification).
+//
+// imguiVisual has a one-frame warm-up (the handle is created render-side and read
+// back the next frame) on top of ImGui's dynamic-atlas warm-up, so — like the
+// other ImGui goldens — these warm up by kImguiWarmupFrames before the capture.
+// The visual is drawn every warm-up frame so its entry stays live (never GC'd).
+// ---------------------------------------------------------------------------
+
+// 8x8 four-color quadrant texture (palette indices 1..4), so a magnified or
+// mesh-mapped render is clearly recognizable. Index 0 is transparent.
+static Nothofagus::IndirectTexture makeQuadrantTexture()
+{
+    Nothofagus::ColorPallete palette({
+        {0.0f, 0.0f, 0.0f, 0.0f},  // 0: transparent
+        {1.0f, 0.2f, 0.2f, 1.0f},  // 1: red
+        {0.2f, 1.0f, 0.3f, 1.0f},  // 2: green
+        {0.4f, 0.6f, 1.0f, 1.0f},  // 3: blue
+        {1.0f, 0.9f, 0.2f, 1.0f},  // 4: yellow
+    });
+    Nothofagus::IndirectTexture tex({8, 8}, glm::vec4(0.0f));
+    tex.setPallete(palette);
+    std::vector<std::uint8_t> pixels(64, 0);
+    for (int y = 0; y < 8; ++y)
+        for (int x = 0; x < 8; ++x)
+            pixels[y * 8 + x] = static_cast<std::uint8_t>(1 + (x / 4) + 2 * (y / 4)); // 1..4 quadrants
+    tex.setPixels(pixels, 0);
+    return tex;
+}
+
+// One borderless ImGui window filling the game viewport, so the captured frame is
+// exactly the image(s) drawn inside it.
+static void beginFullViewportWindow(const Nothofagus::Canvas& canvas, const char* id)
+{
+    const Nothofagus::ImguiOverlayRect rect = canvas.imguiOverlayViewport();
+    ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(rect.width, rect.height), ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::Begin(id, nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoNav |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoSavedSettings);
+}
+
+static void endFullViewportWindow()
+{
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+}
+
+TEST_CASE("imguiVisual draws a scaled paletted visual", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(64, 64);
+
+    // Default magFilter is Nearest, so the 8x8 source magnifies into crisp blocks.
+    auto texId = canvas.addTexture(makeQuadrantTexture());
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) {
+            beginFullViewportWindow(canvas, "##visual_scaled");
+            canvas.imguiVisual(Nothofagus::Visual{texId},
+                               Nothofagus::ImguiImageSize::Scaled{glm::vec2(6.0f)}); // 8x8 -> 48x48
+            endFullViewportWindow();
+        });
+
+    checkAgainstGolden("imgui_visual_scaled", canvas.takeScreenshot());
+}
+
+TEST_CASE("imguiVisual custom size Fit vs Stretch on a custom mesh", "[rendering][imgui][mesh]")
+{
+    auto canvas = makeCanvas(190, 64);
+
+    auto texId = canvas.addTexture(makeQuadrantTexture());
+
+    // Upward-pointing triangle (roughly square AABB) sampling the quadrant texture,
+    // so mapping the UVs across the mesh is visible. Targeting a wide 2:1 box makes
+    // Fit (letterboxed, proportions preserved) vs Stretch (fills, distorts) distinct.
+    Nothofagus::Mesh triangle;
+    triangle.vertices = {
+        {{ 0.0f,  8.0f}, {0.5f, 0.0f}},
+        {{ 8.0f, -8.0f}, {1.0f, 1.0f}},
+        {{-8.0f, -8.0f}, {0.0f, 1.0f}},
+    };
+    triangle.indices = {0, 1, 2};
+    auto meshId = canvas.addMesh(triangle);
+
+    const Nothofagus::Visual triVisual{texId, meshId};
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) {
+            beginFullViewportWindow(canvas, "##visual_fit_stretch");
+            canvas.imguiVisual(triVisual,
+                Nothofagus::ImguiImageSize::Custom{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Fit});
+            ImGui::SameLine();
+            canvas.imguiVisual(triVisual,
+                Nothofagus::ImguiImageSize::Custom{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Stretch});
+            endFullViewportWindow();
+        });
+
+    checkAgainstGolden("imgui_visual_custom_fit_stretch", canvas.takeScreenshot());
 }
