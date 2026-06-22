@@ -15,6 +15,7 @@
 #include "imgui_draw_callback.h"
 #include "imgui_font_id.h"
 #include "imgui_font_source_id.h"
+#include "imgui_image_id.h"
 #include "imgui_image_size.h"
 #include "markdown_renderer.h"
 #include <memory>
@@ -24,6 +25,7 @@
 #include <span>
 #include <optional>
 #include <cstddef>
+#include <cstdint>
 
 struct ImFont;
 
@@ -337,6 +339,61 @@ public:
      */
     void imguiVisual(const Visual& visual,
                      const ImguiImageSize::Spec& sizeSpec = ImguiImageSize::Natural{});
+
+    /**
+     * @brief Register a Visual at a fixed size as a persistent ImGui-bindable image.
+     *
+     * Unlike `imguiVisual` (which requests + displays in the same frame and therefore
+     * blanks for one frame the first time a given visual/size is shown), registration
+     * decouples allocation from display: the internal render target is allocated now and
+     * its `ImTextureID` handle is created on the next render tick, then stays valid for the
+     * registration's lifetime. So any draw that happens at least one rendered frame after
+     * registration is **warm-up-free**, and the handle never churns on size changes or
+     * per-frame garbage collection.
+     *
+     * The returned id is a first-class ImGui image handle: pass it to `imguiImage(id)`, or
+     * fetch `imguiImageHandle(id)` / `imguiImageSize(id)` and drive `ImGui::Image` yourself.
+     * The `sizeSpec` fixes the rasterization resolution (see `imguiVisual` for its axes);
+     * vary only the *draw* size at `imguiImage` time for responsive layouts.
+     *
+     * Call before/inside the loop. Free with `unregisterImguiImage`.
+     */
+    ImguiImageId registerImguiImage(const Visual& visual,
+                                    const ImguiImageSize::Spec& sizeSpec = ImguiImageSize::Natural{});
+
+    /**
+     * @brief Refresh a registered image's source appearance without changing its id.
+     *
+     * Re-renders with the new `visual` (e.g. an advanced animation layer, a new opacity,
+     * a swapped texture/mesh) next tick, keeping the same `sizeSpec`. The handle stays
+     * valid unless the resolved physical size or the source texture/mesh changes, in which
+     * case the RTT is recreated and the handle re-warms for one tick.
+     */
+    void updateImguiImage(ImguiImageId imageId, const Visual& visual);
+
+    /// Free a registered image's render target, ImGui handle, and resource pins.
+    void unregisterImguiImage(ImguiImageId imageId);
+
+    /**
+     * @brief Draw a registered image in the current ImGui window (`ImGui::Image`).
+     *
+     * `drawSize` (logical px) overrides the registered display size for this draw only —
+     * a cheap GPU downscale of the fixed-resolution handle (used e.g. for markdown
+     * fit-to-width). Honors the texture's magFilter and the registered opacity. Reserves
+     * layout (empty cell) while the handle is not yet ready or the visual is invisible.
+     */
+    void imguiImage(ImguiImageId imageId, std::optional<glm::vec2> drawSize = std::nullopt);
+
+    /// The registered image's ImGui-bindable `ImTextureID` (as a 64-bit value), or 0 if the
+    /// id is unknown or its handle is not yet ready. Usable directly in `ImGui::Image`.
+    std::uint64_t imguiImageHandle(ImguiImageId imageId) const;
+
+    /// The registered image's resolved logical display size, or {0, 0} if the id is unknown.
+    glm::vec2 imguiImageSize(ImguiImageId imageId) const;
+
+    /// Whether the registered image's handle has been created (false during the one-tick
+    /// window right after registration / a size-changing update).
+    bool isImguiImageReady(ImguiImageId imageId) const;
 
     /**
      * @brief Register a TTF buffer as a new font source.

@@ -274,6 +274,41 @@ void Canvas::imguiVisual(const Visual& visual, const ImguiImageSize::Spec& sizeS
     mImplPtr->imguiImages.imguiVisual(visual, sizeSpec, mImplPtr->frameRunner.contentScale());
 }
 
+ImguiImageId Canvas::registerImguiImage(const Visual& visual, const ImguiImageSize::Spec& sizeSpec)
+{
+    return mImplPtr->imguiImages.registerImage(visual, sizeSpec, mImplPtr->frameRunner.contentScale());
+}
+
+void Canvas::updateImguiImage(ImguiImageId imageId, const Visual& visual)
+{
+    mImplPtr->imguiImages.updateImage(imageId, visual, mImplPtr->frameRunner.contentScale());
+}
+
+void Canvas::unregisterImguiImage(ImguiImageId imageId)
+{
+    mImplPtr->imguiImages.unregisterImage(imageId);
+}
+
+void Canvas::imguiImage(ImguiImageId imageId, std::optional<glm::vec2> drawSize)
+{
+    mImplPtr->imguiImages.drawImage(imageId, drawSize);
+}
+
+std::uint64_t Canvas::imguiImageHandle(ImguiImageId imageId) const
+{
+    return mImplPtr->imguiImages.handleOf(imageId);
+}
+
+glm::vec2 Canvas::imguiImageSize(ImguiImageId imageId) const
+{
+    return mImplPtr->imguiImages.sizeOf(imageId);
+}
+
+bool Canvas::isImguiImageReady(ImguiImageId imageId) const
+{
+    return mImplPtr->imguiImages.isReady(imageId);
+}
+
 // ---------------------------------------------------------------------------
 // ImGui fonts — forward to mImplPtr->imguiRtt.fonts() (or wrap in imgui.h calls)
 // ---------------------------------------------------------------------------

@@ -682,6 +682,38 @@ void imguiVisual(const Visual& visual, const ImguiImageSize::Spec& sizeSpec = Im
 - **Vulkan image budget.** Each on-screen `imguiVisual` holds one ImGui descriptor set from a fixed Vulkan pool sized by `kImguiImageDescriptorPoolSize` ([source/backends/vulkan_backend.h](source/backends/vulkan_backend.h), default 1024; ~tens of KB reserved). Past that many *concurrent* images the backend logs an error once and no-ops the surplus (those visuals draw nothing) rather than aborting; it recovers as images leave the screen. Raise the constant if you display more at once. OpenGL has no such limit — it binds GL texture handles directly, with no descriptor pool.
 - **v1 scope:** works in the main UI context. Same-frame display (no warm-up) and calling `imguiVisual` inside a `renderImguiTo` diegetic panel are planned follow-ups.
 
+#### Pre-register an image — `Canvas::registerImguiImage` / `ImguiImageId`
+
+`imguiVisual` requests and displays in the same frame, so it carries the one-frame warm-up above and re-warms whenever the resolved size changes or its entry is garbage-collected. **Registration decouples allocation from display:** register a `Visual` (+ `ImguiImageSize::Spec`) once and get a stable `ImguiImageId` ([include/imgui_image_id.h](include/imgui_image_id.h)) whose `ImTextureID` is created on the next render tick and then persists for the registration's lifetime. Any draw at least one rendered frame after registration is **warm-up-free**, and the handle never churns on size changes or per-frame GC. The id is a first-class ImGui image handle — usable in raw `ImGui::Image`, not just the convenience draw.
+
+```cpp
+// Register up front (e.g. at load). Handle ready by the next render tick.
+Nothofagus::ImguiImageId id = canvas.registerImguiImage(
+    Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(4)});
+
+canvas.run([&](float dt) {
+    ImGui::Begin("inventory");
+    canvas.imguiImage(id);                                  // convenience draw (magFilter + opacity honored)
+    canvas.imguiImage(id, canvas.imguiImageSize(id) * 0.5f); // draw-size override: GPU downscale of the fixed-res handle
+    // …or drive ImGui yourself — the id resolves to a plain ImTextureID:
+    ImGui::Image(static_cast<ImTextureID>(canvas.imguiImageHandle(id)),
+                 ImVec2(canvas.imguiImageSize(id).x, canvas.imguiImageSize(id).y));
+    ImGui::End();
+});
+
+// Live content (animation / opacity / texture swap) keeps the same id and handle:
+Nothofagus::Visual v{texId}; v.currentLayer() = frame;
+canvas.updateImguiImage(id, v);     // re-renders next tick; re-warms only if the physical size changes
+canvas.unregisterImguiImage(id);    // frees RTT + handle + resource pins
+```
+
+**Behavior / rules:**
+- API ([include/canvas.h](include/canvas.h)): `registerImguiImage(Visual, Spec) -> ImguiImageId`, `updateImguiImage(id, Visual)`, `unregisterImguiImage(id)`, `imguiImage(id, optional<glm::vec2> drawSize)`, `imguiImageHandle(id) -> std::uint64_t` (0 if unknown / not yet ready), `imguiImageSize(id) -> glm::vec2`, `isImguiImageReady(id) -> bool`.
+- The `sizeSpec` fixes the **rasterization resolution** (its axes are identical to `imguiVisual`'s — `Natural`/`Scaled`/`Explicit` × `Logical`/`Device`, `Fit`/`Stretch`). For responsive layouts vary only the **draw** size via `imguiImage(id, drawSize)`, which is a cheap GPU sample of the fixed-resolution handle — register at natural res and downscale at draw time (the basis for the upcoming markdown fit-to-width).
+- Registered and lazy (`imguiVisual`) entries share one rendering path inside `ImguiImageManager` ([source/imgui_image_manager.h](source/imgui_image_manager.h)) — same internal RTT + flat-2D handle mechanism, same backend methods, same DPI-correct rasterization and `magFilter` honoring. Registered entries are **never** GC'd (only `unregisterImguiImage` frees them) and only re-render on frames they are displayed, are `updateImguiImage`-dirtied, or have not yet been populated — so off-screen registered images cost nothing yet keep a valid handle and last-rendered content.
+- `updateImguiImage` keeps the id/handle stable for layer/opacity/mesh changes; it recreates the RTT (one-tick re-warm) only when the resolved physical size or the source texture/mesh changes.
+- Same Vulkan image-budget note as `imguiVisual` (one descriptor set per registered image from `kImguiImageDescriptorPoolSize`; OpenGL has no limit).
+
 ### ImGui fonts — `ImguiFontManager`, `ImguiFontSourceId`, `ImguiFontId`
 
 `ImguiFontManager` ([source/imgui_font_manager.h](source/imgui_font_manager.h), held by `ImguiRttManager`) owns the entire ImGui-font lifecycle for a Canvas: the main HiDPI font (used by main-canvas UI), the secondary-context default font, every registered TTF buffer, every baked `(source, size)` pair, and the deferred bake/remove queue + atlas-rebuild flow. Two `IndexedContainer`s back the manager — one of `FontSource` (each registered TTF buffer + its `GlyphRange`) keyed by `ImguiFontSourceId` ([include/imgui_font_source_id.h](include/imgui_font_source_id.h)), and one of `FontEntry` (each baked size, with a per-entry `sourceId`) keyed by `ImguiFontId` ([include/imgui_font_id.h](include/imgui_font_id.h)). Atlas glyphs are owned by the shared `ImFontAtlas`; the manager stores non-owning observer pointers and `rebakeAll()` patches them in place across rebuilds.
@@ -883,6 +915,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_nested_render_targets.cpp` | Nested RTTs — one render target's output feeds another |
 | `hello_imgui_rtt.cpp` | `renderImguiTo` — diegetic ImGui panel drawn into an RTT, sampled by a rotating bellota |
 | `hello_imgui_visual.cpp` | `imguiVisual` — draw a Visual inside an ImGui window (`ImGui::Image`): sizing modes (`standard` / `scaled` / `custom` with `Fit` vs `Stretch`), screen-resolution mesh rasterization, animated paletted + custom-mesh visuals, Nearest-vs-Linear sampling (texture `magFilter`), scale + opacity sliders, a render target as the source (`renderTo` → `imguiVisual`, sampled like a main bellota's RTT)|
+| `hello_imgui_image_registry.cpp` | `registerImguiImage` / `ImguiImageId` — pre-register a Visual at a fixed size for a stable, warm-up-free ImGui image handle: convenience `imguiImage(id)` draw, raw `ImGui::Image(imguiImageHandle(id), …)`, a draw-size override (GPU downscale of the fixed-res handle), live animation via `updateImguiImage`, and register/unregister lifecycle |
 | `hello_imgui_overlay.cpp` | `imguiOverlayViewport()` + `imguiBaseFontSize()` — header/footer ImGui bars pinned to the canvas, tracking pillarbox/letterbox + DPI on resize |
 | `hello_custom_font.cpp` | User-supplied TTF via `addImguiFontSource` — typeable path field, editable text, integer min/max + slider for size, default-vs-user side-by-side with `TextWrapped`; also demonstrates the `imgui-filebrowser` integration. When built with `-DNOTHOFAGUS_EMBED_CJK*`, adds macro-guarded blocks rendering Chinese/Japanese/Korean sample text via `embeddedCjkFontSource(...)` |
 | `hello_markdown.cpp` | `MarkdownRenderer` — headings, lists, code blocks, tables, blockquotes, strikethrough, link callback; true bold/italic/bold-italic/mono faces via `canvas.defaultMarkdownStyle(...)` |

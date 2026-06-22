@@ -889,3 +889,33 @@ TEST_CASE("imguiVisual draws a DirectTexture honoring magFilter", "[rendering][i
 
     checkAgainstGolden("imgui_visual_direct_texture", canvas.takeScreenshot());
 }
+
+// ---------------------------------------------------------------------------
+// registerImguiImage — a pre-registered image drawn by id.
+//
+// Registration allocates the internal RTT up front and the handle is created on
+// the next render tick, so by the time the image is drawn (here, every warm-up
+// frame) it is ready — same final pixels as the equivalent imguiVisual scaled
+// case, reached through the registry path (registerImguiImage + imguiImage).
+// This golden locks the registered-draw path end to end.
+// ---------------------------------------------------------------------------
+TEST_CASE("registerImguiImage draws a registered visual by id", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(64, 64);
+
+    auto texId = canvas.addTexture(makeQuadrantTexture());
+
+    // Register before the loop; the handle is ready by the first drawn frame.
+    const Nothofagus::ImguiImageId imageId =
+        canvas.registerImguiImage(Nothofagus::Visual{texId},
+                                  Nothofagus::ImguiImageSize::Scaled{glm::vec2(6.0f)}); // 8x8 -> 48x48
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) {
+            beginFullViewportWindow(canvas, "##registered_image");
+            canvas.imguiImage(imageId);
+            endFullViewportWindow();
+        });
+
+    checkAgainstGolden("imgui_image_registered", canvas.takeScreenshot());
+}
