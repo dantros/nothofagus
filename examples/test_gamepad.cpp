@@ -34,6 +34,9 @@ int main()
     Nothofagus::TextureId textureId = canvas.addTexture(texture);
     Nothofagus::BellotaId bellotaId = canvas.addBellota({{{100.0f, 75.0f}}, textureId});
 
+    // Show the built-in FPS/ms overlay.
+    canvas.stats() = true;
+
     float time = 0.0f;
     constexpr float horizontalSpeed = 0.12f;
     constexpr float angularSpeed = 0.1f;
