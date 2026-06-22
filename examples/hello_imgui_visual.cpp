@@ -102,9 +102,6 @@ int main()
     // shows on the main canvas (renderTo dual-renders), mirroring hello_render_to_texture.
     Nothofagus::BellotaId sceneBellotaId = canvas.addBellota({{{24.0f, 24.0f}, 3.0f}, triTexId});
 
-    using Size = Nothofagus::ImguiImageSize;
-    using Fit  = Nothofagus::ImguiImageFit;
-
     float opacity = 1.0f;
     float scale   = 8.0f;
     float elapsedMs = 0.0f;
@@ -130,7 +127,7 @@ int main()
         Nothofagus::Visual animVisual = canvas.bellota(animBellotaId).visual();
         animVisual.opacity() = opacity;
 
-        ImGui::TextUnformatted("standard() = real size; scaled() rasterizes at the upscaled size:");
+        ImGui::TextUnformatted("ImguiImageSize::Standard = real size; ImguiImageSize::Scaled rasterizes at the upscaled size:");
         ImGui::BeginGroup();
         ImGui::TextUnformatted("standard");
         canvas.imguiVisual(animVisual);                         // true 8x8 logical px
@@ -138,34 +135,34 @@ int main()
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("scaled");
-        canvas.imguiVisual(animVisual, Size::scaled(scale));    // crisp NxN
+        canvas.imguiVisual(animVisual, Nothofagus::ImguiImageSize::Scaled{glm::vec2(scale)});    // crisp NxN
         ImGui::EndGroup();
 
         ImGui::TextUnformatted("Custom-mesh (triangle) at custom size, Fit vs Stretch:");
         Nothofagus::Visual triVisual = canvas.bellota(triBellotaId).visual();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("custom Fit");
-        canvas.imguiVisual(triVisual, Size::custom({120.0f, 80.0f}, Fit::Fit));      // letterboxed, crisp edges
+        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::Custom{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Fit});      // letterboxed, crisp edges
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("custom Stretch");
-        canvas.imguiVisual(triVisual, Size::custom({120.0f, 80.0f}, Fit::Stretch));  // fills, distorts
+        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::Custom{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Stretch});  // fills, distorts
         ImGui::EndGroup();
 
         ImGui::TextUnformatted("RGBA texture magFilter (2x2 magnified) - Nearest vs Linear:");
         ImGui::BeginGroup();
         ImGui::TextUnformatted("Nearest (default)");
-        canvas.imguiVisual(Nothofagus::Visual{nearestTexId}, Size::scaled(scale));
+        canvas.imguiVisual(Nothofagus::Visual{nearestTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(scale)});
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("Linear");
-        canvas.imguiVisual(Nothofagus::Visual{linearTexId}, Size::scaled(scale));
+        canvas.imguiVisual(Nothofagus::Visual{linearTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(scale)});
         ImGui::EndGroup();
 
         ImGui::TextUnformatted("Render target as source (renderTo -> imguiVisual) - same as a main bellota's RTT:");
-        canvas.imguiVisual(Nothofagus::Visual{sceneRtTexId}, Size::scaled(2.0f));
+        canvas.imguiVisual(Nothofagus::Visual{sceneRtTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(2.0f)});
 
         ImGui::End();
     });

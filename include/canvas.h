@@ -322,10 +322,10 @@ public:
      * correctly) and exposed to ImGui. A custom mesh is honored. Opacity modulates the
      * drawn image; visibility=false draws an empty cell.
      *
-     * @p sizing controls the size, in **logical pixels** (scales with OS DPI). The default
-     * (`ImguiImageSize::standard()`) is the visual's real on-screen size — its mesh's
-     * bounding box, with no scale transform. Use `ImguiImageSize::scaled(factor)` to
-     * up/downscale, or `ImguiImageSize::custom(size, ImguiImageFit::Fit|Stretch)` for an
+     * @p sizeSpec controls the size, in **logical pixels** (scales with OS DPI). The default
+     * (`ImguiImageSize::Standard{}`) is the visual's real on-screen size — its mesh's
+     * bounding box, with no scale transform. Use `ImguiImageSize::Scaled{factor}` to
+     * up/downscale, or `ImguiImageSize::Custom{size, ImguiImageFit::Fit|Stretch}` for an
      * explicit size. The off-screen target is rasterized at the chosen size × contentScale,
      * so mesh geometry stays crisp at the displayed size (not bitmap-upscaled), and texture
      * magnification honors the texture's own `magFilter`.
@@ -335,7 +335,7 @@ public:
      * warm-up).
      */
     void imguiVisual(const Visual& visual,
-                     const ImguiImageSize& sizing = ImguiImageSize::standard());
+                     const ImguiImageSize::Spec& sizeSpec = ImguiImageSize::Standard{});
 
     /**
      * @brief Register a TTF buffer as a new font source.

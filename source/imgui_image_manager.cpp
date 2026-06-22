@@ -42,18 +42,18 @@ namespace
         outExtent = glm::max(hi - lo, glm::vec2(1e-3f));
     }
 
-    glm::vec2 resolveTargetLogical(const ImguiImageSize& sizing, glm::vec2 naturalLogical)
+    glm::vec2 resolveTargetLogical(const ImguiImageSize::Spec& sizeSpec, glm::vec2 naturalLogical)
     {
         glm::vec2 target = naturalLogical;
-        if (const auto* scaled = std::get_if<ImguiImageScaled>(&sizing))
+        if (const auto* scaled = std::get_if<ImguiImageSize::Scaled>(&sizeSpec))
             target = naturalLogical * scaled->factor;
-        else if (const auto* custom = std::get_if<ImguiImageCustom>(&sizing))
+        else if (const auto* custom = std::get_if<ImguiImageSize::Custom>(&sizeSpec))
             target = custom->size;
         return glm::max(target, glm::vec2(1.0f));
     }
 }
 
-void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize& sizing, float contentScale)
+void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize::Spec& sizeSpec, float contentScale)
 {
     const TextureId texId = visual.texture();
     debugCheck(mAssets.textures().contains(texId.id), "imguiVisual: unknown TextureId");
@@ -66,7 +66,7 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize& 
         glm::vec2 natural = visual.meshId().has_value()
             ? [&]{ glm::vec2 mn, ext; meshAabb(mAssets.mesh(visual.meshId().value()), mn, ext); return ext; }()
             : glm::max(glm::vec2(mAssets.textures().at(texId.id).mTextureSize), glm::vec2(1.0f));
-        const glm::vec2 target = resolveTargetLogical(sizing, natural);
+        const glm::vec2 target = resolveTargetLogical(sizeSpec, natural);
         ImGui::Dummy(ImVec2(target.x, target.y));
         return;
     }
@@ -88,7 +88,7 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize& 
     glm::vec2 aabbMin, naturalLogical;
     meshAabb(mAssets.mesh(meshId), aabbMin, naturalLogical);
 
-    const glm::vec2 targetLogical = resolveTargetLogical(sizing, naturalLogical);
+    const glm::vec2 targetLogical = resolveTargetLogical(sizeSpec, naturalLogical);
 
     // Rasterize the off-screen target at the same DPI density the font atlas uses, so a
     // logical-pixel size stays crisp (mesh geometry rasterized at the displayed size).
@@ -100,8 +100,8 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize& 
 
     // Content placement within the target (physical px): fill, or — for custom Fit —
     // uniform-scaled and centered with transparent margins.
-    const auto* customSizing = std::get_if<ImguiImageCustom>(&sizing);
-    const bool fitCentered = (customSizing != nullptr && customSizing->fit == ImguiImageFit::Fit);
+    const auto* customSizeSpec = std::get_if<ImguiImageSize::Custom>(&sizeSpec);
+    const bool fitCentered = (customSizeSpec != nullptr && customSizeSpec->fit == ImguiImageFit::Fit);
     const glm::vec2 naturalPhys = naturalLogical * scale;
     glm::vec2 contentPhys(rttPhys);
     glm::vec2 offset(0.0f);

@@ -47,9 +47,9 @@ public:
     void beginFrame() { ++mFrameCounter; }
 
     /// Sim-side, user-facing: draw `visual` in the current ImGui window, sized per
-    /// `sizing` (logical px). `contentScale` is the DPI density to rasterize the internal
+    /// `sizeSpec` (logical px). `contentScale` is the DPI density to rasterize the internal
     /// render target at (the same value the font atlas uses). Call inside an ImGui frame.
-    void imguiVisual(const Visual& visual, const ImguiImageSize& sizing, float contentScale);
+    void imguiVisual(const Visual& visual, const ImguiImageSize::Spec& sizeSpec, float contentScale);
 
     /// Sim-side: append this frame's internal RTT passes (one per visual drawn) onto
     /// the snapshot's RTT pass list, after the user-scheduled RTT passes.

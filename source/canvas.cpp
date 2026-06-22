@@ -267,11 +267,11 @@ void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, Im
         });
 }
 
-void Canvas::imguiVisual(const Visual& visual, const ImguiImageSize& sizing)
+void Canvas::imguiVisual(const Visual& visual, const ImguiImageSize::Spec& sizeSpec)
 {
     // Rasterize the off-screen image at the same DPI density the font atlas uses
     // (style.FontScaleDpi == contentScale()), so logical-pixel sizes stay crisp.
-    mImplPtr->imguiImages.imguiVisual(visual, sizing, mImplPtr->frameRunner.contentScale());
+    mImplPtr->imguiImages.imguiVisual(visual, sizeSpec, mImplPtr->frameRunner.contentScale());
 }
 
 // ---------------------------------------------------------------------------
