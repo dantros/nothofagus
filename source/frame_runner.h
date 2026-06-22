@@ -8,6 +8,7 @@
 #include "bellota_container.h"
 #include "render_snapshot.h"
 #include "snapshot_buffers.h"
+#include "performance_monitor.h"
 #include "aa_box.h"
 #include "backends/render_backend_select.h"
 #include <vector>
@@ -313,8 +314,11 @@ private:
     // ----- Threaded driver state (M2 Phase A) -----
     SnapshotTripleBuffer mTripleBuffer;            ///< sim→render snapshot hand-off (lock-free).
     std::atomic<bool> mThreadedRunning{false};     ///< true while the threaded session is live.
-    float mLastRenderTime{0.0f};                   ///< previous renderFrameThreaded timestamp (for the stats dt).
-    bool  mLastRenderTimeValid{false};
+    /// Render-loop frame-time monitor for the threaded path, mirroring the local
+    /// PerformanceMonitor that run() uses single-threaded: the smoothed getMS() is
+    /// the dt fed to the stats overlay and to RTT ImGui timing (flushPending), so
+    /// both paths report the same averaged value. Emplaced in beginThreadedSession.
+    std::optional<PerformanceMonitor> mThreadedPerfMonitor;
 
     /// Phase B: serializes the sim thread's runtime structural mutations
     /// (spawn/despawn → mTextures/mMeshes + usage monitors + pending-free queues)

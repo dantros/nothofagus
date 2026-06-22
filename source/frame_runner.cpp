@@ -669,12 +669,11 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
 
         mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
 
-        // Wall-clock render dt (the actual render-thread frame time), computed before
-        // the ImGui frame so the stats overlay can show it.
-        const float now = mWindow->getTime();
-        deltaTimeMS = mLastRenderTimeValid ? (now - mLastRenderTime) * 1000.0f : 0.0f;
-        mLastRenderTime = now;
-        mLastRenderTimeValid = true;
+        // Smoothed render-thread frame time via the same PerformanceMonitor recipe
+        // run() uses single-threaded (averaged over its period). Computed before the
+        // ImGui frame so the stats overlay can show it; also fed to RTT ImGui timing.
+        mThreadedPerfMonitor->update(mWindow->getTime());
+        deltaTimeMS = mThreadedPerfMonitor->getMS();
 
         // Main-context ImGui frame on the render thread (under the ImGui mutex, so it
         // never touches the shared font atlas concurrently with the sim-UI context).
@@ -816,7 +815,8 @@ void FrameRunner::beginThreadedSession(Controller& controller)
         mSnapshot.draws.reserve(64);
         mSessionStarted = true;
     }
-    mLastRenderTimeValid = false;
+    // Start the render-loop frame-time monitor (same period as run()'s).
+    mThreadedPerfMonitor.emplace(mWindow->getTime(), 0.5f);
 
     // M3: create the sim-thread UI context, sharing the main font atlas, so the
     // user's ImGui widgets can run on the sim thread. It has no platform/renderer
