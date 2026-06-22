@@ -58,6 +58,11 @@ int main()
     const Nothofagus::TextureId textureId = canvas.addTexture(texture);
     const Nothofagus::BellotaId bellotaId = canvas.addBellota({{{100.0f, 75.0f}}, textureId});
 
+    // Show the built-in FPS/ms overlay (render-thread frame time). On the threaded
+    // path this draws on the main context, which is the rendered UI here since this
+    // demo commits no sim ImGui.
+    canvas.stats() = true;
+
     constexpr float horizontalSpeed = 0.12f;
     constexpr float angularSpeed    = 0.1f;
     constexpr float discreteStep    = 10.0f;

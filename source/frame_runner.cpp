@@ -669,25 +669,39 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
 
         mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
 
+        // Wall-clock render dt (the actual render-thread frame time), computed before
+        // the ImGui frame so the stats overlay can show it.
+        const float now = mWindow->getTime();
+        deltaTimeMS = mLastRenderTimeValid ? (now - mLastRenderTime) * 1000.0f : 0.0f;
+        mLastRenderTime = now;
+        mLastRenderTimeValid = true;
+
         // Main-context ImGui frame on the render thread (under the ImGui mutex, so it
         // never touches the shared font atlas concurrently with the sim-UI context).
         // It does NOT draw user UI (that arrives as a clone) — it (a) drains pending
         // font ops + lets ImGui_ImplGlfw process window input so we can harvest it for
         // the sim, and (b) provides valid empty draw data for the frames before the
-        // first UI commit.
+        // first UI commit. The optional stats overlay is drawn here on the main
+        // context; it shows whenever this main frame is what gets rendered (i.e. when
+        // the sim commits no UI clone — apps with sim ImGui would need stats in the
+        // clone instead).
         {
             ZoneScopedN("RenderImguiNewFrame");
             std::lock_guard<std::mutex> imguiLock(mImguiMutex);
             imguiRtt.drainPendingFontOps();
             beginMainImguiFrame();
             harvestImguiInput(); // io.MousePos/Down/Wheel + DisplaySize are valid post-NewFrame
+            if (mStats)
+            {
+                ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Appearing);
+                ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+                ImGui::Begin("stats", NULL, ImGuiWindowFlags_NoTitleBar);
+                ImGui::Text("%.2f fps", deltaTimeMS > 0.0f ? 1000.0f / deltaTimeMS : 0.0f);
+                ImGui::Text("%.2f ms", deltaTimeMS);
+                ImGui::End();
+            }
             ImGui::Render();
         }
-
-        const float now = mWindow->getTime();
-        deltaTimeMS = mLastRenderTimeValid ? (now - mLastRenderTime) * 1000.0f : 0.0f;
-        mLastRenderTime = now;
-        mLastRenderTimeValid = true;
 
         // Container-touching section (deferred frees, GPU upload, id→handle resolve +
         // draw submission). Guarded against the sim thread's spawn/despawn. The lock
