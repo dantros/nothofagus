@@ -1038,28 +1038,40 @@ void FrameRunner::feedGamepadInput(Controller& simController)
     simController.processInputs();
 }
 
-Nothofagus::BellotaId FrameRunner::threadedSpawnBellota(AssetRegistry& assets, const Bellota& bellota)
+Nothofagus::BellotaId FrameRunner::addBellota(AssetRegistry& assets, const Bellota& bellota)
 {
-    // Sim thread: structural mutation of the (render-shared) asset containers —
-    // adds the bellota plus its auto-quad mesh and registers usage entries. The
-    // mutex serializes this against the render thread's container access.
-    std::lock_guard<std::mutex> lock(mThreadedAssetMutex);
+    // Structural mutation of the asset containers (adds the bellota plus its
+    // auto-quad mesh and registers usage entries). When a threaded session is live
+    // this may run on the sim thread concurrently with the render thread's
+    // container access, so take the asset mutex; single-threaded (run/tick or
+    // setup) there is no other party and we skip the lock entirely.
+    std::unique_lock<std::mutex> lock;
+    if (mThreadedRunning.load(std::memory_order_acquire))
+        lock = std::unique_lock<std::mutex>(mThreadedAssetMutex);
     return assets.addBellota(bellota);
 }
 
-void FrameRunner::threadedDespawnBellota(AssetRegistry& assets, BellotaId bellotaId)
+void FrameRunner::removeBellota(AssetRegistry& assets, BellotaId bellotaId)
 {
-    // Sim thread: remove the bellota, then detect any texture/mesh it orphaned
-    // (typically its auto-quad mesh) and queue them for deferred GPU free. The
-    // actual free happens on the render thread once no in-flight snapshot still
-    // references them (retireSeq <= lastRenderedSeq). Tag with the current commit
-    // seq: the snapshot built this commit no longer references the removed bellota.
-    std::lock_guard<std::mutex> lock(mThreadedAssetMutex);
+    // In a live threaded session: take the asset mutex, remove, then detect any
+    // texture/mesh the bellota orphaned (typically its auto-quad mesh) and queue
+    // them for deferred GPU free — freed render-side once no in-flight snapshot
+    // still references them (retireSeq <= lastRenderedSeq). Tag with the current
+    // commit seq: the snapshot built this commit no longer references the removed
+    // bellota.
+    if (mThreadedRunning.load(std::memory_order_acquire))
+    {
+        std::lock_guard<std::mutex> lock(mThreadedAssetMutex);
+        assets.removeBellota(bellotaId);
+        for (TextureId textureId : assets.collectUnusedTextures())
+            mPendingTextureFrees.push_back({textureId, mCommitSeq});
+        for (MeshId meshId : assets.collectUnusedMeshes())
+            mPendingMeshFrees.push_back({meshId, mCommitSeq});
+        return;
+    }
+    // Single-threaded: plain remove; orphaned resources are GC'd by the
+    // produce(Single) collectUnused* pass on the next frame (unchanged behavior).
     assets.removeBellota(bellotaId);
-    for (TextureId textureId : assets.collectUnusedTextures())
-        mPendingTextureFrees.push_back({textureId, mCommitSeq});
-    for (MeshId meshId : assets.collectUnusedMeshes())
-        mPendingMeshFrees.push_back({meshId, mCommitSeq});
 }
 
 ScreenSize getPrimaryMonitorSize()

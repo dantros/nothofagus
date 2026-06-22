@@ -192,13 +192,15 @@ public:
     /// upload + draw + present), poll window/input, and refresh the running flag.
     void renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& imguiRtt, Controller& controller);
 
-    /// Sim thread (Phase B): add a bellota at runtime, guarded against the render
-    /// thread's container access. Returns the new id.
-    BellotaId threadedSpawnBellota(AssetRegistry& assets, const Bellota& bellota);
+    /// Add a bellota. Safe both single-threaded (run/tick or setup — no lock) and
+    /// from inside commit()'s update on the sim thread while a threaded session is
+    /// live (takes the asset mutex). Returns the new id.
+    BellotaId addBellota(AssetRegistry& assets, const Bellota& bellota);
 
-    /// Sim thread (Phase B): remove a bellota at runtime and queue any resources
-    /// it orphaned for deferred GPU free on the render thread.
-    void threadedDespawnBellota(AssetRegistry& assets, BellotaId bellotaId);
+    /// Remove a bellota. In a live threaded session this also queues any resources
+    /// it orphaned for deferred GPU free on the render thread; single-threaded the
+    /// orphans are GC'd by the next produce(Single) pass.
+    void removeBellota(AssetRegistry& assets, BellotaId bellotaId);
 
 private:
     /// Selects which orchestration a unified producer/consumer runs. `Single` is

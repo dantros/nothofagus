@@ -93,7 +93,7 @@ int main()
     {
         const float x = rng.range(15.0f, screenSize.width - 15.0f);
         const float y = rng.range(15.0f, screenSize.height - 15.0f);
-        const Nothofagus::BellotaId id = canvas.spawnBellota({{{x, y}, 1.0f}, textureId});
+        const Nothofagus::BellotaId id = canvas.addBellota({{{x, y}, 1.0f}, textureId});
         sprites.push_back({id, glm::vec2(x, y), rng.range(0.0f, 6.28f), 0.0f, rng.range(1500.0f, 4000.0f)});
     };
 
@@ -120,7 +120,7 @@ int main()
             const bool overTarget = static_cast<int>(i) >= targetCount;
             if (expired || overTarget)
             {
-                canvas.despawnBellota(sprite.id);
+                canvas.removeBellota(sprite.id);
                 sprite = sprites.back();
                 sprites.pop_back();
                 continue;

@@ -149,13 +149,13 @@ void Canvas::setContentScaleOverride(std::optional<float> scale) { mImplPtr->fra
 // Bellotas — forward to AssetRegistry; remove gates against DenseLandExplorer pool
 // ---------------------------------------------------------------------------
 
-BellotaId Canvas::addBellota(const Bellota& bellota)            { return mImplPtr->assets.addBellota(bellota); }
+BellotaId Canvas::addBellota(const Bellota& bellota)            { return mImplPtr->frameRunner.addBellota(mImplPtr->assets, bellota); }
 
 void Canvas::removeBellota(const BellotaId bellotaId)
 {
     debugCheck(!mImplPtr->frameRunner.isExplorerManagedBellota(bellotaId.id),
         "Bellota is owned by an explorer pool — use canvas.removeDenseLandExplorer() / canvas.removeSparseLandExplorer() instead of removing slot bellotas directly.");
-    mImplPtr->assets.removeBellota(bellotaId);
+    mImplPtr->frameRunner.removeBellota(mImplPtr->assets, bellotaId);
 }
 
 Bellota& Canvas::bellota(BellotaId bellotaId)                   { return mImplPtr->assets.bellota(bellotaId); }
@@ -422,16 +422,6 @@ void Canvas::commit(float deltaTime, std::function<void(float)> update, Controll
 void Canvas::renderFrame(Controller& controller)
 {
     mImplPtr->frameRunner.renderFrameThreaded(mImplPtr->assets, mImplPtr->imguiRtt, controller);
-}
-
-BellotaId Canvas::spawnBellota(const Bellota& bellota)
-{
-    return mImplPtr->frameRunner.threadedSpawnBellota(mImplPtr->assets, bellota);
-}
-
-void Canvas::despawnBellota(BellotaId bellotaId)
-{
-    mImplPtr->frameRunner.threadedDespawnBellota(mImplPtr->assets, bellotaId);
 }
 
 bool Canvas::imguiWantsMouse() const

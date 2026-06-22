@@ -643,10 +643,15 @@ public:
     // The sim thread mutates the scene and commits a snapshot; the main thread
     // draws the previous snapshot, so render of frame N overlaps sim of N+1.
     //
-    // Phase-A constraints: create all textures/meshes/bellotas up front (before
-    // the threads start); at runtime the sim may only mutate existing bellota
-    // values (transform, tint, opacity, layer). No ImGui on the threaded path,
-    // and no runtime resource create/destroy or explorers yet. `run()`/`tick()`
+    // From inside `commit()`'s update (sim thread) you may: mutate existing bellota
+    // values (transform, tint, opacity, layer) and add/remove bellotas at runtime
+    // via the regular `addBellota`/`removeBellota` (they serialize against the
+    // renderer and defer GPU frees while a threaded session is live — see those
+    // methods). Interactive ImGui runs via the `commit(dt, update, uiCallback)`
+    // overload (widgets on the sim thread, cloned to the render thread); gamepad
+    // input via `commit(dt, update, simController)`. Still single-threaded-only:
+    // explorers (Dense/Sparse land) and other structural resource ops
+    // (textures/meshes/render targets) — create those up front. `run()`/`tick()`
     // remain the unrestricted single-threaded path.
 
     /// Main thread: start a threaded session (binds input, marks it running).
@@ -677,17 +682,6 @@ public:
 
     /// Main thread: render the latest published snapshot and pump window/input.
     void renderFrame(Controller& controller);
-
-    /// Sim thread: add a bellota at runtime on the threaded path. Unlike
-    /// `addBellota`, this is safe to call from `commit()`'s update while the main
-    /// thread renders — it serializes structural changes against the renderer.
-    /// Returns the new id (usable immediately for value mutation via `bellota()`).
-    BellotaId spawnBellota(const Bellota& bellota);
-
-    /// Sim thread: remove a bellota at runtime on the threaded path. The GPU
-    /// resources it orphans are freed by the render thread once no in-flight
-    /// frame still references them (deferred free) — no use-after-free.
-    void despawnBellota(BellotaId bellotaId);
 
     /// Whether the threaded ImGui UI captured the mouse / keyboard on the most
     /// recent commit. Read these in the game `update` (which runs before the UI
