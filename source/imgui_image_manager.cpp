@@ -27,6 +27,11 @@ MeshId ImguiImageManager::ownedQuadFor(glm::ivec2 textureSize)
 
 namespace
 {
+    // Overload-set helper for std::visit: one operator() per variant alternative, so a
+    // missing case is a compile error (compile-time exhaustiveness over the variant).
+    template <class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
+    template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
     // AABB of a mesh's vertex positions (pixel units); {0,0}-{1,1} for an empty mesh.
     void meshAabb(const Mesh& mesh, glm::vec2& outMin, glm::vec2& outExtent)
     {
@@ -44,11 +49,11 @@ namespace
 
     glm::vec2 resolveTargetLogical(const ImguiImageSize::Spec& sizeSpec, glm::vec2 naturalLogical)
     {
-        glm::vec2 target = naturalLogical;
-        if (const auto* scaled = std::get_if<ImguiImageSize::Scaled>(&sizeSpec))
-            target = naturalLogical * scaled->factor;
-        else if (const auto* custom = std::get_if<ImguiImageSize::Custom>(&sizeSpec))
-            target = custom->size;
+        const glm::vec2 target = std::visit(overloaded{
+            [&](const ImguiImageSize::Standard&) { return naturalLogical; },
+            [&](const ImguiImageSize::Scaled& scaled) { return naturalLogical * scaled.factor; },
+            [&](const ImguiImageSize::Custom& custom) { return custom.size; },
+        }, sizeSpec);
         return glm::max(target, glm::vec2(1.0f));
     }
 }
@@ -100,8 +105,11 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize::
 
     // Content placement within the target (physical px): fill, or — for custom Fit —
     // uniform-scaled and centered with transparent margins.
-    const auto* customSizeSpec = std::get_if<ImguiImageSize::Custom>(&sizeSpec);
-    const bool fitCentered = (customSizeSpec != nullptr && customSizeSpec->fit == ImguiImageFit::Fit);
+    const bool fitCentered = std::visit(overloaded{
+        [](const ImguiImageSize::Standard&) { return false; },
+        [](const ImguiImageSize::Scaled&)   { return false; },
+        [](const ImguiImageSize::Custom& custom) { return custom.fit == ImguiImageFit::Fit; },
+    }, sizeSpec);
     const glm::vec2 naturalPhys = naturalLogical * scale;
     glm::vec2 contentPhys(rttPhys);
     glm::vec2 offset(0.0f);
