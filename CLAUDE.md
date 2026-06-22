@@ -653,12 +653,7 @@ canvas.renderImguiTo(renderTargetId, canvas.defaultImguiFontId(), [&] { ... });
 
 #### Draw a Visual inside ImGui — `Canvas::imguiVisual`
 
-The inverse of "render ImGui into an RTT": sample an engine sprite *from* an ImGui window
-(`ImGui::Image`). Engine textures are 2D *arrays* / palette-indexed, which ImGui can't sample, so
-the entry point renders into an internal render target (RGBA, via the normal sprite path — Direct /
-Indirect / tile-map / animation all resolve) and exposes that RTT's color attachment to ImGui as a
-flat-2D handle (`ImTextureID`). This is the `ImguiImageManager` ([source/imgui_image_manager.h](source/imgui_image_manager.h)),
-a sibling of `ImguiRttManager`.
+The inverse of "render ImGui into an RTT": sample an engine sprite *from* an ImGui window (`ImGui::Image`). Engine textures are 2D *arrays* / palette-indexed, which ImGui can't sample, so the entry point renders into an internal render target (RGBA, via the normal sprite path — Direct / Indirect / tile-map / animation all resolve) and exposes that RTT's color attachment to ImGui as a flat-2D handle (`ImTextureID`). This is the `ImguiImageManager` ([source/imgui_image_manager.h](source/imgui_image_manager.h)), a sibling of `ImguiRttManager`.
 
 ```cpp
 canvas.run([&](float) {
@@ -675,54 +670,16 @@ canvas.run([&](float) {
 void imguiVisual(const Visual& visual, const ImguiImageSize& sizing = ImguiImageSize::standard());
 ```
 
-**The entry point is a `Visual`, not a `Bellota`** — placement (transform / depth) is meaningless in
-an ImGui cell, so only the appearance is drawn (`Visual` = texture + optional mesh + current layer +
-visible + opacity; tint is a `BellotaPack` field and is *not* part of a Visual, so it is excluded).
-Pass `canvas.bellota(id).visual()` for a bellota's current look, or a standalone `Visual{texId}`.
+**The entry point is a `Visual`, not a `Bellota`** — placement (transform / depth) is meaningless in an ImGui cell, so only the appearance is drawn (`Visual` = texture + optional mesh + current layer + visible + opacity; tint is a `BellotaPack` field and is *not* part of a Visual, so it is excluded). Pass `canvas.bellota(id).visual()` for a bellota's current look, or a standalone `Visual{texId}`.
 
 **Behavior / rules:**
-- **Sizing (`ImguiImageSize`, all in logical pixels → scales with OS DPI).** The default,
-  `standard()`, is the visual's **real on-screen size** — its mesh AABB extent with no scale transform
-  (auto-quad → texture size; custom mesh → its full extent). `scaled(float)` / `scaled(vec2)` multiply
-  that; `custom(size, ImguiImageFit::Fit|Stretch)` renders at an explicit size (`Fit` =
-  uniform-scale + letterbox/pillarbox, `Stretch` = fill/distort). The off-screen target is
-  **rasterized at the chosen size × `contentScale()`** (the same DPI density the font atlas uses, via
-  `style.FontScaleDpi`), so **mesh geometry is rasterized at the displayed size — crisp edges, not
-  bitmap-upscaled** — and texture magnification happens through the engine sprite path honoring the
-  texture's own `magFilter`. A non-square custom mesh keeps its proportions under `Fit`.
-- **Opacity** modulates the drawn image (applied as the ImGui widget alpha); `visible()==false` draws
-  an empty cell of the resolved size.
-- **Sampling follows the texture's `magFilter`** (default `Nearest` → crisp pixel art; set `Linear`
-  via `setTextureMagFilter` for smoothing). Texture magnification now happens *inside* the RTT through
-  the engine sprite path (which honors the texture's filter), and ImGui draws the RTT ~1:1. As a
-  belt-and-suspenders for any residual ImGui-side scaling, `imguiVisual` also pins ImGui's own
-  (global-per-draw, LINEAR-default) sampler to match via the standard
-  `DrawCallback_SetSamplerNearest` / `SetSamplerLinear` callbacks, restoring Linear afterward so
-  window text/widgets are unaffected. (ImGui ignores the sampler passed to
-  `ImGui_ImplVulkan_AddTexture`, hence the callback approach.)
-- **One-frame warm-up.** Sim/render-split aware: `imguiVisual` runs on the sim side and bakes a
-  stable handle into the ImGui draw list; the handle is created on the render side (after the internal
-  RTT is drawn) and read back the next frame. So the first frame a given visual is shown reserves
-  layout only and the image appears the following frame. Internal RTTs are keyed by
-  `(TextureId, MeshId, currentLayer, rttPixelW, rttPixelH, fill/fit)` — so the same visual at
-  different sizes gets distinct crisp targets; an entry unused for a few frames is garbage-collected
-  (its RTT + handle freed, its texture/mesh pin released). Dragging a size slider therefore churns
-  RTTs (one per distinct pixel size) until they retire — acceptable; bucketing is a future tweak. All
-  GPU work is render-side and id-driven — nothing is created from the user callback.
-- **Backends.** OpenGL keeps a flat `GL_TEXTURE_2D` companion blitted (Y-flipped) from the RTT array
-  texture each frame, since ImGui binds `GL_TEXTURE_2D`; Vulkan adds a `VK_IMAGE_VIEW_TYPE_2D` view of
-  the RTT color image + `ImGui_ImplVulkan_AddTexture` (no copy). Both via three render-agnostic
-  `RenderBackend` methods (`acquireFlat2DImguiHandle` / `resolveRenderTargetFlat2D` /
-  `releaseFlat2DImguiHandle`).
-- **Vulkan image budget.** Each on-screen `imguiVisual` holds one ImGui descriptor set from a
-  fixed Vulkan pool sized by `kImguiImageDescriptorPoolSize`
-  ([source/backends/vulkan_backend.h](source/backends/vulkan_backend.h), default 1024; ~tens of
-  KB reserved). Past that many *concurrent* images the backend logs an error once and no-ops the
-  surplus (those visuals draw nothing) rather than aborting; it recovers as images leave the
-  screen. Raise the constant if you display more at once. OpenGL has no such limit — it binds GL
-  texture handles directly, with no descriptor pool.
-- **v1 scope:** works in the main UI context. Same-frame display (no warm-up) and calling
-  `imguiVisual` inside a `renderImguiTo` diegetic panel are planned follow-ups.
+- **Sizing (`ImguiImageSize`, all in logical pixels → scales with OS DPI).** The default, `standard()`, is the visual's **real on-screen size** — its mesh AABB extent with no scale transform (auto-quad → texture size; custom mesh → its full extent). `scaled(float)` / `scaled(vec2)` multiply that; `custom(size, ImguiImageFit::Fit|Stretch)` renders at an explicit size (`Fit` = uniform-scale + letterbox/pillarbox, `Stretch` = fill/distort). The off-screen target is **rasterized at the chosen size × `contentScale()`** (the same DPI density the font atlas uses, via `style.FontScaleDpi`), so **mesh geometry is rasterized at the displayed size — crisp edges, not bitmap-upscaled** — and texture magnification happens through the engine sprite path honoring the texture's own `magFilter`. A non-square custom mesh keeps its proportions under `Fit`.
+- **Opacity** modulates the drawn image (applied as the ImGui widget alpha); `visible()==false` draws an empty cell of the resolved size.
+- **Sampling follows the texture's `magFilter`** (default `Nearest` → crisp pixel art; set `Linear` via `setTextureMagFilter` for smoothing). Texture magnification now happens *inside* the RTT through the engine sprite path (which honors the texture's filter), and ImGui draws the RTT ~1:1. As a belt-and-suspenders for any residual ImGui-side scaling, `imguiVisual` also pins ImGui's own (global-per-draw, LINEAR-default) sampler to match via the standard `DrawCallback_SetSamplerNearest` / `SetSamplerLinear` callbacks, restoring Linear afterward so window text/widgets are unaffected. (ImGui ignores the sampler passed to `ImGui_ImplVulkan_AddTexture`, hence the callback approach.)
+- **One-frame warm-up.** Sim/render-split aware: `imguiVisual` runs on the sim side and bakes a stable handle into the ImGui draw list; the handle is created on the render side (after the internal RTT is drawn) and read back the next frame. So the first frame a given visual is shown reserves layout only and the image appears the following frame. Internal RTTs are keyed by `(TextureId, MeshId, currentLayer, rttPixelW, rttPixelH, fill/fit)` — so the same visual at different sizes gets distinct crisp targets; an entry unused for a few frames is garbage-collected (its RTT + handle freed, its texture/mesh pin released). Dragging a size slider therefore churns RTTs (one per distinct pixel size) until they retire — acceptable; bucketing is a future tweak. All GPU work is render-side and id-driven — nothing is created from the user callback.
+- **Backends.** OpenGL keeps a flat `GL_TEXTURE_2D` companion blitted (Y-flipped) from the RTT array texture each frame, since ImGui binds `GL_TEXTURE_2D`; Vulkan adds a `VK_IMAGE_VIEW_TYPE_2D` view of the RTT color image + `ImGui_ImplVulkan_AddTexture` (no copy). Both via three render-agnostic `RenderBackend` methods (`acquireFlat2DImguiHandle` / `resolveRenderTargetFlat2D` / `releaseFlat2DImguiHandle`).
+- **Vulkan image budget.** Each on-screen `imguiVisual` holds one ImGui descriptor set from a fixed Vulkan pool sized by `kImguiImageDescriptorPoolSize` ([source/backends/vulkan_backend.h](source/backends/vulkan_backend.h), default 1024; ~tens of KB reserved). Past that many *concurrent* images the backend logs an error once and no-ops the surplus (those visuals draw nothing) rather than aborting; it recovers as images leave the screen. Raise the constant if you display more at once. OpenGL has no such limit — it binds GL texture handles directly, with no descriptor pool.
+- **v1 scope:** works in the main UI context. Same-frame display (no warm-up) and calling `imguiVisual` inside a `renderImguiTo` diegetic panel are planned follow-ups.
 
 ### ImGui fonts — `ImguiFontManager`, `ImguiFontSourceId`, `ImguiFontId`
 
