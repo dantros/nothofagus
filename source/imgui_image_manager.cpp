@@ -45,12 +45,10 @@ namespace
     glm::vec2 resolveTargetLogical(const ImguiImageSize& sizing, glm::vec2 naturalLogical)
     {
         glm::vec2 target = naturalLogical;
-        switch (sizing.mode)
-        {
-            case ImguiImageSize::Mode::Standard: target = naturalLogical;                break;
-            case ImguiImageSize::Mode::Scaled:   target = naturalLogical * sizing.value; break;
-            case ImguiImageSize::Mode::Custom:   target = sizing.value;                  break;
-        }
+        if (const auto* scaled = std::get_if<ImguiImageScaled>(&sizing))
+            target = naturalLogical * scaled->factor;
+        else if (const auto* custom = std::get_if<ImguiImageCustom>(&sizing))
+            target = custom->size;
         return glm::max(target, glm::vec2(1.0f));
     }
 }
@@ -102,8 +100,8 @@ void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize& 
 
     // Content placement within the target (physical px): fill, or — for custom Fit —
     // uniform-scaled and centered with transparent margins.
-    const bool fitCentered =
-        (sizing.mode == ImguiImageSize::Mode::Custom && sizing.fit == ImguiImageFit::Fit);
+    const auto* customSizing = std::get_if<ImguiImageCustom>(&sizing);
+    const bool fitCentered = (customSizing != nullptr && customSizing->fit == ImguiImageFit::Fit);
     const glm::vec2 naturalPhys = naturalLogical * scale;
     glm::vec2 contentPhys(rttPhys);
     glm::vec2 offset(0.0f);
