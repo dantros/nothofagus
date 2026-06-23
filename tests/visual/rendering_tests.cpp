@@ -640,6 +640,46 @@ TEST_CASE("Markdown tables render with wrapped columns", "[rendering][imgui]")
 }
 
 // ---------------------------------------------------------------------------
+// Markdown inline images: `![alt](src)` resolves to a pre-registered ImGui image
+// (registerImguiImage) via setImageResolver and is drawn inline through imguiImage,
+// fit to the content width. This golden locks the resolved-image draw and the
+// dimmed `[src]` placeholder for an unresolved source.
+// ---------------------------------------------------------------------------
+static Nothofagus::IndirectTexture makeQuadrantTexture();   // defined with the imguiImage tests below
+
+TEST_CASE("Markdown renders an inline registered image", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(160, 120);
+
+    auto texId = canvas.addTexture(makeQuadrantTexture());     // 8x8 four-color quadrants
+    const Nothofagus::ImguiImageId imageId = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(6.0f)}); // 8x8 -> 48x48
+
+    Nothofagus::MarkdownRenderer markdown(canvas);
+    markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));     // bake before ticking
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::ImguiImageId> {
+        if (src == "tile") return imageId;
+        return std::nullopt;                                   // unknown -> [src] placeholder
+    });
+
+    static constexpr const char* kDoc =
+        "Tile: ![a tile](tile)\n\n"
+        "Missing: ![x](nope)\n";
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) {
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(160.0f, 120.0f), ImGuiCond_Always);
+            ImGui::Begin("md", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            markdown.print(kDoc);
+            ImGui::End();
+        });
+
+    checkAgainstGolden("markdown_inline_image", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
 // OS DPI scaling of the standard-UI (main) context.
 //
 // setContentScaleOverride() makes the content scale deterministic and

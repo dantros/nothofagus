@@ -749,9 +749,26 @@ canvas.run([&](float) {
 });
 ```
 
-**Supported subset (v1):** headings (h1–h6), emphasis (bold, italic, bold-italic), inline code, fenced code blocks, unordered and ordered lists with nesting, blockquotes, horizontal rules, tables (`tableBorder` / `tableHeaderHighlight` toggles on `MarkdownStyle`), links with optional click callback, strikethrough.
+**Supported subset:** headings (h1–h6), emphasis (bold, italic, bold-italic), inline code, fenced code blocks, unordered and ordered lists with nesting, blockquotes, horizontal rules, tables (`tableBorder` / `tableHeaderHighlight` toggles on `MarkdownStyle`), links with optional click callback, strikethrough, **inline images** (`![alt](src)`).
 
-**Not supported (v1):** inline images (`![alt](url)`) — the parser consumes them and silently skips. Image support requires a `TextureId → ImTextureID` bridge that handles the engine's layered (2D-array) texture format.
+#### Inline images — `setImageResolver` + `MarkdownImageResolver`
+
+Inline images render an engine sprite when an image resolver is installed. The resolver maps an image `src` string to a **pre-registered** `ImguiImageId` (see [`registerImguiImage`](#draw-a-visual-inside-imgui--canvasregisterimguiimage--imguiimage)); the renderer draws it inline via `imguiImage`, **fit to the available content width** (downscale only, preserving aspect — a crisp GPU downscale of the fixed-resolution handle). Because images are pre-registered, declared images have **no warm-up**. Every texture kind works (Direct / Indirect / tile-map / animation); keep an animated source live with `Canvas::updateImguiImage`.
+
+```cpp
+// Register the document's images up front, then map each src token to its id.
+auto logoId = canvas.registerImguiImage(Nothofagus::Visual{logoTexId}, ImguiImageSize::Scaled{glm::vec2(6)});
+markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::ImguiImageId> {
+    if (src == "logo") return logoId;
+    return std::nullopt;            // unknown src -> a dimmed [src] placeholder
+});
+markdown.print("![the logo](logo)\n");
+```
+
+- `MarkdownImageResolver = std::function<std::optional<ImguiImageId>(std::string_view src)>` ([include/markdown_renderer.h](include/markdown_renderer.h)). Returning `std::nullopt` (or installing no resolver) draws a dimmed `[src]` placeholder instead of the image.
+- The renderer draws the image itself and suppresses imgui_md's own `ImGui::Image`, re-creating the standard behaviors on the image item: a tooltip showing the `src`, and click → the `setOpenUrlCallback` callback (with the `src`).
+- **Sizing split:** the `ImguiImageSize::Spec` at registration fixes the rasterization resolution (register at a generous size); markdown's fit-to-width is purely the `imguiImage(id, drawSize)` draw-size override, so the two compose without conflict.
+- **Limitations:** the alt text itself is not shown (the parser suppresses inline text while in an image, so the placeholder uses the `src`); images draw as block items at the cursor (no true mid-sentence text flow).
 
 **Rules:**
 - `MarkdownRenderer(Canvas&)` binds for the renderer's lifetime; the canvas must outlive it.
@@ -905,7 +922,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_imgui_image_registry.cpp` | `registerImguiImage` / `ImguiImageId` focused — the stable, warm-up-free ImGui image handle: convenience `imguiImage(id)` draw, raw `ImGui::Image(imguiImageHandle(id), …)`, a draw-size override (GPU downscale of the fixed-res handle), live animation via `updateImguiImage`, and register/unregister lifecycle |
 | `hello_imgui_overlay.cpp` | `imguiOverlayViewport()` + `imguiBaseFontSize()` — header/footer ImGui bars pinned to the canvas, tracking pillarbox/letterbox + DPI on resize |
 | `hello_custom_font.cpp` | User-supplied TTF via `addImguiFontSource` — typeable path field, editable text, integer min/max + slider for size, default-vs-user side-by-side with `TextWrapped`; also demonstrates the `imgui-filebrowser` integration. When built with `-DNOTHOFAGUS_EMBED_CJK*`, adds macro-guarded blocks rendering Chinese/Japanese/Korean sample text via `embeddedCjkFontSource(...)` |
-| `hello_markdown.cpp` | `MarkdownRenderer` — headings, lists, code blocks, tables, blockquotes, strikethrough, link callback; true bold/italic/bold-italic/mono faces via `canvas.defaultMarkdownStyle(...)` |
+| `hello_markdown.cpp` | `MarkdownRenderer` — headings, lists, code blocks, tables, blockquotes, strikethrough, link callback; true bold/italic/bold-italic/mono faces via `canvas.defaultMarkdownStyle(...)`; **inline images** via `setImageResolver` → `registerImguiImage` (a static logo, a live animated spinner via `updateImguiImage`, and a dimmed `[src]` placeholder for an unresolved source) |
 | `hello_dpi_scaling.cpp` | OS DPI scaling for standard UI vs game-resolution diegetic UI — `contentScale()` / `setContentScaleOverride()` / `imguiScaledFontSize()` + `style.FontScaleMain`, a broad native-style widget spread, live override/zoom sliders, a diagnostics readout, and a side-by-side diegetic RTT panel |
 
 ## Tests
