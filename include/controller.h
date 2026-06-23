@@ -190,6 +190,16 @@ public:
 
     glm::vec2 getMousePosition() const;
 
+    // Keyboard / mouse polling — current held state (parity with the gamepad
+    // getters). Updated by the activate*/scrolled feed primitives.
+    bool isKeyDown(Key key) const;
+    bool isMouseButtonDown(MouseButton button) const;
+
+    /// Return the scroll offset accumulated since the previous call and reset it
+    /// to zero. Used by the threaded input marshal to forward per-frame scroll to
+    /// the sim controller; single-threaded apps typically use registerMouseScroll.
+    glm::vec2 consumeScroll();
+
     // Gamepad registration
     bool registerGamepadAction(GamepadButtonTrigger trigger, Action action);
     bool deleteGamepadAction(GamepadButtonTrigger trigger);
@@ -230,6 +240,13 @@ private:
     std::optional<std::function<void(glm::vec2)>> mMouseMoveCallback;
     std::optional<std::function<void(glm::vec2)>> mMouseScrollCallback;
     glm::vec2 mMousePosition{0.0f, 0.0f};
+
+    // Held-state mirrors of keyboard/mouse, updated by activate*/scrolled so the
+    // state is pollable (isKeyDown/isMouseButtonDown) and harvestable by the
+    // threaded input marshal. mAccumulatedScroll sums offsets until consumeScroll().
+    std::bitset<static_cast<std::size_t>(Key::SIZEOF)> mKeyDown;
+    bool mMouseButtonDown[3]{false, false, false};
+    glm::vec2 mAccumulatedScroll{0.0f, 0.0f};
 
     GamepadTriggerActions mGamepadTriggerActions;
     ActiveGamepadActions  mActiveGamepadActions;

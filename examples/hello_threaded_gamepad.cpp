@@ -1,4 +1,4 @@
-// hello_threaded_gamepad — gamepad input on the sim thread (M5).
+// hello_threaded_gamepad — game input (gamepad + keyboard + mouse) on the sim thread.
 //
 // The game logic runs on its own std::thread (inside canvas.commit's update);
 // the main thread renders the previous frame's snapshot. nothofagus spawns no
@@ -9,15 +9,18 @@
 //     -> close). The window backend polls the OS input — keyboard/mouse/gamepad —
 //     into it on the render thread.
 //   * a SIM controller, the game's own. nothofagus marshals the render
-//     controller's normalized gamepad state across the thread boundary and
-//     replays it onto the sim controller right before each commit's update, so
-//     the game can poll it (getGamepadAxis/...) and receive its callbacks
-//     (registerGamepadAction/...) the normal way — all on the sim thread.
+//     controller's input — gamepad state (M5) plus held keyboard/mouse state and
+//     per-frame scroll — across the thread boundary and replays it onto the sim
+//     controller right before each commit's update, so the game can poll it
+//     (getGamepadAxis / isKeyDown / isMouseButtonDown / getMousePosition) and
+//     receive its callbacks (registerGamepadAction / registerAction / ...) the
+//     normal way — all on the sim thread.
 //
-// This mirrors examples/test_gamepad.cpp, but on the threaded driver. Gamepad
-// input is one frame stale by construction (same uniform sim<-render latency as
-// the rest of the threaded path). Real stick input needs a connected pad; with
-// none, the marshal/feed runs every frame as a clean no-op.
+// Controls: left stick or WASD move the sprite; hold left mouse to ease it toward
+// the cursor; gamepad Start or the R key toggle rotation; A pulses; D-pad steps.
+// Input is one frame stale by construction (the uniform sim<-render latency).
+// Real stick input needs a connected pad; with none, the marshal/feed runs every
+// frame as a clean no-op.
 
 #include <algorithm>
 #include <chrono>
@@ -87,6 +90,11 @@ int main()
     simController.registerGamepadAction({0, Nothofagus::GamepadButton::DpadRight, Nothofagus::DiscreteTrigger::Press},
         [&]() { canvas.bellota(bellotaId).transform().location().x += discreteStep; });
 
+    // Keyboard (R) toggles rotation too — a registered key action on the sim
+    // controller, dispatched on the sim thread (parity with the gamepad Start).
+    simController.registerAction({Nothofagus::Key::R, Nothofagus::DiscreteTrigger::Press},
+        [&]() { rotate = not rotate; });
+
     auto update = [&](float deltaTime)
     {
         Nothofagus::Bellota& bellota = canvas.bellota(bellotaId);
@@ -100,6 +108,22 @@ int main()
             const float leftY = simController.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::LeftY);
             bellota.transform().location().x += leftX * horizontalSpeed * deltaTime;
             bellota.transform().location().y += leftY * horizontalSpeed * deltaTime;
+        }
+
+        // Keyboard WASD movement (polling the sim controller's held key state).
+        glm::vec2 keyboardMove{0.0f, 0.0f};
+        if (simController.isKeyDown(Nothofagus::Key::W)) keyboardMove.y += 1.0f;
+        if (simController.isKeyDown(Nothofagus::Key::S)) keyboardMove.y -= 1.0f;
+        if (simController.isKeyDown(Nothofagus::Key::D)) keyboardMove.x += 1.0f;
+        if (simController.isKeyDown(Nothofagus::Key::A)) keyboardMove.x -= 1.0f;
+        bellota.transform().location() += keyboardMove * horizontalSpeed * deltaTime;
+
+        // Mouse: while the left button is held, ease the sprite toward the cursor
+        // (mouse position arrives in canvas space, like the single-threaded path).
+        if (simController.isMouseButtonDown(Nothofagus::MouseButton::Left))
+        {
+            const glm::vec2 cursor = simController.getMousePosition();
+            bellota.transform().location() += (cursor - bellota.transform().location()) * 0.01f * deltaTime;
         }
 
         bellota.transform().location().x = std::clamp(bellota.transform().location().x, 10.0f, static_cast<float>(screenSize.width) - 10.0f);

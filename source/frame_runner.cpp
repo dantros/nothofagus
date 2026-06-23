@@ -354,12 +354,14 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
         // resources with the commit at which they leave the scene.
         const std::uint64_t commitSeq = ++mCommitSeq;
 
-        // M5: feed the sim controller from the latest gamepad snapshot (harvested
-        // render-side after the window poll) so the game `update` sees the gamepad.
+        // Feed the sim controller from the latest input snapshots (harvested
+        // render-side after the window poll) so the game `update` sees gamepad,
+        // keyboard, and mouse.
         if (controller != nullptr)
         {
-            ZoneScopedN("FeedGamepad");
+            ZoneScopedN("FeedInput");
             feedGamepadInput(*controller);
+            feedGameInput(*controller);
         }
 
         // 1) Game logic — lock-free, so it overlaps the render thread's sprite work.
@@ -746,11 +748,12 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
             mWindow->endFrame(controller, mScreenSize);
         }
 
-        // M5: snapshot the render controller's freshly-polled gamepad state for the
-        // sim thread to replay onto its own controller next commit.
+        // Snapshot the render controller's freshly-polled input (gamepad + keyboard
+        // + mouse) for the sim thread to replay onto its own controller next commit.
         {
-            ZoneScopedN("HarvestGamepad");
+            ZoneScopedN("HarvestInput");
             harvestGamepadInput(controller);
+            harvestGameInput(controller);
         }
 
         mThreadedRunning.store(mWindow->isRunning(), std::memory_order_release);
@@ -1035,6 +1038,73 @@ void FrameRunner::feedGamepadInput(Controller& simController)
     }
 
     // Dispatch the queued button edges to the game's registered callbacks.
+    simController.processInputs();
+}
+
+void FrameRunner::harvestGameInput(Controller& renderController)
+{
+    // Read the render controller's held keyboard/mouse state + per-frame scroll
+    // into a local, then publish under the mutex. Scroll is a DELTA, so accumulate
+    // it into the shared state (the sim resets it on consume) rather than overwrite.
+    GameInputSnapshot local;
+    for (std::size_t k = 0; k < GameInputSnapshot::kKeyCount; ++k)
+        local.keyDown[k] = renderController.isKeyDown(static_cast<Key>(k));
+    for (std::size_t b = 0; b < 3; ++b)
+        local.mouseDown[b] = renderController.isMouseButtonDown(static_cast<MouseButton>(b));
+    const glm::vec2 mousePos = renderController.getMousePosition();
+    local.mouseX = mousePos.x;
+    local.mouseY = mousePos.y;
+    const glm::vec2 scroll = renderController.consumeScroll();
+
+    std::lock_guard<std::mutex> lock(mThreadedGameInputMutex);
+    std::copy(std::begin(local.keyDown), std::end(local.keyDown), std::begin(mThreadedGameInputState.keyDown));
+    std::copy(std::begin(local.mouseDown), std::end(local.mouseDown), std::begin(mThreadedGameInputState.mouseDown));
+    mThreadedGameInputState.mouseX = local.mouseX;
+    mThreadedGameInputState.mouseY = local.mouseY;
+    mThreadedGameInputState.scrollX += scroll.x;
+    mThreadedGameInputState.scrollY += scroll.y;
+}
+
+void FrameRunner::feedGameInput(Controller& simController)
+{
+    GameInputSnapshot snapshot;
+    {
+        std::lock_guard<std::mutex> lock(mThreadedGameInputMutex);
+        snapshot = mThreadedGameInputState;
+        mThreadedGameInputState.scrollX = 0.0f; // consume accumulated scroll
+        mThreadedGameInputState.scrollY = 0.0f;
+    }
+
+    // Keyboard: reconstruct press/release edges by diffing the snapshot against the
+    // sim controller's held state (activate sets state + queues the edge).
+    for (std::size_t k = 0; k < GameInputSnapshot::kKeyCount; ++k)
+    {
+        const Key key = static_cast<Key>(k);
+        const bool down = snapshot.keyDown[k];
+        if (down != simController.isKeyDown(key))
+            simController.activate({key, down ? DiscreteTrigger::Press : DiscreteTrigger::Release});
+    }
+
+    // Mouse buttons: same edge reconstruction.
+    for (std::size_t b = 0; b < 3; ++b)
+    {
+        const MouseButton button = static_cast<MouseButton>(b);
+        const bool down = snapshot.mouseDown[b];
+        if (down != simController.isMouseButtonDown(button))
+            simController.activateMouseButton({button, down ? DiscreteTrigger::Press : DiscreteTrigger::Release});
+    }
+
+    // Mouse position (already canvas-space): only on change, to match the
+    // single-threaded path (the backend updates it per move event, not per frame).
+    const glm::vec2 newPos(snapshot.mouseX, snapshot.mouseY);
+    if (newPos != simController.getMousePosition())
+        simController.updateMousePosition(newPos);
+
+    // Scroll: forward this frame's accumulated delta (fires the scroll callback).
+    if (snapshot.scrollX != 0.0f || snapshot.scrollY != 0.0f)
+        simController.scrolled(glm::vec2(snapshot.scrollX, snapshot.scrollY));
+
+    // Dispatch the queued key / mouse-button edges to the game's callbacks.
     simController.processInputs();
 }
 

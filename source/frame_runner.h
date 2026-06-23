@@ -223,6 +223,15 @@ private:
     /// (diff buttons/connection vs its current state, set axes, then dispatch the
     /// queued button edges). Called before the user update.
     void feedGamepadInput(Controller& simController);
+
+    /// Render thread: snapshot the render controller's held keyboard/mouse state +
+    /// per-frame scroll into mThreadedGameInputState (called after the window poll).
+    void harvestGameInput(Controller& renderController);
+
+    /// Sim thread: replay the latest keyboard/mouse snapshot onto the sim controller
+    /// (diff key/button state vs its current state → press/release edges, set mouse
+    /// position, forward scroll, then dispatch the queued edges). Before the update.
+    void feedGameInput(Controller& simController);
     void ensureSessionStarted(Controller& controller);
     void runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
                      ImguiImageManager& imguiImages,
@@ -390,6 +399,24 @@ private:
     };
     GamepadSnapshot mThreadedGamepadState;
     std::mutex mThreadedGamepadMutex;
+
+    // ----- Keyboard + mouse game input on the sim thread -----
+    /// Held keyboard/mouse state snapshotted from the render controller on the
+    /// render thread (post window poll) and replayed onto the sim controller before
+    /// the sim update, so a game running in commit()'s update can poll/receive
+    /// keyboard + mouse the normal way. POD; mouse position is in canvas space
+    /// (already converted render-side); scroll is the per-frame accumulated delta
+    /// (consumed from the render controller). Guarded by its mutex.
+    struct GameInputSnapshot
+    {
+        static constexpr std::size_t kKeyCount = static_cast<std::size_t>(Key::SIZEOF);
+        bool      keyDown[kKeyCount]{};
+        bool      mouseDown[3]{false, false, false};
+        float     mouseX{0.0f}, mouseY{0.0f};
+        float     scrollX{0.0f}, scrollY{0.0f};
+    };
+    GameInputSnapshot mThreadedGameInputState;
+    std::mutex mThreadedGameInputMutex;
 
     /// Set from the sim-UI frame each commit; read by the host's game update (and
     /// available via Canvas) so world interaction can be suppressed while an ImGui
