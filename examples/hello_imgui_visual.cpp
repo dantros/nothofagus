@@ -3,14 +3,15 @@
 #include <vector>
 #include <nothofagus.h>
 
-// imguiVisual demo:
-//   * draw a Visual's appearance inside an ImGui window (ImGui::Image),
-//   * a palette-indexed, animated visual (proves the RTT palette/animation resolve),
+// Drawing engine Visuals inside ImGui — the registration model (registerImguiImage):
+//   * register each Visual at a fixed size once, then draw it by id every frame,
+//   * a palette-indexed, animated visual (updateImguiImage advances the frame; stable id),
 //   * a custom-mesh (triangle) visual (proves the mesh-AABB fit — non-square),
 //   * a standalone Visual{textureId} (no bellota, no mesh — engine synthesizes a quad),
-//   * an opacity slider (one internal RTT reused; opacity applied as the image tint),
-//   * a render target as the source (renderTo -> imguiVisual), proving an RTT texture is
-//     sampled by imguiVisual exactly like a main-canvas bellota samples one.
+//   * an opacity slider (fed through updateImguiImage; no re-warm),
+//   * a scale slider via the imguiImage draw-size override — register once at a generous
+//     resolution and downscale at draw time (a GPU sample of the fixed-res handle, stays crisp),
+//   * a render target as the source (renderTo -> registered image), sampled like a main bellota.
 //
 // The entry point is a Visual, never a Bellota: placement (transform/depth) is
 // meaningless inside an ImGui layout, so only the appearance is drawn.
@@ -19,6 +20,7 @@ namespace
 {
     constexpr float kTwoPi  = 2.0f * std::numbers::pi_v<float>;
     constexpr float kHalfPi = std::numbers::pi_v<float> / 2.0f;
+    constexpr float kMaxScale = 20.0f; // the animated "scaled" image is rasterized at this size
 
     Nothofagus::Mesh makeTriangle(float radius)
     {
@@ -37,7 +39,11 @@ namespace
 
 int main()
 {
-    Nothofagus::Canvas canvas({200, 140}, "imguiVisual", {0.10f, 0.10f, 0.14f}, 5);
+    namespace Size = Nothofagus::ImguiImageSize;
+    using Nothofagus::ImguiImageUnits;
+    using Nothofagus::ImguiImageFit;
+
+    Nothofagus::Canvas canvas({200, 140}, "imguiImage", {0.10f, 0.10f, 0.14f}, 5);
 
     Nothofagus::ColorPallete pallete{
         {0.0f, 0.0f, 0.0f, 0.0f},  // 0: transparent
@@ -61,7 +67,6 @@ int main()
         animTex.setPixels(pixels, frame);
     }
     Nothofagus::TextureId animTexId = canvas.addTexture(animTex);
-    Nothofagus::BellotaId animBellotaId = canvas.addBellota({{{60.0f, 70.0f}}, animTexId});
 
     // Custom-mesh visual: a triangle (non-square AABB) sampling a 4-color quadrant
     // texture, so the texture mapping across the mesh's UVs is clearly visible.
@@ -76,7 +81,7 @@ int main()
     }
     Nothofagus::TextureId triTexId = canvas.addTexture(triTex);
     Nothofagus::MeshId triMeshId = canvas.addMesh(makeTriangle(16.0f));
-    Nothofagus::BellotaId triBellotaId = canvas.addBellota({{{140.0f, 70.0f}}, triTexId, triMeshId});
+    const Nothofagus::Visual triVisual{triTexId, triMeshId};
 
     // Nearest-vs-Linear must use a DirectTexture (RGBA): paletted/IndirectTextures are
     // integer-indexed (texelFetch) and forced to Nearest, so magFilter has no effect on
@@ -91,16 +96,33 @@ int main()
     canvas.setTextureMagFilter(linearTexId, Nothofagus::TextureSampleMode::Linear);
 
     // Render-target source: draw an engine bellota into an off-screen RTT, then feed that
-    // RTT's *texture* to imguiVisual. The expected order is the same one the standard
-    // nested-RTT flow relies on — schedule renderTo(...) for the source each frame;
-    // imguiVisual's internal pass is appended after all user RTT passes, so the source is
-    // always rendered before it's sampled.
+    // RTT's *texture* to a registered image. renderTo(...) is scheduled each frame, and the
+    // registered image's internal pass is appended after all user RTT passes, so the source
+    // is always rendered before it's sampled.
     Nothofagus::RenderTargetId sceneRtId = canvas.addRenderTarget({48, 48});
     canvas.setRenderTargetClearColor(sceneRtId, {0.05f, 0.06f, 0.12f, 1.0f});
     Nothofagus::TextureId sceneRtTexId = canvas.renderTargetTexture(sceneRtId);
-    // A sprite living in the RTT's coordinate space (origin bottom-left, 48x48). It also
-    // shows on the main canvas (renderTo dual-renders), mirroring hello_render_to_texture.
     Nothofagus::BellotaId sceneBellotaId = canvas.addBellota({{{24.0f, 24.0f}, 3.0f}, triTexId});
+
+    // Register every image up front (before the loop): each handle is ready by its first
+    // drawn frame, so nothing flashes an empty cell. The animated images are re-rendered
+    // each frame via updateImguiImage; the rest are static registrations.
+    const Nothofagus::ImguiImageId animNaturalId  = canvas.registerImguiImage(Nothofagus::Visual{animTexId}, Size::Natural{});
+    const Nothofagus::ImguiImageId animScaledId   = canvas.registerImguiImage(Nothofagus::Visual{animTexId}, Size::Scaled{glm::vec2(kMaxScale)});
+    const Nothofagus::ImguiImageId animNativeId   = canvas.registerImguiImage(Nothofagus::Visual{animTexId}, Size::Natural{ImguiImageUnits::Device});
+    const Nothofagus::ImguiImageId animZoomId     = canvas.registerImguiImage(Nothofagus::Visual{animTexId}, Size::Scaled{glm::vec2(4.0f), ImguiImageUnits::Device});
+
+    const Nothofagus::ImguiImageId triFitId       = canvas.registerImguiImage(triVisual, Size::Explicit{{120.0f, 80.0f}, ImguiImageFit::Fit});
+    const Nothofagus::ImguiImageId triStretchId   = canvas.registerImguiImage(triVisual, Size::Explicit{{120.0f, 80.0f}, ImguiImageFit::Stretch});
+    const Nothofagus::ImguiImageId triFitDevId    = canvas.registerImguiImage(triVisual, Size::Explicit{{120.0f, 80.0f}, ImguiImageFit::Fit, ImguiImageUnits::Device});
+    const Nothofagus::ImguiImageId triStretchDevId= canvas.registerImguiImage(triVisual, Size::Explicit{{120.0f, 80.0f}, ImguiImageFit::Stretch, ImguiImageUnits::Device});
+
+    const Nothofagus::ImguiImageId nearestId      = canvas.registerImguiImage(Nothofagus::Visual{nearestTexId}, Size::Scaled{glm::vec2(8.0f)});
+    const Nothofagus::ImguiImageId linearId       = canvas.registerImguiImage(Nothofagus::Visual{linearTexId},  Size::Scaled{glm::vec2(8.0f)});
+    const Nothofagus::ImguiImageId sceneRtImageId = canvas.registerImguiImage(Nothofagus::Visual{sceneRtTexId}, Size::Scaled{glm::vec2(2.0f)});
+
+    // The animated registrations that share the same source content (advanced together).
+    const Nothofagus::ImguiImageId animIds[] = {animNaturalId, animScaledId, animNativeId, animZoomId};
 
     float opacity = 1.0f;
     float scale   = 8.0f;
@@ -108,83 +130,84 @@ int main()
 
     canvas.run([&](float dt)
     {
-        // Drive the animation by hand (changing the Visual's current layer).
+        // Advance the animation (current layer) and push it — plus the live opacity — onto
+        // every registered view of the animated visual. Same size => no re-warm.
         elapsedMs += dt;
         const std::size_t frame = static_cast<std::size_t>(elapsedMs / 180.0f) % kFrames;
-        canvas.bellota(animBellotaId).currentLayer() = frame;
+        Nothofagus::Visual animVisual{animTexId};
+        animVisual.currentLayer() = frame;
+        animVisual.opacity() = opacity;
+        for (const Nothofagus::ImguiImageId id : animIds)
+            canvas.updateImguiImage(id, animVisual);
 
         // Spin the RTT sprite and schedule it into the off-screen target this frame, so the
-        // imguiVisual sampling sceneRtTexId below has fresh pixels to read.
+        // registered image sampling sceneRtTexId below has fresh pixels to read.
         canvas.bellota(sceneBellotaId).transform().angle() += dt * 0.05f;
         canvas.renderTo(sceneRtId, {sceneBellotaId});
 
         ImGui::Begin("Visuals in ImGui");
 
-        ImGui::SliderFloat("scale", &scale, 1.0f, 20.0f);
+        ImGui::SliderFloat("draw scale", &scale, 1.0f, kMaxScale);
         ImGui::SliderFloat("opacity", &opacity, 0.0f, 1.0f);
         ImGui::Separator();
-
-        Nothofagus::Visual animVisual = canvas.bellota(animBellotaId).visual();
-        animVisual.opacity() = opacity;
 
         ImGui::TextUnformatted("Size source x units. Natural = real size; Scaled = xN; Device units = exact");
         ImGui::TextUnformatted("physical px (1 texel -> 1 display pixel, ignores OS DPI):");
         ImGui::BeginGroup();
         ImGui::TextUnformatted("natural");
-        canvas.imguiVisual(animVisual);                         // Natural, Logical: true 8x8 logical px (DPI-scaled)
+        canvas.imguiImage(animNaturalId);                       // Natural, Logical: true 8x8 logical px (DPI-scaled)
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
-        ImGui::TextUnformatted("scaled");
-        canvas.imguiVisual(animVisual, Nothofagus::ImguiImageSize::Scaled{glm::vec2(scale)});    // Scaled, Logical: crisp NxN
+        ImGui::TextUnformatted("scaled (draw-size)");
+        canvas.imguiImage(animScaledId, glm::vec2(8.0f * scale)); // registered at xMaxScale, drawn smaller (crisp downscale)
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("native (device)");
-        canvas.imguiVisual(animVisual, Nothofagus::ImguiImageSize::Natural{Nothofagus::ImguiImageUnits::Device}); // 1 texel -> 1 device px, no size needed
+        canvas.imguiImage(animNativeId);                        // 1 texel -> 1 device px
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("zoom (device)");
-        canvas.imguiVisual(animVisual, Nothofagus::ImguiImageSize::Scaled{glm::vec2(4.0f), Nothofagus::ImguiImageUnits::Device}); // crisp 4x in device px
+        canvas.imguiImage(animZoomId);                          // crisp 4x in device px
         ImGui::EndGroup();
 
         ImGui::TextUnformatted("Custom-mesh (triangle) at an Explicit logical-px box, Fit vs Stretch:");
-        Nothofagus::Visual triVisual = canvas.bellota(triBellotaId).visual();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("logical Fit");
-        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::Explicit{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Fit});      // letterboxed, crisp edges
+        canvas.imguiImage(triFitId);      // letterboxed, crisp edges
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("logical Stretch");
-        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::Explicit{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Stretch});  // fills, distorts
+        canvas.imguiImage(triStretchId);  // fills, distorts
         ImGui::EndGroup();
 
         ImGui::TextUnformatted("Same triangle at an Explicit device-px box (ignores OS DPI), Fit vs Stretch:");
         ImGui::BeginGroup();
         ImGui::TextUnformatted("device Fit");
-        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::Explicit{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Fit, Nothofagus::ImguiImageUnits::Device});      // letterboxed, exact device px
+        canvas.imguiImage(triFitDevId);      // letterboxed, exact device px
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("device Stretch");
-        canvas.imguiVisual(triVisual, Nothofagus::ImguiImageSize::Explicit{{120.0f, 80.0f}, Nothofagus::ImguiImageFit::Stretch, Nothofagus::ImguiImageUnits::Device});  // fills the device box, distorts
+        canvas.imguiImage(triStretchDevId);  // fills the device box, distorts
         ImGui::EndGroup();
 
         ImGui::TextUnformatted("RGBA texture magFilter (2x2 magnified) - Nearest vs Linear:");
         ImGui::BeginGroup();
         ImGui::TextUnformatted("Nearest (default)");
-        canvas.imguiVisual(Nothofagus::Visual{nearestTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(scale)});
+        canvas.imguiImage(nearestId);
         ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::TextUnformatted("Linear");
-        canvas.imguiVisual(Nothofagus::Visual{linearTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(scale)});
+        canvas.imguiImage(linearId);
         ImGui::EndGroup();
 
-        ImGui::TextUnformatted("Render target as source (renderTo -> imguiVisual) - same as a main bellota's RTT:");
-        canvas.imguiVisual(Nothofagus::Visual{sceneRtTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(2.0f)});
+        ImGui::TextUnformatted("Render target as source (renderTo -> registered image):");
+        canvas.imguiImage(sceneRtImageId);
 
         ImGui::End();
     });

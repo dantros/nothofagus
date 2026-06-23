@@ -13,7 +13,6 @@
 #include <glm/glm.hpp>
 #include <map>
 #include <optional>
-#include <tuple>
 #include <utility>
 #include <vector>
 #include <cstdint>
@@ -38,16 +37,11 @@ class AssetRegistry;
  * list; all GPU work (RTT creation/draw, flat-2D handle creation) happens on the
  * render side, driven by ids.
  *
- * Two entry populations share one rendering path:
- *  - **Lazy** entries back the convenience `imguiVisual(...)` call. They are keyed by
- *    content + size, reference-counted by frame use, and garbage-collected a few frames
- *    after they stop being drawn. A genuinely first-seen visual is blank for one frame
- *    (the warm-up: the handle is created render-side this frame and read sim-side next).
- *  - **Registered** entries back `registerImguiImage(...)`. They have an explicit
- *    lifetime (until `unregisterImguiImage`), a fixed size spec, and a stable handle.
- *    Registration allocates the internal RTT immediately and the render side populates
- *    its handle on the next tick, so any draw that happens after registration is
- *    warm-up-free. They are never garbage-collected and never re-keyed on size change.
+ * Every image is **registered**: `registerImage(...)` returns a stable id with an explicit
+ * lifetime (until `unregisterImage`), a fixed size spec, and a stable handle. Registration
+ * allocates the internal RTT immediately and the render side populates its handle on the next
+ * tick, so any draw that happens after registration is warm-up-free. Registered images are
+ * never garbage-collected and never re-keyed on size change.
  */
 class ImguiImageManager
 {
@@ -57,11 +51,6 @@ public:
 
     /// Sim-side: bump the per-frame clock. Call once at the start of the build phase.
     void beginFrame() { ++mFrameCounter; }
-
-    /// Sim-side, user-facing: draw `visual` in the current ImGui window, sized per
-    /// `sizeSpec` (logical px). `contentScale` is the DPI density to rasterize the internal
-    /// render target at (the same value the font atlas uses). Call inside an ImGui frame.
-    void imguiVisual(const Visual& visual, const ImguiImageSize::Spec& sizeSpec, float contentScale);
 
     // --- Registration (general ImGui image handles) ------------------------------------
     /// Register `visual` at a fixed `sizeSpec`. Returns immediately with a stable id; the
@@ -86,26 +75,20 @@ public:
     /// Whether the registered image's handle has been created (no warm-up remaining).
     bool isReady(ImguiImageId id) const;
 
-    /// Sim-side: append this frame's internal RTT passes (lazy entries drawn this frame +
-    /// registered entries that are displayed, dirty, or not-yet-populated) onto the
-    /// snapshot's RTT pass list, after the user-scheduled RTT passes.
+    /// Sim-side: append this frame's internal RTT passes (registered entries that are
+    /// displayed, dirty, or not-yet-populated) onto the snapshot's RTT pass list, after the
+    /// user-scheduled RTT passes.
     void appendInternalPasses(std::vector<RttPass>& out);
 
-    /// Render-side: after the snapshot's RTT passes have drawn the internal targets,
-    /// refresh each flat-2D and (lazily) create its ImGui handle; then garbage-collect
-    /// lazy entries unused for a while.
-    void resolveAndGarbageCollect();
+    /// Render-side: after the snapshot's RTT passes have drawn the internal targets, refresh
+    /// each flat-2D and create its ImGui handle if not yet created.
+    void resolveImages();
 
     /// Teardown: free every handle + internal RTT + resource pin. Backend and the
     /// main ImGui context must still be alive (called from ~Canvas before shutdown).
     void releaseAll();
 
 private:
-    // Identity of a drawn image: pixels (textureId, meshId, layer) + the rasterized
-    // physical size + whether the content fills or is fit-centered (so the same visual at
-    // different sizes / fit modes gets distinct render targets).
-    using Key = std::tuple<std::size_t, std::size_t, std::size_t, int, int, int>;
-
     struct Entry
     {
         RenderTargetId rt{0};
@@ -115,10 +98,9 @@ private:
         glm::ivec2     rttSize{1, 1};       ///< physical px the target is rasterized at.
         glm::mat3      transform{1.0f};     ///< maps the mesh AABB into the RTT (pre rttNdc).
         std::uint64_t  handle = 0;          ///< ImTextureID; 0 until created render-side.
-        std::uint64_t  lastUsedFrame = 0;
+        std::uint64_t  lastUsedFrame = 0;   ///< last frame the image was drawn.
         bool           ownedQuad = false;   ///< mesh is a manager-synthesized quad.
 
-        // Registered-entry fields (unused for lazy entries).
         glm::vec2          displaySize{1.0f};               ///< logical points handed to ImGui.
         float              opacity = 1.0f;                  ///< source visual opacity.
         bool               visible = true;                  ///< source visual visibility.
@@ -128,8 +110,8 @@ private:
         bool               renderedThisFrame = false;       ///< emitted a pass this frame.
     };
 
-    // Geometry resolved from (Visual, size spec, scale), shared by the lazy and registered
-    // paths — everything needed to allocate/key an RTT and draw the result.
+    // Geometry resolved from (Visual, size spec, scale): everything needed to allocate an
+    // RTT and draw the result.
     struct ResolvedGeom
     {
         TextureId  texId{0};
@@ -152,17 +134,12 @@ private:
     /// Draw `handle` at `displaySize` in the current ImGui window, honoring the texture's
     /// magFilter and `opacity`. Caller guarantees `handle != 0`.
     void drawResolvedImage(std::uint64_t handle, glm::vec2 displaySize, TextureId texForFilter, float opacity);
-    /// Best ready entry for the same sprite (same texture/mesh) as `want`, preferring
-    /// matching layer, then size, then fit, then recency — to bridge the warm-up gap
-    /// for both animation (layer change) and size-slider (size change). nullptr if none.
-    Entry* findReadyFallback(const Key& key, const Entry& want);
     void   freeEntryGpu(Entry& entry);   ///< render-side: free handle + RTT.
     void   unpinEntry(const Entry& entry);
 
     ActiveBackend& mBackend;
     AssetRegistry& mAssets;
 
-    std::map<Key, Entry>                 mEntries;       ///< lazy entries (imguiVisual).
     std::map<std::size_t, Entry>         mRegistered;    ///< registered entries (ImguiImageId).
     std::size_t                          mNextImageId = 1;
     std::map<std::pair<int, int>, MeshId> mOwnedQuads;   ///< quad mesh per texture size (shared).
@@ -174,7 +151,6 @@ private:
     RefCount<MeshId>    mMeshPins;
 
     std::uint64_t mFrameCounter = 0;
-    static constexpr std::uint64_t kRetireAfterFrames = 8;
 };
 
 } // namespace Nothofagus

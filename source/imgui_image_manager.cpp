@@ -189,67 +189,6 @@ void ImguiImageManager::drawResolvedImage(
         drawList->AddCallback(platformIo.DrawCallback_SetSamplerLinear, nullptr);
 }
 
-void ImguiImageManager::imguiVisual(const Visual& visual, const ImguiImageSize::Spec& sizeSpec, float contentScale)
-{
-    const TextureId texId = visual.texture();
-    debugCheck(mAssets.textures().contains(texId.id), "imguiVisual: unknown TextureId");
-
-    // DPI density to rasterize the off-screen target at (the same value the font atlas
-    // uses). Device units deliberately bypass it; see resolveLayout.
-    const float scale = std::max(contentScale, 1e-3f);
-
-    // Natural size = the visual's real on-screen footprint (mesh AABB extent, logical px).
-    // For an invisible visual, reserve the layout without touching GPU/mesh resources:
-    // derive the size from the mesh (if any) or the texture, then bail.
-    if (not visual.visible())
-    {
-        glm::vec2 natural = visual.meshId().has_value()
-            ? [&]{ glm::vec2 mn, ext; meshAabb(mAssets.mesh(visual.meshId().value()), mn, ext); return ext; }()
-            : glm::max(glm::vec2(mAssets.textures().at(texId.id).mTextureSize), glm::vec2(1.0f));
-        const glm::vec2 display = resolveLayout(sizeSpec, natural, scale).displaySize;
-        ImGui::Dummy(ImVec2(display.x, display.y));
-        return;
-    }
-
-    const ResolvedGeom geom = resolveGeom(visual, sizeSpec, scale);
-    const Key key{geom.texId.id, geom.meshId.id, static_cast<std::size_t>(geom.layer),
-                  geom.rttPhys.x, geom.rttPhys.y, geom.fitCentered ? 1 : 0};
-
-    auto it = mEntries.find(key);
-    if (it == mEntries.end())
-    {
-        Entry entry;
-        allocateEntry(entry, geom);
-        it = mEntries.emplace(key, entry).first;
-    }
-
-    Entry& entry = it->second;
-    entry.lastUsedFrame = mFrameCounter;
-
-    // Pick the handle to draw: this entry's own once it is ready, otherwise the best
-    // ready handle for the SAME sprite (same texture/mesh) — see findReadyFallback for
-    // the preference order. Without this, the per-frame warm-up flashes an empty cell on
-    // every animation step (layer changes) and on every size-slider tick (size changes),
-    // since each is a fresh Key. Only a genuinely first-seen sprite (nothing ready yet)
-    // still reserves a blank cell.
-    std::uint64_t drawHandle = entry.handle;
-    if (drawHandle == 0)
-    {
-        if (Entry* fallback = findReadyFallback(key, entry))
-        {
-            // Keep the borrowed entry alive and re-rendered this frame so its handle
-            // stays valid through the main ImGui pass (GC runs before it).
-            fallback->lastUsedFrame = mFrameCounter;
-            drawHandle = fallback->handle;
-        }
-    }
-
-    if (drawHandle != 0)
-        drawResolvedImage(drawHandle, geom.displaySize, geom.texId, visual.opacity());
-    else
-        ImGui::Dummy(ImVec2(geom.displaySize.x, geom.displaySize.y)); // first-ever frame: reserve layout
-}
-
 // --- Registration ----------------------------------------------------------------------
 
 ImguiImageId ImguiImageManager::registerImage(
@@ -354,39 +293,6 @@ bool ImguiImageManager::isReady(ImguiImageId id) const
     return it != mRegistered.end() && it->second.handle != 0;
 }
 
-ImguiImageManager::Entry* ImguiImageManager::findReadyFallback(const Key& key, const Entry& want)
-{
-    // Any ready handle for the same sprite (same texture + mesh) beats a blank cell
-    // during warm-up. Prefer, in order: the same animation layer (correct frame), then
-    // the same rasterized size + fit (crisp, no stretch), then the most recently
-    // rendered. This bridges two warm-up cases: an animation revisiting a retired layer
-    // (same size, different layer), and a size-slider drag churning a new RTT every
-    // frame (same layer, different size) — the differently-sized handle is just drawn
-    // stretched to the target for the one bridge frame. nullptr if nothing is ready.
-    const int wantFit = std::get<5>(key);
-    Entry* best = nullptr;
-    int bestScore = -1;
-    for (auto& [candidateKey, candidate] : mEntries)
-    {
-        if (candidate.handle == 0)                   continue; // not yet ready
-        if (candidate.texture.id != want.texture.id) continue;
-        if (candidate.mesh.id    != want.mesh.id)    continue;
-
-        int score = 0;
-        if (candidate.layer   == want.layer)      score += 4; // correct frame content
-        if (candidate.rttSize == want.rttSize)    score += 2; // crisp, no stretch
-        if (std::get<5>(candidateKey) == wantFit) score += 1; // same fill/fit placement
-
-        if (score > bestScore ||
-            (score == bestScore && best != nullptr && candidate.lastUsedFrame > best->lastUsedFrame))
-        {
-            best = &candidate;
-            bestScore = score;
-        }
-    }
-    return best;
-}
-
 void ImguiImageManager::pushPass(std::vector<RttPass>& out, const Entry& entry)
 {
     // entry.transform maps the mesh AABB into the RTT's pixel space (fill or fit-
@@ -409,12 +315,7 @@ void ImguiImageManager::pushPass(std::vector<RttPass>& out, const Entry& entry)
 
 void ImguiImageManager::appendInternalPasses(std::vector<RttPass>& out)
 {
-    // Lazy entries: re-render every entry drawn this frame.
-    for (auto& [key, entry] : mEntries)
-        if (entry.lastUsedFrame == mFrameCounter)
-            pushPass(out, entry);
-
-    // Registered entries: re-render when displayed this frame, when their source changed
+    // Re-render a registered image when displayed this frame, when its source changed
     // (dirty), or once to populate a freshly registered RTT (everRendered). Off-screen
     // registered images cost nothing but keep their last-rendered content + valid handle.
     for (auto& [id, entry] : mRegistered)
@@ -431,49 +332,27 @@ void ImguiImageManager::appendInternalPasses(std::vector<RttPass>& out)
     }
 }
 
-void ImguiImageManager::resolveAndGarbageCollect()
+void ImguiImageManager::resolveImages()
 {
     RenderTargetContainer& renderTargets = mAssets.renderTargets();
 
-    // 1. For images rendered this frame, refresh the flat-2D and (lazily) create the
-    //    ImGui handle. Acquire before resolve so the creation frame already has pixels.
-    auto resolveEntry = [&](Entry& entry)
+    // For images rendered this frame, refresh the flat-2D and create the ImGui handle if it
+    // does not exist yet. Acquire before resolve so the creation frame already has pixels.
+    // The handle, once created, persists for the registration lifetime.
+    for (auto& [id, entry] : mRegistered)
     {
+        if (not entry.renderedThisFrame)
+            continue;
         if (not renderTargets.contains(entry.rt.id))
-            return;
+            continue;
         RenderTargetPack& pack = renderTargets.at(entry.rt.id);
         if (not pack.dRenderTargetOpt.has_value())
-            return;
+            continue;
 
         const DRenderTarget& dRenderTarget = pack.dRenderTargetOpt.value();
         if (entry.handle == 0)
             entry.handle = mBackend.acquireFlat2DImguiHandle(dRenderTarget);
         mBackend.resolveRenderTargetFlat2D(dRenderTarget);
-    };
-
-    for (auto& [key, entry] : mEntries)
-        if (entry.lastUsedFrame == mFrameCounter)
-            resolveEntry(entry);
-
-    // Registered entries: resolve any that emitted a pass this frame (display, dirty, or
-    // initial populate). The handle, once created, persists for the registration lifetime.
-    for (auto& [id, entry] : mRegistered)
-        if (entry.renderedThisFrame)
-            resolveEntry(entry);
-
-    // 2. Retire lazy entries unused for a while (frees the internal RTT + ImGui handle).
-    //    Registered entries are never garbage-collected — only unregisterImage frees them.
-    std::vector<Key> toRetire;
-    for (auto& [key, entry] : mEntries)
-        if (mFrameCounter - entry.lastUsedFrame > kRetireAfterFrames)
-            toRetire.push_back(key);
-
-    for (const Key& key : toRetire)
-    {
-        Entry& entry = mEntries.at(key);
-        freeEntryGpu(entry);
-        unpinEntry(entry);
-        mEntries.erase(key);
     }
 }
 
@@ -506,17 +385,11 @@ void ImguiImageManager::unpinEntry(const Entry& entry)
 
 void ImguiImageManager::releaseAll()
 {
-    for (auto& [key, entry] : mEntries)
-    {
-        freeEntryGpu(entry);
-        unpinEntry(entry);
-    }
     for (auto& [id, entry] : mRegistered)
     {
         freeEntryGpu(entry);
         unpinEntry(entry);
     }
-    mEntries.clear();
     mRegistered.clear();
     mTexturePins.clear();
     mMeshPins.clear();

@@ -11,8 +11,8 @@
 //   * a draw-size override downsizes the draw only (a GPU sample of the fixed-res handle),
 //   * unregisterImguiImage(id) frees it.
 //
-// Contrast with imguiVisual (hello_imgui_visual.cpp), which requests + displays in the same
-// frame and therefore blanks for one frame the first time each visual/size is shown.
+// See hello_imgui_visual.cpp for the same registration model exercised across every size
+// mode (Natural / Scaled / Device, Explicit Fit/Stretch on a mesh, Nearest/Linear, RTT source).
 
 namespace
 {

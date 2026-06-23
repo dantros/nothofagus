@@ -749,7 +749,8 @@ TEST_CASE("Tilemap text renders multiple lines", "[rendering][text]")
 }
 
 // ---------------------------------------------------------------------------
-// imguiVisual — draw a Visual's appearance inside an ImGui window (ImGui::Image).
+// registerImguiImage / imguiImage — draw a Visual's appearance inside an ImGui
+// window (ImGui::Image), via the registration model.
 //
 // The engine renders the (paletted, array) visual into an internal render target
 // and exposes that as a flat-2D handle to ImGui. These goldens lock the whole
@@ -757,10 +758,9 @@ TEST_CASE("Tilemap text renders multiple lines", "[rendering][text]")
 // (Scaled / Custom Fit / Custom Stretch), and the texture's magFilter honoring
 // (Nearest -> crisp pixel-art magnification).
 //
-// imguiVisual has a one-frame warm-up (the handle is created render-side and read
-// back the next frame) on top of ImGui's dynamic-atlas warm-up, so — like the
-// other ImGui goldens — these warm up by kImguiWarmupFrames before the capture.
-// The visual is drawn every warm-up frame so its entry stays live (never GC'd).
+// Each image is registered before the loop, so its handle is ready by the first
+// drawn frame (no warm-up). ImGui's dynamic-atlas warm-up still applies, so — like
+// the other ImGui goldens — these warm up by kImguiWarmupFrames before the capture.
 // ---------------------------------------------------------------------------
 
 // 8x8 four-color quadrant texture (palette indices 1..4), so a magnified or
@@ -805,25 +805,27 @@ static void endFullViewportWindow()
     ImGui::PopStyleVar(2);
 }
 
-TEST_CASE("imguiVisual draws a scaled paletted visual", "[rendering][imgui]")
+TEST_CASE("imguiImage draws a scaled paletted visual", "[rendering][imgui]")
 {
     auto canvas = makeCanvas(64, 64);
 
     // Default magFilter is Nearest, so the 8x8 source magnifies into crisp blocks.
     auto texId = canvas.addTexture(makeQuadrantTexture());
 
+    const Nothofagus::ImguiImageId imageId = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(6.0f)}); // 8x8 -> 48x48
+
     for (int i = 0; i < kImguiWarmupFrames; ++i)
         canvas.tick(16.0f, [&](float) {
             beginFullViewportWindow(canvas, "##visual_scaled");
-            canvas.imguiVisual(Nothofagus::Visual{texId},
-                               Nothofagus::ImguiImageSize::Scaled{glm::vec2(6.0f)}); // 8x8 -> 48x48
+            canvas.imguiImage(imageId);
             endFullViewportWindow();
         });
 
     checkAgainstGolden("imgui_visual_scaled", canvas.takeScreenshot());
 }
 
-TEST_CASE("imguiVisual explicit logical size Fit vs Stretch on a custom mesh", "[rendering][imgui][mesh]")
+TEST_CASE("imguiImage explicit logical size Fit vs Stretch on a custom mesh", "[rendering][imgui][mesh]")
 {
     auto canvas = makeCanvas(190, 64);
 
@@ -842,22 +844,24 @@ TEST_CASE("imguiVisual explicit logical size Fit vs Stretch on a custom mesh", "
     auto meshId = canvas.addMesh(triangle);
 
     const Nothofagus::Visual triVisual{texId, meshId};
+    const Nothofagus::ImguiImageId fitId = canvas.registerImguiImage(
+        triVisual, Nothofagus::ImguiImageSize::Explicit{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Fit});
+    const Nothofagus::ImguiImageId stretchId = canvas.registerImguiImage(
+        triVisual, Nothofagus::ImguiImageSize::Explicit{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Stretch});
 
     for (int i = 0; i < kImguiWarmupFrames; ++i)
         canvas.tick(16.0f, [&](float) {
             beginFullViewportWindow(canvas, "##visual_fit_stretch");
-            canvas.imguiVisual(triVisual,
-                Nothofagus::ImguiImageSize::Explicit{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Fit});
+            canvas.imguiImage(fitId);
             ImGui::SameLine();
-            canvas.imguiVisual(triVisual,
-                Nothofagus::ImguiImageSize::Explicit{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Stretch});
+            canvas.imguiImage(stretchId);
             endFullViewportWindow();
         });
 
     checkAgainstGolden("imgui_visual_logical_fit_stretch", canvas.takeScreenshot());
 }
 
-TEST_CASE("imguiVisual draws a DirectTexture honoring magFilter", "[rendering][imgui]")
+TEST_CASE("imguiImage draws a DirectTexture honoring magFilter", "[rendering][imgui]")
 {
     auto canvas = makeCanvas(110, 56);
 
@@ -865,7 +869,7 @@ TEST_CASE("imguiVisual draws a DirectTexture honoring magFilter", "[rendering][i
     // IndirectTexture — which is integer-indexed (texelFetch) and forced to Nearest —
     // an RGBA texture honors its magFilter, so magnifying the same source as Nearest
     // vs Linear shows hard pixels vs a smooth blend. This golden locks the
-    // DirectTexture path through imguiVisual and the magFilter honoring inside it.
+    // DirectTexture path through the registered image and the magFilter honoring inside it.
     Nothofagus::DirectTexture rgbaTex(glm::ivec2{2, 2});
     rgbaTex.setColor(0, 0, glm::vec4(1.0f, 0.2f, 0.2f, 1.0f)); // red
     rgbaTex.setColor(1, 0, glm::vec4(0.2f, 1.0f, 0.3f, 1.0f)); // green
@@ -876,46 +880,20 @@ TEST_CASE("imguiVisual draws a DirectTexture honoring magFilter", "[rendering][i
     auto linearTexId  = canvas.addTexture(rgbaTex);
     canvas.setTextureMagFilter(linearTexId, Nothofagus::TextureSampleMode::Linear);
 
+    const Nothofagus::ImguiImageId nearestId = canvas.registerImguiImage(
+        Nothofagus::Visual{nearestTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(20.0f)}); // crisp blocks
+    const Nothofagus::ImguiImageId linearId = canvas.registerImguiImage(
+        Nothofagus::Visual{linearTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(20.0f)});  // smooth blend
+
     for (int i = 0; i < kImguiWarmupFrames; ++i)
         canvas.tick(16.0f, [&](float) {
             beginFullViewportWindow(canvas, "##visual_direct_texture");
-            canvas.imguiVisual(Nothofagus::Visual{nearestTexId},
-                               Nothofagus::ImguiImageSize::Scaled{glm::vec2(20.0f)}); // crisp blocks
+            canvas.imguiImage(nearestId);
             ImGui::SameLine();
-            canvas.imguiVisual(Nothofagus::Visual{linearTexId},
-                               Nothofagus::ImguiImageSize::Scaled{glm::vec2(20.0f)}); // smooth blend
+            canvas.imguiImage(linearId);
             endFullViewportWindow();
         });
 
     checkAgainstGolden("imgui_visual_direct_texture", canvas.takeScreenshot());
 }
 
-// ---------------------------------------------------------------------------
-// registerImguiImage — a pre-registered image drawn by id.
-//
-// Registration allocates the internal RTT up front and the handle is created on
-// the next render tick, so by the time the image is drawn (here, every warm-up
-// frame) it is ready — same final pixels as the equivalent imguiVisual scaled
-// case, reached through the registry path (registerImguiImage + imguiImage).
-// This golden locks the registered-draw path end to end.
-// ---------------------------------------------------------------------------
-TEST_CASE("registerImguiImage draws a registered visual by id", "[rendering][imgui]")
-{
-    auto canvas = makeCanvas(64, 64);
-
-    auto texId = canvas.addTexture(makeQuadrantTexture());
-
-    // Register before the loop; the handle is ready by the first drawn frame.
-    const Nothofagus::ImguiImageId imageId =
-        canvas.registerImguiImage(Nothofagus::Visual{texId},
-                                  Nothofagus::ImguiImageSize::Scaled{glm::vec2(6.0f)}); // 8x8 -> 48x48
-
-    for (int i = 0; i < kImguiWarmupFrames; ++i)
-        canvas.tick(16.0f, [&](float) {
-            beginFullViewportWindow(canvas, "##registered_image");
-            canvas.imguiImage(imageId);
-            endFullViewportWindow();
-        });
-
-    checkAgainstGolden("imgui_image_registered", canvas.takeScreenshot());
-}
