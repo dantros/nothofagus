@@ -5,20 +5,24 @@
 // nothofagus spawns no threads — this file owns both loops.
 //
 // Phase A established the snapshot hand-off with a static scene (the sim only
-// mutated existing bellota values). Phase B adds runtime structural churn: the
-// simulation continuously adds and removes sprites via the regular
-// Canvas::addBellota / removeBellota while the render thread is a frame behind.
-// Called from commit()'s update during a live threaded session, those serialize
-// structural changes against the renderer, and the GPU resources a removal
-// orphans (each sprite's auto-quad mesh) are freed by the render thread only
-// once no in-flight frame still references them — so there is no use-after-free
-// despite the one-frame lag.
+// mutated existing bellota values). Later phases add runtime structural churn:
+// from commit()'s update during a live threaded session the simulation
+// continuously creates and destroys resources via the regular Canvas API —
+// bellotas (addBellota/removeBellota) with a per-sprite texture (addTexture), and
+// a rotating set of render targets (addRenderTarget/removeRenderTarget) — while
+// the render thread is a frame behind. Those serialize structural changes against
+// the renderer, and the GPU resources a removal frees (the sprite's texture +
+// auto-quad mesh, or the RTT's FBO/proxy/ImGui context) are released by the
+// render thread only once no in-flight frame still references them — so there is
+// no use-after-free despite the one-frame lag.
 
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <deque>
 #include <thread>
+#include <utility>
 #include <vector>
 #include <nothofagus.h>
 
@@ -65,10 +69,6 @@ int main()
             0,1,2,2,2,2,1,0,
             0,0,1,1,1,1,0,0,
         });
-    // Texture is created up front (uploaded once on the render thread); only
-    // bellotas (and their auto-quad meshes) churn at runtime.
-    const Nothofagus::TextureId textureId = canvas.addTexture(texture);
-
     struct Sprite
     {
         Nothofagus::BellotaId id;
@@ -82,14 +82,23 @@ int main()
 
     constexpr std::size_t targetCount = 60;
 
+    // Each sprite gets its OWN texture, created on the sim thread via addBellota's
+    // sibling addTexture and freed (deferred) when its bellota is removed — so
+    // textures churn on the sim thread too, not just auto-quad meshes.
     auto spawnOne = [&](float now)
     {
         const float x = rng.range(15.0f, screenSize.width - 15.0f);
         const float y = rng.range(15.0f, screenSize.height - 15.0f);
+        const Nothofagus::TextureId textureId = canvas.addTexture(texture);
         const Nothofagus::BellotaId id = canvas.addBellota({{{x, y}, 1.0f}, textureId});
         sprites.push_back({id, glm::vec2(x, y), rng.range(0.0f, 6.28f), 0.0f, rng.range(1500.0f, 4000.0f)});
         (void)now;
     };
+
+    // Render-target churn — create/destroy RTTs from the sim thread to exercise
+    // the deferred render-target free (FBO/VkImage + proxy texture + per-RTT ImGui
+    // context, all torn down on the render thread once no in-flight frame uses them).
+    std::deque<std::pair<Nothofagus::RenderTargetId, float>> scratchRenderTargets;
 
     float simTime = 0.0f;
     auto update = [&](float dt)
@@ -123,6 +132,15 @@ int main()
         int budget = 3;
         while (sprites.size() < targetCount && budget-- > 0)
             spawnOne(simTime);
+
+        // Render-target churn: spawn one roughly every 100 ms, retire after ~400 ms.
+        if (scratchRenderTargets.empty() || simTime - scratchRenderTargets.back().second > 100.0f)
+            scratchRenderTargets.push_back({canvas.addRenderTarget({32, 32}), simTime});
+        while (!scratchRenderTargets.empty() && simTime - scratchRenderTargets.front().second > 400.0f)
+        {
+            canvas.removeRenderTarget(scratchRenderTargets.front().first);
+            scratchRenderTargets.pop_front();
+        }
     };
 
     Nothofagus::Controller controller;

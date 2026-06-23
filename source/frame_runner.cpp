@@ -555,7 +555,7 @@ void FrameRunner::buildRttPasses(AssetRegistry& assets, std::vector<RttPass>& ou
     mPendingRttPasses.clear();
 }
 
-void FrameRunner::drainPendingFrees(AssetRegistry& assets, std::uint64_t lastRenderedSeq)
+void FrameRunner::drainPendingFrees(AssetRegistry& assets, ImguiRttManager& imguiRtt, std::uint64_t lastRenderedSeq)
 {
     std::erase_if(mPendingTextureFrees, [&](const PendingTextureFree& pending)
     {
@@ -571,6 +571,19 @@ void FrameRunner::drainPendingFrees(AssetRegistry& assets, std::uint64_t lastRen
         if (pending.retireSeq <= lastRenderedSeq)
         {
             assets.freeRetiredMesh(pending.id);
+            return true;
+        }
+        return false;
+    });
+    std::erase_if(mPendingRenderTargetFrees, [&](const PendingRenderTargetFree& pending)
+    {
+        if (pending.retireSeq <= lastRenderedSeq)
+        {
+            // Tear down the per-RTT ImGui secondary context (GPU + render-thread
+            // affine) first, then free the FBO/VkImage + proxy texture and erase
+            // both containers. Safe here on the render thread under the asset mutex.
+            imguiRtt.releaseContext(pending.id);
+            assets.removeRenderTarget(pending.id);
             return true;
         }
         return false;
@@ -592,7 +605,7 @@ void FrameRunner::renderSnapshotContents(AssetRegistry& assets, ImguiRttManager&
     // about to render. Single-threaded, that snapshot is the latest commit so
     // frees happen this frame; threaded, the gate genuinely defers (render lags).
     mLastRenderedSeq = snapshot.commitSeq;
-    drainPendingFrees(assets, mLastRenderedSeq);
+    drainPendingFrees(assets, imguiRtt, mLastRenderedSeq);
 
     {
         ZoneScopedN("TextureUpload");
@@ -1142,6 +1155,100 @@ void FrameRunner::removeBellota(AssetRegistry& assets, BellotaId bellotaId)
     // Single-threaded: plain remove; orphaned resources are GC'd by the
     // produce(Single) collectUnused* pass on the next frame (unchanged behavior).
     assets.removeBellota(bellotaId);
+}
+
+std::unique_lock<std::mutex> FrameRunner::lockAssetsIfThreaded()
+{
+    if (mThreadedRunning.load(std::memory_order_acquire))
+        return std::unique_lock<std::mutex>(mThreadedAssetMutex);
+    return std::unique_lock<std::mutex>();
+}
+
+TextureId FrameRunner::addTexture(AssetRegistry& assets, const Texture& texture)
+{
+    auto lock = lockAssetsIfThreaded();
+    return assets.addTexture(texture); // GPU upload is lazy (syncToGpu), so add is sim-safe.
+}
+
+void FrameRunner::removeTexture(AssetRegistry& assets, TextureId textureId)
+{
+    // Threaded: do only the usage-monitor bookkeeping now and defer the GPU free +
+    // container erase to the render thread (drainPendingFrees -> freeRetiredTexture),
+    // so an in-flight snapshot referencing this id is never freed mid-render.
+    if (mThreadedRunning.load(std::memory_order_acquire))
+    {
+        std::lock_guard<std::mutex> lock(mThreadedAssetMutex);
+        // Queue only if retire actually removed it from the unused set; a prior
+        // removeBellota sweep may have already collected it (tolerant — no double free).
+        if (assets.retireTexture(textureId))
+            mPendingTextureFrees.push_back({textureId, mCommitSeq});
+        return;
+    }
+    assets.removeTexture(textureId);
+}
+
+void FrameRunner::setTexture(AssetRegistry& assets, BellotaId bellotaId, TextureId textureId)
+{
+    auto lock = lockAssetsIfThreaded();
+    assets.setTexture(bellotaId, textureId);
+}
+
+MeshId FrameRunner::addMesh(AssetRegistry& assets, const Mesh& mesh)
+{
+    auto lock = lockAssetsIfThreaded();
+    return assets.addMesh(mesh);
+}
+
+MeshId FrameRunner::addMesh(AssetRegistry& assets, Mesh&& mesh)
+{
+    auto lock = lockAssetsIfThreaded();
+    return assets.addMesh(std::move(mesh));
+}
+
+void FrameRunner::removeMesh(AssetRegistry& assets, MeshId meshId)
+{
+    if (mThreadedRunning.load(std::memory_order_acquire))
+    {
+        std::lock_guard<std::mutex> lock(mThreadedAssetMutex);
+        if (assets.retireMesh(meshId))
+            mPendingMeshFrees.push_back({meshId, mCommitSeq});
+        return;
+    }
+    assets.removeMesh(meshId);
+}
+
+void FrameRunner::setMesh(AssetRegistry& assets, BellotaId bellotaId, MeshId meshId)
+{
+    auto lock = lockAssetsIfThreaded();
+    assets.setMesh(bellotaId, meshId);
+}
+
+RenderTargetId FrameRunner::addRenderTarget(AssetRegistry& assets, ScreenSize size)
+{
+    auto lock = lockAssetsIfThreaded();
+    return assets.addRenderTarget(size); // GPU creation is lazy (syncToGpu), so add is sim-safe.
+}
+
+void FrameRunner::removeRenderTarget(AssetRegistry& assets, RenderTargetId renderTargetId)
+{
+    // Threaded: defer the whole removeRenderTarget (it frees GPU + erases the RT and
+    // its proxy texture immediately) to the render thread. The RT + proxy stay live
+    // for any in-flight snapshot until drainPendingFrees runs it at a safe seq.
+    if (mThreadedRunning.load(std::memory_order_acquire))
+    {
+        std::lock_guard<std::mutex> lock(mThreadedAssetMutex);
+        mPendingRenderTargetFrees.push_back({renderTargetId, mCommitSeq});
+        return;
+    }
+    assets.removeRenderTarget(renderTargetId);
+}
+
+void FrameRunner::setRenderTargetClearColor(AssetRegistry& assets, RenderTargetId renderTargetId, glm::vec4 clearColor)
+{
+    // The render thread reads the RT clear color live during the RTT pass (under the
+    // asset mutex), so serialize the write when threaded.
+    auto lock = lockAssetsIfThreaded();
+    assets.setRenderTargetClearColor(renderTargetId, clearColor);
 }
 
 ScreenSize getPrimaryMonitorSize()

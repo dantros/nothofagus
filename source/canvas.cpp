@@ -167,16 +167,16 @@ void Canvas::removeTint(const BellotaId bellotaId)              { mImplPtr->asse
 // Textures — forward to AssetRegistry; remove gates against DenseLandExplorer pool
 // ---------------------------------------------------------------------------
 
-TextureId Canvas::addTexture(const Texture& texture)            { return mImplPtr->assets.addTexture(texture); }
+TextureId Canvas::addTexture(const Texture& texture)            { return mImplPtr->frameRunner.addTexture(mImplPtr->assets, texture); }
 
 void Canvas::removeTexture(const TextureId textureId)
 {
     debugCheck(!mImplPtr->frameRunner.isExplorerManagedTexture(textureId.id),
         "Texture is owned by an explorer pool — use canvas.removeDenseLandExplorer() / canvas.removeSparseLandExplorer() instead of removing slot textures directly.");
-    mImplPtr->assets.removeTexture(textureId);
+    mImplPtr->frameRunner.removeTexture(mImplPtr->assets, textureId);
 }
 
-void Canvas::setTexture(const BellotaId bellotaId, const TextureId textureId)            { mImplPtr->assets.setTexture(bellotaId, textureId); }
+void Canvas::setTexture(const BellotaId bellotaId, const TextureId textureId)            { mImplPtr->frameRunner.setTexture(mImplPtr->assets, bellotaId, textureId); }
 void Canvas::markTextureAsDirty(const TextureId textureId)                                { mImplPtr->assets.markTextureAsDirty(textureId); }
 void Canvas::setTextureMinFilter(const TextureId textureId, TextureSampleMode mode)       { mImplPtr->assets.setTextureMinFilter(textureId, mode); }
 void Canvas::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)       { mImplPtr->assets.setTextureMagFilter(textureId, mode); }
@@ -187,10 +187,10 @@ const Texture& Canvas::texture(TextureId textureId) const                       
 // Meshes — forward to AssetRegistry
 // ---------------------------------------------------------------------------
 
-MeshId Canvas::addMesh(const Mesh& mesh)                                                  { return mImplPtr->assets.addMesh(mesh); }
-MeshId Canvas::addMesh(Mesh&& mesh)                                                       { return mImplPtr->assets.addMesh(std::move(mesh)); }
-void Canvas::removeMesh(MeshId meshId)                                                    { mImplPtr->assets.removeMesh(meshId); }
-void Canvas::setMesh(const BellotaId bellotaId, const MeshId meshId)                      { mImplPtr->assets.setMesh(bellotaId, meshId); }
+MeshId Canvas::addMesh(const Mesh& mesh)                                                  { return mImplPtr->frameRunner.addMesh(mImplPtr->assets, mesh); }
+MeshId Canvas::addMesh(Mesh&& mesh)                                                       { return mImplPtr->frameRunner.addMesh(mImplPtr->assets, std::move(mesh)); }
+void Canvas::removeMesh(MeshId meshId)                                                    { mImplPtr->frameRunner.removeMesh(mImplPtr->assets, meshId); }
+void Canvas::setMesh(const BellotaId bellotaId, const MeshId meshId)                      { mImplPtr->frameRunner.setMesh(mImplPtr->assets, bellotaId, meshId); }
 const Mesh& Canvas::mesh(MeshId meshId) const                                             { return mImplPtr->assets.mesh(meshId); }
 const Mesh& Canvas::mesh(BellotaId bellotaId) const                                       { return mImplPtr->assets.mesh(bellotaId); }
 
@@ -200,16 +200,24 @@ const Mesh& Canvas::mesh(BellotaId bellotaId) const                             
 // render pass / FBO that the registry is about to free).
 // ---------------------------------------------------------------------------
 
-RenderTargetId Canvas::addRenderTarget(ScreenSize size)                                   { return mImplPtr->assets.addRenderTarget(size); }
+RenderTargetId Canvas::addRenderTarget(ScreenSize size)                                   { return mImplPtr->frameRunner.addRenderTarget(mImplPtr->assets, size); }
 
 void Canvas::removeRenderTarget(RenderTargetId renderTargetId)
 {
+    // During a live threaded session the GPU free AND the per-RTT ImGui-context
+    // teardown are deferred to the render thread (drainPendingFrees handles both);
+    // single-threaded they happen immediately here.
+    if (mImplPtr->frameRunner.threadedRunning())
+    {
+        mImplPtr->frameRunner.removeRenderTarget(mImplPtr->assets, renderTargetId);
+        return;
+    }
     mImplPtr->imguiRtt.releaseContext(renderTargetId);
     mImplPtr->assets.removeRenderTarget(renderTargetId);
 }
 
 TextureId Canvas::renderTargetTexture(RenderTargetId renderTargetId) const                { return mImplPtr->assets.renderTargetTexture(renderTargetId); }
-void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor) { mImplPtr->assets.setRenderTargetClearColor(renderTargetId, clearColor); }
+void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor) { mImplPtr->frameRunner.setRenderTargetClearColor(mImplPtr->assets, renderTargetId, clearColor); }
 
 // ---------------------------------------------------------------------------
 // DenseLands — forward to FrameRunner (ExplorerManager<DenseLand> lives there)

@@ -202,7 +202,27 @@ public:
     /// orphans are GC'd by the next produce(Single) pass.
     void removeBellota(AssetRegistry& assets, BellotaId bellotaId);
 
+    // ----- Mode-aware resource create/destroy -----
+    // Each takes the asset mutex only while a threaded session is live (no lock
+    // single-threaded). Adds + CPU-only mutators just forward (GPU upload is lazy
+    // via syncToGpu). Removes defer the GPU free to the render thread when threaded
+    // (enqueue + drainPendingFrees), or free immediately single-threaded.
+    TextureId      addTexture(AssetRegistry& assets, const Texture& texture);
+    void           removeTexture(AssetRegistry& assets, TextureId textureId);
+    void           setTexture(AssetRegistry& assets, BellotaId bellotaId, TextureId textureId);
+    MeshId         addMesh(AssetRegistry& assets, const Mesh& mesh);
+    MeshId         addMesh(AssetRegistry& assets, Mesh&& mesh);
+    void           removeMesh(AssetRegistry& assets, MeshId meshId);
+    void           setMesh(AssetRegistry& assets, BellotaId bellotaId, MeshId meshId);
+    RenderTargetId addRenderTarget(AssetRegistry& assets, ScreenSize size);
+    void           removeRenderTarget(AssetRegistry& assets, RenderTargetId renderTargetId);
+    void           setRenderTargetClearColor(AssetRegistry& assets, RenderTargetId renderTargetId, glm::vec4 clearColor);
+
 private:
+    /// Returns a lock on the asset mutex while a threaded session is live, else an
+    /// empty (unlocked) lock — the single-threaded fast path takes no mutex.
+    std::unique_lock<std::mutex> lockAssetsIfThreaded();
+
     /// Selects which orchestration a unified producer/consumer runs. `Single` is
     /// the run()/tick() path (one thread; ImGui on the main context, live draw
     /// data, no locks); `Threaded` is the commit()/renderFrame() path (sim/render
@@ -284,7 +304,7 @@ private:
 
     /// Free every pending resource whose retire commit is no later than
     /// `lastRenderedSeq` (i.e. no in-flight snapshot still references it).
-    void drainPendingFrees(AssetRegistry& assets, std::uint64_t lastRenderedSeq);
+    void drainPendingFrees(AssetRegistry& assets, ImguiRttManager& imguiRtt, std::uint64_t lastRenderedSeq);
     /// Apply the current effective content scale to the main ImGui context:
     /// FontScaleDpi (fonts, every frame) + ScaleAllSizes from the pristine base
     /// style (metrics, only when the scale changed). Main context must be current.
@@ -323,10 +343,12 @@ private:
     /// A resource removed from the scene at commit `retireSeq`, awaiting GPU free.
     /// Held until `mLastRenderedSeq >= retireSeq` so no in-flight snapshot can
     /// still reference it (at depth-0 this is the same frame).
-    struct PendingTextureFree { TextureId id; std::uint64_t retireSeq; };
-    struct PendingMeshFree    { MeshId    id; std::uint64_t retireSeq; };
-    std::vector<PendingTextureFree> mPendingTextureFrees;
-    std::vector<PendingMeshFree>    mPendingMeshFrees;
+    struct PendingTextureFree      { TextureId      id; std::uint64_t retireSeq; };
+    struct PendingMeshFree         { MeshId         id; std::uint64_t retireSeq; };
+    struct PendingRenderTargetFree { RenderTargetId id; std::uint64_t retireSeq; };
+    std::vector<PendingTextureFree>      mPendingTextureFrees;
+    std::vector<PendingMeshFree>         mPendingMeshFrees;
+    std::vector<PendingRenderTargetFree> mPendingRenderTargetFrees;
 
     int mFramebufferWidth{0};   ///< Framebuffer size captured in produce(), reused by consume().
     int mFramebufferHeight{0};

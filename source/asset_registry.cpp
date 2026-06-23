@@ -205,6 +205,14 @@ void AssetRegistry::freeRetiredTexture(TextureId textureId)
     mTextures.remove(textureId.id);
 }
 
+bool AssetRegistry::retireTexture(TextureId textureId)
+{
+    // Tolerant: returns false if the texture was already swept (by a prior
+    // removeBellota's collectUnusedTextures) or is still referenced. GPU free +
+    // container erase happen later in freeRetiredTexture() only if true.
+    return mTextureUsageMonitor.removeUnused(textureId);
+}
+
 // ---------------------------------------------------------------------------
 // Meshes
 // ---------------------------------------------------------------------------
@@ -320,6 +328,15 @@ void AssetRegistry::freeRetiredMesh(MeshId meshId)
 {
     mMeshes.at(meshId.id).freeGpuResources(mBackend);
     mMeshes.remove(meshId.id);
+}
+
+bool AssetRegistry::retireMesh(MeshId meshId)
+{
+    debugCheck(mMeshes.contains(meshId.id), "retireMesh: unknown MeshId");
+    debugCheck(not mMeshes.at(meshId.id).isAutoQuad,
+               "retireMesh: cannot remove an engine-allocated auto-quad — it is owned by the canvas");
+    // Tolerant (see retireTexture): false if already swept or still referenced.
+    return mMeshUsageMonitor.removeUnused(meshId);
 }
 
 // ---------------------------------------------------------------------------
