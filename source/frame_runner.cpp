@@ -76,8 +76,8 @@ FrameRunner::FrameRunner(
     // Initialize the window backend (creates window, GL/Vulkan context, loads GLAD for OpenGL)
     mWindow = std::make_unique<Window>(
         mTitle,
-        static_cast<int>(mScreenSize.width  * mPixelSize),
-        static_cast<int>(mScreenSize.height * mPixelSize),
+        static_cast<int>(screenSize.width  * mPixelSize),
+        static_cast<int>(screenSize.height * mPixelSize),
         !mHeadless // visible
     );
 
@@ -94,7 +94,7 @@ FrameRunner::FrameRunner(
     mWindow->initImGuiPlatform();
 
     // Render backend init (GPU resources, shader compilation, ImGui renderer binding).
-    mBackend.initialize(mWindow->nativeHandle(), {static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)});
+    mBackend.initialize(mWindow->nativeHandle(), {static_cast<int>(screenSize.width), static_cast<int>(screenSize.height)});
     mBackend.initImGuiRenderer();
 
     // Font setup happens after construction at the Canvas level — once `mAssets`
@@ -217,7 +217,8 @@ ScreenSize FrameRunner::windowSize() const
 
 DirectTexture FrameRunner::takeScreenshot() const
 {
-    const glm::ivec2 gameSize{static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)};
+    const ScreenSize screen = mScreenSize.load(std::memory_order_acquire);
+    const glm::ivec2 gameSize{static_cast<int>(screen.width), static_cast<int>(screen.height)};
     ScreenshotPixels pixels = mBackend.takeScreenshot(mGameViewport, gameSize);
     TextureData textureData(pixels.width, pixels.height, 1);
     std::copy(pixels.data.begin(), pixels.data.end(), textureData.getDataSpan().begin());
@@ -409,8 +410,9 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
                 mThreadedImguiInput.wheelY = 0.0f;
                 mThreadedImguiInput.textCharCount = 0; // consume typed characters
             }
-            const float displayWidth  = input.displayWidth  > 0.0f ? input.displayWidth  : static_cast<float>(mScreenSize.width);
-            const float displayHeight = input.displayHeight > 0.0f ? input.displayHeight : static_cast<float>(mScreenSize.height);
+            const ScreenSize screen   = mScreenSize.load(std::memory_order_acquire);
+            const float displayWidth  = input.displayWidth  > 0.0f ? input.displayWidth  : static_cast<float>(screen.width);
+            const float displayHeight = input.displayHeight > 0.0f ? input.displayHeight : static_cast<float>(screen.height);
             io.DisplaySize = ImVec2(displayWidth, displayHeight);
             io.DisplayFramebufferScale = ImVec2(input.framebufferScaleX, input.framebufferScaleY);
 
@@ -492,7 +494,8 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
     auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
     mFramebufferWidth = framebufferWidth;
     mFramebufferHeight = framebufferHeight;
-    mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, mScreenSize.width, mScreenSize.height);
+    const ScreenSize singleScreen = mScreenSize.load(std::memory_order_acquire);
+    mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, singleScreen.width, singleScreen.height);
 
     // M1: GPU-frame setup + ImGui NewFrame stay inline here (the user update
     // issues ImGui calls). These migrate to the render side at the thread flip.
@@ -640,7 +643,7 @@ void FrameRunner::renderSnapshotContents(AssetRegistry& assets, ImguiRttManager&
             meshPack.syncToGpu(mBackend);
     }
 
-    const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
+    const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize.load(std::memory_order_acquire));
 
     {
         ZoneScopedN("RttPasses");
@@ -712,7 +715,8 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
         auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
         mFramebufferWidth = framebufferWidth;
         mFramebufferHeight = framebufferHeight;
-        mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, mScreenSize.width, mScreenSize.height);
+        const ScreenSize threadedScreen = mScreenSize.load(std::memory_order_acquire);
+        mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, threadedScreen.width, threadedScreen.height);
 
         mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
 
@@ -773,7 +777,7 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
 
         {
             ZoneScopedN("SwapBuffers");
-            mWindow->endFrame(controller, mScreenSize);
+            mWindow->endFrame(controller, mScreenSize.load(std::memory_order_acquire));
         }
 
         // Snapshot the render controller's freshly-polled input (gamepad + keyboard
@@ -884,12 +888,13 @@ void FrameRunner::beginThreadedSession(Canvas& canvas, Controller& controller)
         // CreateContext restores the previous (main) context on return, so make
         // the sim-UI context current explicitly before configuring its IO.
         ImGui::SetCurrentContext(mSimUiContext);
+        const ScreenSize primingScreen = mScreenSize.load(std::memory_order_acquire);
         ImGuiIO& simIo = ImGui::GetIO();
         simIo.IniFilename             = nullptr;
         simIo.BackendPlatformName     = "nothofagus_sim_ui";
         simIo.BackendFlags           |= ImGuiBackendFlags_RendererHasTextures; // atlas uploaded render-side
-        simIo.DisplaySize             = ImVec2(static_cast<float>(mScreenSize.width),
-                                               static_cast<float>(mScreenSize.height));
+        simIo.DisplaySize             = ImVec2(static_cast<float>(primingScreen.width),
+                                               static_cast<float>(primingScreen.height));
         // Enable keyboard nav and wire an in-process clipboard so InputText
         // copy/paste works on the sim thread (GLFW clipboard is main-thread-only).
         simIo.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
@@ -910,7 +915,7 @@ void FrameRunner::beginThreadedSession(Canvas& canvas, Controller& controller)
         // any sim commit references it, so the shared atlas is ready and the sim's
         // NewFrame/layout never races a first-time upload.
         auto [fbW, fbH] = mWindow->getFramebufferSize();
-        const ViewportRect viewport = computeLetterboxViewport(fbW, fbH, mScreenSize.width, mScreenSize.height);
+        const ViewportRect viewport = computeLetterboxViewport(fbW, fbH, primingScreen.width, primingScreen.height);
         mBackend.beginFrame(mClearColor, viewport, fbW, fbH);
         beginMainImguiFrame();
         ImGui::Render();

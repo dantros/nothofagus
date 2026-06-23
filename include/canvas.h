@@ -99,10 +99,14 @@ public:
     void setWindowed();
 
     /**
-     * @brief Returns reference to the screen size.
+     * @brief Returns the logical screen size (by value).
+     *
+     * Returned by value (not by reference) because the size is stored atomically:
+     * on the threaded path the sim thread may `setScreenSize()` from commit's
+     * update while the render thread reads it. Safe to call from any thread.
      * @return The screen size.
      */
-    const ScreenSize& screenSize() const;
+    ScreenSize screenSize() const;
 
     void setScreenSize(const ScreenSize& screenSize);
 

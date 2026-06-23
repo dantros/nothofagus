@@ -91,6 +91,8 @@ int main()
     glm::vec2 camera{0.0f, 0.0f};
     float     autoPanPhase = 0.0f;
     bool      autoPan      = true; // headless-friendly stress: constant chunk swaps
+    float     resizeTimerMs = 0.0f; // toggles the logical canvas size to exercise pool resize
+    bool      bigCanvas     = true;
     std::uint32_t rngState = 0x9E3779B9u;
     auto nextRandomCell = [&]() -> glm::ivec2
     {
@@ -130,6 +132,18 @@ int main()
         // re-syncs displayed slots (exercises the threaded explorer write path).
         for (int i = 0; i < 8; ++i)
             canvas.denseLand(denseLandId).setCell(nextRandomCell(), 2);
+
+        // Every ~2 s, change the logical canvas size from the SIM thread — exercises
+        // A4: setScreenSize is now race-safe (atomic mScreenSize) and the explorer
+        // pre-pass rebuilds the pool for the new size next commit.
+        resizeTimerMs += deltaTimeMS;
+        if (resizeTimerMs >= 2000.0f)
+        {
+            resizeTimerMs = 0.0f;
+            bigCanvas = !bigCanvas;
+            canvas.setScreenSize(bigCanvas ? Nothofagus::ScreenSize{480, 320}
+                                           : Nothofagus::ScreenSize{360, 240});
+        }
     };
 
     canvas.beginThreadedSession(renderController);

@@ -121,7 +121,7 @@ std::size_t Canvas::getCurrentMonitor() const                   { return mImplPt
 bool Canvas::isFullscreen() const                               { return mImplPtr->frameRunner.isFullscreen(); }
 void Canvas::setFullScreenOnMonitor(std::size_t monitor)        { mImplPtr->frameRunner.setFullScreenOnMonitor(monitor); }
 void Canvas::setWindowed()                                       { mImplPtr->frameRunner.setWindowed(); }
-const ScreenSize& Canvas::screenSize() const                    { return mImplPtr->frameRunner.screenSize(); }
+ScreenSize Canvas::screenSize() const                           { return mImplPtr->frameRunner.screenSize(); }
 void Canvas::setScreenSize(const ScreenSize& screenSize)        { mImplPtr->frameRunner.setScreenSize(screenSize); }
 void Canvas::setClearColor(glm::vec3 clearColor)                { mImplPtr->frameRunner.setClearColor(clearColor); }
 void Canvas::setAutoRemoveUnusedTextures(bool enabled)          { mImplPtr->frameRunner.setAutoRemoveUnusedTextures(enabled); }

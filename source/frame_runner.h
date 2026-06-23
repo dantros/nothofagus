@@ -111,8 +111,11 @@ public:
     void close();
 
     // ----- Canvas state -----
-    const ScreenSize& screenSize() const                                                    { return mScreenSize; }
-    void setScreenSize(const ScreenSize& screenSize)                                        { mScreenSize = screenSize; }
+    // mScreenSize is atomic: on the threaded path the sim thread may setScreenSize()
+    // from commit's update while the render thread reads it (viewport/letterbox).
+    // Returns by value (a consistent 8-byte load); never a reference into the atomic.
+    ScreenSize screenSize() const                                                           { return mScreenSize.load(std::memory_order_acquire); }
+    void setScreenSize(const ScreenSize& screenSize)                                        { mScreenSize.store(screenSize, std::memory_order_release); }
     void setClearColor(glm::vec3 clearColor)                                                { mClearColor = clearColor; }
     ViewportRect gameViewport() const                                                       { return mGameViewport; }
     bool& stats()                                                                           { return mStats; }
@@ -319,7 +322,7 @@ private:
     /// `drainPendingFontOps`, and any ImGui mutex around this call.
     void beginMainImguiFrame();
 
-    ScreenSize mScreenSize; ///< The screen size of the canvas.
+    std::atomic<ScreenSize> mScreenSize; ///< The screen size of the canvas (atomic: sim-thread setScreenSize vs render-thread reads).
     std::string mTitle; ///< The title of the canvas window.
     glm::vec3 mClearColor; ///< The background color of the canvas.
     unsigned int mPixelSize; ///< The pixel size on the canvas.
