@@ -167,3 +167,9 @@ add_executable(hello_threaded_gamepad
 )
 set_property(TARGET hello_threaded_gamepad PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_threaded_gamepad PRIVATE nothofagus Threads::Threads)
+
+add_executable(hello_threaded_dense_land
+    "hello_threaded_dense_land.cpp"
+)
+set_property(TARGET hello_threaded_dense_land PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_threaded_dense_land PRIVATE nothofagus Threads::Threads)

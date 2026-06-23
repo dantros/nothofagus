@@ -404,7 +404,7 @@ void Canvas::close()
 
 void Canvas::beginThreadedSession(Controller& controller)
 {
-    mImplPtr->frameRunner.beginThreadedSession(controller);
+    mImplPtr->frameRunner.beginThreadedSession(*this, controller);
 }
 
 bool Canvas::isThreadedRunning() const

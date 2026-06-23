@@ -372,6 +372,21 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
             update(deltaTimeMS);
         }
 
+        // 1b) Explorer pre-pass (Dense/Sparse land). It rewrites pool textures'
+        //     cell maps (setMapBulk → mMapDirty) and repositions pool bellotas, all
+        //     from the camera the user set in `update`. The map writes race the
+        //     render thread's syncToGpu upload, so hold the asset mutex around it;
+        //     the resize path re-enters via the self-locking add/remove wrappers
+        //     (mThreadedAssetMutex is recursive). canvas is null only if a malformed
+        //     session skipped beginThreadedSession.
+        if (canvas != nullptr)
+        {
+            ZoneScopedN("Explorers");
+            std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
+            mDenseLandManager.updateExplorers(*canvas);
+            mSparseLandManager.updateExplorers(*canvas);
+        }
+
         RenderSnapshot& snapshot = mTripleBuffer.writeSlot();
         snapshot.commitSeq = commitSeq;
         snapshot.clearColor = mClearColor;
@@ -739,7 +754,7 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
         // is released BEFORE the vsync swap so a slow present never stalls the sim.
         {
             ZoneScopedN("AssetLockedRender");
-            std::lock_guard<std::mutex> assetLock(mThreadedAssetMutex);
+            std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
             renderSnapshotContents(assets, imguiRtt, imguiImages, snapshot, deltaTimeMS);
         }
 
@@ -841,8 +856,11 @@ void FrameRunner::close()
 // mutation guarded by mThreadedAssetMutex)
 // ---------------------------------------------------------------------------
 
-void FrameRunner::beginThreadedSession(Controller& controller)
+void FrameRunner::beginThreadedSession(Canvas& canvas, Controller& controller)
 {
+    // Remember the canvas so produce(Threaded) can drive the explorer pre-pass.
+    mThreadedCanvas = &canvas;
+
     // Bind input callbacks + reset the close flag (same as run()'s session start).
     mWindow->beginSession(controller);
     if (!mSessionStarted)
@@ -911,9 +929,10 @@ void FrameRunner::beginThreadedSession(Controller& controller)
 void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
                              std::function<void(float)> update, std::function<void(float)> uiCallback)
 {
-    // Sim thread: CPU only, no GL. canvas/imguiRtt/controller are unused on this
-    // path (no explorers, font drain, or input poll on the sim thread).
-    produce(FrameMode::Threaded, nullptr, assets, nullptr, nullptr, deltaTimeMS,
+    // Sim thread: CPU only, no GL. The canvas (bound in beginThreadedSession) drives
+    // the explorer pre-pass; imguiRtt/controller stay null (no font drain or input
+    // poll on the sim thread).
+    produce(FrameMode::Threaded, mThreadedCanvas, assets, nullptr, nullptr, deltaTimeMS,
             std::move(update), std::move(uiCallback), nullptr);
 }
 
@@ -922,7 +941,7 @@ void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
 {
     // Sim thread (M5): feed the sim controller from the latest gamepad snapshot
     // (inside produce, before update) so the game `update` sees the gamepad. No ImGui.
-    produce(FrameMode::Threaded, nullptr, assets, nullptr, nullptr, deltaTimeMS,
+    produce(FrameMode::Threaded, mThreadedCanvas, assets, nullptr, nullptr, deltaTimeMS,
             std::move(update), {}, &simController);
 }
 
@@ -1128,9 +1147,9 @@ Nothofagus::BellotaId FrameRunner::addBellota(AssetRegistry& assets, const Bello
     // this may run on the sim thread concurrently with the render thread's
     // container access, so take the asset mutex; single-threaded (run/tick or
     // setup) there is no other party and we skip the lock entirely.
-    std::unique_lock<std::mutex> lock;
+    std::unique_lock<std::recursive_mutex> lock;
     if (mThreadedRunning.load(std::memory_order_acquire))
-        lock = std::unique_lock<std::mutex>(mThreadedAssetMutex);
+        lock = std::unique_lock<std::recursive_mutex>(mThreadedAssetMutex);
     return assets.addBellota(bellota);
 }
 
@@ -1144,7 +1163,7 @@ void FrameRunner::removeBellota(AssetRegistry& assets, BellotaId bellotaId)
     // bellota.
     if (mThreadedRunning.load(std::memory_order_acquire))
     {
-        std::lock_guard<std::mutex> lock(mThreadedAssetMutex);
+        std::lock_guard<std::recursive_mutex> lock(mThreadedAssetMutex);
         assets.removeBellota(bellotaId);
         for (TextureId textureId : assets.collectUnusedTextures())
             mPendingTextureFrees.push_back({textureId, mCommitSeq});
@@ -1157,11 +1176,11 @@ void FrameRunner::removeBellota(AssetRegistry& assets, BellotaId bellotaId)
     assets.removeBellota(bellotaId);
 }
 
-std::unique_lock<std::mutex> FrameRunner::lockAssetsIfThreaded()
+std::unique_lock<std::recursive_mutex> FrameRunner::lockAssetsIfThreaded()
 {
     if (mThreadedRunning.load(std::memory_order_acquire))
-        return std::unique_lock<std::mutex>(mThreadedAssetMutex);
-    return std::unique_lock<std::mutex>();
+        return std::unique_lock<std::recursive_mutex>(mThreadedAssetMutex);
+    return std::unique_lock<std::recursive_mutex>();
 }
 
 TextureId FrameRunner::addTexture(AssetRegistry& assets, const Texture& texture)
@@ -1177,7 +1196,7 @@ void FrameRunner::removeTexture(AssetRegistry& assets, TextureId textureId)
     // so an in-flight snapshot referencing this id is never freed mid-render.
     if (mThreadedRunning.load(std::memory_order_acquire))
     {
-        std::lock_guard<std::mutex> lock(mThreadedAssetMutex);
+        std::lock_guard<std::recursive_mutex> lock(mThreadedAssetMutex);
         // Queue only if retire actually removed it from the unused set; a prior
         // removeBellota sweep may have already collected it (tolerant — no double free).
         if (assets.retireTexture(textureId))
@@ -1209,7 +1228,7 @@ void FrameRunner::removeMesh(AssetRegistry& assets, MeshId meshId)
 {
     if (mThreadedRunning.load(std::memory_order_acquire))
     {
-        std::lock_guard<std::mutex> lock(mThreadedAssetMutex);
+        std::lock_guard<std::recursive_mutex> lock(mThreadedAssetMutex);
         if (assets.retireMesh(meshId))
             mPendingMeshFrees.push_back({meshId, mCommitSeq});
         return;
@@ -1236,7 +1255,7 @@ void FrameRunner::removeRenderTarget(AssetRegistry& assets, RenderTargetId rende
     // for any in-flight snapshot until drainPendingFrees runs it at a safe seq.
     if (mThreadedRunning.load(std::memory_order_acquire))
     {
-        std::lock_guard<std::mutex> lock(mThreadedAssetMutex);
+        std::lock_guard<std::recursive_mutex> lock(mThreadedAssetMutex);
         mPendingRenderTargetFrees.push_back({renderTargetId, mCommitSeq});
         return;
     }

@@ -161,12 +161,14 @@ public:
     // ----- Threaded driver (M2 Phase A) -----
     // The app runs two threads: `commitFrame` on a sim thread and
     // `renderFrameThreaded` on the main thread. nothofagus spawns nothing.
-    // Constraints in Phase A: resources are created up front; at runtime the sim
-    // only mutates existing bellota values. No ImGui, explorers, or runtime
-    // resource create/destroy on the threaded path yet (Phase B / M3).
+    // The sim thread (commit's update) may mutate bellota values, create/destroy
+    // bellotas/textures/meshes/render targets, run interactive ImGui (uiCallback),
+    // use gamepad/keyboard/mouse, and drive Dense/Sparse land explorers — all
+    // serialized against the renderer.
 
-    /// Main thread: bind input, reset the close flag, mark the threaded session live.
-    void beginThreadedSession(Controller& controller);
+    /// Main thread: bind input, reset the close flag, mark the threaded session
+    /// live, and remember the canvas so the threaded producer can drive explorers.
+    void beginThreadedSession(Canvas& canvas, Controller& controller);
 
     /// Thread-safe: true until the window is closed. Read by the sim loop.
     bool threadedRunning() const { return mThreadedRunning.load(std::memory_order_acquire); }
@@ -221,7 +223,7 @@ public:
 private:
     /// Returns a lock on the asset mutex while a threaded session is live, else an
     /// empty (unlocked) lock — the single-threaded fast path takes no mutex.
-    std::unique_lock<std::mutex> lockAssetsIfThreaded();
+    std::unique_lock<std::recursive_mutex> lockAssetsIfThreaded();
 
     /// Selects which orchestration a unified producer/consumer runs. `Single` is
     /// the run()/tick() path (one thread; ImGui on the main context, live draw
@@ -356,6 +358,7 @@ private:
     // ----- Threaded driver state (M2 Phase A) -----
     SnapshotTripleBuffer mTripleBuffer;            ///< sim→render snapshot hand-off (lock-free).
     std::atomic<bool> mThreadedRunning{false};     ///< true while the threaded session is live.
+    Canvas* mThreadedCanvas{nullptr};              ///< canvas bound by beginThreadedSession; drives explorers in produce(Threaded).
     /// Render-loop frame-time monitor for the threaded path, mirroring the local
     /// PerformanceMonitor that run() uses single-threaded: the smoothed getMS() is
     /// the dt fed to the stats overlay and to RTT ImGui timing (flushPending), so
@@ -367,7 +370,11 @@ private:
     /// against the render thread's container access (upload/resolve/free). Held
     /// only for the fast container section — never across the vsync swap. Bellota
     /// value mutation and the snapshot projection stay lock-free.
-    std::mutex mThreadedAssetMutex;
+    // Recursive: produce(Threaded) holds it around updateExplorers, whose resize
+    // path calls the self-locking addBellota/removeBellota/addTexture/removeTexture
+    // wrappers — so the sim thread re-enters it. The render thread only ever locks
+    // it once (renderSnapshotContents).
+    std::recursive_mutex mThreadedAssetMutex;
 
     // ----- M3: interactive ImGui on the threaded path -----
     /// Dedicated ImGui context driven on the sim thread (NewFrame/widgets/Render),
