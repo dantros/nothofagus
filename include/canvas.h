@@ -11,6 +11,7 @@
 #include "controller.h"
 #include "tint.h"
 #include "screen_size.h"
+#include "present_mode.h"
 #include "imgui_overlay.h"
 #include "imgui_draw_callback.h"
 #include "imgui_font_id.h"
@@ -49,6 +50,10 @@ constexpr static unsigned int DEFAULT_PIXEL_SIZE{ 4 };
 
 constexpr static float DEFAULT_IMGUI_FONT_SIZE{14};
 
+/// Default presentation mode. Mailbox is vsync'd + triple-buffered (no tearing,
+/// compositor-friendly) and avoids the ~45 fps FIFO/compositor pacing on Linux.
+constexpr static PresentMode DEFAULT_PRESENT_MODE{PresentMode::Mailbox};
+
 /// @brief Returns the resolution of the primary monitor using GLFW.
 /// Safe to call before constructing a Canvas — initialises GLFW internally (idempotent).
 ScreenSize getPrimaryMonitorSize();
@@ -78,6 +83,10 @@ public:
      * @param clearColor The background color of the canvas (default is black).
      * @param pixelSize The pixel size (default is 4).
      * @param imguiFontSize font size used for DearImGui (default is 14.f).
+     * @param headless When true, the window is hidden (offscreen rendering).
+     * @param presentMode Swapchain / vsync preference (default Mailbox). Set at
+     *        construction only; affects windowed builds (Vulkan present mode and
+     *        OpenGL swap interval). Ignored in pure-offscreen headless-Vulkan builds.
      */
     Canvas(
         const ScreenSize& screenSize = DEFAULT_SCREEN_SIZE,
@@ -85,7 +94,8 @@ public:
         const glm::vec3 clearColor = DEFAULT_CLEAR_COLOR,
         const unsigned int pixelSize = DEFAULT_PIXEL_SIZE,
         const float imguiFontSize = DEFAULT_IMGUI_FONT_SIZE,
-        bool headless = false
+        bool headless = false,
+        PresentMode presentMode = DEFAULT_PRESENT_MODE
     );
 
     /// Destructor

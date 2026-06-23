@@ -40,22 +40,27 @@ FrameRunner::FrameRunner(
     const std::string& title,
     const glm::vec3 clearColor,
     const unsigned int pixelSize,
-    bool headless)
+    bool headless,
+    PresentMode presentMode)
     :
     mScreenSize(screenSize),
     mTitle(title),
     mClearColor(clearColor),
     mPixelSize(pixelSize),
+    mPresentMode(presentMode),
     mStats(false),
     mHeadless(headless),
     mGameViewport{0, 0, 0, 0}
 {
-    // Initialize the window backend (creates window, GL/Vulkan context, loads GLAD for OpenGL)
+    // Initialize the window backend (creates window, GL/Vulkan context, loads GLAD for OpenGL).
+    // The GL swap interval (derived from the present mode) is applied here, while the GL
+    // context is being made current; it is a no-op in Vulkan builds.
     mWindow = std::make_unique<Window>(
         mTitle,
         static_cast<int>(mScreenSize.width  * mPixelSize),
         static_cast<int>(mScreenSize.height * mPixelSize),
-        !mHeadless // visible
+        !mHeadless, // visible
+        presentModeToSwapInterval(mPresentMode)
     );
 
     // ImGui context must be created before platform/renderer bindings.
@@ -71,7 +76,7 @@ FrameRunner::FrameRunner(
     mWindow->initImGuiPlatform();
 
     // Render backend init (GPU resources, shader compilation, ImGui renderer binding).
-    mBackend.initialize(mWindow->nativeHandle(), {static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)});
+    mBackend.initialize(mWindow->nativeHandle(), {static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)}, mPresentMode);
     mBackend.initImGuiRenderer();
 
     // Font setup happens after construction at the Canvas level — once `mAssets`

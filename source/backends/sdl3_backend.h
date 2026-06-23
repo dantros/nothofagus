@@ -14,7 +14,9 @@ namespace Nothofagus
 class Sdl3Backend
 {
 public:
-    Sdl3Backend(const std::string& title, int width, int height, bool visible = true);
+    /// @param swapInterval OpenGL swap interval (1 = vsync, 0 = uncapped). Applied
+    ///        after the GL context is made current; ignored in Vulkan builds.
+    Sdl3Backend(const std::string& title, int width, int height, bool visible = true, int swapInterval = 1);
     ~Sdl3Backend();
 
     // Non-copyable, non-movable (owns SDL handles)

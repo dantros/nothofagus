@@ -61,7 +61,8 @@ public:
         const std::string& title,
         const glm::vec3 clearColor,
         const unsigned int pixelSize,
-        bool headless = false
+        bool headless = false,
+        PresentMode presentMode = DEFAULT_PRESENT_MODE
     );
 
     /// Destructor to clean up resources and terminate the window backend.
@@ -205,6 +206,7 @@ private:
     /// RTT passes queued by renderTo() during the update callback, executed before the main render.
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
 
+    PresentMode mPresentMode{DEFAULT_PRESENT_MODE}; ///< Swapchain / vsync preference (construction-time).
     bool mStats; ///< Flag to indicate whether stats should be displayed.
     bool mHeadless{false}; ///< When true, the window is hidden (no visible UI).
     bool mSessionStarted{false}; ///< True after ensureSessionStarted() has been called.

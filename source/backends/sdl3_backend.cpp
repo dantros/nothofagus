@@ -18,7 +18,7 @@ namespace Nothofagus
 {
 
 
-Sdl3Backend::Sdl3Backend(const std::string& title, int width, int height, bool visible)
+Sdl3Backend::Sdl3Backend(const std::string& title, int width, int height, bool visible, int swapInterval)
 {
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD);
 
@@ -58,11 +58,17 @@ Sdl3Backend::Sdl3Backend(const std::string& title, int width, int height, bool v
     mGlContext = SDL_GL_CreateContext(mSdlWindow);
     SDL_GL_MakeCurrent(mSdlWindow, mGlContext);
 
+    // Apply the requested swap interval (1 = vsync, 0 = uncapped) now that the
+    // GL context is current, matching the GLFW backend's behavior.
+    SDL_GL_SetSwapInterval(swapInterval);
+
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress)))
     {
         spdlog::error("Failed to initialize GLAD");
         throw std::runtime_error("Failed to initialize GLAD");
     }
+#else
+    (void)swapInterval; // present mode is handled by the Vulkan swapchain, not GL.
 #endif
 }
 
