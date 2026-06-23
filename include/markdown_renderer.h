@@ -6,11 +6,19 @@
 #include <optional>
 #include <string_view>
 #include "imgui_font_id.h"
+#include "imgui_image_id.h"
 
 namespace Nothofagus
 {
 
 class Canvas;
+
+/// Maps a markdown image `src` string (`![alt](src)`) to a pre-registered ImGui
+/// image. Return `std::nullopt` to skip (a dimmed `[src]` placeholder is drawn).
+/// The app registers its document images up front via `Canvas::registerImguiImage`
+/// and returns the resulting `ImguiImageId` here — so declared images have no
+/// warm-up. See `MarkdownRenderer::setImageResolver`.
+using MarkdownImageResolver = std::function<std::optional<ImguiImageId>(std::string_view src)>;
 
 /**
  * @brief Per-element font mapping for `MarkdownRenderer`.
@@ -50,10 +58,13 @@ struct MarkdownStyle
  * ordered lists with nesting, blockquotes, horizontal rules, tables,
  * links (with optional click callback), and strikethrough.
  *
- * **Inline images (`![alt](url)`) are not rendered in v1.** The parser still
- * consumes them and skips them silently. See the project roadmap for
- * image support — it requires a separate `TextureId → ImTextureID` bridge
- * that handles the engine's layered (2D-array) texture format.
+ * **Inline images (`![alt](src)`)** render an engine sprite when an image
+ * resolver is installed via `setImageResolver(...)`: the resolver maps the
+ * `src` string to a pre-registered `ImguiImageId` (see `Canvas::registerImguiImage`),
+ * which is drawn through `imguiImage`, fit to the available content width. Without a
+ * resolver (or when it returns `std::nullopt`) a dimmed `[src]` placeholder is drawn.
+ * Animated / tile-map sources work too — keep the registration live via
+ * `Canvas::updateImguiImage`.
  *
  * Construction binds the renderer to a `Canvas&` for font resolution; the
  * canvas must outlive the renderer.
@@ -76,9 +87,17 @@ public:
     void setStyle(const MarkdownStyle& style);
     const MarkdownStyle& style() const noexcept;
 
-    /// Set a callback fired when the user clicks a `[text](url)` link.
-    /// Receives the raw URL string. Pass an empty `std::function` to disable.
+    /// Set a callback fired when the user clicks a `[text](url)` link (and when an
+    /// inline image is clicked, with the image `src`). Receives the raw URL string.
+    /// Pass an empty `std::function` to disable.
     void setOpenUrlCallback(std::function<void(std::string_view url)> callback);
+
+    /// Set the resolver that maps an image `src` (`![alt](src)`) to a pre-registered
+    /// `ImguiImageId` (see `Canvas::registerImguiImage`). The image is drawn inline via
+    /// `imguiImage`, fit to the available content width. Pass an empty `std::function`
+    /// (or have the resolver return `std::nullopt`) to skip an image. Takes effect on the
+    /// next `print()`.
+    void setImageResolver(MarkdownImageResolver resolver);
 
     /// Parse and render the given markdown source into the current ImGui
     /// window. Must be called inside an active ImGui frame (between
