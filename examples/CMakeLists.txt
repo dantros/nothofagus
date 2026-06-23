@@ -64,6 +64,12 @@ add_executable(hello_imgui_visual
 set_property(TARGET hello_imgui_visual PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_imgui_visual PRIVATE nothofagus)
 
+add_executable(hello_imgui_image_registry
+    "hello_imgui_image_registry.cpp"
+)
+set_property(TARGET hello_imgui_image_registry PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_imgui_image_registry PRIVATE nothofagus)
+
 add_executable(hello_nested_render_targets
     "hello_nested_render_targets.cpp"
 )

@@ -30,16 +30,16 @@ namespace Nothofagus
 
 static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
-// Budget for ImGui image descriptors used by Canvas::imguiVisual (one VK_DESCRIPTOR_TYPE_
-// SAMPLED_IMAGE set per on-screen visual). Vulkan-only: descriptor pools don't exist on
-// the OpenGL backend, which has no comparable cap. Each set is tiny (~tens of bytes), so
-// the whole reservation is ~tens of KB regardless of how many images you actually show.
-// Past this many concurrent images, imguiVisual logs once and no-ops the extra images
-// instead of aborting. Raise this if you need to display more at once.
+// Budget for ImGui image descriptors used by Canvas::registerImguiImage (one
+// VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE set per on-screen registered image). Vulkan-only:
+// descriptor pools don't exist on the OpenGL backend, which has no comparable cap. Each set
+// is tiny (~tens of bytes), so the whole reservation is ~tens of KB regardless of how many
+// images you actually show. Past this many concurrent images, the backend logs once and
+// no-ops the extra images instead of aborting. Raise this if you need to display more at once.
 constexpr std::uint32_t kImguiImageDescriptorPoolSize = 1024;
 
 // Small extra headroom in the pool itself for ImGui's own atlas/sampler descriptors, so
-// imguiVisual images (capped at kImguiImageDescriptorPoolSize) can never starve them.
+// ImGui images (capped at kImguiImageDescriptorPoolSize) can never starve them.
 constexpr std::uint32_t kImguiImageDescriptorHeadroom = 16;
 
 struct PendingBufferDeletion

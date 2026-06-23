@@ -305,7 +305,7 @@ const RenderSnapshot& FrameRunner::buildSnapshot(Canvas& canvas, AssetRegistry& 
         controller.processInputs();
     }
 
-    // Advance the ImGui-image clock before the user update issues imguiVisual() calls.
+    // Advance the ImGui-image clock before the user update issues imguiImage() draws.
     imguiImages.beginFrame();
 
     // Drain any deferred ImGui font ops (bake-on-miss / remove) accumulated
@@ -371,7 +371,7 @@ const RenderSnapshot& FrameRunner::buildSnapshot(Canvas& canvas, AssetRegistry& 
     {
         ZoneScopedN("RttGather");
         buildRttPasses(assets, mSnapshot.rttPasses);
-        // Internal RTT passes for visuals drawn via imguiVisual() this frame.
+        // Internal RTT passes for registered ImGui images that need (re)rendering this frame.
         imguiImages.appendInternalPasses(mSnapshot.rttPasses);
     }
 
@@ -487,10 +487,10 @@ void FrameRunner::renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRt
             mBackend.endRttPass();
         }
 
-        // The internal RTTs for imguiVisual() were just drawn (they are ordinary RTT
-        // passes); refresh their flat-2D and (lazily) create the ImGui handles the main
-        // UI samples, then GC stale entries. Runs before the main ImGui render below.
-        imguiImages.resolveAndGarbageCollect();
+        // The internal RTTs for registered ImGui images were just drawn (they are ordinary
+        // RTT passes); refresh their flat-2D and create the ImGui handles the main UI samples.
+        // Runs before the main ImGui render below.
+        imguiImages.resolveImages();
 
         // ImGui-to-RTT passes — each uses a secondary ImGuiContext owned by the
         // render target, rendered with a pipeline compiled against the RTT render
