@@ -127,6 +127,13 @@ canvas.run([&](float dt) {
 | tables        | yes       |
 | inline images | yes       |
 
+Columns size proportionally and long cells wrap inside their own column:
+
+| field | notes |
+|-------|-------|
+| short | A long cell that must wrap inside its own column instead of pushing into the neighbour or stacking one glyph per line. |
+| again | Second long row so the column width is shared proportionally and the borders line up across rows. |
+
 > Blockquotes work too. See [the repo](https://github.com/dantros/nothofagus)
 > for the project source. Strikethrough: ~~deprecated~~.
 
