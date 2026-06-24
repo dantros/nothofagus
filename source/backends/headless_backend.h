@@ -16,7 +16,9 @@ namespace Nothofagus
 class HeadlessBackend
 {
 public:
-    HeadlessBackend(const std::string& title, int width, int height, bool visible = true);
+    /// @param swapInterval Ignored — the headless backend never creates a GL/Vulkan
+    ///        swapchain. Accepted to match the windowed backend constructors.
+    HeadlessBackend(const std::string& title, int width, int height, bool visible = true, int swapInterval = 1);
 
     void initImGuiPlatform();
 

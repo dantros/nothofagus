@@ -14,7 +14,9 @@ namespace Nothofagus
 class OpenGLBackend
 {
 public:
-    void initialize(void* nativeWindowHandle, glm::ivec2 canvasSize);
+    // presentMode is consumed by the window backend (GL swap interval); the GL
+    // render backend ignores it, but accepts it to satisfy the RenderBackend concept.
+    void initialize(void* nativeWindowHandle, glm::ivec2 canvasSize, PresentMode presentMode);
     void shutdown();
     void initImGuiRenderer();
     void rebuildImguiFontTexture();

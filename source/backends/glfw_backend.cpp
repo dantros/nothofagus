@@ -88,7 +88,7 @@ static void glfwScrollCallback(GLFWwindow* window, double xoffset, double yoffse
 
 static void glfwFramebufferSizeCallback(GLFWwindow* /*window*/, int /*width*/, int /*height*/) {}
 
-GlfwBackend::GlfwBackend(const std::string& title, int width, int height, bool visible)
+GlfwBackend::GlfwBackend(const std::string& title, int width, int height, bool visible, int swapInterval)
 {
     glfwInit();
 #if defined(NOTHOFAGUS_BACKEND_VULKAN)
@@ -124,6 +124,9 @@ GlfwBackend::GlfwBackend(const std::string& title, int width, int height, bool v
 
 #if !defined(NOTHOFAGUS_BACKEND_VULKAN)
     glfwMakeContextCurrent(mGlfwWindow);
+    // Apply the requested swap interval (1 = vsync, 0 = uncapped). Without this
+    // call GL would run uncapped by default, diverging from the Vulkan backend.
+    glfwSwapInterval(swapInterval);
     glfwSetFramebufferSizeCallback(mGlfwWindow, glfwFramebufferSizeCallback);
 
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)))
@@ -132,6 +135,7 @@ GlfwBackend::GlfwBackend(const std::string& title, int width, int height, bool v
         throw std::runtime_error("Failed to initialize GLAD");
     }
 #else
+    (void)swapInterval; // present mode is handled by the Vulkan swapchain, not GL.
     glfwSetFramebufferSizeCallback(mGlfwWindow, glfwFramebufferSizeCallback);
 #endif
 }

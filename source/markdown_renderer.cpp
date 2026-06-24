@@ -32,6 +32,11 @@ struct MarkdownRenderer::Impl : public imgui_md
         mOpenUrlCallback = std::move(callback);
     }
 
+    void setImageResolver(MarkdownImageResolver resolver)
+    {
+        mImageResolver = std::move(resolver);
+    }
+
     // The regular body font, resolved (or nullptr if unset / not yet baked).
     // print() pushes this so PLAIN paragraph text uses the markdown family
     // rather than whatever ImGui font happens to be current (the main HiDPI
@@ -106,11 +111,49 @@ protected:
         else       { ImGui::PopFont();  m_is_code = false; }
     }
 
-    // v1 deliberately does not render inline images. The base class's default
-    // would draw the ImGui font atlas as a stand-in, which is worse than just
-    // skipping. Returning false leaves the image out entirely.
+    // Render an inline image `![alt](src)`: resolve src -> a pre-registered ImGui
+    // image and draw it ourselves (fit to content width), then return false so
+    // imgui_md's own ImGui::Image is suppressed (we don't double-draw). The price of
+    // bypassing its draw is that the title tooltip / click-to-open are re-implemented
+    // here. m_href holds the image src.
     bool get_image(image_info&) const override
     {
+        const std::string_view src(m_href.data(), m_href.size());
+
+        std::optional<ImguiImageId> imageId =
+            (mImageResolver && mCanvas != nullptr) ? mImageResolver(src) : std::nullopt;
+
+        if (not imageId)
+        {
+            // No resolver / unresolved src: a dimmed placeholder keeps the missing
+            // image visible (the parser suppresses the alt text while in an image, so
+            // the src is the best available label).
+            if (mCanvas != nullptr && not src.empty())
+                ImGui::TextDisabled("[%.*s]", static_cast<int>(src.size()), src.data());
+            return false;
+        }
+
+        // Fit to the available content width, preserving aspect (downscale only). The
+        // registered size and ImGui's content region are the same layout units, so no
+        // DPI/FontGlobalScale juggling is needed — register at a generous resolution and
+        // this stays a crisp GPU downscale of the fixed-resolution handle.
+        const glm::vec2 natural = mCanvas->imguiImageSize(*imageId);   // logical layout px
+        std::optional<glm::vec2> drawSize;
+        const float availableWidth = ImGui::GetContentRegionAvail().x;
+        if (natural.x > 0.0f && natural.y > 0.0f && natural.x > availableWidth)
+            drawSize = glm::vec2(availableWidth, availableWidth * natural.y / natural.x);
+
+        mCanvas->imguiImage(*imageId, drawSize);
+
+        // imgui_md's own hover/click handling is bypassed (we returned false), so
+        // re-create it on the image item: tooltip with the src, click fires open_url.
+        if (ImGui::IsItemHovered())
+        {
+            if (not src.empty())
+                ImGui::SetTooltip("%.*s", static_cast<int>(src.size()), src.data());
+            if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+                open_url();
+        }
         return false;
     }
 
@@ -137,6 +180,7 @@ private:
     Canvas* mCanvas;
     MarkdownStyle mStyle{};
     std::function<void(std::string_view)> mOpenUrlCallback;
+    MarkdownImageResolver mImageResolver;
 };
 
 MarkdownRenderer::MarkdownRenderer(Canvas& canvas)
@@ -173,6 +217,11 @@ const MarkdownStyle& MarkdownRenderer::style() const noexcept
 void MarkdownRenderer::setOpenUrlCallback(std::function<void(std::string_view)> callback)
 {
     mImpl->setOpenUrlCallback(std::move(callback));
+}
+
+void MarkdownRenderer::setImageResolver(MarkdownImageResolver resolver)
+{
+    mImpl->setImageResolver(std::move(resolver));
 }
 
 void MarkdownRenderer::print(std::string_view markdownText)

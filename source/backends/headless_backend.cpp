@@ -4,7 +4,7 @@
 namespace Nothofagus
 {
 
-HeadlessBackend::HeadlessBackend(const std::string& /*title*/, int width, int height, bool /*visible*/)
+HeadlessBackend::HeadlessBackend(const std::string& /*title*/, int width, int height, bool /*visible*/, int /*swapInterval*/)
     : mWidth(width)
     , mHeight(height)
     , mStartTime(std::chrono::steady_clock::now())

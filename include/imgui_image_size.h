@@ -21,7 +21,7 @@ enum class ImguiImageUnits
     Device,  ///< Physical/device pixels: 1 unit = 1 display pixel, bypassing OS DPI scaling.
 };
 
-/// Sizing alternatives for `Canvas::imguiVisual`, along two orthogonal axes: the **size
+/// Sizing alternatives for `Canvas::registerImguiImage`, along two orthogonal axes: the **size
 /// source** (which variant alternative — `Natural` / `Scaled` / `Explicit`) and the
 /// **units** (the `ImguiImageUnits` field on each, default `Logical`).
 ///
@@ -60,8 +60,8 @@ struct Explicit
     ImguiImageUnits units = ImguiImageUnits::Logical;
 };
 
-/// The sizing spec passed to `Canvas::imguiVisual` — a variant over the three size sources.
-/// Default-constructs (via the first alternative) to `Natural` in `Logical` units.
+/// The sizing spec passed to `Canvas::registerImguiImage` — a variant over the three size
+/// sources. Default-constructs (via the first alternative) to `Natural` in `Logical` units.
 using Spec = std::variant<Natural, Scaled, Explicit>;
 
 } // namespace ImguiImageSize

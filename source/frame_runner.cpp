@@ -63,22 +63,27 @@ FrameRunner::FrameRunner(
     const std::string& title,
     const glm::vec3 clearColor,
     const unsigned int pixelSize,
-    bool headless)
+    bool headless,
+    PresentMode presentMode)
     :
     mScreenSize(screenSize),
     mTitle(title),
     mClearColor(clearColor),
     mPixelSize(pixelSize),
+    mPresentMode(presentMode),
     mStats(false),
     mHeadless(headless),
     mGameViewport{0, 0, 0, 0}
 {
-    // Initialize the window backend (creates window, GL/Vulkan context, loads GLAD for OpenGL)
+    // Initialize the window backend (creates window, GL/Vulkan context, loads GLAD for OpenGL).
+    // The GL swap interval (derived from the present mode) is applied here, while the GL
+    // context is being made current; it is a no-op in Vulkan builds.
     mWindow = std::make_unique<Window>(
         mTitle,
         static_cast<int>(screenSize.width  * mPixelSize),
         static_cast<int>(screenSize.height * mPixelSize),
-        !mHeadless // visible
+        !mHeadless, // visible
+        presentModeToSwapInterval(mPresentMode)
     );
 
     // ImGui context must be created before platform/renderer bindings.
@@ -94,7 +99,7 @@ FrameRunner::FrameRunner(
     mWindow->initImGuiPlatform();
 
     // Render backend init (GPU resources, shader compilation, ImGui renderer binding).
-    mBackend.initialize(mWindow->nativeHandle(), {static_cast<int>(screenSize.width), static_cast<int>(screenSize.height)});
+    mBackend.initialize(mWindow->nativeHandle(), {static_cast<int>(screenSize.width), static_cast<int>(screenSize.height)}, mPresentMode);
     mBackend.initImGuiRenderer();
 
     // Font setup happens after construction at the Canvas level — once `mAssets`
@@ -477,7 +482,8 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
         controller->processInputs();
     }
 
-    // Advance the ImGui-image clock before the user update issues imguiVisual() calls.
+    // Advance the ImGui-image clock before the user update issues ImGui-image draws.
+    // (Single arm — imguiImages is non-null here.)
     imguiImages->beginFrame();
 
     // Drain any deferred ImGui font ops (bake-on-miss / remove) accumulated
@@ -541,7 +547,7 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
     {
         ZoneScopedN("RttGather");
         buildRttPasses(assets, mSnapshot.rttPasses);
-        // Internal RTT passes for visuals drawn via imguiVisual() this frame.
+        // Internal RTT passes for registered ImGui images that need (re)rendering this frame.
         imguiImages->appendInternalPasses(mSnapshot.rttPasses);
     }
 
@@ -674,12 +680,12 @@ void FrameRunner::renderSnapshotContents(AssetRegistry& assets, ImguiRttManager&
             mBackend.endRttPass();
         }
 
-        // The internal RTTs for imguiVisual() were just drawn (they are ordinary RTT
-        // passes); refresh their flat-2D and (lazily) create the ImGui handles the main
-        // UI samples, then GC stale entries. Runs before the main ImGui render below.
-        // Null on the threaded path (imguiVisual is single-threaded only for now).
+        // The internal RTTs for registered ImGui images were just drawn (they are ordinary
+        // RTT passes); refresh their flat-2D and create the ImGui handles the main UI samples.
+        // Runs before the main ImGui render below. Null on the threaded path (ImGui images
+        // are single-threaded only for now).
         if (imguiImages)
-            imguiImages->resolveAndGarbageCollect();
+            imguiImages->resolveImages();
 
         // ImGui-to-RTT passes — each uses a secondary ImGuiContext owned by the
         // render target, rendered with a pipeline compiled against the RTT render

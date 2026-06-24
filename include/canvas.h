@@ -11,10 +11,12 @@
 #include "controller.h"
 #include "tint.h"
 #include "screen_size.h"
+#include "present_mode.h"
 #include "imgui_overlay.h"
 #include "imgui_draw_callback.h"
 #include "imgui_font_id.h"
 #include "imgui_font_source_id.h"
+#include "imgui_image_id.h"
 #include "imgui_image_size.h"
 #include "markdown_renderer.h"
 #include <memory>
@@ -24,6 +26,7 @@
 #include <span>
 #include <optional>
 #include <cstddef>
+#include <cstdint>
 
 struct ImFont;
 
@@ -46,6 +49,10 @@ const glm::vec3 DEFAULT_CLEAR_COLOR{0.0f, 0.0f, 0.0f};
 constexpr static unsigned int DEFAULT_PIXEL_SIZE{ 4 }; 
 
 constexpr static float DEFAULT_IMGUI_FONT_SIZE{14};
+
+/// Default presentation mode. Mailbox is vsync'd + triple-buffered (no tearing,
+/// compositor-friendly) and avoids the ~45 fps FIFO/compositor pacing on Linux.
+constexpr static PresentMode DEFAULT_PRESENT_MODE{PresentMode::Mailbox};
 
 /// @brief Returns the resolution of the primary monitor using GLFW.
 /// Safe to call before constructing a Canvas — initialises GLFW internally (idempotent).
@@ -76,6 +83,10 @@ public:
      * @param clearColor The background color of the canvas (default is black).
      * @param pixelSize The pixel size (default is 4).
      * @param imguiFontSize font size used for DearImGui (default is 14.f).
+     * @param headless When true, the window is hidden (offscreen rendering).
+     * @param presentMode Swapchain / vsync preference (default Mailbox). Set at
+     *        construction only; affects windowed builds (Vulkan present mode and
+     *        OpenGL swap interval). Ignored in pure-offscreen headless-Vulkan builds.
      */
     Canvas(
         const ScreenSize& screenSize = DEFAULT_SCREEN_SIZE,
@@ -83,7 +94,8 @@ public:
         const glm::vec3 clearColor = DEFAULT_CLEAR_COLOR,
         const unsigned int pixelSize = DEFAULT_PIXEL_SIZE,
         const float imguiFontSize = DEFAULT_IMGUI_FONT_SIZE,
-        bool headless = false
+        bool headless = false,
+        PresentMode presentMode = DEFAULT_PRESENT_MODE
     );
 
     /// Destructor
@@ -314,33 +326,70 @@ public:
     void renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, ImguiDrawCallback imguiDrawCallback);
 
     /**
-     * @brief Draw a Visual's appearance inside the current ImGui window (`ImGui::Image`).
+     * @brief Register a Visual at a fixed size as a persistent ImGui-bindable image.
      *
-     * The entry point is a Visual (texture + optional mesh + current layer + opacity),
-     * NOT a Bellota — placement (transform / depth) is meaningless in an ImGui cell, so
-     * the image aligns to the GUI/text layout. Pass `canvas.bellota(id).visual()` to show
-     * a bellota's current appearance, or a standalone `Visual{textureId}`.
+     * The single entry point for drawing an engine Visual inside ImGui: register once, then
+     * draw the returned id every frame. The entry point is a Visual (texture + optional mesh
+     * + current layer + opacity), NOT a Bellota — placement (transform / depth) is meaningless
+     * in an ImGui cell. Pass `canvas.bellota(id).visual()` for a bellota's current appearance,
+     * or a standalone `Visual{textureId}`. Works for every texture kind (Direct / Indirect /
+     * tile-map / animation frame); a custom mesh is honored; magnification follows the
+     * texture's `magFilter`.
      *
-     * Works for every texture kind: the Visual is rendered into an engine-managed
-     * off-screen target (Direct / Indirect / tile-map / animation frame all resolve
-     * correctly) and exposed to ImGui. A custom mesh is honored. Opacity modulates the
-     * drawn image; visibility=false draws an empty cell.
+     * Registration decouples allocation from display: the internal render target is allocated
+     * now and its `ImTextureID` handle is created on the next render tick, then stays valid for
+     * the registration's lifetime. So any draw at least one rendered frame after registration
+     * is **warm-up-free**, and the handle never churns on size changes or garbage collection.
+     * The id is a first-class ImGui image handle: pass it to `imguiImage(id)`, or fetch
+     * `imguiImageHandle(id)` / `imguiImageSize(id)` and drive `ImGui::Image` yourself.
      *
-     * @p sizeSpec has two orthogonal axes: the size source — `ImguiImageSize::Natural{}`
-     * (default; the visual's real size, its mesh's bounding box), `ImguiImageSize::Scaled{factor}`,
-     * or `ImguiImageSize::Explicit{size, fit}` — and the units (an `ImguiImageUnits` field on
-     * each, default `Logical`). `Logical` units scale with OS DPI and the target is rasterized
-     * at size × contentScale so mesh geometry stays crisp (not bitmap-upscaled); `Device` units
-     * are exact physical pixels (1 texel → 1 display pixel, bypassing OS DPI) — e.g.
-     * `Natural{ImguiImageUnits::Device}` shows a texture at its native resolution. Texture
-     * magnification honors the texture's own `magFilter`.
+     * @p sizeSpec fixes the rasterization resolution along two orthogonal axes: the size
+     * source — `ImguiImageSize::Natural{}` (default; the visual's real size, its mesh's
+     * bounding box), `ImguiImageSize::Scaled{factor}`, or `ImguiImageSize::Explicit{size, fit}`
+     * — and the units (an `ImguiImageUnits` field on each, default `Logical`). `Logical` units
+     * scale with OS DPI and the target is rasterized at size × contentScale so mesh geometry
+     * stays crisp; `Device` units are exact physical pixels (1 texel → 1 display pixel,
+     * bypassing OS DPI). For responsive layouts, register at a generous size and vary only the
+     * *draw* size at `imguiImage` time (a GPU downscale of the fixed-resolution handle).
      *
-     * Call inside an active ImGui frame (a run()/tick() update callback). The first frame a
-     * given (Visual, size) is shown reserves layout only and appears next frame (one-frame
-     * warm-up).
+     * Call before/inside the loop. Free with `unregisterImguiImage`.
      */
-    void imguiVisual(const Visual& visual,
-                     const ImguiImageSize::Spec& sizeSpec = ImguiImageSize::Natural{});
+    ImguiImageId registerImguiImage(const Visual& visual,
+                                    const ImguiImageSize::Spec& sizeSpec = ImguiImageSize::Natural{});
+
+    /**
+     * @brief Refresh a registered image's source appearance without changing its id.
+     *
+     * Re-renders with the new `visual` (e.g. an advanced animation layer, a new opacity,
+     * a swapped texture/mesh) next tick, keeping the same `sizeSpec`. The handle stays
+     * valid unless the resolved physical size or the source texture/mesh changes, in which
+     * case the RTT is recreated and the handle re-warms for one tick.
+     */
+    void updateImguiImage(ImguiImageId imageId, const Visual& visual);
+
+    /// Free a registered image's render target, ImGui handle, and resource pins.
+    void unregisterImguiImage(ImguiImageId imageId);
+
+    /**
+     * @brief Draw a registered image in the current ImGui window (`ImGui::Image`).
+     *
+     * `drawSize` (logical px) overrides the registered display size for this draw only —
+     * a cheap GPU downscale of the fixed-resolution handle (used e.g. for markdown
+     * fit-to-width). Honors the texture's magFilter and the registered opacity. Reserves
+     * layout (empty cell) while the handle is not yet ready or the visual is invisible.
+     */
+    void imguiImage(ImguiImageId imageId, std::optional<glm::vec2> drawSize = std::nullopt);
+
+    /// The registered image's ImGui-bindable `ImTextureID` (as a 64-bit value), or 0 if the
+    /// id is unknown or its handle is not yet ready. Usable directly in `ImGui::Image`.
+    std::uint64_t imguiImageHandle(ImguiImageId imageId) const;
+
+    /// The registered image's resolved logical display size, or {0, 0} if the id is unknown.
+    glm::vec2 imguiImageSize(ImguiImageId imageId) const;
+
+    /// Whether the registered image's handle has been created (false during the one-tick
+    /// window right after registration / a size-changing update).
+    bool isImguiImageReady(ImguiImageId imageId) const;
 
     /**
      * @brief Register a TTF buffer as a new font source.

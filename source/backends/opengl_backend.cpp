@@ -76,7 +76,7 @@ void OpenGLBackend::setupVAO(OpenGLMesh& glMesh)
     glBindVertexArray(0);
 }
 
-void OpenGLBackend::initialize(void* /*nativeWindowHandle*/, glm::ivec2 /*canvasSize*/)
+void OpenGLBackend::initialize(void* /*nativeWindowHandle*/, glm::ivec2 /*canvasSize*/, PresentMode /*presentMode*/)
 {
     // GLAD was already loaded by the window backend constructor.
 

@@ -68,8 +68,9 @@ struct Canvas::Implementation
         const glm::vec3 clearColor,
         const unsigned int pixelSize,
         const float imguiFontSize,
-        bool headless)
-        : frameRunner(screenSize, title, clearColor, pixelSize, headless),
+        bool headless,
+        PresentMode presentMode)
+        : frameRunner(screenSize, title, clearColor, pixelSize, headless, presentMode),
           assets(frameRunner.backend()),
           imguiRtt(frameRunner.backend(), assets.renderTargets(),
                    makeEmbeddedFontFamily(),
@@ -95,10 +96,11 @@ Canvas::Canvas(
     const glm::vec3 clearColor,
     const unsigned int pixelSize,
     const float imguiFontSize,
-    bool headless
+    bool headless,
+    PresentMode presentMode
 )
     : mImplPtr(std::make_unique<Implementation>(
-          screenSize, title, clearColor, pixelSize, imguiFontSize, headless))
+          screenSize, title, clearColor, pixelSize, imguiFontSize, headless, presentMode))
 {
 }
 
@@ -275,11 +277,39 @@ void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, Im
         });
 }
 
-void Canvas::imguiVisual(const Visual& visual, const ImguiImageSize::Spec& sizeSpec)
+ImguiImageId Canvas::registerImguiImage(const Visual& visual, const ImguiImageSize::Spec& sizeSpec)
 {
-    // Rasterize the off-screen image at the same DPI density the font atlas uses
-    // (style.FontScaleDpi == contentScale()), so logical-pixel sizes stay crisp.
-    mImplPtr->imguiImages.imguiVisual(visual, sizeSpec, mImplPtr->frameRunner.contentScale());
+    return mImplPtr->imguiImages.registerImage(visual, sizeSpec, mImplPtr->frameRunner.contentScale());
+}
+
+void Canvas::updateImguiImage(ImguiImageId imageId, const Visual& visual)
+{
+    mImplPtr->imguiImages.updateImage(imageId, visual, mImplPtr->frameRunner.contentScale());
+}
+
+void Canvas::unregisterImguiImage(ImguiImageId imageId)
+{
+    mImplPtr->imguiImages.unregisterImage(imageId);
+}
+
+void Canvas::imguiImage(ImguiImageId imageId, std::optional<glm::vec2> drawSize)
+{
+    mImplPtr->imguiImages.drawImage(imageId, drawSize);
+}
+
+std::uint64_t Canvas::imguiImageHandle(ImguiImageId imageId) const
+{
+    return mImplPtr->imguiImages.handleOf(imageId);
+}
+
+glm::vec2 Canvas::imguiImageSize(ImguiImageId imageId) const
+{
+    return mImplPtr->imguiImages.sizeOf(imageId);
+}
+
+bool Canvas::isImguiImageReady(ImguiImageId imageId) const
+{
+    return mImplPtr->imguiImages.isReady(imageId);
 }
 
 // ---------------------------------------------------------------------------

@@ -25,7 +25,9 @@ struct GlfwInputContext
 class GlfwBackend
 {
 public:
-    GlfwBackend(const std::string& title, int width, int height, bool visible = true);
+    /// @param swapInterval OpenGL swap interval (1 = vsync, 0 = uncapped). Applied
+    ///        after the GL context is made current; ignored in Vulkan builds.
+    GlfwBackend(const std::string& title, int width, int height, bool visible = true, int swapInterval = 1);
     ~GlfwBackend();
 
     // Non-copyable, non-movable (owns a GLFW window handle)

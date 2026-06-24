@@ -214,7 +214,20 @@ VkFormat VulkanBackend::findDepthFormat() const
 // initialize()
 // ---------------------------------------------------------------------------
 
-void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
+// Translate the engine-level present preference to a Vulkan present mode.
+// vk-bootstrap silently falls back to FIFO if the requested mode is unsupported.
+static VkPresentModeKHR toVkPresentMode(PresentMode mode)
+{
+    switch (mode)
+    {
+    case PresentMode::Mailbox:   return VK_PRESENT_MODE_MAILBOX_KHR;
+    case PresentMode::Immediate: return VK_PRESENT_MODE_IMMEDIATE_KHR;
+    case PresentMode::Fifo:
+    default:                     return VK_PRESENT_MODE_FIFO_KHR;
+    }
+}
+
+void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize, PresentMode presentMode)
 {
     // 1. Instance
     // Disable Samsung Galaxy overlay implicit layers before the Vulkan loader
@@ -309,7 +322,7 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
 
     // 9. Presentation target (swapchain or offscreen image — determines color format)
     mPresentation.createPresentationTarget(mPhysicalDevice, mDevice, mAllocator,
-                                           mDepthFormat, canvasSize);
+                                           mDepthFormat, canvasSize, toVkPresentMode(presentMode));
 
     // 10. Main render pass (format and final layout come from the presentation policy)
     {
@@ -769,7 +782,7 @@ void VulkanBackend::flushPendingDeletions(FrameData& frame)
     // Flat-2D companions must be destroyed before the render targets: a flat-2D
     // VkImageView is created from the RT's colorImage, and a view must not outlive
     // its image (VUID-vkDestroyImage-image-01000). Both are queued to the same frame
-    // slot when an imguiVisual entry is retired, so the order here is what matters.
+    // slot when an ImGui image is unregistered, so the order here is what matters.
     for (auto& pending : frame.pendingFlat2DDeletions)
     {
         if (pending.descriptorSet != VK_NULL_HANDLE)
@@ -1740,7 +1753,7 @@ std::uint64_t VulkanBackend::acquireFlat2DImguiHandle(DRenderTarget renderTarget
     {
         if (not mLoggedFlat2DExhaustion)
         {
-            spdlog::error("imguiVisual: ImGui image descriptor budget reached ({} live, cap {}). "
+            spdlog::error("imguiImage: ImGui image descriptor budget reached ({} live, cap {}). "
                           "Extra images are skipped until some are released. Raise "
                           "kImguiImageDescriptorPoolSize in vulkan_backend.h if you need more.",
                           mFlat2DDescriptorsLive, kImguiImageDescriptorPoolSize);
@@ -1765,9 +1778,9 @@ std::uint64_t VulkanBackend::acquireFlat2DImguiHandle(DRenderTarget renderTarget
     VkImageView view = VK_NULL_HANDLE;
     if (vkCreateImageView(mDevice, &viewInfo, nullptr, &view) != VK_SUCCESS)
     {
-        spdlog::error("imguiVisual: vkCreateImageView failed for the flat-2D handle; "
+        spdlog::error("imguiImage: vkCreateImageView failed for the flat-2D handle; "
                       "skipping this image (likely out of GPU memory).");
-        return 0;   // no-op: manager draws nothing for this visual, retries next frame
+        return 0;   // no-op: manager draws nothing for this image, retries next frame
     }
 
     // The RT color image stays in SHADER_READ_ONLY_OPTIMAL between RTT passes. No sampler:
