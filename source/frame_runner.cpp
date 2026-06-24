@@ -407,6 +407,9 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
         RenderSnapshot& snapshot = mTripleBuffer.writeSlot();
         snapshot.commitSeq = commitSeq;
         snapshot.clearColor = mClearColor;
+        // Capture the logical canvas size so the render side draws this snapshot's
+        // pool in its own viewport/world transform (C10: no resize letterbox transient).
+        snapshot.screenSize = mScreenSize.load(std::memory_order_acquire);
 
         // 2) ImGui frame on the sim-UI context — under the ImGui mutex so it never
         //    touches the shared font atlas concurrently with the render thread.
@@ -546,6 +549,7 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
     // no in-flight snapshot references them). At depth-0 this is the same frame.
     mSnapshot.commitSeq = ++mCommitSeq;
     mSnapshot.clearColor = mClearColor;
+    mSnapshot.screenSize = singleScreen;
 
     if (mAutoTextureGC)
         for (TextureId textureId : assets.collectUnusedTextures())
@@ -665,7 +669,13 @@ void FrameRunner::renderSnapshotContents(AssetRegistry& assets, ImguiRttManager&
             meshPack.syncToGpu(mBackend);
     }
 
-    const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize.load(std::memory_order_acquire));
+    // Snapshot size, falling back to the live atomic for un-stamped priming slots
+    // (default {0,0} would make the world transform degenerate). Single mode always
+    // stamps a valid size, so this is a no-op there.
+    const ScreenSize renderScreen = (snapshot.screenSize.width != 0 && snapshot.screenSize.height != 0)
+        ? snapshot.screenSize
+        : mScreenSize.load(std::memory_order_acquire);
+    const glm::mat3 worldTransformMat = computeWorldTransformMat(renderScreen);
 
     {
         ZoneScopedN("RttPasses");
@@ -761,7 +771,13 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
         auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
         mFramebufferWidth = framebufferWidth;
         mFramebufferHeight = framebufferHeight;
-        const ScreenSize threadedScreen = mScreenSize.load(std::memory_order_acquire);
+        // Use the snapshot's captured size (not the live atomic) so the viewport
+        // matches the pool this snapshot was built for — no resize letterbox transient (C10).
+        // Fall back to the live size for priming frames whose slot was never produced
+        // (default-constructed snapshot → {0,0}; a zero size would divide by a 0 aspect).
+        const ScreenSize threadedScreen = (snapshot.screenSize.width != 0 && snapshot.screenSize.height != 0)
+            ? snapshot.screenSize
+            : mScreenSize.load(std::memory_order_acquire);
         mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, threadedScreen.width, threadedScreen.height);
 
         mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
@@ -827,7 +843,7 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
 
         {
             ZoneScopedN("SwapBuffers");
-            mWindow->endFrame(controller, mScreenSize.load(std::memory_order_acquire));
+            mWindow->endFrame(controller, threadedScreen);
         }
 
         // Snapshot the render controller's freshly-polled input (gamepad + keyboard

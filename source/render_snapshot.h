@@ -7,6 +7,7 @@
 #include "texture_id.h"
 #include "mesh.h"           // MeshId
 #include "render_target.h"  // RenderTargetId
+#include "screen_size.h"    // ScreenSize
 
 namespace Nothofagus
 {
@@ -65,6 +66,11 @@ struct RenderSnapshot
     std::vector<DrawItem> draws;          ///< main pass, depth-sorted at commit
     std::vector<RttPass>  rttPasses;      ///< insertion order preserved (nested-RTT dependency)
     glm::vec3             clearColor{0.0f};
+    /// Logical canvas size captured at commit. The render side uses this (not the
+    /// live atomic) so the viewport / world transform match the pool this snapshot
+    /// was built for — removes the 1-frame letterbox transient on a threaded
+    /// setScreenSize (roadmap C10).
+    ScreenSize            screenSize{};
     /// Cloned main-context ImGui draw data produced on the sim thread (M3),
     /// null until ImGui has been committed. Lazily allocated by the producer.
     std::unique_ptr<ClonedImDrawData> mainUi;
