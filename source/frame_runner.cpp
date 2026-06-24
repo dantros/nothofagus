@@ -355,6 +355,15 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
     FrameMark;
 }
 
+// The ImGui gamepad keys that carry an analog 0..1 value (sticks + triggers), as
+// opposed to digital buttons/d-pad. These need AddKeyAnalogEvent on replay so the
+// sim-UI gets ImGui's smooth gamepad nav; everything else replays digitally (C11).
+static bool isAnalogNavKey(int key)
+{
+    return key == ImGuiKey_GamepadL2 || key == ImGuiKey_GamepadR2
+        || (key >= ImGuiKey_GamepadLStickLeft && key <= ImGuiKey_GamepadRStickDown);
+}
+
 const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, AssetRegistry& assets,
                                            ImguiRttManager* imguiRtt, ImguiImageManager* imguiImages,
                                            float deltaTimeMS,
@@ -446,8 +455,16 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
                 io.AddMouseWheelEvent(input.wheelX, input.wheelY);
 
             // Keyboard: replay key state (ImGui dedups to changes), modifiers, text.
+            // Gamepad stick/trigger keys go through AddKeyAnalogEvent so smooth nav
+            // (continuous scroll/tween) survives the marshal, not just on/off (C11).
             for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_MouseLeft; ++key)
-                io.AddKeyEvent(static_cast<ImGuiKey>(key), input.keyDown[key - ImGuiKey_NamedKey_BEGIN]);
+            {
+                const int index = key - ImGuiKey_NamedKey_BEGIN;
+                if (isAnalogNavKey(key))
+                    io.AddKeyAnalogEvent(static_cast<ImGuiKey>(key), input.keyDown[index], input.keyAnalog[index]);
+                else
+                    io.AddKeyEvent(static_cast<ImGuiKey>(key), input.keyDown[index]);
+            }
             io.AddKeyEvent(ImGuiMod_Ctrl,  input.keyCtrl);
             io.AddKeyEvent(ImGuiMod_Shift, input.keyShift);
             io.AddKeyEvent(ImGuiMod_Alt,   input.keyAlt);
@@ -1071,8 +1088,13 @@ void FrameRunner::harvestImguiInput()
     for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; ++key)
     {
         const int index = key - ImGuiKey_NamedKey_BEGIN;
+        const bool isRealKey = (key < ImGuiKey_MouseLeft);
         mThreadedImguiInput.keyDown[index] =
-            (key < ImGuiKey_MouseLeft) ? ImGui::IsKeyDown(static_cast<ImGuiKey>(key)) : false;
+            isRealKey ? ImGui::IsKeyDown(static_cast<ImGuiKey>(key)) : false;
+        // Analog value (gamepad sticks/triggers); 0 for digital keys. KeysData is the
+        // public per-key state array, indexed by (key - ImGuiKey_NamedKey_BEGIN) (C11).
+        mThreadedImguiInput.keyAnalog[index] =
+            isRealKey ? io.KeysData[index].AnalogValue : 0.0f;
     }
     mThreadedImguiInput.keyCtrl  = io.KeyCtrl;
     mThreadedImguiInput.keyShift = io.KeyShift;

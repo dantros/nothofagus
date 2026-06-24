@@ -402,6 +402,10 @@ private:
         // a static_assert in the .cpp verifies it covers ImGuiKey_NamedKey_COUNT.
         static constexpr int kKeyCount = 256;
         bool keyDown[kKeyCount]{};           // indexed by (ImGuiKey - ImGuiKey_NamedKey_BEGIN)
+        // Analog value per key (C11). Only the gamepad stick/trigger keys carry a
+        // meaningful 0..1 value (ImGui's smooth nav); 0 for everything else. Same
+        // indexing as keyDown. Lets sim-UI gamepad-stick nav match single-threaded.
+        float keyAnalog[kKeyCount]{};
         bool keyCtrl{false}, keyShift{false}, keyAlt{false}, keySuper{false};
         static constexpr int kMaxTextChars = 32;
         unsigned int textChars[kMaxTextChars]{}; // chars typed this frame (consumed on sim)
