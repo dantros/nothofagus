@@ -160,14 +160,15 @@ The `#ifdef NOTHOFAGUS_HEADLESS_VULKAN` appears only in two places: the `ActiveV
 ### Canvas lifecycle
 
 ```cpp
-// Construct: screen size, title, clear color, pixel scale, ImGui font size, headless flag.
+// Construct: screen size, title, clear color, pixel scale, ImGui font size, headless flag, present mode.
 Nothofagus::Canvas canvas(
-    {256, 240},          // screenSize (logical canvas, default 256×240)
-    "My App",            // title
-    {0.0f, 0.0f, 0.0f},  // clearColor (default black)
-    4,                   // pixelSize (window scale, default 4)
-    14.0f,               // imguiFontSize (default 14)
-    /*headless=*/false); // hide the window if true
+    {256, 240},                          // screenSize (logical canvas, default 256×240)
+    "My App",                            // title
+    {0.0f, 0.0f, 0.0f},                  // clearColor (default black)
+    4,                                   // pixelSize (window scale, default 4)
+    14.0f,                               // imguiFontSize (default 14)
+    /*headless=*/false,                  // hide the window if true
+    Nothofagus::PresentMode::Mailbox);   // present mode (default Mailbox)
 
 // Main loop — drives ticks at the backend's native cadence.
 canvas.run([&](float dt) {
@@ -179,6 +180,10 @@ canvas.run([&](float dt) {
 **Headless mode and manual tick.** Pass `headless = true` as the last constructor argument to create a canvas with a hidden window (no visible UI). Works with all backend combinations (GLFW/SDL3 + OpenGL/Vulkan). Use `tick()` to drive rendering one frame at a time with a caller-supplied delta time (in milliseconds) instead of the engine's internal loop.
 
 `run()` and `tick()` are mutually exclusive on a given Canvas — do not mix them.
+
+**Present mode (vsync).** The trailing `PresentMode` constructor argument (default `PresentMode::Mailbox`) selects the swapchain / vsync preference; it is construction-time only (no runtime setter) and applies to windowed builds — ignored in pure-offscreen `NOTHOFAGUS_HEADLESS_VULKAN` builds. `PresentMode` (`include/present_mode.h`) is `Fifo` (mandatory vsync; on a Linux compositor this can quantize windowed Vulkan to ~45 fps), `Mailbox` (vsync'd, triple-buffered, no tearing — the default, which fixes that ~45 fps pacing), or `Immediate` (uncapped, may tear). On Vulkan it maps to a `VkPresentModeKHR` (an unsupported mode silently falls back to FIFO via vk-bootstrap); on OpenGL it maps to a swap interval via `presentModeToSwapInterval()` — GL has no Mailbox, so `Fifo`/`Mailbox` → interval 1 (vsync) and `Immediate` → 0.
+
+> **Behavior change:** with the `Mailbox` default, **OpenGL windowed builds are now vsync-capped** where they previously ran uncapped (no swap interval was ever set before). This makes both backends behave consistently. Apps that want uncapped OpenGL must pass `PresentMode::Immediate`.
 
 ```cpp
 // Headless canvas — no window appears
@@ -934,7 +939,9 @@ Enable with `-DNOTHOFAGUS_BUILD_TESTS=ON`. Two independent groups, each behind i
 | Visual (pixel-level golden-image comparison) | [tests/visual/](tests/visual/) | `NOTHOFAGUS_BUILD_TESTS_VISUAL` | Catch2 + render backend + golden-image infrastructure |
 | Nonvisual (CPU-only data/logic checks) | [tests/nonvisual/](tests/nonvisual/) | `NOTHOFAGUS_BUILD_TESTS_NONVISUAL` | Catch2 only |
 
-Run via CTest from the build directory. Both groups use Catch2 (`catch_discover_tests` registers each `TEST_CASE` as a separate CTest entry); Catch2 is added once at the `tests/CMakeLists.txt` orchestrator level when either sub-option is enabled. The visual group additionally requires a render backend and the shared test-helpers lib in [tests/nothofagus_test_helpers/](tests/nothofagus_test_helpers/) (target `nothofagus_test_helpers`); the test cases themselves live in [tests/visual/rendering_tests.cpp](tests/visual/rendering_tests.cpp). The nonvisual group builds without any render backend (use it from CI lanes that don't have a display server). The nonvisual files are [tests/nonvisual/dense_land_tests.cpp](tests/nonvisual/dense_land_tests.cpp) — pure-data tests for `DenseLand`, `IndirectTexture::setMapBulk`, and the `DenseLandExplorer` pool-grid-size formula (mirrored from source) — and [tests/nonvisual/sparse_land_tests.cpp](tests/nonvisual/sparse_land_tests.cpp) — pure-data tests for `SparseLand` (chunk lifecycle, lazy `setCell`, `chunkDataInto` zero-fill for missing chunks, independent per-chunk generation bumps).
+Run via CTest from the build directory. Both groups use Catch2 (`catch_discover_tests` registers each `TEST_CASE` as a separate CTest entry); Catch2 is added once at the `tests/CMakeLists.txt` orchestrator level when either sub-option is enabled. The visual group additionally requires a render backend and the shared test-helpers lib in [tests/nothofagus_test_helpers/](tests/nothofagus_test_helpers/) (target `nothofagus_test_helpers`); the test cases themselves live in [tests/visual/rendering_tests.cpp](tests/visual/rendering_tests.cpp). The nonvisual group builds without any render backend (use it from CI lanes that don't have a display server). The nonvisual files are [tests/nonvisual/dense_land_tests.cpp](tests/nonvisual/dense_land_tests.cpp) — pure-data tests for `DenseLand`, `IndirectTexture::setMapBulk`, and the `DenseLandExplorer` pool-grid-size formula (mirrored from source) — and [tests/nonvisual/sparse_land_tests.cpp](tests/nonvisual/sparse_land_tests.cpp) — pure-data tests for `SparseLand` (chunk lifecycle, lazy `setCell`, `chunkDataInto` zero-fill for missing chunks, independent per-chunk generation bumps), plus [tests/nonvisual/present_mode_tests.cpp](tests/nonvisual/present_mode_tests.cpp) — `presentModeToSwapInterval` mapping + `PresentMode` enum stability.
+
+**Present-mode regression tests (local / windowed).** [tests/visual/present_mode_pixel_tests.cpp](tests/visual/present_mode_pixel_tests.cpp) (present mode never changes rendered pixels — screenshot byte-identical across `Fifo`/`Mailbox`/`Immediate` and run-to-run) and [tests/visual/present_mode_sync_tests.cpp](tests/visual/present_mode_sync_tests.cpp) (present mode introduces no new Vulkan validation/sync hazards — the set of distinct `VUID-*` / `SYNC-HAZARD-*` ids is identical across modes, captured in-process via `setVulkanValidationCallback` in [include/vulkan_validation.h](include/vulkan_validation.h)). These only bite on a **windowed Vulkan build with a display** (present mode is a no-op under `NOTHOFAGUS_HEADLESS_VULKAN`, so they pass trivially / `SKIP` in the CI lane) and the sync test needs the validation layer on `VK_LAYER_PATH`. See [tests/visual/README.md](tests/visual/README.md) for how to run them.
 
 ### Golden images (PNG) and the Visual Tests Explorer
 

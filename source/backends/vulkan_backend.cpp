@@ -1,4 +1,5 @@
 #include "vulkan_backend.h"
+#include "vulkan_validation.h"
 #include <VkBootstrap.h>
 #include <vk_mem_alloc.h>
 #include <backends/imgui_impl_vulkan.h>
@@ -12,6 +13,48 @@
 
 namespace Nothofagus
 {
+
+// ---------------------------------------------------------------------------
+// Validation message hook (tests / diagnostics — see include/vulkan_validation.h)
+// ---------------------------------------------------------------------------
+
+// Set via setVulkanValidationCallback() before Canvas construction; forwarded to by
+// the debug messenger below. Single-threaded use is assumed (set/clear around a
+// Canvas lifetime).
+static VulkanValidationCallback gValidationCallback;
+
+void setVulkanValidationCallback(VulkanValidationCallback callback)
+{
+    gValidationCallback = std::move(callback);
+}
+
+// Debug-utils callback installed on the instance. Logs warnings/errors via spdlog
+// (preserving the previous default-messenger behavior) and forwards the raw text to
+// any registered validation callback.
+static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanDebugCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT /*types*/,
+    const VkDebugUtilsMessengerCallbackDataEXT* data,
+    void* /*userData*/)
+{
+    if (data)
+    {
+        // The stable identifier (e.g. "VUID-..." or "SYNC-HAZARD-...") lives in
+        // pMessageIdName, while pMessage holds the human description. Forward both so
+        // callers can key off the id.
+        std::string text;
+        if (data->pMessageIdName)
+            text.append(data->pMessageIdName).append(": ");
+        if (data->pMessage)
+            text.append(data->pMessage);
+
+        if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+            spdlog::warn("[vulkan] {}", text);
+        if (gValidationCallback)
+            gValidationCallback(text);
+    }
+    return VK_FALSE;
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -245,9 +288,23 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize, 
 #ifdef NOTHOFAGUS_HEADLESS_VULKAN
     instanceBuilder.set_headless();
 #endif
+    // Enable validation in debug builds, or whenever a validation callback is
+    // registered (so tests can observe messages even in release). request_ (not
+    // enable_) keeps instance creation non-fatal when the layer isn't installed.
+    bool wantValidation = false;
 #ifndef NDEBUG
-    instanceBuilder.enable_validation_layers().use_default_debug_messenger();
+    wantValidation = true;
 #endif
+    if (gValidationCallback)
+        wantValidation = true;
+    if (wantValidation)
+    {
+        instanceBuilder.request_validation_layers()
+            .set_debug_callback(&vulkanDebugCallback)
+            .set_debug_messenger_severity(
+                VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT);
+    }
     auto instanceResult = instanceBuilder.build();
     if (!instanceResult)
         throw std::runtime_error("Failed to create Vulkan instance: " + instanceResult.error().message());
