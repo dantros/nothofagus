@@ -77,12 +77,12 @@ int main()
     const Nothofagus::ImguiImageId logoImageId =
         canvas.registerImguiImage(Nothofagus::Visual{logoTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(6.0f)}); // 16 -> 96px
     const Nothofagus::ImguiImageId spinImageId =
-        canvas.registerImguiImage(Nothofagus::Visual{spinTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(6.0f)});
+        canvas.registerImguiImage(Nothofagus::Visual{spinTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(4.0f)}); // 16 -> 64px inline icon
 
     markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
-        // Per-image width bounds are fractions of the available content width.
-        if (src == "logo")    return Nothofagus::MarkdownImage{logoImageId, 0.0f, 0.8f};  // cap at 80% of the column
-        if (src == "spinner") return Nothofagus::MarkdownImage{spinImageId, 0.2f, 0.4f};  // floor 20%, cap 40%
+        // Width bounds are fractions of the column (text-wrap) width.
+        if (src == "logo")    return Nothofagus::MarkdownImage{logoImageId, 0.0f, 0.8f};  // big block image, capped at 80% of the column
+        if (src == "spinner") return Nothofagus::MarkdownImage{spinImageId};              // small inline icon, drawn at its natural 32px
         return std::nullopt;   // unknown src -> dimmed [src] placeholder
     });
 
@@ -95,10 +95,10 @@ Welcome to **Nothofagus** markdown rendering. This panel shows
 
 ## Inline images
 
-Images resolve to engine sprites via `setImageResolver`, each with optional width
-bounds (fractions of the column). The animated spinner ![spinner](spinner) is a live,
-paletted, multi-frame texture, floored to 20% so it stays readable. An unresolved
-source renders a placeholder: ![missing](unknown-asset).
+Images resolve to engine sprites via `setImageResolver`. The logo above is a large block
+image capped at 80% of the column. The animated spinner ![spinner](spinner) is a small,
+live, multi-frame icon drawn inline at its natural size. An unresolved source renders a
+placeholder: ![missing](unknown-asset).
 
 ## Lists
 

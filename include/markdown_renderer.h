@@ -14,13 +14,14 @@ namespace Nothofagus
 class Canvas;
 
 /// A resolved inline markdown image: which pre-registered ImGui image to draw, plus
-/// optional per-image width bounds expressed as fractions of the available content
-/// width (the current ImGui content region — so they respect blockquote / list / table
-/// indentation automatically). The defaults reproduce plain fit-to-width.
+/// optional per-image width bounds expressed as fractions of the **column width** (the
+/// markdown text-wrap width — not the width remaining on the current line, so an inline
+/// image near a line wrap is sized like any other). The defaults reproduce drawing at the
+/// image's natural size, capped at the column width.
 ///
-///  - `maxWidthPercentage` is a **ceiling**: `width = min(intrinsic, maxPct * available)`.
+///  - `maxWidthPercentage` is a **ceiling**: `width = min(intrinsic, maxPct * column)`.
 ///    Only shrinks oversized images; always a lossless downscale of the registered handle.
-///  - `minWidthPercentage` is a **floor**: `width = max(intrinsic, minPct * available)`.
+///  - `minWidthPercentage` is a **floor**: `width = max(intrinsic, minPct * column)`.
 ///    Only enlarges undersized images. Enlarging past the registered rasterization size
 ///    upscales the fixed-resolution handle — crisp for `Nearest` pixel art, soft for
 ///    `Linear`; register the source larger if a floored-up image must stay crisp.
@@ -31,8 +32,8 @@ class Canvas;
 struct MarkdownImage
 {
     ImguiImageId id;
-    float minWidthPercentage = 0.0f;   ///< floor, fraction of content width (0 = no floor).
-    float maxWidthPercentage = 1.0f;   ///< ceiling, fraction of content width (1 = full width).
+    float minWidthPercentage = 0.0f;   ///< floor, fraction of column width (0 = no floor).
+    float maxWidthPercentage = 1.0f;   ///< ceiling, fraction of column width (1 = full column).
 };
 
 /// Maps a markdown image `src` string (`![alt](src)`) to a pre-registered ImGui image

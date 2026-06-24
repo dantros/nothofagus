@@ -146,14 +146,18 @@ protected:
                    image->maxWidthPercentage <= 1.0f,
                    "MarkdownImage: width bounds must satisfy 0 <= minWidthPercentage <= maxWidthPercentage <= 1");
         const glm::vec2 natural = mCanvas->imguiImageSize(image->id);   // logical layout px
-        const float availableWidth = ImGui::GetContentRegionAvail().x;
+        // Basis is the full column (text-wrap) width, NOT GetContentRegionAvail().x (the width
+        // *remaining on the current line*). Otherwise an inline image near a line wrap — where
+        // little width is left — collapses to a sliver. GetContentRegionMax/GetCursorStartPos are
+        // window-local, so their difference is the content column width regardless of cursor X.
+        const float columnWidth = ImGui::GetContentRegionMax().x - ImGui::GetCursorStartPos().x;
         std::optional<glm::vec2> drawSize;
-        if (natural.x > 0.0f && natural.y > 0.0f && availableWidth > 0.0f)
+        if (natural.x > 0.0f && natural.y > 0.0f && columnWidth > 0.0f)
         {
-            float width = std::min(natural.x, image->maxWidthPercentage * availableWidth); // ceiling
-            width = std::max(width, image->minWidthPercentage * availableWidth);           // floor
+            float width = std::min(natural.x, image->maxWidthPercentage * columnWidth); // ceiling
+            width = std::max(width, image->minWidthPercentage * columnWidth);           // floor
             if (width != natural.x)
-                drawSize = glm::vec2(width, width * natural.y / natural.x);                // height follows aspect
+                drawSize = glm::vec2(width, width * natural.y / natural.x);             // height follows aspect
         }
 
         mCanvas->imguiImage(image->id, drawSize);

@@ -723,6 +723,64 @@ TEST_CASE("Markdown inline image respects width bounds", "[rendering][imgui]")
 }
 
 // ---------------------------------------------------------------------------
+// Markdown inline image animated each frame via updateImguiImage and drawn inside
+// a paragraph (the hello_markdown "spinner" scenario). Crucially the paragraph is
+// wide enough that the icon lands near a line wrap — where the *remaining* line
+// width is tiny — so this locks the fix: bounds are fractions of the column width,
+// not the leftover line width, so the icon renders at full size, never a sliver.
+// ---------------------------------------------------------------------------
+TEST_CASE("Markdown animated inline image", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(360, 140);
+
+    // A 16x16, 4-frame filled pinwheel whose quadrant colors rotate per frame.
+    Nothofagus::ColorPallete pal{{0,0,0,0},{1,0.4f,0.4f,1},{0.4f,1,0.5f,1},{0.5f,0.7f,1,1},{1,0.9f,0.4f,1}};
+    Nothofagus::IndirectTexture spin({16,16}, glm::vec4(0.0f), 4);
+    spin.setPallete(pal);
+    for (std::size_t frame = 0; frame < 4; ++frame) {
+        std::vector<std::uint8_t> px(256, 0);
+        for (int y = 0; y < 16; ++y)
+            for (int x = 0; x < 16; ++x) {
+                const int quadrant = (x / 8) + 2 * (y / 8);
+                px[y*16+x] = static_cast<std::uint8_t>(1 + ((quadrant + static_cast<int>(frame)) % 4));
+            }
+        spin.setPixels(px, frame);
+    }
+    auto texId = canvas.addTexture(spin);
+    // A small inline icon (32px), drawn at its natural size (default bounds).
+    const Nothofagus::ImguiImageId spinId = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(2.0f)});
+
+    Nothofagus::MarkdownRenderer markdown(canvas);
+    markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "spinner") return Nothofagus::MarkdownImage{spinId};   // default bounds: natural size
+        return std::nullopt;
+    });
+
+    // Text engineered so the icon falls right at a line wrap (little width remains).
+    static constexpr const char* kDoc =
+        "Some leading words that fill most of the first line before the inline "
+        "![spinner](spinner) icon, which must still render at full size.\n";
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) {
+            Nothofagus::Visual v{texId};
+            v.currentLayer() = static_cast<std::size_t>(i % 4);
+            canvas.updateImguiImage(spinId, v);
+
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(360.0f, 140.0f), ImGuiCond_Always);
+            ImGui::Begin("md", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            markdown.print(kDoc);
+            ImGui::End();
+        });
+
+    checkAgainstGolden("markdown_animated_inline_image", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
 // OS DPI scaling of the standard-UI (main) context.
 //
 // setContentScaleOverride() makes the content scale deterministic and
