@@ -125,6 +125,7 @@ void WindowedVulkanPresentation::createPresentationTarget(
         .add_fallback_format({VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
         .set_desired_present_mode(mPresentMode)               // vk-bootstrap falls back to FIFO if unsupported.
         .set_desired_min_image_count(kDesiredSwapchainImageCount)
+        .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_SRC_BIT) // takeScreenshot() blits from the swapchain image.
         .set_desired_extent(framebufferSize.width, framebufferSize.height)
         .build();
     if (!swapchainResult)
@@ -538,6 +539,7 @@ void WindowedVulkanPresentation::recreateSwapchain()
         .add_fallback_format({VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
         .set_desired_present_mode(mPresentMode)               // Preserve the mode chosen at init across recreation.
         .set_desired_min_image_count(kDesiredSwapchainImageCount)
+        .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_SRC_BIT) // takeScreenshot() blits from the swapchain image.
         .set_desired_extent(framebufferSize.width, framebufferSize.height)
         .set_old_swapchain(mSwapchain)
         .build();
