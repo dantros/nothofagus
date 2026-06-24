@@ -44,6 +44,20 @@ namespace
         }
         return tex;
     }
+
+    // A 32x8 wide "banner" (4:1) of vertical color bands — a sensible full-width header strip
+    // (a square image at full column width would be enormous), used for the width-mode demos.
+    Nothofagus::IndirectTexture makeBanner(const Nothofagus::ColorPallete& pallete)
+    {
+        Nothofagus::IndirectTexture tex({32, 8}, glm::vec4(0.0f));
+        tex.setPallete(pallete);
+        std::vector<std::uint8_t> px(32 * 8, 0);
+        for (int y = 0; y < 8; ++y)
+            for (int x = 0; x < 32; ++x)
+                px[y * 32 + x] = static_cast<std::uint8_t>(1 + (x / 8) % 4); // 4 vertical bands
+        tex.setPixels(px, 0);
+        return tex;
+    }
 }
 
 int main()
@@ -77,11 +91,24 @@ int main()
     const Nothofagus::ImguiImageId logoImageId =
         canvas.registerImguiImage(Nothofagus::Visual{logoTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(6.0f)}); // 16 -> 96px
     const Nothofagus::ImguiImageId spinImageId =
-        canvas.registerImguiImage(Nothofagus::Visual{spinTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(6.0f)});
+        canvas.registerImguiImage(Nothofagus::Visual{spinTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(4.0f)}); // 16 -> 64px inline icon
 
-    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::ImguiImageId> {
-        if (src == "logo")    return logoImageId;
-        if (src == "spinner") return spinImageId;
+    // A wide banner at two resolutions, to illustrate the width-bound modes below: a large one
+    // (crisp when downscaled for full-width / max%) and a small one (to enlarge via min%).
+    const Nothofagus::TextureId bannerTexId = canvas.addTexture(makeBanner(pallete));
+    const Nothofagus::ImguiImageId modeBigImageId =
+        canvas.registerImguiImage(Nothofagus::Visual{bannerTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(20.0f)}); // 640x160
+    const Nothofagus::ImguiImageId modeSmallImageId =
+        canvas.registerImguiImage(Nothofagus::Visual{bannerTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(2.0f)});  // 64x16
+
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        // Width bounds are fractions of the column (text-wrap) width.
+        if (src == "logo")      return Nothofagus::MarkdownImage{logoImageId, 0.0f, 0.8f};      // big block image, capped at 80% of the column
+        if (src == "spinner")   return Nothofagus::MarkdownImage{spinImageId};                  // small inline icon, drawn at its natural 64px
+        if (src == "mode-full") return Nothofagus::MarkdownImage{modeBigImageId,   1.0f, 1.0f}; // 1) span the full column
+        if (src == "mode-max")  return Nothofagus::MarkdownImage{modeBigImageId,   0.0f, 0.4f}; // 2) ceiling: a large image reduced to 40%
+        if (src == "mode-min")  return Nothofagus::MarkdownImage{modeSmallImageId, 0.3f, 1.0f}; // 3) floor: a small image enlarged to 30%
+        if (src == "wide")      return Nothofagus::MarkdownImage{modeBigImageId};               // 4) no bounds: drawn at its registered 640px size (overflows a narrow window)
         return std::nullopt;   // unknown src -> dimmed [src] placeholder
     });
 
@@ -94,9 +121,26 @@ Welcome to **Nothofagus** markdown rendering. This panel shows
 
 ## Inline images
 
-Images resolve to engine sprites via `setImageResolver`. The animated spinner
-![spinner](spinner) is a live, paletted, multi-frame texture drawn inline.
-An unresolved source renders a placeholder: ![missing](unknown-asset).
+Images resolve to engine sprites via `setImageResolver`. The logo above is a large block
+image capped at 80% of the column. The animated spinner ![spinner](spinner) is a small,
+live, multi-frame icon drawn inline at its natural size. An unresolved source renders a
+placeholder: ![missing](unknown-asset).
+
+## Width modes
+
+A banner at different `MarkdownImage` width bounds (each a fraction of the column width).
+
+Full column width:
+
+![full](mode-full)
+
+Capped to 40% — a large banner reduced by the ceiling:
+
+![max](mode-max)
+
+Floored to 30% — a small banner enlarged by the floor:
+
+![min](mode-min)
 
 ## Lists
 
@@ -142,6 +186,14 @@ Columns size proportionally and long cells wrap inside their own column:
 The horizontal rule above closes the document.
 )md";
 
+    static constexpr const char* kOverflowSample = R"md(## Raw, oversized
+
+A `MarkdownImage{id}` with no width bounds draws at its registered size. This banner is
+wider than the window, so it overflows — drag the horizontal scrollbar to pan:
+
+![wide](wide)
+)md";
+
     float elapsedMs = 0.0f;
 
     canvas.run([&](float dt)
@@ -155,9 +207,19 @@ The horizontal rule above closes the document.
         canvas.updateImguiImage(spinImageId, spinVisual);
 
         ImGui::SetNextWindowPos(ImVec2(20.0f, 20.0f), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(640.0f, 600.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(520.0f, 680.0f), ImGuiCond_FirstUseEver);
         ImGui::Begin("Readme");
         markdown.print(kSample);
+        ImGui::End();
+
+        // Secondary window with a horizontal scrollbar: a raw image (no width bounds) is drawn
+        // at its registered 640px size. Wider than this window, it overflows — and because the
+        // window opted into ImGuiWindowFlags_HorizontalScrollbar, you can pan across it (without
+        // the flag it would simply be clipped at the right edge).
+        ImGui::SetNextWindowPos(ImVec2(560.0f, 20.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(380.0f, 320.0f), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Oversized image (horizontal scroll)", nullptr, ImGuiWindowFlags_HorizontalScrollbar);
+        markdown.print(kOverflowSample);
         ImGui::End();
     });
 

@@ -657,9 +657,9 @@ TEST_CASE("Markdown renders an inline registered image", "[rendering][imgui]")
 
     Nothofagus::MarkdownRenderer markdown(canvas);
     markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));     // bake before ticking
-    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::ImguiImageId> {
-        if (src == "tile") return imageId;
-        return std::nullopt;                                   // unknown -> [src] placeholder
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "tile") return Nothofagus::MarkdownImage{imageId};  // default bounds: fit to width
+        return std::nullopt;                                           // unknown -> [src] placeholder
     });
 
     static constexpr const char* kDoc =
@@ -677,6 +677,191 @@ TEST_CASE("Markdown renders an inline registered image", "[rendering][imgui]")
         });
 
     checkAgainstGolden("markdown_inline_image", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// Per-image width bounds (fractions of the content width): the ceiling
+// (maxWidthPercentage) shrinks an oversized image, and the floor
+// (minWidthPercentage) enlarges an undersized one — so a large and a small
+// source both land at bounded widths. This golden locks the clamp in both
+// directions.
+// ---------------------------------------------------------------------------
+TEST_CASE("Markdown inline image respects width bounds", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(160, 140);
+
+    auto texId = canvas.addTexture(makeQuadrantTexture());
+    // A large registration (capped down) and a small one (floored up), same source.
+    const Nothofagus::ImguiImageId bigId   = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(16.0f)}); // 128px
+    const Nothofagus::ImguiImageId smallId = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(1.0f)});  // 8px
+
+    Nothofagus::MarkdownRenderer markdown(canvas);
+    markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "big")   return Nothofagus::MarkdownImage{bigId,   0.0f, 0.6f};  // ceiling: shrink to <=60%
+        if (src == "small") return Nothofagus::MarkdownImage{smallId, 0.3f, 1.0f};  // floor: grow to >=30%
+        return std::nullopt;
+    });
+
+    static constexpr const char* kDoc =
+        "Big: ![big](big)\n\n"
+        "Small: ![small](small)\n";
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) {
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(160.0f, 140.0f), ImGuiCond_Always);
+            ImGui::Begin("md", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            markdown.print(kDoc);
+            ImGui::End();
+        });
+
+    checkAgainstGolden("markdown_image_bounds", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// Markdown inline image animated each frame via updateImguiImage and drawn inside
+// a paragraph (the hello_markdown "spinner" scenario). Crucially the paragraph is
+// wide enough that the icon lands near a line wrap — where the *remaining* line
+// width is tiny — so this locks the fix: bounds are fractions of the column width,
+// not the leftover line width, so the icon renders at full size, never a sliver.
+// ---------------------------------------------------------------------------
+TEST_CASE("Markdown animated inline image", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(360, 140);
+
+    // A 16x16, 4-frame filled pinwheel whose quadrant colors rotate per frame.
+    Nothofagus::ColorPallete pal{{0,0,0,0},{1,0.4f,0.4f,1},{0.4f,1,0.5f,1},{0.5f,0.7f,1,1},{1,0.9f,0.4f,1}};
+    Nothofagus::IndirectTexture spin({16,16}, glm::vec4(0.0f), 4);
+    spin.setPallete(pal);
+    for (std::size_t frame = 0; frame < 4; ++frame) {
+        std::vector<std::uint8_t> px(256, 0);
+        for (int y = 0; y < 16; ++y)
+            for (int x = 0; x < 16; ++x) {
+                const int quadrant = (x / 8) + 2 * (y / 8);
+                px[y*16+x] = static_cast<std::uint8_t>(1 + ((quadrant + static_cast<int>(frame)) % 4));
+            }
+        spin.setPixels(px, frame);
+    }
+    auto texId = canvas.addTexture(spin);
+    // A small inline icon (32px), drawn at its natural size (default bounds).
+    const Nothofagus::ImguiImageId spinId = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(2.0f)});
+
+    Nothofagus::MarkdownRenderer markdown(canvas);
+    markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "spinner") return Nothofagus::MarkdownImage{spinId};   // default bounds: natural size
+        return std::nullopt;
+    });
+
+    // Text engineered so the icon falls right at a line wrap (little width remains).
+    static constexpr const char* kDoc =
+        "Some leading words that fill most of the first line before the inline "
+        "![spinner](spinner) icon, which must still render at full size.\n";
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) {
+            Nothofagus::Visual v{texId};
+            v.currentLayer() = static_cast<std::size_t>(i % 4);
+            canvas.updateImguiImage(spinId, v);
+
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(360.0f, 140.0f), ImGuiCond_Always);
+            ImGui::Begin("md", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            markdown.print(kDoc);
+            ImGui::End();
+        });
+
+    checkAgainstGolden("markdown_animated_inline_image", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// Markdown image width modes (the hello_markdown "Width modes" section): one wide
+// banner shown at full column width ({1,1}), capped to 40% (the ceiling reducing a
+// large registration), and floored to 30% (the floor enlarging a small registration).
+// Locks all three bound modes, including the full-width case the bounds golden omits.
+// ---------------------------------------------------------------------------
+TEST_CASE("Markdown image width modes", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(640, 520);
+    // A 32x8 banner (4:1) of vertical color bands.
+    Nothofagus::ColorPallete pal{{0,0,0,0},{1,0.4f,0.4f,1},{0.4f,1,0.5f,1},{0.5f,0.7f,1,1},{1,0.9f,0.4f,1}};
+    Nothofagus::IndirectTexture banner({32,8}, glm::vec4(0.0f));
+    banner.setPallete(pal);
+    { std::vector<std::uint8_t> px(256,0);
+      for (int y=0;y<8;++y) for (int x=0;x<32;++x) px[y*32+x]=static_cast<std::uint8_t>(1+(x/8)%4);
+      banner.setPixels(px,0); }
+    auto texId = canvas.addTexture(banner);
+    const Nothofagus::ImguiImageId bigId   = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(20.0f)}); // 640x160
+    const Nothofagus::ImguiImageId smallId = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(2.0f)});  // 64x16
+    Nothofagus::MarkdownRenderer markdown(canvas);
+    markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "mode-full") return Nothofagus::MarkdownImage{bigId,   1.0f, 1.0f};
+        if (src == "mode-max")  return Nothofagus::MarkdownImage{bigId,   0.0f, 0.4f};
+        if (src == "mode-min")  return Nothofagus::MarkdownImage{smallId, 0.3f, 1.0f};
+        return std::nullopt;
+    });
+    static constexpr const char* kDoc =
+        "Full:\n\n![full](mode-full)\n\nMax 40%:\n\n![max](mode-max)\n\nMin 30%:\n\n![min](mode-min)\n";
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) {
+            ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(640,520), ImGuiCond_Always);
+            ImGui::Begin("md", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            markdown.print(kDoc);
+            ImGui::End();
+        });
+    checkAgainstGolden("markdown_width_modes", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// A markdown image with NO width bounds (MarkdownImage{id}) is drawn at its
+// registered size, uncapped. Here the banner (384px) is wider than the window,
+// so it overflows and is clipped at the right edge — locking the "raw" behavior:
+// only the first ~2 of the 4 color bands are visible. (If it were capped to the
+// column, as the old default was, all 4 bands would be visible, shrunk to fit.)
+// ---------------------------------------------------------------------------
+TEST_CASE("Markdown raw image overflows the column uncapped", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(200, 80);
+    // A 32x8 banner (4:1) of four vertical color bands.
+    Nothofagus::ColorPallete pal{{0,0,0,0},{1,0.4f,0.4f,1},{0.4f,1,0.5f,1},{0.5f,0.7f,1,1},{1,0.9f,0.4f,1}};
+    Nothofagus::IndirectTexture banner({32,8}, glm::vec4(0.0f));
+    banner.setPallete(pal);
+    { std::vector<std::uint8_t> px(256,0);
+      for (int y=0;y<8;++y) for (int x=0;x<32;++x) px[y*32+x]=static_cast<std::uint8_t>(1+(x/8)%4);
+      banner.setPixels(px,0); }
+    auto texId = canvas.addTexture(banner);
+    const Nothofagus::ImguiImageId id = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(12.0f)}); // 384px wide
+
+    Nothofagus::MarkdownRenderer markdown(canvas);
+    markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "raw") return Nothofagus::MarkdownImage{id};   // no bounds -> registered size, uncapped
+        return std::nullopt;
+    });
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) {
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(200.0f, 80.0f), ImGuiCond_Always);
+            ImGui::Begin("md", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            markdown.print("![raw](raw)\n");
+            ImGui::End();
+        });
+
+    checkAgainstGolden("markdown_raw_overflow", canvas.takeScreenshot());
 }
 
 // ---------------------------------------------------------------------------
