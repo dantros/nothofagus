@@ -474,9 +474,28 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
 
             io.DeltaTime = std::max(deltaTimeMS * 0.001f, 1e-6f);
 
+            // Advance the sim commit-rate monitor off an accumulated clock (the sim
+            // thread has no window clock); smoothed like the render-side monitor (C8).
+            mSimClockMs += deltaTimeMS;
+            mSimPerfMonitor->update(mSimClockMs * 0.001f);
+
             ImGui::NewFrame();
             if (uiCallback)
                 uiCallback(deltaTimeMS); // user ImGui widgets, on the sim thread
+            // Stats overlay is drawn HERE (into the sim-UI frame) rather than on the
+            // render-thread main context, so it ends up in the cloned draw data that
+            // gets presented even when the app commits its own ImGui. Shows the
+            // render cadence (marshalled) next to the sim commit rate (C8).
+            if (mStats)
+            {
+                ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Appearing);
+                ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+                ImGui::Begin("stats", NULL, ImGuiWindowFlags_NoTitleBar);
+                ImGui::Text("%.2f fps (render)", mRenderFps.load(std::memory_order_acquire));
+                ImGui::Text("%.2f ms (render)",  mRenderMs.load(std::memory_order_acquire));
+                ImGui::Text("%.2f fps (sim)",    mSimPerfMonitor->getFPS());
+                ImGui::End();
+            }
             ImGui::Render();
 
             // Publish what the UI captured this frame so the host's game update (which
@@ -804,16 +823,19 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
         // ImGui frame so the stats overlay can show it; also fed to RTT ImGui timing.
         mThreadedPerfMonitor->update(mWindow->getTime());
         deltaTimeMS = mThreadedPerfMonitor->getMS();
+        // Marshal the render cadence to the sim thread, which draws the stats overlay
+        // into its UI frame so it survives in the cloned draw data (C8).
+        mRenderFps.store(mThreadedPerfMonitor->getFPS(), std::memory_order_release);
+        mRenderMs.store(deltaTimeMS, std::memory_order_release);
 
         // Main-context ImGui frame on the render thread (under the ImGui mutex, so it
         // never touches the shared font atlas concurrently with the sim-UI context).
         // It does NOT draw user UI (that arrives as a clone) — it (a) drains pending
         // font ops + lets ImGui_ImplGlfw process window input so we can harvest it for
         // the sim, and (b) provides valid empty draw data for the frames before the
-        // first UI commit. The optional stats overlay is drawn here on the main
-        // context; it shows whenever this main frame is what gets rendered (i.e. when
-        // the sim commits no UI clone — apps with sim ImGui would need stats in the
-        // clone instead).
+        // first UI commit. The stats overlay is NOT drawn here: it lives in the sim-UI
+        // frame (produce) so it survives in the cloned draw data presented for apps
+        // that commit their own ImGui (C8).
         {
             ZoneScopedN("RenderImguiNewFrame");
             std::lock_guard<std::mutex> imguiLock(mImguiMutex);
@@ -824,15 +846,6 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
             ImGui::SetMouseCursor(static_cast<ImGuiMouseCursor>(mThreadedCursor.load(std::memory_order_acquire)));
             beginMainImguiFrame();
             harvestImguiInput(); // io.MousePos/Down/Wheel + DisplaySize are valid post-NewFrame
-            if (mStats)
-            {
-                ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Appearing);
-                ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
-                ImGui::Begin("stats", NULL, ImGuiWindowFlags_NoTitleBar);
-                ImGui::Text("%.2f fps", deltaTimeMS > 0.0f ? 1000.0f / deltaTimeMS : 0.0f);
-                ImGui::Text("%.2f ms", deltaTimeMS);
-                ImGui::End();
-            }
             ImGui::Render();
         }
 
@@ -957,6 +970,10 @@ void FrameRunner::beginThreadedSession(Canvas& canvas, Controller& controller)
     }
     // Start the render-loop frame-time monitor (same period as run()'s).
     mThreadedPerfMonitor.emplace(mWindow->getTime(), 0.5f);
+    // Sim-thread commit-rate monitor, fed by an accumulated commit clock in
+    // produce(Threaded) (the sim thread can't use the window clock) (C8).
+    mSimClockMs = 0.0f;
+    mSimPerfMonitor.emplace(0.0f, 0.5f);
 
     // M3: create the sim-thread UI context, sharing the main font atlas, so the
     // user's ImGui widgets can run on the sim thread. It has no platform/renderer

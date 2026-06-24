@@ -181,6 +181,11 @@ int main()
         canvas.close();
     });
 
+    // Stats overlay alongside the interactive panel: on the threaded path it's drawn
+    // into the sim-UI frame so it survives in the cloned draw data even though this
+    // app commits its own ImGui (C8). Shows render fps/ms next to the sim commit rate.
+    canvas.stats() = true;
+
     canvas.beginThreadedSession(controller);
 
     std::thread simThread([&]()

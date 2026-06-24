@@ -369,6 +369,17 @@ private:
     /// the dt fed to the stats overlay and to RTT ImGui timing (flushPending), so
     /// both paths report the same averaged value. Emplaced in beginThreadedSession.
     std::optional<PerformanceMonitor> mThreadedPerfMonitor;
+    /// Render-thread cadence marshalled to the sim thread so the stats overlay,
+    /// which is drawn into the sim-UI frame (so it survives in the cloned draw
+    /// data even when the app commits its own ImGui), can report render fps/ms
+    /// next to the sim commit rate (C8). Lock-free, written each consume(Threaded).
+    std::atomic<float> mRenderFps{0.0f};
+    std::atomic<float> mRenderMs{0.0f};
+    /// Sim-thread commit-rate monitor (smoothed, same recipe as the render one).
+    /// Updated each produce(Threaded) off an accumulated commit clock; read only
+    /// on the sim thread for the stats overlay, so no synchronization is needed.
+    std::optional<PerformanceMonitor> mSimPerfMonitor;
+    float mSimClockMs{0.0f};
 
     /// Phase B: serializes the sim thread's runtime structural mutations
     /// (spawn/despawn → mTextures/mMeshes + usage monitors + pending-free queues)
