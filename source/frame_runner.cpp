@@ -908,11 +908,15 @@ void FrameRunner::beginThreadedSession(Canvas& canvas, Controller& controller)
         simIo.IniFilename             = nullptr;
         simIo.BackendPlatformName     = "nothofagus_sim_ui";
         simIo.BackendFlags           |= ImGuiBackendFlags_RendererHasTextures; // atlas uploaded render-side
+        // HasGamepad + NavEnableGamepad let the sim-UI process the gamepad nav keys
+        // the render thread harvests from the main context and replays here (B6).
+        simIo.BackendFlags           |= ImGuiBackendFlags_HasGamepad;
         simIo.DisplaySize             = ImVec2(static_cast<float>(primingScreen.width),
                                                static_cast<float>(primingScreen.height));
-        // Enable keyboard nav and wire an in-process clipboard so InputText
+        // Enable keyboard + gamepad nav and wire an in-process clipboard so InputText
         // copy/paste works on the sim thread (GLFW clipboard is main-thread-only).
         simIo.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        simIo.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
         // With keyboard nav on, ImGui would set io.WantCaptureKeyboard true whenever
         // io.NavActive is true — i.e. merely because a window exists with nav focus,
         // even when nothing is being typed. That makes imguiWantsKeyboard() stuck at
@@ -925,6 +929,14 @@ void FrameRunner::beginThreadedSession(Canvas& canvas, Controller& controller)
         simPlatformIo.Platform_GetClipboardTextFn = threadedGetClipboardText;
         simPlatformIo.Platform_SetClipboardTextFn = threadedSetClipboardText;
         ImGui::SetCurrentContext(mainContext); // restore the render thread's context
+
+        // Enable gamepad nav on the MAIN context too (threaded path only): GLFW's
+        // ImGui_ImplGlfw_UpdateGamepads is gated on this flag, so without it the main
+        // context's per-frame NewFrame wouldn't populate the ImGuiKey_Gamepad* keys
+        // that harvestImguiInput captures and the sim replays. (SDL3 populates them
+        // regardless; the flag is harmless there.) Single-threaded run/tick never
+        // calls beginThreadedSession, so its main context is unaffected.
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
         // Prime the font atlas on the render thread (uploads the texture) before
         // any sim commit references it, so the shared atlas is ready and the sim's
