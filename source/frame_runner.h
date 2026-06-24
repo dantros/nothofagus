@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <optional>
 #include <memory>
+#include <chrono>
 
 struct ImGuiStyle; // global-scope (Dear ImGui); held by unique_ptr to keep imgui.h out of this header.
 
@@ -62,7 +63,8 @@ public:
         const glm::vec3 clearColor,
         const unsigned int pixelSize,
         bool headless = false,
-        PresentMode presentMode = DEFAULT_PRESENT_MODE
+        PresentMode presentMode = DEFAULT_PRESENT_MODE,
+        std::optional<float> targetFps = std::nullopt
     );
 
     /// Destructor to clean up resources and terminate the window backend.
@@ -109,6 +111,9 @@ public:
     const ScreenSize& screenSize() const                                                    { return mScreenSize; }
     void setScreenSize(const ScreenSize& screenSize)                                        { mScreenSize = screenSize; }
     void setClearColor(glm::vec3 clearColor)                                                { mClearColor = clearColor; }
+    /// Frame-rate cap for run(); a present value <= 0 is normalized to nullopt (unlimited).
+    void setTargetFps(std::optional<float> targetFps)                                       { mTargetFps = (targetFps && *targetFps > 0.0f) ? targetFps : std::nullopt; }
+    std::optional<float> targetFps() const                                                  { return mTargetFps; }
     ViewportRect gameViewport() const                                                       { return mGameViewport; }
     bool& stats()                                                                           { return mStats; }
     const bool& stats() const                                                               { return mStats; }
@@ -193,6 +198,11 @@ private:
     /// style (metrics, only when the scale changed). Main context must be current.
     void applyMainContextScale();
 
+    /// If a target FPS is set, wait until `nextDeadline` (hybrid sleep + short busy-spin)
+    /// and advance it by one frame period; otherwise just refresh `nextDeadline` to now.
+    /// Uses steady_clock directly (monotonic, no float drift over long sessions).
+    void limitFrameRate(std::chrono::steady_clock::time_point& nextDeadline);
+
     ScreenSize mScreenSize; ///< The screen size of the canvas.
     std::string mTitle; ///< The title of the canvas window.
     glm::vec3 mClearColor; ///< The background color of the canvas.
@@ -207,6 +217,7 @@ private:
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
 
     PresentMode mPresentMode{DEFAULT_PRESENT_MODE}; ///< Swapchain / vsync preference (construction-time).
+    std::optional<float> mTargetFps; ///< Frame-rate cap for run() (nullopt = unlimited). Runtime-settable.
     bool mStats; ///< Flag to indicate whether stats should be displayed.
     bool mHeadless{false}; ///< When true, the window is hidden (no visible UI).
     bool mSessionStarted{false}; ///< True after ensureSessionStarted() has been called.
