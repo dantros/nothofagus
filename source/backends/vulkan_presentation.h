@@ -52,7 +52,7 @@ struct WindowedVulkanPresentation
                         VkQueue& outGraphicsQueue, uint32_t& outGraphicsQueueFamily);
     void createPresentationTarget(VkPhysicalDevice physicalDevice, VkDevice device,
                                   VmaAllocator allocator, VkFormat depthFormat,
-                                  glm::ivec2 canvasSize);
+                                  glm::ivec2 canvasSize, VkPresentModeKHR presentMode);
     void createPresentationFramebuffers(VkRenderPass mainRenderPass);
     void createSyncObjects(VkDevice device);
 
@@ -97,6 +97,7 @@ private:
     VkRenderPass     mRenderPass     = VK_NULL_HANDLE;
 
     // Surface + swapchain state.
+    VkPresentModeKHR           mPresentMode      = VK_PRESENT_MODE_FIFO_KHR; // Stored so recreateSwapchain reuses it.
     VkSurfaceKHR               mSurface          = VK_NULL_HANDLE;
     VkSwapchainKHR             mSwapchain        = VK_NULL_HANDLE;
     VkFormat                   mSwapchainFormat  = VK_FORMAT_UNDEFINED;
@@ -140,9 +141,11 @@ struct HeadlessVulkanPresentation
     void configurePhysicalDeviceSelector(vkb::PhysicalDeviceSelector& selector);
     void retrieveQueues(vkb::Device& vkbDevice,
                         VkQueue& outGraphicsQueue, uint32_t& outGraphicsQueueFamily);
+    /// presentMode is ignored — headless never presents. Accepted to match the
+    /// windowed policy's interface (both are called identically from the backend).
     void createPresentationTarget(VkPhysicalDevice physicalDevice, VkDevice device,
                                   VmaAllocator allocator, VkFormat depthFormat,
-                                  glm::ivec2 canvasSize);
+                                  glm::ivec2 canvasSize, VkPresentModeKHR presentMode);
     void createPresentationFramebuffers(VkRenderPass mainRenderPass);
     void createSyncObjects(VkDevice device);
 

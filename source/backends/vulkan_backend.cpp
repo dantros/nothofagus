@@ -214,7 +214,20 @@ VkFormat VulkanBackend::findDepthFormat() const
 // initialize()
 // ---------------------------------------------------------------------------
 
-void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
+// Translate the engine-level present preference to a Vulkan present mode.
+// vk-bootstrap silently falls back to FIFO if the requested mode is unsupported.
+static VkPresentModeKHR toVkPresentMode(PresentMode mode)
+{
+    switch (mode)
+    {
+    case PresentMode::Mailbox:   return VK_PRESENT_MODE_MAILBOX_KHR;
+    case PresentMode::Immediate: return VK_PRESENT_MODE_IMMEDIATE_KHR;
+    case PresentMode::Fifo:
+    default:                     return VK_PRESENT_MODE_FIFO_KHR;
+    }
+}
+
+void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize, PresentMode presentMode)
 {
     // 1. Instance
     // Disable Samsung Galaxy overlay implicit layers before the Vulkan loader
@@ -309,7 +322,7 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize)
 
     // 9. Presentation target (swapchain or offscreen image — determines color format)
     mPresentation.createPresentationTarget(mPhysicalDevice, mDevice, mAllocator,
-                                           mDepthFormat, canvasSize);
+                                           mDepthFormat, canvasSize, toVkPresentMode(presentMode));
 
     // 10. Main render pass (format and final layout come from the presentation policy)
     {

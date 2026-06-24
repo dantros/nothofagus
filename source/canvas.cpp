@@ -68,8 +68,9 @@ struct Canvas::Implementation
         const glm::vec3 clearColor,
         const unsigned int pixelSize,
         const float imguiFontSize,
-        bool headless)
-        : frameRunner(screenSize, title, clearColor, pixelSize, headless),
+        bool headless,
+        PresentMode presentMode)
+        : frameRunner(screenSize, title, clearColor, pixelSize, headless, presentMode),
           assets(frameRunner.backend()),
           imguiRtt(frameRunner.backend(), assets.renderTargets(),
                    makeEmbeddedFontFamily(),
@@ -95,10 +96,11 @@ Canvas::Canvas(
     const glm::vec3 clearColor,
     const unsigned int pixelSize,
     const float imguiFontSize,
-    bool headless
+    bool headless,
+    PresentMode presentMode
 )
     : mImplPtr(std::make_unique<Implementation>(
-          screenSize, title, clearColor, pixelSize, imguiFontSize, headless))
+          screenSize, title, clearColor, pixelSize, imguiFontSize, headless, presentMode))
 {
 }
 

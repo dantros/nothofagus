@@ -7,6 +7,7 @@
 #include "../texture_mode.h" // TextureMode
 #include "mesh.h"          // Mesh (CPU-side)
 #include "screen_size.h"   // ScreenSize, ViewportRect
+#include "present_mode.h"  // PresentMode
 #include <glm/glm.hpp>
 #include <concepts>
 #include <cstdint>
@@ -41,6 +42,7 @@ concept RenderBackend = requires(
     Backend& backend,
     void* nativeWindowHandle,
     glm::ivec2 canvasSize,
+    PresentMode presentMode,
     const Texture& texture,
     TextureSampleMode samplerMode,
     const Mesh& mesh,
@@ -60,7 +62,7 @@ concept RenderBackend = requires(
     std::uint64_t imguiTextureHandle)
 {
     // Lifecycle
-    { backend.initialize(nativeWindowHandle, canvasSize) } -> std::same_as<void>;
+    { backend.initialize(nativeWindowHandle, canvasSize, presentMode) } -> std::same_as<void>;
     { backend.shutdown()                                  } -> std::same_as<void>;
     { backend.initImGuiRenderer()                         } -> std::same_as<void>;
     { backend.rebuildImguiFontTexture()                   } -> std::same_as<void>;

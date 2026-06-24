@@ -125,7 +125,7 @@ class VulkanBackend
 public:
     // --- RenderBackend concept interface ---
 
-    void initialize(void* nativeWindowHandle, glm::ivec2 canvasSize);
+    void initialize(void* nativeWindowHandle, glm::ivec2 canvasSize, PresentMode presentMode);
     void initImGuiRenderer();
     void rebuildImguiFontTexture();
     void shutdown();
