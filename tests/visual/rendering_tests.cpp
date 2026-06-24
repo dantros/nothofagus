@@ -781,6 +781,49 @@ TEST_CASE("Markdown animated inline image", "[rendering][imgui]")
 }
 
 // ---------------------------------------------------------------------------
+// Markdown image width modes (the hello_markdown "Width modes" section): one wide
+// banner shown at full column width ({1,1}), capped to 40% (the ceiling reducing a
+// large registration), and floored to 30% (the floor enlarging a small registration).
+// Locks all three bound modes, including the full-width case the bounds golden omits.
+// ---------------------------------------------------------------------------
+TEST_CASE("Markdown image width modes", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(640, 520);
+    // A 32x8 banner (4:1) of vertical color bands.
+    Nothofagus::ColorPallete pal{{0,0,0,0},{1,0.4f,0.4f,1},{0.4f,1,0.5f,1},{0.5f,0.7f,1,1},{1,0.9f,0.4f,1}};
+    Nothofagus::IndirectTexture banner({32,8}, glm::vec4(0.0f));
+    banner.setPallete(pal);
+    { std::vector<std::uint8_t> px(256,0);
+      for (int y=0;y<8;++y) for (int x=0;x<32;++x) px[y*32+x]=static_cast<std::uint8_t>(1+(x/8)%4);
+      banner.setPixels(px,0); }
+    auto texId = canvas.addTexture(banner);
+    const Nothofagus::ImguiImageId bigId   = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(20.0f)}); // 640x160
+    const Nothofagus::ImguiImageId smallId = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(2.0f)});  // 64x16
+    Nothofagus::MarkdownRenderer markdown(canvas);
+    markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "mode-full") return Nothofagus::MarkdownImage{bigId,   1.0f, 1.0f};
+        if (src == "mode-max")  return Nothofagus::MarkdownImage{bigId,   0.0f, 0.4f};
+        if (src == "mode-min")  return Nothofagus::MarkdownImage{smallId, 0.3f, 1.0f};
+        return std::nullopt;
+    });
+    static constexpr const char* kDoc =
+        "Full:\n\n![full](mode-full)\n\nMax 40%:\n\n![max](mode-max)\n\nMin 30%:\n\n![min](mode-min)\n";
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) {
+            ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(640,520), ImGuiCond_Always);
+            ImGui::Begin("md", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            markdown.print(kDoc);
+            ImGui::End();
+        });
+    checkAgainstGolden("markdown_width_modes", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
 // OS DPI scaling of the standard-UI (main) context.
 //
 // setContentScaleOverride() makes the content scale deterministic and
