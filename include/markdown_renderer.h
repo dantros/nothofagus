@@ -25,12 +25,14 @@ class Canvas;
 ///    upscales the fixed-resolution handle — crisp for `Nearest` pixel art, soft for
 ///    `Linear`; register the source larger if a floored-up image must stay crisp.
 ///
-/// Height follows the image's aspect ratio. Expect `0.0 <= minWidthPercentage <= maxWidthPercentage`.
+/// Height follows the image's aspect ratio. Valid range is `0 <= minWidthPercentage <=
+/// maxWidthPercentage <= 1`; a `debugCheck` fires otherwise (in release, `min > max` lets the
+/// floor win the clamp and `max > 1` lets the image overflow the content region).
 struct MarkdownImage
 {
     ImguiImageId id;
-    float minWidthPercentage = 0.0f;   ///< floor (0 = no floor).
-    float maxWidthPercentage = 1.0f;   ///< ceiling (1 = full content width).
+    float minWidthPercentage = 0.0f;   ///< floor, fraction of content width (0 = no floor).
+    float maxWidthPercentage = 1.0f;   ///< ceiling, fraction of content width (1 = full width).
 };
 
 /// Maps a markdown image `src` string (`![alt](src)`) to a pre-registered ImGui image

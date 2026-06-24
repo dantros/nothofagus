@@ -139,17 +139,21 @@ protected:
         // units, so no DPI/FontGlobalScale juggling is needed. The ceiling (maxWidthPercentage)
         // only downscales the fixed-resolution handle (crisp); the floor (minWidthPercentage)
         // may upscale it — soft for Linear, blocky-crisp for Nearest.
+        // Valid range: 0 <= min <= max <= 1. In release (no assert), min > max lets the floor
+        // win the clamp and max > 1 lets the image overflow the content region.
+        debugCheck(image->minWidthPercentage >= 0.0f &&
+                   image->minWidthPercentage <= image->maxWidthPercentage &&
+                   image->maxWidthPercentage <= 1.0f,
+                   "MarkdownImage: width bounds must satisfy 0 <= minWidthPercentage <= maxWidthPercentage <= 1");
         const glm::vec2 natural = mCanvas->imguiImageSize(image->id);   // logical layout px
         const float availableWidth = ImGui::GetContentRegionAvail().x;
         std::optional<glm::vec2> drawSize;
         if (natural.x > 0.0f && natural.y > 0.0f && availableWidth > 0.0f)
         {
-            float width = natural.x;
-            if (image->maxWidthPercentage > 0.0f)
-                width = std::min(width, image->maxWidthPercentage * availableWidth);  // ceiling
-            width = std::max(width, image->minWidthPercentage * availableWidth);      // floor
+            float width = std::min(natural.x, image->maxWidthPercentage * availableWidth); // ceiling
+            width = std::max(width, image->minWidthPercentage * availableWidth);           // floor
             if (width != natural.x)
-                drawSize = glm::vec2(width, width * natural.y / natural.x);            // height follows aspect
+                drawSize = glm::vec2(width, width * natural.y / natural.x);                // height follows aspect
         }
 
         mCanvas->imguiImage(image->id, drawSize);
