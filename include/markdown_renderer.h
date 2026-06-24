@@ -13,12 +13,32 @@ namespace Nothofagus
 
 class Canvas;
 
-/// Maps a markdown image `src` string (`![alt](src)`) to a pre-registered ImGui
-/// image. Return `std::nullopt` to skip (a dimmed `[src]` placeholder is drawn).
-/// The app registers its document images up front via `Canvas::registerImguiImage`
-/// and returns the resulting `ImguiImageId` here — so declared images have no
-/// warm-up. See `MarkdownRenderer::setImageResolver`.
-using MarkdownImageResolver = std::function<std::optional<ImguiImageId>(std::string_view src)>;
+/// A resolved inline markdown image: which pre-registered ImGui image to draw, plus
+/// optional per-image width bounds expressed as fractions of the available content
+/// width (the current ImGui content region — so they respect blockquote / list / table
+/// indentation automatically). The defaults reproduce plain fit-to-width.
+///
+///  - `maxWidthPercentage` is a **ceiling**: `width = min(intrinsic, maxPct * available)`.
+///    Only shrinks oversized images; always a lossless downscale of the registered handle.
+///  - `minWidthPercentage` is a **floor**: `width = max(intrinsic, minPct * available)`.
+///    Only enlarges undersized images. Enlarging past the registered rasterization size
+///    upscales the fixed-resolution handle — crisp for `Nearest` pixel art, soft for
+///    `Linear`; register the source larger if a floored-up image must stay crisp.
+///
+/// Height follows the image's aspect ratio. Expect `0.0 <= minWidthPercentage <= maxWidthPercentage`.
+struct MarkdownImage
+{
+    ImguiImageId id;
+    float minWidthPercentage = 0.0f;   ///< floor (0 = no floor).
+    float maxWidthPercentage = 1.0f;   ///< ceiling (1 = full content width).
+};
+
+/// Maps a markdown image `src` string (`![alt](src)`) to a pre-registered ImGui image
+/// (with optional per-image width bounds). Return `std::nullopt` to skip (a dimmed `[src]`
+/// placeholder is drawn). The app registers its document images up front via
+/// `Canvas::registerImguiImage` and returns the resulting id here — so declared images have
+/// no warm-up. See `MarkdownRenderer::setImageResolver`.
+using MarkdownImageResolver = std::function<std::optional<MarkdownImage>(std::string_view src)>;
 
 /**
  * @brief Per-element font mapping for `MarkdownRenderer`.
@@ -60,8 +80,9 @@ struct MarkdownStyle
  *
  * **Inline images (`![alt](src)`)** render an engine sprite when an image
  * resolver is installed via `setImageResolver(...)`: the resolver maps the
- * `src` string to a pre-registered `ImguiImageId` (see `Canvas::registerImguiImage`),
- * which is drawn through `imguiImage`, fit to the available content width. Without a
+ * `src` string to a `MarkdownImage` (a pre-registered `ImguiImageId` plus optional
+ * per-image width bounds; see `Canvas::registerImguiImage`), drawn through `imguiImage`
+ * and clamped between the bounds (default: fit to the available content width). Without a
  * resolver (or when it returns `std::nullopt`) a dimmed `[src]` placeholder is drawn.
  * Animated / tile-map sources work too — keep the registration live via
  * `Canvas::updateImguiImage`.
@@ -92,11 +113,12 @@ public:
     /// Pass an empty `std::function` to disable.
     void setOpenUrlCallback(std::function<void(std::string_view url)> callback);
 
-    /// Set the resolver that maps an image `src` (`![alt](src)`) to a pre-registered
-    /// `ImguiImageId` (see `Canvas::registerImguiImage`). The image is drawn inline via
-    /// `imguiImage`, fit to the available content width. Pass an empty `std::function`
-    /// (or have the resolver return `std::nullopt`) to skip an image. Takes effect on the
-    /// next `print()`.
+    /// Set the resolver that maps an image `src` (`![alt](src)`) to a `MarkdownImage`
+    /// (a pre-registered `ImguiImageId` plus optional per-image width bounds; see
+    /// `Canvas::registerImguiImage`). The image is drawn inline via `imguiImage`, clamped
+    /// between the bounds (default: fit to the available content width). Pass an empty
+    /// `std::function` (or have the resolver return `std::nullopt`) to skip an image.
+    /// Takes effect on the next `print()`.
     void setImageResolver(MarkdownImageResolver resolver);
 
     /// Parse and render the given markdown source into the current ImGui

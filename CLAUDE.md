@@ -753,21 +753,22 @@ canvas.run([&](float) {
 
 #### Inline images — `setImageResolver` + `MarkdownImageResolver`
 
-Inline images render an engine sprite when an image resolver is installed. The resolver maps an image `src` string to a **pre-registered** `ImguiImageId` (see [`registerImguiImage`](#draw-a-visual-inside-imgui--canvasregisterimguiimage--imguiimage)); the renderer draws it inline via `imguiImage`, **fit to the available content width** (downscale only, preserving aspect — a crisp GPU downscale of the fixed-resolution handle). Because images are pre-registered, declared images have **no warm-up**. Every texture kind works (Direct / Indirect / tile-map / animation); keep an animated source live with `Canvas::updateImguiImage`.
+Inline images render an engine sprite when an image resolver is installed. The resolver maps an image `src` string to a `MarkdownImage` — a **pre-registered** `ImguiImageId` (see [`registerImguiImage`](#draw-a-visual-inside-imgui--canvasregisterimguiimage--imguiimage)) plus optional per-image width bounds — and the renderer draws it inline via `imguiImage`, clamped between the bounds (default: fit to the available content width). Because images are pre-registered, declared images have **no warm-up**. Every texture kind works (Direct / Indirect / tile-map / animation); keep an animated source live with `Canvas::updateImguiImage`.
 
 ```cpp
-// Register the document's images up front, then map each src token to its id.
+// Register the document's images up front, then map each src token to a MarkdownImage.
 auto logoId = canvas.registerImguiImage(Nothofagus::Visual{logoTexId}, ImguiImageSize::Scaled{glm::vec2(6)});
-markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::ImguiImageId> {
-    if (src == "logo") return logoId;
+markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+    if (src == "logo") return Nothofagus::MarkdownImage{logoId, /*minPct=*/0.0f, /*maxPct=*/0.8f};
     return std::nullopt;            // unknown src -> a dimmed [src] placeholder
 });
 markdown.print("![the logo](logo)\n");
 ```
 
-- `MarkdownImageResolver = std::function<std::optional<ImguiImageId>(std::string_view src)>` ([include/markdown_renderer.h](include/markdown_renderer.h)). Returning `std::nullopt` (or installing no resolver) draws a dimmed `[src]` placeholder instead of the image.
+- `MarkdownImageResolver = std::function<std::optional<MarkdownImage>(std::string_view src)>` ([include/markdown_renderer.h](include/markdown_renderer.h)). Returning `std::nullopt` (or installing no resolver) draws a dimmed `[src]` placeholder instead of the image.
+- **Per-image width bounds** are fractions of the available content width (the current ImGui content region — so they respect blockquote / list / table indentation automatically). `maxWidthPercentage` (default `1.0`) is a **ceiling** — `width = min(intrinsic, maxPct·avail)`, always a lossless downscale. `minWidthPercentage` (default `0.0`) is a **floor** — `width = max(intrinsic, minPct·avail)`; enlarging past the registered rasterization size upscales the handle (crisp for `Nearest`, soft for `Linear` — register larger if a floored-up image must stay crisp). Height follows aspect. The defaults reproduce plain fit-to-width.
 - The renderer draws the image itself and suppresses imgui_md's own `ImGui::Image`, re-creating the standard behaviors on the image item: a tooltip showing the `src`, and click → the `setOpenUrlCallback` callback (with the `src`).
-- **Sizing split:** the `ImguiImageSize::Spec` at registration fixes the rasterization resolution (register at a generous size); markdown's fit-to-width is purely the `imguiImage(id, drawSize)` draw-size override, so the two compose without conflict.
+- **Sizing split:** the `ImguiImageSize::Spec` at registration fixes the rasterization resolution (register at a generous size); markdown's bounds clamp is purely the `imguiImage(id, drawSize)` draw-size override, so the two compose without conflict.
 - **Limitations:** the alt text itself is not shown (the parser suppresses inline text while in an image, so the placeholder uses the `src`); images draw as block items at the cursor (no true mid-sentence text flow).
 
 **Rules:**
@@ -922,7 +923,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_imgui_image_registry.cpp` | `registerImguiImage` / `ImguiImageId` focused — the stable, warm-up-free ImGui image handle: convenience `imguiImage(id)` draw, raw `ImGui::Image(imguiImageHandle(id), …)`, a draw-size override (GPU downscale of the fixed-res handle), live animation via `updateImguiImage`, and register/unregister lifecycle |
 | `hello_imgui_overlay.cpp` | `imguiOverlayViewport()` + `imguiBaseFontSize()` — header/footer ImGui bars pinned to the canvas, tracking pillarbox/letterbox + DPI on resize |
 | `hello_custom_font.cpp` | User-supplied TTF via `addImguiFontSource` — typeable path field, editable text, integer min/max + slider for size, default-vs-user side-by-side with `TextWrapped`; also demonstrates the `imgui-filebrowser` integration. When built with `-DNOTHOFAGUS_EMBED_CJK*`, adds macro-guarded blocks rendering Chinese/Japanese/Korean sample text via `embeddedCjkFontSource(...)` |
-| `hello_markdown.cpp` | `MarkdownRenderer` — headings, lists, code blocks, tables, blockquotes, strikethrough, link callback; true bold/italic/bold-italic/mono faces via `canvas.defaultMarkdownStyle(...)`; **inline images** via `setImageResolver` → `registerImguiImage` (a static logo, a live animated spinner via `updateImguiImage`, and a dimmed `[src]` placeholder for an unresolved source) |
+| `hello_markdown.cpp` | `MarkdownRenderer` — headings, lists, code blocks, tables, blockquotes, strikethrough, link callback; true bold/italic/bold-italic/mono faces via `canvas.defaultMarkdownStyle(...)`; **inline images** via `setImageResolver` → `MarkdownImage` (a static logo capped at 80% width, a live animated spinner floored to 20% via `updateImguiImage`, and a dimmed `[src]` placeholder for an unresolved source) |
 | `hello_dpi_scaling.cpp` | OS DPI scaling for standard UI vs game-resolution diegetic UI — `contentScale()` / `setContentScaleOverride()` / `imguiScaledFontSize()` + `style.FontScaleMain`, a broad native-style widget spread, live override/zoom sliders, a diagnostics readout, and a side-by-side diegetic RTT panel |
 
 ## Tests

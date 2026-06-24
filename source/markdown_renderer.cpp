@@ -6,6 +6,7 @@
 
 #include <imgui.h>
 #include <spdlog/spdlog.h>
+#include <algorithm>
 #include <utility>
 
 namespace Nothofagus
@@ -120,10 +121,10 @@ protected:
     {
         const std::string_view src(m_href.data(), m_href.size());
 
-        std::optional<ImguiImageId> imageId =
+        std::optional<MarkdownImage> image =
             (mImageResolver && mCanvas != nullptr) ? mImageResolver(src) : std::nullopt;
 
-        if (not imageId)
+        if (not image)
         {
             // No resolver / unresolved src: a dimmed placeholder keeps the missing
             // image visible (the parser suppresses the alt text while in an image, so
@@ -133,17 +134,25 @@ protected:
             return false;
         }
 
-        // Fit to the available content width, preserving aspect (downscale only). The
-        // registered size and ImGui's content region are the same layout units, so no
-        // DPI/FontGlobalScale juggling is needed — register at a generous resolution and
-        // this stays a crisp GPU downscale of the fixed-resolution handle.
-        const glm::vec2 natural = mCanvas->imguiImageSize(*imageId);   // logical layout px
-        std::optional<glm::vec2> drawSize;
+        // Clamp the drawn width between the per-image bounds (fractions of the available
+        // content width). The registered size and ImGui's content region are the same layout
+        // units, so no DPI/FontGlobalScale juggling is needed. The ceiling (maxWidthPercentage)
+        // only downscales the fixed-resolution handle (crisp); the floor (minWidthPercentage)
+        // may upscale it — soft for Linear, blocky-crisp for Nearest.
+        const glm::vec2 natural = mCanvas->imguiImageSize(image->id);   // logical layout px
         const float availableWidth = ImGui::GetContentRegionAvail().x;
-        if (natural.x > 0.0f && natural.y > 0.0f && natural.x > availableWidth)
-            drawSize = glm::vec2(availableWidth, availableWidth * natural.y / natural.x);
+        std::optional<glm::vec2> drawSize;
+        if (natural.x > 0.0f && natural.y > 0.0f && availableWidth > 0.0f)
+        {
+            float width = natural.x;
+            if (image->maxWidthPercentage > 0.0f)
+                width = std::min(width, image->maxWidthPercentage * availableWidth);  // ceiling
+            width = std::max(width, image->minWidthPercentage * availableWidth);      // floor
+            if (width != natural.x)
+                drawSize = glm::vec2(width, width * natural.y / natural.x);            // height follows aspect
+        }
 
-        mCanvas->imguiImage(*imageId, drawSize);
+        mCanvas->imguiImage(image->id, drawSize);
 
         // imgui_md's own hover/click handling is bypassed (we returned false), so
         // re-create it on the image item: tooltip with the src, click fires open_url.

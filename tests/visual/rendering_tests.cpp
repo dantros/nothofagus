@@ -657,9 +657,9 @@ TEST_CASE("Markdown renders an inline registered image", "[rendering][imgui]")
 
     Nothofagus::MarkdownRenderer markdown(canvas);
     markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));     // bake before ticking
-    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::ImguiImageId> {
-        if (src == "tile") return imageId;
-        return std::nullopt;                                   // unknown -> [src] placeholder
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "tile") return Nothofagus::MarkdownImage{imageId};  // default bounds: fit to width
+        return std::nullopt;                                           // unknown -> [src] placeholder
     });
 
     static constexpr const char* kDoc =
@@ -677,6 +677,49 @@ TEST_CASE("Markdown renders an inline registered image", "[rendering][imgui]")
         });
 
     checkAgainstGolden("markdown_inline_image", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// Per-image width bounds (fractions of the content width): the ceiling
+// (maxWidthPercentage) shrinks an oversized image, and the floor
+// (minWidthPercentage) enlarges an undersized one — so a large and a small
+// source both land at bounded widths. This golden locks the clamp in both
+// directions.
+// ---------------------------------------------------------------------------
+TEST_CASE("Markdown inline image respects width bounds", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(160, 140);
+
+    auto texId = canvas.addTexture(makeQuadrantTexture());
+    // A large registration (capped down) and a small one (floored up), same source.
+    const Nothofagus::ImguiImageId bigId   = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(16.0f)}); // 128px
+    const Nothofagus::ImguiImageId smallId = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(1.0f)});  // 8px
+
+    Nothofagus::MarkdownRenderer markdown(canvas);
+    markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "big")   return Nothofagus::MarkdownImage{bigId,   0.0f, 0.6f};  // ceiling: shrink to <=60%
+        if (src == "small") return Nothofagus::MarkdownImage{smallId, 0.3f, 1.0f};  // floor: grow to >=30%
+        return std::nullopt;
+    });
+
+    static constexpr const char* kDoc =
+        "Big: ![big](big)\n\n"
+        "Small: ![small](small)\n";
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) {
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(160.0f, 140.0f), ImGuiCond_Always);
+            ImGui::Begin("md", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            markdown.print(kDoc);
+            ImGui::End();
+        });
+
+    checkAgainstGolden("markdown_image_bounds", canvas.takeScreenshot());
 }
 
 // ---------------------------------------------------------------------------
