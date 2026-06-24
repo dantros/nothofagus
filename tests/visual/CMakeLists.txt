@@ -22,5 +22,24 @@ if(NOTHOFAGUS_SWIFTSHADER_ICD)
         NOTHOFAGUS_SWIFTSHADER_ICD="${NOTHOFAGUS_SWIFTSHADER_ICD}")
 endif()
 
+# Present-mode regression tests. Two executables (one Vulkan instance per Canvas,
+# and vk-bootstrap caches the debug-messenger fn pointer per process, so the
+# messenger-using sync test runs in its own process). Meaningful on windowed Vulkan;
+# the pixel test trivially passes and the sync test SKIPs under the headless backend.
+# No golden images or test-helpers needed (raw-byte / message-set compare).
+add_executable(present_mode_pixel_tests
+    "present_mode_pixel_tests.cpp"
+)
+set_property(TARGET present_mode_pixel_tests PROPERTY CXX_STANDARD 20)
+target_link_libraries(present_mode_pixel_tests PRIVATE nothofagus Catch2::Catch2WithMain)
+
+add_executable(present_mode_sync_tests
+    "present_mode_sync_tests.cpp"
+)
+set_property(TARGET present_mode_sync_tests PROPERTY CXX_STANDARD 20)
+target_link_libraries(present_mode_sync_tests PRIVATE nothofagus Catch2::Catch2WithMain)
+
 include(Catch)
 catch_discover_tests(rendering_tests)
+catch_discover_tests(present_mode_pixel_tests)
+catch_discover_tests(present_mode_sync_tests)
