@@ -131,31 +131,32 @@ void AssetRegistry::setTexture(const BellotaId bellotaId, const TextureId textur
     replaceBellota(bellotaId, bellotaWithNewTexture);
 }
 
+// These three setters are pure-CPU: they only flag the TexturePack. The actual GPU
+// work is performed by TexturePack::syncToGpu on the render thread, so the calls are
+// safe from the sim thread (threaded-safety, via the FrameRunner mode-aware wrappers).
 void AssetRegistry::markTextureAsDirty(const TextureId textureId)
 {
     TexturePack& texturePack = mTextures.at(textureId.id);
     debugCheck(not texturePack.isProxy(), "markTextureAsDirty called on a render target proxy texture.");
-    texturePack.freeGpuResources(mBackend);
+    texturePack.mContentDirty = true; // syncToGpu will free + re-upload
 }
 
 void AssetRegistry::setTextureMinFilter(const TextureId textureId, TextureSampleMode mode)
 {
     TexturePack& texturePack = mTextures.at(textureId.id);
     texturePack.minFilter = mode;
-    // Indirect index textures require GL_NEAREST — skip filter updates for them.
+    // Indirect index textures require GL_NEAREST — never apply filters to them.
     if (texturePack.mode == TextureMode::Indirect) return;
-    if (texturePack.dtextureOpt.has_value())
-        mBackend.setTextureMinFilter(texturePack.dtextureOpt.value(), mode);
+    texturePack.mFilterDirty = true; // syncToGpu re-applies once the texture is uploaded
 }
 
 void AssetRegistry::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)
 {
     TexturePack& texturePack = mTextures.at(textureId.id);
     texturePack.magFilter = mode;
-    // Indirect index textures require GL_NEAREST — skip filter updates for them.
+    // Indirect index textures require GL_NEAREST — never apply filters to them.
     if (texturePack.mode == TextureMode::Indirect) return;
-    if (texturePack.dtextureOpt.has_value())
-        mBackend.setTextureMagFilter(texturePack.dtextureOpt.value(), mode);
+    texturePack.mFilterDirty = true; // syncToGpu re-applies once the texture is uploaded
 }
 
 Texture& AssetRegistry::texture(TextureId textureId)

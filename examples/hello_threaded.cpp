@@ -100,6 +100,19 @@ int main()
     // context, all torn down on the render thread once no in-flight frame uses them).
     std::deque<std::pair<Nothofagus::RenderTargetId, float>> scratchRenderTargets;
 
+    // A persistent Direct (RGBA) texture exercised from the sim thread to cover the
+    // threaded-safe markTextureAsDirty / setTextureMin|MagFilter path. Filters apply
+    // to Direct textures (Indirect ones force GL_NEAREST), so the sprites above can't
+    // exercise them. Both calls now only flag the texture on the sim thread — the GPU
+    // work (re-upload, sampler change) runs render-side in syncToGpu.
+    Nothofagus::DirectTexture directTexture(glm::ivec2{4, 4});
+    for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x)
+            directTexture.setColor(x, y, ((x + y) % 2) ? glm::vec4(1, 1, 1, 1) : glm::vec4(0.2, 0.4, 0.9, 1));
+    const Nothofagus::TextureId directTexId = canvas.addTexture(directTexture);
+    canvas.addBellota({{{screenSize.width * 0.5f, screenSize.height * 0.5f}, 6}, directTexId});
+    int lastFilterPhase = -1;
+
     float simTime = 0.0f;
     auto update = [&](float dt)
     {
@@ -140,6 +153,19 @@ int main()
         {
             canvas.removeRenderTarget(scratchRenderTargets.front().first);
             scratchRenderTargets.pop_front();
+        }
+
+        // Flip the Direct texture's filter (and force a re-upload) ~every 250 ms,
+        // all from the sim thread — the threaded-safe filter / dirty path.
+        const int filterPhase = static_cast<int>(simTime / 250.0f) & 1;
+        if (filterPhase != lastFilterPhase)
+        {
+            lastFilterPhase = filterPhase;
+            const auto mode = filterPhase ? Nothofagus::TextureSampleMode::Linear
+                                          : Nothofagus::TextureSampleMode::Nearest;
+            canvas.setTextureMinFilter(directTexId, mode);
+            canvas.setTextureMagFilter(directTexId, mode);
+            canvas.markTextureAsDirty(directTexId);
         }
     };
 

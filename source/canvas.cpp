@@ -179,9 +179,9 @@ void Canvas::removeTexture(const TextureId textureId)
 }
 
 void Canvas::setTexture(const BellotaId bellotaId, const TextureId textureId)            { mImplPtr->frameRunner.setTexture(mImplPtr->assets, bellotaId, textureId); }
-void Canvas::markTextureAsDirty(const TextureId textureId)                                { mImplPtr->assets.markTextureAsDirty(textureId); }
-void Canvas::setTextureMinFilter(const TextureId textureId, TextureSampleMode mode)       { mImplPtr->assets.setTextureMinFilter(textureId, mode); }
-void Canvas::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)       { mImplPtr->assets.setTextureMagFilter(textureId, mode); }
+void Canvas::markTextureAsDirty(const TextureId textureId)                                { mImplPtr->frameRunner.markTextureAsDirty(mImplPtr->assets, textureId); }
+void Canvas::setTextureMinFilter(const TextureId textureId, TextureSampleMode mode)       { mImplPtr->frameRunner.setTextureMinFilter(mImplPtr->assets, textureId, mode); }
+void Canvas::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)       { mImplPtr->frameRunner.setTextureMagFilter(mImplPtr->assets, textureId, mode); }
 Texture& Canvas::texture(TextureId textureId)                                             { return mImplPtr->assets.texture(textureId); }
 const Texture& Canvas::texture(TextureId textureId) const                                 { return mImplPtr->assets.texture(textureId); }
 

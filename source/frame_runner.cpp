@@ -1337,6 +1337,28 @@ void FrameRunner::setTexture(AssetRegistry& assets, BellotaId bellotaId, Texture
     assets.setTexture(bellotaId, textureId);
 }
 
+// markTextureAsDirty / setTextureMin|MagFilter only set CPU flags on the TexturePack
+// (the GPU work is deferred to syncToGpu on the render thread), but those flags are
+// read by the render thread's syncToGpu, so take the asset lock when threaded to
+// serialize the write — same pattern as setTexture.
+void FrameRunner::markTextureAsDirty(AssetRegistry& assets, TextureId textureId)
+{
+    auto lock = lockAssetsIfThreaded();
+    assets.markTextureAsDirty(textureId);
+}
+
+void FrameRunner::setTextureMinFilter(AssetRegistry& assets, TextureId textureId, TextureSampleMode mode)
+{
+    auto lock = lockAssetsIfThreaded();
+    assets.setTextureMinFilter(textureId, mode);
+}
+
+void FrameRunner::setTextureMagFilter(AssetRegistry& assets, TextureId textureId, TextureSampleMode mode)
+{
+    auto lock = lockAssetsIfThreaded();
+    assets.setTextureMagFilter(textureId, mode);
+}
+
 MeshId FrameRunner::addMesh(AssetRegistry& assets, const Mesh& mesh)
 {
     auto lock = lockAssetsIfThreaded();

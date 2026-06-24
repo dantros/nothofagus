@@ -216,6 +216,9 @@ public:
     TextureId      addTexture(AssetRegistry& assets, const Texture& texture);
     void           removeTexture(AssetRegistry& assets, TextureId textureId);
     void           setTexture(AssetRegistry& assets, BellotaId bellotaId, TextureId textureId);
+    void           markTextureAsDirty(AssetRegistry& assets, TextureId textureId);
+    void           setTextureMinFilter(AssetRegistry& assets, TextureId textureId, TextureSampleMode mode);
+    void           setTextureMagFilter(AssetRegistry& assets, TextureId textureId, TextureSampleMode mode);
     MeshId         addMesh(AssetRegistry& assets, const Mesh& mesh);
     MeshId         addMesh(AssetRegistry& assets, Mesh&& mesh);
     void           removeMesh(AssetRegistry& assets, MeshId meshId);
