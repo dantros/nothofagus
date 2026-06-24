@@ -824,6 +824,47 @@ TEST_CASE("Markdown image width modes", "[rendering][imgui]")
 }
 
 // ---------------------------------------------------------------------------
+// A markdown image with NO width bounds (MarkdownImage{id}) is drawn at its
+// registered size, uncapped. Here the banner (384px) is wider than the window,
+// so it overflows and is clipped at the right edge — locking the "raw" behavior:
+// only the first ~2 of the 4 color bands are visible. (If it were capped to the
+// column, as the old default was, all 4 bands would be visible, shrunk to fit.)
+// ---------------------------------------------------------------------------
+TEST_CASE("Markdown raw image overflows the column uncapped", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(200, 80);
+    // A 32x8 banner (4:1) of four vertical color bands.
+    Nothofagus::ColorPallete pal{{0,0,0,0},{1,0.4f,0.4f,1},{0.4f,1,0.5f,1},{0.5f,0.7f,1,1},{1,0.9f,0.4f,1}};
+    Nothofagus::IndirectTexture banner({32,8}, glm::vec4(0.0f));
+    banner.setPallete(pal);
+    { std::vector<std::uint8_t> px(256,0);
+      for (int y=0;y<8;++y) for (int x=0;x<32;++x) px[y*32+x]=static_cast<std::uint8_t>(1+(x/8)%4);
+      banner.setPixels(px,0); }
+    auto texId = canvas.addTexture(banner);
+    const Nothofagus::ImguiImageId id = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(12.0f)}); // 384px wide
+
+    Nothofagus::MarkdownRenderer markdown(canvas);
+    markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "raw") return Nothofagus::MarkdownImage{id};   // no bounds -> registered size, uncapped
+        return std::nullopt;
+    });
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+        canvas.tick(16.0f, [&](float) {
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(200.0f, 80.0f), ImGuiCond_Always);
+            ImGui::Begin("md", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            markdown.print("![raw](raw)\n");
+            ImGui::End();
+        });
+
+    checkAgainstGolden("markdown_raw_overflow", canvas.takeScreenshot());
+}
+
+// ---------------------------------------------------------------------------
 // OS DPI scaling of the standard-UI (main) context.
 //
 // setContentScaleOverride() makes the content scale deterministic and

@@ -108,6 +108,7 @@ int main()
         if (src == "mode-full") return Nothofagus::MarkdownImage{modeBigImageId,   1.0f, 1.0f}; // 1) span the full column
         if (src == "mode-max")  return Nothofagus::MarkdownImage{modeBigImageId,   0.0f, 0.4f}; // 2) ceiling: a large image reduced to 40%
         if (src == "mode-min")  return Nothofagus::MarkdownImage{modeSmallImageId, 0.3f, 1.0f}; // 3) floor: a small image enlarged to 30%
+        if (src == "wide")      return Nothofagus::MarkdownImage{modeBigImageId};               // 4) no bounds: drawn at its registered 640px size (overflows a narrow window)
         return std::nullopt;   // unknown src -> dimmed [src] placeholder
     });
 
@@ -185,6 +186,14 @@ Columns size proportionally and long cells wrap inside their own column:
 The horizontal rule above closes the document.
 )md";
 
+    static constexpr const char* kOverflowSample = R"md(## Raw, oversized
+
+A `MarkdownImage{id}` with no width bounds draws at its registered size. This banner is
+wider than the window, so it overflows — drag the horizontal scrollbar to pan:
+
+![wide](wide)
+)md";
+
     float elapsedMs = 0.0f;
 
     canvas.run([&](float dt)
@@ -198,9 +207,19 @@ The horizontal rule above closes the document.
         canvas.updateImguiImage(spinImageId, spinVisual);
 
         ImGui::SetNextWindowPos(ImVec2(20.0f, 20.0f), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(640.0f, 600.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(520.0f, 680.0f), ImGuiCond_FirstUseEver);
         ImGui::Begin("Readme");
         markdown.print(kSample);
+        ImGui::End();
+
+        // Secondary window with a horizontal scrollbar: a raw image (no width bounds) is drawn
+        // at its registered 640px size. Wider than this window, it overflows — and because the
+        // window opted into ImGuiWindowFlags_HorizontalScrollbar, you can pan across it (without
+        // the flag it would simply be clipped at the right edge).
+        ImGui::SetNextWindowPos(ImVec2(560.0f, 20.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(380.0f, 320.0f), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Oversized image (horizontal scroll)", nullptr, ImGuiWindowFlags_HorizontalScrollbar);
+        markdown.print(kOverflowSample);
         ImGui::End();
     });
 

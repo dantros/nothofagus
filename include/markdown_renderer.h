@@ -14,10 +14,14 @@ namespace Nothofagus
 class Canvas;
 
 /// A resolved inline markdown image: which pre-registered ImGui image to draw, plus
-/// optional per-image width bounds expressed as fractions of the **column width** (the
+/// **optional** per-image width bounds expressed as fractions of the **column width** (the
 /// markdown text-wrap width — not the width remaining on the current line, so an inline
-/// image near a line wrap is sized like any other). The defaults reproduce drawing at the
-/// image's natural size, capped at the column width.
+/// image near a line wrap is sized like any other).
+///
+/// With **no bounds** (`MarkdownImage{id}`) the image is drawn at exactly its registered
+/// `ImguiImageSize` — uncapped, so it may be small or overflow the column (an overflowing image
+/// is clipped at the window edge unless the window has `ImGuiWindowFlags_HorizontalScrollbar`).
+/// When bounds are present they clamp the drawn width:
 ///
 ///  - `maxWidthPercentage` is a **ceiling**: `width = min(intrinsic, maxPct * column)`.
 ///    Only shrinks oversized images; always a lossless downscale of the registered handle.
@@ -26,14 +30,14 @@ class Canvas;
 ///    upscales the fixed-resolution handle — crisp for `Nearest` pixel art, soft for
 ///    `Linear`; register the source larger if a floored-up image must stay crisp.
 ///
-/// Height follows the image's aspect ratio. Valid range is `0 <= minWidthPercentage <=
-/// maxWidthPercentage <= 1`; a `debugCheck` fires otherwise (in release, `min > max` lets the
-/// floor win the clamp and `max > 1` lets the image overflow the content region).
+/// Either bound may be left unset independently (floor-only / ceiling-only). Height follows the
+/// image's aspect ratio. Each present bound must lie in `[0, 1]` and `min <= max`; a `debugCheck`
+/// fires otherwise (in release, `min > max` lets the floor win and `max > 1` lets it overflow).
 struct MarkdownImage
 {
     ImguiImageId id;
-    float minWidthPercentage = 0.0f;   ///< floor, fraction of column width (0 = no floor).
-    float maxWidthPercentage = 1.0f;   ///< ceiling, fraction of column width (1 = full column).
+    std::optional<float> minWidthPercentage;   ///< floor (unset = no floor, draw at registered width).
+    std::optional<float> maxWidthPercentage;   ///< ceiling (unset = no cap, may overflow the column).
 };
 
 /// Maps a markdown image `src` string (`![alt](src)`) to a pre-registered ImGui image
