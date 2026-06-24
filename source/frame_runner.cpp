@@ -24,6 +24,8 @@
 #include <span>
 #include <format>
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include "profiling.h"
 
 namespace Nothofagus
@@ -70,13 +72,15 @@ FrameRunner::FrameRunner(
     const glm::vec3 clearColor,
     const unsigned int pixelSize,
     bool headless,
-    PresentMode presentMode)
+    PresentMode presentMode,
+    std::optional<float> targetFps)
     :
     mScreenSize(screenSize),
     mTitle(title),
     mClearColor(clearColor),
     mPixelSize(pixelSize),
     mPresentMode(presentMode),
+    mTargetFps((targetFps && *targetFps > 0.0f) ? targetFps : std::nullopt),
     mStats(false),
     mHeadless(headless),
     mGameViewport{0, 0, 0, 0}
@@ -931,11 +935,50 @@ void FrameRunner::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& im
 
     PerformanceMonitor performanceMonitor(mWindow->getTime(), 0.5f);
 
+    // Frame-rate limiter deadline. steady_clock (monotonic, integer-based) is used
+    // instead of the backend's float getTime() so the deadline never drifts over a
+    // long session; float is reserved for the small per-frame dt below.
+    auto nextDeadline = std::chrono::steady_clock::now();
+
     while (mWindow->isRunning())
     {
         performanceMonitor.update(mWindow->getTime());
         runOneFrame(canvas, assets, imguiRtt, imguiImages, performanceMonitor.getMS(), update, controller);
+        limitFrameRate(nextDeadline);
     }
+}
+
+void FrameRunner::limitFrameRate(std::chrono::steady_clock::time_point& nextDeadline)
+{
+    using namespace std::chrono;
+
+    if (!mTargetFps)
+    {
+        // Unlimited: keep the deadline anchored to now so that enabling a cap mid-run
+        // starts pacing from the current frame instead of firing a catch-up burst.
+        nextDeadline = steady_clock::now();
+        return;
+    }
+
+    const auto period = duration_cast<steady_clock::duration>(duration<double>(1.0 / *mTargetFps));
+    nextDeadline += period;
+
+    const auto now = steady_clock::now();
+    if (now >= nextDeadline)
+    {
+        // Behind schedule (heavy frame, or the cap was just lowered): resync to now so we
+        // never try to "catch up" by running a burst of zero-length frames.
+        nextDeadline = now;
+        return;
+    }
+
+    // Hybrid wait: sleep most of the remaining time, then busy-spin the last ~1 ms for a
+    // crisp deadline (OS sleep granularity alone overshoots by 1-15 ms).
+    constexpr auto spinMargin = milliseconds(1);
+    if (nextDeadline - now > spinMargin)
+        std::this_thread::sleep_until(nextDeadline - spinMargin);
+    while (steady_clock::now() < nextDeadline)
+        std::this_thread::yield();
 }
 
 void FrameRunner::tick(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,

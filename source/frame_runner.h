@@ -20,6 +20,7 @@
 #include <atomic>
 #include <functional>
 #include <mutex>
+#include <chrono>
 
 struct ImGuiStyle;   // global-scope (Dear ImGui); held by unique_ptr to keep imgui.h out of this header.
 struct ImGuiContext; // global-scope; the sim-thread UI context (M3) is held as an opaque pointer.
@@ -68,7 +69,8 @@ public:
         const glm::vec3 clearColor,
         const unsigned int pixelSize,
         bool headless = false,
-        PresentMode presentMode = DEFAULT_PRESENT_MODE
+        PresentMode presentMode = DEFAULT_PRESENT_MODE,
+        std::optional<float> targetFps = std::nullopt
     );
 
     /// Destructor to clean up resources and terminate the window backend.
@@ -118,6 +120,9 @@ public:
     ScreenSize screenSize() const                                                           { return mScreenSize.load(std::memory_order_acquire); }
     void setScreenSize(const ScreenSize& screenSize)                                        { mScreenSize.store(screenSize, std::memory_order_release); }
     void setClearColor(glm::vec3 clearColor)                                                { mClearColor = clearColor; }
+    /// Frame-rate cap for run(); a present value <= 0 is normalized to nullopt (unlimited).
+    void setTargetFps(std::optional<float> targetFps)                                       { mTargetFps = (targetFps && *targetFps > 0.0f) ? targetFps : std::nullopt; }
+    std::optional<float> targetFps() const                                                  { return mTargetFps; }
     ViewportRect gameViewport() const                                                       { return mGameViewport; }
     bool& stats()                                                                           { return mStats; }
     const bool& stats() const                                                               { return mStats; }
@@ -326,6 +331,11 @@ private:
     /// `drainPendingFontOps`, and any ImGui mutex around this call.
     void beginMainImguiFrame();
 
+    /// If a target FPS is set, wait until `nextDeadline` (hybrid sleep + short busy-spin)
+    /// and advance it by one frame period; otherwise just refresh `nextDeadline` to now.
+    /// Uses steady_clock directly (monotonic, no float drift over long sessions).
+    void limitFrameRate(std::chrono::steady_clock::time_point& nextDeadline);
+
     std::atomic<ScreenSize> mScreenSize; ///< The screen size of the canvas (atomic: sim-thread setScreenSize vs render-thread reads).
     std::string mTitle; ///< The title of the canvas window.
     glm::vec3 mClearColor; ///< The background color of the canvas.
@@ -340,6 +350,7 @@ private:
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
 
     PresentMode mPresentMode{DEFAULT_PRESENT_MODE}; ///< Swapchain / vsync preference (construction-time).
+    std::optional<float> mTargetFps; ///< Frame-rate cap for run() (nullopt = unlimited). Runtime-settable.
     bool mStats; ///< Flag to indicate whether stats should be displayed.
     bool mHeadless{false}; ///< When true, the window is hidden (no visible UI).
     bool mSessionStarted{false}; ///< True after ensureSessionStarted() has been called.

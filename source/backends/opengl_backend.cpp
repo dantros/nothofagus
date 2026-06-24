@@ -1,4 +1,5 @@
 #include "opengl_backend.h"
+#include "vulkan_validation.h"
 #include "check.h"
 #include <glad/glad.h>
 #include <backends/imgui_impl_opengl3.h>
@@ -17,6 +18,10 @@
 
 namespace Nothofagus
 {
+
+// OpenGL has no Vulkan validation layer; the hook is a no-op here. (Declared in
+// include/vulkan_validation.h; defined per-backend so exactly one TU provides it.)
+void setVulkanValidationCallback(VulkanValidationCallback /*callback*/) {}
 
 unsigned int OpenGLBackend::compileShader(unsigned int type, const std::string& source)
 {

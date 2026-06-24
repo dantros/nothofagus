@@ -87,6 +87,8 @@ public:
      * @param presentMode Swapchain / vsync preference (default Mailbox). Set at
      *        construction only; affects windowed builds (Vulkan present mode and
      *        OpenGL swap interval). Ignored in pure-offscreen headless-Vulkan builds.
+     * @param targetFps Optional frame-rate cap for run() (std::nullopt = unlimited,
+     *        the default). See setTargetFps for semantics.
      */
     Canvas(
         const ScreenSize& screenSize = DEFAULT_SCREEN_SIZE,
@@ -95,7 +97,8 @@ public:
         const unsigned int pixelSize = DEFAULT_PIXEL_SIZE,
         const float imguiFontSize = DEFAULT_IMGUI_FONT_SIZE,
         bool headless = false,
-        PresentMode presentMode = DEFAULT_PRESENT_MODE
+        PresentMode presentMode = DEFAULT_PRESENT_MODE,
+        std::optional<float> targetFps = std::nullopt
     );
 
     /// Destructor
@@ -123,6 +126,21 @@ public:
     void setScreenSize(const ScreenSize& screenSize);
 
     void setClearColor(glm::vec3 clearColor);
+
+    /// @brief Caps the run() loop to at most `targetFps` frames per second.
+    ///
+    /// Pass std::nullopt (or a value <= 0) to remove the cap (unlimited — the default).
+    /// Runtime-settable: takes effect within a frame. Only affects run(); tick() is
+    /// caller-driven and never throttled.
+    ///
+    /// Most useful with a non-blocking present mode (Vulkan Mailbox/Immediate, OpenGL
+    /// Immediate). Under hard vsync (Fifo, or OpenGL swap interval 1) the loop is already
+    /// blocked at the display refresh, so a cap above refresh does nothing and a cap below
+    /// it competes with vsync.
+    void setTargetFps(std::optional<float> targetFps);
+
+    /// The current frame-rate cap, or std::nullopt when unlimited.
+    std::optional<float> targetFps() const;
 
     void setWindowTitle(const std::string& title);
 

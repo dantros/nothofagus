@@ -69,8 +69,9 @@ struct Canvas::Implementation
         const unsigned int pixelSize,
         const float imguiFontSize,
         bool headless,
-        PresentMode presentMode)
-        : frameRunner(screenSize, title, clearColor, pixelSize, headless, presentMode),
+        PresentMode presentMode,
+        std::optional<float> targetFps)
+        : frameRunner(screenSize, title, clearColor, pixelSize, headless, presentMode, targetFps),
           assets(frameRunner.backend()),
           imguiRtt(frameRunner.backend(), assets.renderTargets(),
                    makeEmbeddedFontFamily(),
@@ -97,10 +98,11 @@ Canvas::Canvas(
     const unsigned int pixelSize,
     const float imguiFontSize,
     bool headless,
-    PresentMode presentMode
+    PresentMode presentMode,
+    std::optional<float> targetFps
 )
     : mImplPtr(std::make_unique<Implementation>(
-          screenSize, title, clearColor, pixelSize, imguiFontSize, headless, presentMode))
+          screenSize, title, clearColor, pixelSize, imguiFontSize, headless, presentMode, targetFps))
 {
 }
 
@@ -126,6 +128,8 @@ void Canvas::setWindowed()                                       { mImplPtr->fra
 ScreenSize Canvas::screenSize() const                           { return mImplPtr->frameRunner.screenSize(); }
 void Canvas::setScreenSize(const ScreenSize& screenSize)        { mImplPtr->frameRunner.setScreenSize(screenSize); }
 void Canvas::setClearColor(glm::vec3 clearColor)                { mImplPtr->frameRunner.setClearColor(clearColor); }
+void Canvas::setTargetFps(std::optional<float> targetFps)       { mImplPtr->frameRunner.setTargetFps(targetFps); }
+std::optional<float> Canvas::targetFps() const                  { return mImplPtr->frameRunner.targetFps(); }
 void Canvas::setAutoRemoveUnusedTextures(bool enabled)          { mImplPtr->frameRunner.setAutoRemoveUnusedTextures(enabled); }
 void Canvas::setAutoRemoveUnusedMeshes(bool enabled)            { mImplPtr->frameRunner.setAutoRemoveUnusedMeshes(enabled); }
 void Canvas::setWindowTitle(const std::string& title)           { mImplPtr->frameRunner.setWindowTitle(title); }
