@@ -160,14 +160,15 @@ The `#ifdef NOTHOFAGUS_HEADLESS_VULKAN` appears only in two places: the `ActiveV
 ### Canvas lifecycle
 
 ```cpp
-// Construct: screen size, title, clear color, pixel scale, ImGui font size, headless flag.
+// Construct: screen size, title, clear color, pixel scale, ImGui font size, headless flag, present mode.
 Nothofagus::Canvas canvas(
-    {256, 240},          // screenSize (logical canvas, default 256×240)
-    "My App",            // title
-    {0.0f, 0.0f, 0.0f},  // clearColor (default black)
-    4,                   // pixelSize (window scale, default 4)
-    14.0f,               // imguiFontSize (default 14)
-    /*headless=*/false); // hide the window if true
+    {256, 240},                          // screenSize (logical canvas, default 256×240)
+    "My App",                            // title
+    {0.0f, 0.0f, 0.0f},                  // clearColor (default black)
+    4,                                   // pixelSize (window scale, default 4)
+    14.0f,                               // imguiFontSize (default 14)
+    /*headless=*/false,                  // hide the window if true
+    Nothofagus::PresentMode::Mailbox);   // present mode (default Mailbox)
 
 // Main loop — drives ticks at the backend's native cadence.
 canvas.run([&](float dt) {
@@ -179,6 +180,10 @@ canvas.run([&](float dt) {
 **Headless mode and manual tick.** Pass `headless = true` as the last constructor argument to create a canvas with a hidden window (no visible UI). Works with all backend combinations (GLFW/SDL3 + OpenGL/Vulkan). Use `tick()` to drive rendering one frame at a time with a caller-supplied delta time (in milliseconds) instead of the engine's internal loop.
 
 `run()` and `tick()` are mutually exclusive on a given Canvas — do not mix them.
+
+**Present mode (vsync).** The trailing `PresentMode` constructor argument (default `PresentMode::Mailbox`) selects the swapchain / vsync preference; it is construction-time only (no runtime setter) and applies to windowed builds — ignored in pure-offscreen `NOTHOFAGUS_HEADLESS_VULKAN` builds. `PresentMode` (`include/present_mode.h`) is `Fifo` (mandatory vsync; on a Linux compositor this can quantize windowed Vulkan to ~45 fps), `Mailbox` (vsync'd, triple-buffered, no tearing — the default, which fixes that ~45 fps pacing), or `Immediate` (uncapped, may tear). On Vulkan it maps to a `VkPresentModeKHR` (an unsupported mode silently falls back to FIFO via vk-bootstrap); on OpenGL it maps to a swap interval via `presentModeToSwapInterval()` — GL has no Mailbox, so `Fifo`/`Mailbox` → interval 1 (vsync) and `Immediate` → 0.
+
+> **Behavior change:** with the `Mailbox` default, **OpenGL windowed builds are now vsync-capped** where they previously ran uncapped (no swap interval was ever set before). This makes both backends behave consistently. Apps that want uncapped OpenGL must pass `PresentMode::Immediate`.
 
 ```cpp
 // Headless canvas — no window appears
