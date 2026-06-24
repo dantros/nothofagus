@@ -459,6 +459,11 @@ private:
     std::atomic<bool> mImguiWantsMouse{false};
     std::atomic<bool> mImguiWantsKeyboard{false};
 
+    /// Sim UI's desired mouse cursor shape (an ImGuiMouseCursor; int keeps imgui.h
+    /// out of this header), set each commit from the sim-UI frame and applied by the
+    /// render thread before its main-context NewFrame. 0 == ImGuiMouseCursor_Arrow.
+    std::atomic<int> mThreadedCursor{0};
+
     /// Serializes all access to the (shared) ImGui font atlas between the sim-UI
     /// context (NewFrame + widgets + Render + clone, on the sim thread) and the
     /// render/main context (NewFrame + RenderDrawData + atlas rebuild, on the

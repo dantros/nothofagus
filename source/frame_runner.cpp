@@ -453,6 +453,11 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
             mImguiWantsMouse.store(io.WantCaptureMouse, std::memory_order_release);
             mImguiWantsKeyboard.store(io.WantCaptureKeyboard, std::memory_order_release);
 
+            // Marshal the sim UI's desired cursor shape to the render thread, which
+            // applies it via the platform backend. Valid here (post-Render, before
+            // the next NewFrame resets it). int storage keeps imgui.h out of the header.
+            mThreadedCursor.store(static_cast<int>(ImGui::GetMouseCursor()), std::memory_order_release);
+
             if (!snapshot.mainUi)
                 snapshot.mainUi = std::make_unique<ClonedImDrawData>();
             snapshot.mainUi->cloneFrom(ImGui::GetDrawData());
@@ -745,6 +750,10 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
             ZoneScopedN("RenderImguiNewFrame");
             std::lock_guard<std::mutex> imguiLock(mImguiMutex);
             imguiRtt.drainPendingFontOps();
+            // Apply the sim UI's marshalled cursor shape before newImGuiFrame (inside
+            // beginMainImguiFrame) runs the platform backend's UpdateMouseCursor, which
+            // reads the main context's GetMouseCursor() and drives glfwSetCursor/SDL.
+            ImGui::SetMouseCursor(static_cast<ImGuiMouseCursor>(mThreadedCursor.load(std::memory_order_acquire)));
             beginMainImguiFrame();
             harvestImguiInput(); // io.MousePos/Down/Wheel + DisplaySize are valid post-NewFrame
             if (mStats)
