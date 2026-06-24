@@ -12,7 +12,7 @@ namespace Nothofagus
 /// OpenGL has no Mailbox, so Mailbox and Fifo both map to swap interval 1.
 enum class PresentMode : std::uint8_t
 {
-    Fifo      = 0,  ///< Mandatory vsync, double-buffered. On a compositor this can quantize to ~45 fps.
+    Fifo      = 0,  ///< Mandatory vsync, no tearing. On a compositor this can quantize to ~45 fps.
     Mailbox   = 1,  ///< Vsync'd, triple-buffered, no tearing — compositor-friendly. The default.
     Immediate = 2,  ///< Uncapped, may tear. Useful for benchmarking.
 };

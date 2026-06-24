@@ -63,6 +63,13 @@ static void endOneTimeCommand(VkDevice device, VkCommandPool commandPool,
 // WindowedVulkanPresentation
 // ===========================================================================
 
+// Minimum swapchain image count requested for both initial creation and
+// recreation. MAILBOX needs >= 3 images; requesting 3 unconditionally keeps the
+// two swapchain builders identical (FIFO/IMMEDIATE are unaffected in practice —
+// vk-bootstrap already defaults to minImageCount + 1). vk-bootstrap clamps this
+// to the surface's supported range.
+static constexpr uint32_t kDesiredSwapchainImageCount = 3;
+
 void WindowedVulkanPresentation::createSurface(VkInstance instance, void* nativeWindowHandle)
 {
     mNativeWindowHandle = nativeWindowHandle;
@@ -116,8 +123,8 @@ void WindowedVulkanPresentation::createPresentationTarget(
     auto swapchainResult = swapchainBuilder
         .set_desired_format({VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
         .add_fallback_format({VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
-        .set_desired_present_mode(mPresentMode)         // vk-bootstrap falls back to FIFO if unsupported.
-        .set_desired_min_image_count(3)                 // MAILBOX needs >=3 images; explicit/safe.
+        .set_desired_present_mode(mPresentMode)               // vk-bootstrap falls back to FIFO if unsupported.
+        .set_desired_min_image_count(kDesiredSwapchainImageCount)
         .set_desired_extent(framebufferSize.width, framebufferSize.height)
         .build();
     if (!swapchainResult)
@@ -529,8 +536,8 @@ void WindowedVulkanPresentation::recreateSwapchain()
     auto swapchainResult = builder
         .set_desired_format({VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
         .add_fallback_format({VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
-        .set_desired_present_mode(mPresentMode)         // Preserve the mode chosen at init across recreation.
-        .set_desired_min_image_count(3)                 // MAILBOX needs >=3 images; explicit/safe.
+        .set_desired_present_mode(mPresentMode)               // Preserve the mode chosen at init across recreation.
+        .set_desired_min_image_count(kDesiredSwapchainImageCount)
         .set_desired_extent(framebufferSize.width, framebufferSize.height)
         .set_old_swapchain(mSwapchain)
         .build();
