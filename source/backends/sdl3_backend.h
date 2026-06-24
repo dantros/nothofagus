@@ -56,6 +56,9 @@ public:
 
     void setWindowTitle(const std::string& title);
 
+    std::string getClipboardText() const;
+    void setClipboardText(const std::string& text);
+
     static ScreenSize getPrimaryMonitorSize();
     static float getPrimaryMonitorContentScale();
 

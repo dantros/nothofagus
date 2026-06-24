@@ -464,6 +464,20 @@ private:
     /// render thread before its main-context NewFrame. 0 == ImGuiMouseCursor_Arrow.
     std::atomic<int> mThreadedCursor{0};
 
+    // ----- OS clipboard marshal (threaded path) -----
+    // The sim-UI clipboard callbacks run on the sim thread and can't call the
+    // main-thread-only window clipboard API, so they read/write these buffers; the
+    // render thread (consume) refreshes mClipboardFromOs from the OS and flushes a
+    // pending mClipboardToOs to the OS. sThreadedClipboardOwner lets the plain
+    // function-pointer ImGui callbacks reach the live instance.
+    std::mutex mClipboardMutex;
+    std::string mClipboardFromOs;                 ///< last OS clipboard text (render refreshes, throttled).
+    std::optional<std::string> mClipboardToOs;    ///< pending sim→OS write, flushed render-side.
+    float mLastClipboardPollTime{-1.0f};          ///< throttles the per-frame OS clipboard read.
+    static FrameRunner* sThreadedClipboardOwner;  ///< target for the ImGui clipboard callbacks.
+    static const char* threadedGetClipboardText(ImGuiContext* ctx);
+    static void threadedSetClipboardText(ImGuiContext* ctx, const char* text);
+
     /// Serializes all access to the (shared) ImGui font atlas between the sim-UI
     /// context (NewFrame + widgets + Render + clone, on the sim thread) and the
     /// render/main context (NewFrame + RenderDrawData + atlas rebuild, on the

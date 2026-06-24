@@ -29,26 +29,32 @@
 namespace Nothofagus
 {
 
-namespace
+// Sim-UI ImGui clipboard callbacks (B7). They run on the SIM thread and so can't
+// call the main-thread-only window clipboard API; instead they read/write the
+// FrameRunner's marshal buffers, which the render thread syncs with the OS clipboard.
+// Plain function pointers (ImGui's callback type), so they reach the live instance
+// via the static sThreadedClipboardOwner set in beginThreadedSession.
+FrameRunner* FrameRunner::sThreadedClipboardOwner = nullptr;
+
+const char* FrameRunner::threadedGetClipboardText(ImGuiContext*)
 {
-// In-process clipboard for the sim-UI ImGui context. GLFW's clipboard is
-// main-thread-only, so the sim thread cannot use it; this gives working
-// copy/paste within the app's own text fields. (OS-clipboard integration across
-// the thread boundary is a documented follow-up.) Accessed only on the sim thread
-// (ImGui calls these during the sim UI frame), so no synchronization is needed.
-std::string& threadedClipboardStorage()
-{
-    static std::string storage;
-    return storage;
+    // ImGui requires the returned pointer to stay valid until the next call; a
+    // thread_local buffer (this only runs on the sim thread) satisfies that.
+    thread_local std::string buffer;
+    if (sThreadedClipboardOwner != nullptr)
+    {
+        std::lock_guard<std::mutex> lock(sThreadedClipboardOwner->mClipboardMutex);
+        buffer = sThreadedClipboardOwner->mClipboardFromOs;
+    }
+    return buffer.c_str();
 }
-const char* threadedGetClipboardText(ImGuiContext*)
+
+void FrameRunner::threadedSetClipboardText(ImGuiContext*, const char* text)
 {
-    return threadedClipboardStorage().c_str();
-}
-void threadedSetClipboardText(ImGuiContext*, const char* text)
-{
-    threadedClipboardStorage() = (text != nullptr) ? text : "";
-}
+    if (sThreadedClipboardOwner == nullptr)
+        return;
+    std::lock_guard<std::mutex> lock(sThreadedClipboardOwner->mClipboardMutex);
+    sThreadedClipboardOwner->mClipboardToOs = (text != nullptr) ? std::string(text) : std::string();
 }
 
 // Window is the selected backend type. Forward declared in frame_runner.h;
@@ -122,6 +128,11 @@ FrameRunner::~FrameRunner()
         ImGui::DestroyContext(mSimUiContext);
         mSimUiContext = nullptr;
     }
+
+    // Drop the clipboard-callback back-pointer if it targets this instance, so a
+    // later stray callback can't dereference a destroyed FrameRunner.
+    if (sThreadedClipboardOwner == this)
+        sThreadedClipboardOwner = nullptr;
 
     mBackend.shutdown(); // detaches the ImGui renderer backend (ImGui_Impl*_Shutdown).
 
@@ -723,6 +734,30 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
             controller.processInputs();
         }
 
+        // OS clipboard marshal (B7): flush any sim→OS write, then refresh the OS→sim
+        // cache. The OS read is throttled (it's a synchronous X11/Wayland round-trip
+        // on GLFW) — our own writes are reflected into the cache immediately so
+        // app-internal copy/paste is instant; cross-app paste lands within ~0.25 s.
+        {
+            ZoneScopedN("Clipboard");
+            std::lock_guard<std::mutex> lock(mClipboardMutex);
+            if (mClipboardToOs.has_value())
+            {
+                mWindow->setClipboardText(*mClipboardToOs);
+                mClipboardFromOs = *mClipboardToOs;
+                mClipboardToOs.reset();
+            }
+            else
+            {
+                const float now = mWindow->getTime();
+                if (mLastClipboardPollTime < 0.0f || (now - mLastClipboardPollTime) >= 0.25f)
+                {
+                    mClipboardFromOs = mWindow->getClipboardText();
+                    mLastClipboardPollTime = now;
+                }
+            }
+        }
+
         auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
         mFramebufferWidth = framebufferWidth;
         mFramebufferHeight = framebufferHeight;
@@ -925,9 +960,12 @@ void FrameRunner::beginThreadedSession(Canvas& canvas, Controller& controller)
         // WantCaptureKeyboard reflect real capture only — an active widget (e.g. an
         // InputText being edited) or an open modal.
         simIo.ConfigNavCaptureKeyboard = false;
+        // Route the sim-UI clipboard through the OS marshal (B7): the callbacks
+        // touch this instance's buffers; the render thread syncs them with the OS.
+        sThreadedClipboardOwner = this;
         ImGuiPlatformIO& simPlatformIo = ImGui::GetPlatformIO();
-        simPlatformIo.Platform_GetClipboardTextFn = threadedGetClipboardText;
-        simPlatformIo.Platform_SetClipboardTextFn = threadedSetClipboardText;
+        simPlatformIo.Platform_GetClipboardTextFn = &FrameRunner::threadedGetClipboardText;
+        simPlatformIo.Platform_SetClipboardTextFn = &FrameRunner::threadedSetClipboardText;
         ImGui::SetCurrentContext(mainContext); // restore the render thread's context
 
         // Enable gamepad nav on the MAIN context too (threaded path only): GLFW's

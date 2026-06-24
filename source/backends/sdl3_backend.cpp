@@ -337,6 +337,21 @@ void Sdl3Backend::setWindowTitle(const std::string& title)
     SDL_SetWindowTitle(mSdlWindow, title.c_str());
 }
 
+std::string Sdl3Backend::getClipboardText() const
+{
+    // SDL_GetClipboardText returns a freshly-allocated, never-null string the
+    // caller must SDL_free.
+    char* text = SDL_GetClipboardText();
+    std::string result = text != nullptr ? std::string(text) : std::string();
+    SDL_free(text);
+    return result;
+}
+
+void Sdl3Backend::setClipboardText(const std::string& text)
+{
+    SDL_SetClipboardText(text.c_str());
+}
+
 ScreenSize Sdl3Backend::getPrimaryMonitorSize()
 {
     SDL_Init(SDL_INIT_VIDEO);  // idempotent — safe if Canvas has already initialised it

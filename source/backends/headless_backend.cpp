@@ -87,6 +87,15 @@ void HeadlessBackend::setWindowTitle(const std::string& /*title*/)
 {
 }
 
+std::string HeadlessBackend::getClipboardText() const
+{
+    return std::string();
+}
+
+void HeadlessBackend::setClipboardText(const std::string& /*text*/)
+{
+}
+
 ScreenSize HeadlessBackend::getPrimaryMonitorSize()
 {
     return {1920u, 1080u};

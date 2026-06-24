@@ -52,6 +52,11 @@ concept WindowBackend = requires(
     { backend.getWindowSize()                  } -> std::same_as<ScreenSize>;
     { backend.requestClose()                   } -> std::same_as<void>;
     { backend.setWindowTitle(title)            } -> std::same_as<void>;
+
+    // OS clipboard (main-thread-only on GLFW/SDL). Used by the threaded path to
+    // marshal the sim-UI context's copy/paste across the thread boundary.
+    { backend.getClipboardText()               } -> std::same_as<std::string>;
+    { backend.setClipboardText(title)          } -> std::same_as<void>;
 };
 
 } // namespace Nothofagus
