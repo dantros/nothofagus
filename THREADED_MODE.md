@@ -158,6 +158,16 @@ in-tree callers of the `[[deprecated]] run(update, Controller&)` overload left.
   `VUID-` / `SYNC-HAZARD` messages.
 - SwiftShader Vulkan headless goldens unchanged (this is the CI lane): `linux-release-headless-vulkan-tests`
   + `NOTHOFAGUS_RENDER_BACKEND=swiftshader .../rendering_tests`.
+- **TSan + ASan/UBSan on the threaded path — against SwiftShader, not the GPU:** `tools/sanitizers/run_sanitizers.sh`
+  (builds a headless-Vulkan + SwiftShader fixture, `tools/sanitizers/threaded_smoke.cpp`, with the sanitizer
+  flags and runs it). Expect **0 sanitizer reports** and a clean exit. Two things to know:
+  - **Mesa is buggy under sanitizers** — run the sanitizers on SwiftShader (deterministic CPU Vulkan) only;
+    do **not** point them at the system GPU.
+  - The validation layer is disabled for the run (`VK_LOADER_LAYERS_DISABLE`) and TSan uses
+    `tools/sanitizers/tsan.supp` to filter SwiftShader-ICD / ImGui-Vulkan init-teardown noise. That file is
+    for third-party/init noise **only** — a race in nothofagus code must be fixed, never suppressed.
+  - TSan under SwiftShader is slow (it instruments SwiftShader's worker pool), so the fixture is small and
+    self-closing; give it a generous timeout.
 - Any new cross-thread shared state must be mutex- or atomic-guarded like the existing marshal channels
   (`mThreadedGamepadState`/`mThreadedGameInputState`, the `mThreadedCursor` atomic, the `mClipboardMutex`
-  payload) — argue race-freedom by mirroring those.
+  payload, `HeadlessBackend::mRunning`) — argue race-freedom by mirroring those, and confirm with TSan.
