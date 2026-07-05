@@ -735,10 +735,12 @@ public:
     // renderer and defer GPU frees while a threaded session is live — see those
     // methods). Interactive ImGui runs via the `commit(dt, update, uiCallback)`
     // overload (widgets on the sim thread, cloned to the render thread); gamepad
-    // input via `commit(dt, update, simController)`. Still single-threaded-only:
-    // explorers (Dense/Sparse land) and other structural resource ops
-    // (textures/meshes/render targets) — create those up front. `run()`/`tick()`
-    // remain the unrestricted single-threaded path.
+    // input via `commit(dt, update, simController)`. Explorers (Dense/Sparse land)
+    // and runtime create/destroy of textures/meshes/render targets are also
+    // supported from `commit`'s update (they serialize against the renderer and
+    // defer GPU frees like `addBellota`/`removeBellota`). Still single-threaded-only:
+    // `imguiVisual`/`imguiImages`. `run()`/`tick()` remain the unrestricted
+    // single-threaded path.
 
     /// Main thread: start a threaded session (binds input, marks it running).
     void beginThreadedSession(Controller& controller);
