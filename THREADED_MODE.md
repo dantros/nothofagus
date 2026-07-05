@@ -80,41 +80,41 @@ convenience overloads that own the sim thread for you.
 
 ### Diegetic ImGui + registered ImGui images on the sim thread
 - **Registered ImGui images** (`registerImguiImage`/`imguiImage`/`updateImguiImage`) — the
-  `ImguiImageManager` is threaded through the produce/consume arms; sim-side registry access is
-  serialized under the asset mutex and GPU frees deferred via a two-phase retire queue.
-- **Diegetic `renderImguiTo`** — `ImguiRttManager` split into sim-side `produceClones` (run each
-  callback on its secondary context, deep-clone into `RenderSnapshot::rttUi`) + render-side
-  `replayClones` (backend init + `RenderDrawData`, no user code). Render consume takes the ImGui
-  mutex outer of the asset mutex so the RTT-clone atlas access can't deadlock with the sim.
-  See [THREADED_DIEGETIC_IMGUI.md](THREADED_DIEGETIC_IMGUI.md) for the full as-built.
+  `ImguiImageManager` is threaded through the produce/consume arms (via `mThreadedImguiImages`); sim-side
+  `beginFrame`/`appendInternalPasses` run in the `produce(Threaded)` arm, registry access is serialized
+  under the asset mutex (the same one `resolveImages` holds render-side — the Canvas entry points wrap
+  `lockAssetsIfThreaded`), and GPU handle/RTT frees are deferred render-side via a two-phase retire queue
+  (`retireEntryGpu`/`drainRetiredGpu`). Demos: `hello_imgui_visual`/`_image_registry`/`hello_markdown`.
+- **Diegetic `renderImguiTo`** — `ImguiRttManager::flushPending` split into sim-side **`produceClones`**
+  (run each `renderImguiTo` callback on its secondary context, deep-clone its draw data into the snapshot's
+  `rttUi` — the `mainUi` reuse template) + render-side **`replayClones`** (lazy per-RTT backend init +
+  `RenderDrawData` of the clones, no user code). Wired through `produce(Threaded)` via `mThreadedImguiRtt`.
+  Demos: `hello_imgui_rtt`/`hello_dpi_scaling`.
+- **Lock order (both features).** The sim takes `imgui⊃asset` (a Canvas ImGui-image draw in `ui` grabs the
+  asset mutex while the ImGui mutex is held), so any render-side step that touches the shared font atlas
+  must take the pair in the same order. `renderSnapshotContents` is split so only the atlas-touching steps
+  hold the ImGui mutex: `renderSnapshotPreMain` (uploads + sprite RTT passes + `resolveImages`) and
+  `renderSnapshotMain` (main sprite draw) run **asset-only** and overlap the sim; `replayClones` (diegetic)
+  and the main `endFrame` run under **`imgui⊃asset`**. So a diegetic frame serializes only the ImGui draws,
+  not the sprite work. `drainPendingFrees` runs under `imgui⊃asset` too (its RT branch tears down secondary
+  ImGui contexts). No render path ever takes `asset⊃imgui`, so it's deadlock-free.
+- **v1 limitation (both single-threaded and threaded):** diegetic panels take **no input** — mouse/keyboard
+  reach only the main context. Threaded support is render parity, not new input forwarding.
 
-## Pending — port all demos to the threaded path (main remaining work)
+## Demo migration — done
 
-The threaded core is complete; the outstanding effort is migrating the example demos so the
-suite exercises the threaded path as the default. The `run(update, ui[, simController,
-renderController])` convenience makes each migration mechanical: split the single `run` lambda
-into a game-logic `update` + an ImGui `ui`, and split input into `simController` (game) vs
-`renderController` (window/`close`).
+Every example now runs on the threaded path via the `run(update, ui[, simController,
+renderController])` convenience (split the single `run` lambda into a game-logic `update` + an ImGui
+`ui`, and input into `simController` (game) vs `renderController` (window/`close`)). `run()`/`run(update)`
+are rerouted to the threaded path and `run(update, Controller&)` is `[[deprecated]]`.
 
-**Ported (6 / 29):** `hello_threaded`, `hello_threaded_imgui`, `hello_threaded_gamepad`,
-`hello_threaded_dense_land` (dedicated); `hello_nothofagus`, `test_keyboard` (migrated in place).
-
-**Remaining (23):** hello_animation, hello_animation_state_machine, hello_custom_font,
-hello_dense_land, hello_direct_texture, hello_dpi_scaling, hello_headless, hello_imgui_image_registry,
-hello_imgui_overlay, hello_imgui_rtt, hello_imgui_visual, hello_layers, hello_markdown, hello_mesh,
-hello_nested_render_targets, hello_render_to_texture, hello_screenshot, hello_sparse_land,
-hello_text, hello_tilemap, hello_tint, test_create_destroy, test_gamepad.
-
-Per-demo caveats:
-- **hello_headless** uses `tick()` (deliberate single-step/headless harness) — a threaded port
-  may not be meaningful; keep as the single-threaded/manual-tick reference.
-- **hello_screenshot** stays on the deprecated single-thread `run(update, Controller&)`: the
-  scheduled screenshot request/result handoff crosses the sim/render boundary unsynchronized
-  (`requestScreenshot` arms sim-side, `finishScreenshot` writes render-side). This is a *separate*
-  gap from the ImGui features and is the only remaining deferred demo.
-- **hello_imgui_rtt / hello_dpi_scaling** (diegetic `renderImguiTo`) and **hello_imgui_visual /
-  hello_imgui_image_registry / hello_markdown** (registered ImGui images) are **now threaded** —
-  all five run on `run(update, ui)` (see [THREADED_DIEGETIC_IMGUI.md](THREADED_DIEGETIC_IMGUI.md)).
+Two demos deliberately stay off the threaded path:
+- **hello_headless** uses `tick()` (single-step/headless harness) — a threaded port isn't meaningful;
+  it's the single-threaded/manual-tick reference.
+- **hello_screenshot** stays on the deprecated single-thread `run(update, Controller&)`: the scheduled
+  screenshot request/result handoff crosses the sim/render boundary unsynchronized (`requestScreenshot`
+  arms sim-side, `finishScreenshot` writes render-side). A *separate* gap from the ImGui features — the
+  only remaining deferred demo, and the last caller of the deprecated overload.
 
 ## Out of scope
 
