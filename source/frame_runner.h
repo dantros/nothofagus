@@ -21,6 +21,7 @@
 #include <functional>
 #include <mutex>
 #include <chrono>
+#include <thread>
 
 struct ImGuiStyle;   // global-scope (Dear ImGui); held by unique_ptr to keep imgui.h out of this header.
 struct ImGuiContext; // global-scope; the sim-thread UI context (M3) is held as an opaque pointer.
@@ -181,6 +182,15 @@ public:
 
     /// Thread-safe: true until the window is closed. Read by the sim loop.
     bool threadedRunning() const { return mThreadedRunning.load(std::memory_order_acquire); }
+
+    /// Thread-affinity guards (debug-only). During a live threaded session, assert the
+    /// caller is on the thread that owns the operation: window/monitor ops on the render
+    /// (main) thread, live-scene access on the sim thread. No-op when no session is live
+    /// (single-thread run/tick, setup) or the relevant thread id isn't captured yet, and
+    /// fully compiled out under NDEBUG. Turns a mis-placed Controller action (e.g. a
+    /// window op from a sim action) into an immediate, located failure instead of UB.
+    void debugCheckRenderThread(const char* op) const;
+    void debugCheckSimThread(const char* op) const;
 
     /// Thread-safe: whether the threaded ImGui UI captured the mouse / keyboard on
     /// the most recent commit (so host game logic can ignore that input).
@@ -378,6 +388,11 @@ private:
     SnapshotTripleBuffer mTripleBuffer;            ///< sim→render snapshot hand-off (lock-free).
     std::atomic<bool> mThreadedRunning{false};     ///< true while the threaded session is live.
     Canvas* mThreadedCanvas{nullptr};              ///< canvas bound by beginThreadedSession; drives explorers in produce(Threaded).
+    /// Thread identities for the affinity guards (debug-only). Render id is captured in
+    /// beginThreadedSession (main thread); sim id is captured on the first threaded
+    /// produce(). Default-constructed (== no id) until then.
+    std::thread::id mRenderThreadId;
+    std::thread::id mSimThreadId;
     /// Render-loop frame-time monitor for the threaded path, mirroring the local
     /// PerformanceMonitor that run() uses single-threaded: the smoothed getMS() is
     /// the dt fed to the stats overlay and to RTT ImGui timing (flushPending), so

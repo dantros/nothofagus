@@ -235,6 +235,30 @@ ScreenSize FrameRunner::windowSize() const
     return mWindow->getWindowSize();
 }
 
+void FrameRunner::debugCheckRenderThread(const char* op) const
+{
+#ifndef NDEBUG
+    if (mThreadedRunning.load(std::memory_order_acquire) && mRenderThreadId != std::thread::id{})
+        debugCheck(std::this_thread::get_id() == mRenderThreadId,
+                   std::string("Canvas::") + op + " must be called on the render (main) thread "
+                   "during a threaded session (it touches the window/monitor).");
+#else
+    (void)op;
+#endif
+}
+
+void FrameRunner::debugCheckSimThread(const char* op) const
+{
+#ifndef NDEBUG
+    if (mThreadedRunning.load(std::memory_order_acquire) && mSimThreadId != std::thread::id{})
+        debugCheck(std::this_thread::get_id() == mSimThreadId,
+                   std::string("Canvas::") + op + " must be called on the sim thread during a "
+                   "threaded session (it accesses the live scene).");
+#else
+    (void)op;
+#endif
+}
+
 DirectTexture FrameRunner::takeScreenshot() const
 {
     const ScreenSize screen = mScreenSize.load(std::memory_order_acquire);
@@ -379,6 +403,17 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
     {
         // Sim thread: CPU only, no GL.
         ZoneScopedN("commitFrame");
+
+        // Thread-affinity guards: capture the sim thread on the first commit of the
+        // session (before `update`/explorers touch the live scene), and assert every
+        // later commit is the same thread. Debug-only.
+#ifndef NDEBUG
+        const std::thread::id thisThread = std::this_thread::get_id();
+        if (mSimThreadId == std::thread::id{})
+            mSimThreadId = thisThread;
+        else
+            debugCheck(mSimThreadId == thisThread, "commit() called from more than one thread");
+#endif
 
         // Stamp the commit seq BEFORE `update` so spawn/despawn can tag retired
         // resources with the commit at which they leave the scene.
@@ -1003,6 +1038,11 @@ void FrameRunner::beginThreadedSession(Canvas& canvas, Controller& controller)
 {
     // Remember the canvas so produce(Threaded) can drive the explorer pre-pass.
     mThreadedCanvas = &canvas;
+
+    // Thread-affinity guards: this runs on the render (main) thread. Reset the sim id
+    // so the first produce(Threaded) of this session re-captures it.
+    mRenderThreadId = std::this_thread::get_id();
+    mSimThreadId = std::thread::id{};
 
     // Bind input callbacks + reset the close flag (same as run()'s session start).
     mWindow->beginSession(controller);

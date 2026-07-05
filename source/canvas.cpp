@@ -121,10 +121,10 @@ Canvas::~Canvas()
 // Window / display — forward to FrameRunner
 // ---------------------------------------------------------------------------
 
-std::size_t Canvas::getCurrentMonitor() const                   { return mImplPtr->frameRunner.getCurrentMonitor(); }
-bool Canvas::isFullscreen() const                               { return mImplPtr->frameRunner.isFullscreen(); }
-void Canvas::setFullScreenOnMonitor(std::size_t monitor)        { mImplPtr->frameRunner.setFullScreenOnMonitor(monitor); }
-void Canvas::setWindowed()                                       { mImplPtr->frameRunner.setWindowed(); }
+std::size_t Canvas::getCurrentMonitor() const                   { mImplPtr->frameRunner.debugCheckRenderThread("getCurrentMonitor"); return mImplPtr->frameRunner.getCurrentMonitor(); }
+bool Canvas::isFullscreen() const                               { mImplPtr->frameRunner.debugCheckRenderThread("isFullscreen"); return mImplPtr->frameRunner.isFullscreen(); }
+void Canvas::setFullScreenOnMonitor(std::size_t monitor)        { mImplPtr->frameRunner.debugCheckRenderThread("setFullScreenOnMonitor"); mImplPtr->frameRunner.setFullScreenOnMonitor(monitor); }
+void Canvas::setWindowed()                                       { mImplPtr->frameRunner.debugCheckRenderThread("setWindowed"); mImplPtr->frameRunner.setWindowed(); }
 ScreenSize Canvas::screenSize() const                           { return mImplPtr->frameRunner.screenSize(); }
 void Canvas::setScreenSize(const ScreenSize& screenSize)        { mImplPtr->frameRunner.setScreenSize(screenSize); }
 void Canvas::setClearColor(glm::vec3 clearColor)                { mImplPtr->frameRunner.setClearColor(clearColor); }
@@ -132,8 +132,8 @@ void Canvas::setTargetFps(std::optional<float> targetFps)       { mImplPtr->fram
 std::optional<float> Canvas::targetFps() const                  { return mImplPtr->frameRunner.targetFps(); }
 void Canvas::setAutoRemoveUnusedTextures(bool enabled)          { mImplPtr->frameRunner.setAutoRemoveUnusedTextures(enabled); }
 void Canvas::setAutoRemoveUnusedMeshes(bool enabled)            { mImplPtr->frameRunner.setAutoRemoveUnusedMeshes(enabled); }
-void Canvas::setWindowTitle(const std::string& title)           { mImplPtr->frameRunner.setWindowTitle(title); }
-ScreenSize Canvas::windowSize() const                            { return mImplPtr->frameRunner.windowSize(); }
+void Canvas::setWindowTitle(const std::string& title)           { mImplPtr->frameRunner.debugCheckRenderThread("setWindowTitle"); mImplPtr->frameRunner.setWindowTitle(title); }
+ScreenSize Canvas::windowSize() const                            { mImplPtr->frameRunner.debugCheckRenderThread("windowSize"); return mImplPtr->frameRunner.windowSize(); }
 ViewportRect Canvas::gameViewport() const                       { return mImplPtr->frameRunner.gameViewport(); }
 
 ImguiOverlayRect Canvas::imguiOverlayViewport() const
@@ -164,8 +164,8 @@ void Canvas::removeBellota(const BellotaId bellotaId)
     mImplPtr->frameRunner.removeBellota(mImplPtr->assets, bellotaId);
 }
 
-Bellota& Canvas::bellota(BellotaId bellotaId)                   { return mImplPtr->assets.bellota(bellotaId); }
-const Bellota& Canvas::bellota(BellotaId bellotaId) const       { return mImplPtr->assets.bellota(bellotaId); }
+Bellota& Canvas::bellota(BellotaId bellotaId)                   { mImplPtr->frameRunner.debugCheckSimThread("bellota"); return mImplPtr->assets.bellota(bellotaId); }
+const Bellota& Canvas::bellota(BellotaId bellotaId) const       { mImplPtr->frameRunner.debugCheckSimThread("bellota"); return mImplPtr->assets.bellota(bellotaId); }
 void Canvas::setTint(const BellotaId bellotaId, const Tint& tint) { mImplPtr->assets.setTint(bellotaId, tint); }
 void Canvas::removeTint(const BellotaId bellotaId)              { mImplPtr->assets.removeTint(bellotaId); }
 
