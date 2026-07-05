@@ -6,12 +6,20 @@
 > designed and implemented separately. Until then, examples using them stay on the
 > single-threaded `run(update, Controller&)` path.
 
-## TL;DR — what does not work threaded today
+## TL;DR — threaded status
 
-| Feature | Public API | Threaded status | Blocked examples |
+| Feature | Public API | Threaded status | Examples |
 |---|---|---|---|
 | **Diegetic ImGui in an RTT** | `Canvas::renderImguiTo(rtId, fontId, callback)` | **Unsupported** | `hello_imgui_rtt`, `hello_dpi_scaling` |
-| **Registered ImGui images** | `Canvas::registerImguiImage` / `imguiImage` / `updateImguiImage` | **Unsupported** | `hello_imgui_visual`, `hello_imgui_image_registry`, `hello_markdown` (spinner) |
+| **Registered ImGui images** | `Canvas::registerImguiImage` / `imguiImage` / `updateImguiImage` | **Supported** (Phase 1) | `hello_imgui_visual`, `hello_imgui_image_registry`, `hello_markdown` (spinner) |
+
+> **Registered images are done.** `ImguiImageManager` is now threaded through
+> `runThreaded`/`commitFrame`/`renderFrameThreaded`; the sim-side `beginFrame` +
+> `appendInternalPasses` run in the `FrameMode::Threaded` produce arm, the registry is
+> serialized under the asset mutex (the same one `resolveImages` holds render-side), and GPU
+> handle/RTT frees are deferred to the render thread via a two-phase retire queue. The three
+> examples above run on `run(update, ui)`. What remains below is the **diegetic `renderImguiTo`**
+> path.
 
 Everything else the examples need is already threaded: main-canvas ImGui (interactive, input-marshalled),
 `renderTo` sprite RTT passes (ride the snapshot's `rttPasses`), screenshots, explorers, runtime asset

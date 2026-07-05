@@ -98,12 +98,12 @@ hello_text, hello_tilemap, hello_tint, test_create_destroy, test_gamepad.
 Per-demo caveats:
 - **hello_headless** uses `tick()` (deliberate single-step/headless harness) — a threaded port
   may not be meaningful; keep as the single-threaded/manual-tick reference.
-- **hello_imgui_visual / hello_imgui_image_registry** exercise `imguiVisual`/`imguiImages`, which
-  is single-threaded-only for now — port only once/if that path gains threaded support.
-- **hello_imgui_rtt / hello_dpi_scaling** use `renderImguiTo` (diegetic ImGui in an RTT), and
-  **hello_markdown** an animated registered-image spinner — both the diegetic and registered-image
-  ImGui paths are single-threaded-only for now (see [THREADED_DIEGETIC_IMGUI.md](THREADED_DIEGETIC_IMGUI.md));
-  port only once that path gains threaded support.
+- **hello_imgui_rtt / hello_dpi_scaling** use `renderImguiTo` (diegetic ImGui in an RTT), which is
+  single-threaded-only for now (see [THREADED_DIEGETIC_IMGUI.md](THREADED_DIEGETIC_IMGUI.md)); port
+  only once that path gains threaded support.
+- **hello_imgui_visual / hello_imgui_image_registry / hello_markdown** exercise registered ImGui
+  images (`registerImguiImage`/`imguiImage`), which is **now threaded** (Phase 1) — all three run on
+  `run(update, ui)`.
 
 ## Out of scope
 
