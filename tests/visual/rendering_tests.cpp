@@ -1175,3 +1175,80 @@ TEST_CASE("imguiImage draws a DirectTexture honoring magFilter", "[rendering][im
     checkAgainstGolden("imgui_visual_direct_texture", *canvas.retrieveScreenshot());
 }
 
+// ---------------------------------------------------------------------------
+// pixelSize > 1: screenshots capture at device resolution (screenSize * pixelSize),
+// preserving the pixelSize amplification and the sub-pixel bellota positioning it
+// affords. Every other test uses pixelSize == 1, where device == logical; these stress
+// the device-resolution path (which crashed before it was fixed). A bellota at a
+// sub-pixelSize fractional logical position lands one device pixel off the integer grid
+// in the capture — something a logical-resolution capture cannot represent.
+// ---------------------------------------------------------------------------
+
+// A small solid 2x2 red sprite centered at `location`.
+static Nothofagus::BellotaId addRedSprite(Nothofagus::Canvas& canvas, glm::vec2 location)
+{
+    Nothofagus::ColorPallete palette({
+        {0.0f, 0.0f, 0.0f, 0.0f},
+        {1.0f, 0.0f, 0.0f, 1.0f}
+    });
+    Nothofagus::IndirectTexture tex({2, 2}, {0.0f, 0.0f, 0.0f, 0.0f});
+    tex.setPallete(palette);
+    tex.setPixels({1, 1, 1, 1});
+    auto texId = canvas.addTexture(tex);
+    return canvas.addBellota(Nothofagus::Bellota({location}, texId));
+}
+
+TEST_CASE("Sub-pixel bellota at pixelSize 2", "[rendering][pixel_scale]")
+{
+    // pixelSize = 2 (4th arg), headless = true (6th). Logical 8x8 -> 16x16 device capture.
+    Nothofagus::Canvas canvas({8, 8}, "test", {0.0f, 0.0f, 0.0f}, 2, 14, true);
+    // 0.5 logical y-offset == 1 device pixel at pixelSize 2: the sprite sits one device
+    // pixel below the integer grid — invisible at logical resolution.
+    addRedSprite(canvas, glm::vec2(4.0f, 4.5f));
+    for (int i = 0; i < 3; ++i)
+        canvas.tick(16.0f);
+
+    auto shot = capture(canvas);
+    REQUIRE(shot.size().x == 8 * 2);   // device resolution, not logical (crash-class guard)
+    REQUIRE(shot.size().y == 8 * 2);
+    checkAgainstGolden("subpixel_bellota_pixelsize_2", shot);
+}
+
+TEST_CASE("Sub-pixel bellota at pixelSize 3", "[rendering][pixel_scale]")
+{
+    // Odd amplification stresses non-power-of-two 1/3-logical offsets. 8x8 -> 24x24.
+    Nothofagus::Canvas canvas({8, 8}, "test", {0.0f, 0.0f, 0.0f}, 3, 14, true);
+    // 1/3 logical y-offset == 1 device pixel at pixelSize 3.
+    addRedSprite(canvas, glm::vec2(4.0f, 4.0f + 1.0f / 3.0f));
+    for (int i = 0; i < 3; ++i)
+        canvas.tick(16.0f);
+
+    auto shot = capture(canvas);
+    REQUIRE(shot.size().x == 8 * 3);
+    REQUIRE(shot.size().y == 8 * 3);
+    checkAgainstGolden("subpixel_bellota_pixelsize_3", shot);
+}
+
+TEST_CASE("Sub-pixel bellota move is visible at pixelSize 3", "[rendering][pixel_scale]")
+{
+    // Moving a bellota by less than one logical pixel must change the device-resolution
+    // capture. Before the fix the move was rounded away (logical-res capture), so the two
+    // captures were identical.
+    Nothofagus::Canvas canvas({8, 8}, "test", {0.0f, 0.0f, 0.0f}, 3, 14, true);
+    auto id = addRedSprite(canvas, glm::vec2(4.0f, 4.0f));
+    for (int i = 0; i < 3; ++i)
+        canvas.tick(16.0f);
+    Nothofagus::DirectTexture before = capture(canvas);
+
+    // 2/3 logical == 2 device pixels at pixelSize 3 — still sub-logical-pixel (< 1.0).
+    canvas.bellota(id).transform().location() = glm::vec2(4.0f, 4.0f + 2.0f / 3.0f);
+    for (int i = 0; i < 3; ++i)
+        canvas.tick(16.0f);
+    Nothofagus::DirectTexture after = capture(canvas);
+
+    const Nothofagus::TestHelpers::ComparisonResult cmp =
+        Nothofagus::TestHelpers::compare(before, after, 0, 0);
+    REQUIRE_FALSE(cmp.sizeMismatch);
+    REQUIRE(cmp.differingPixels > 0);
+}
+
