@@ -125,11 +125,15 @@ int main()
         tileMapTexId
     });
 
-    Nothofagus::Controller controller;
-    controller.registerAction(
+    // Window input — dispatched on the main thread; ESC closes the window.
+    Nothofagus::Controller renderController;
+    renderController.registerAction(
         { Nothofagus::Key::ESCAPE, Nothofagus::DiscreteTrigger::Press },
         [&]() { canvas.close(); });
 
-    canvas.run([](float) {}, controller);
+    // Multithreaded convenience: no game logic/ImGui/input here (static tile map), so
+    // update, ui, and the sim controller are all empty; ESC lives on the render controller.
+    Nothofagus::Controller simController;
+    canvas.run([](float){}, [](float){}, simController, renderController);
     return 0;
 }

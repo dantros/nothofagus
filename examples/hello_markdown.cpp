@@ -196,16 +196,21 @@ wider than the window, so it overflows — drag the horizontal scrollbar to pan:
 
     float elapsedMs = 0.0f;
 
-    canvas.run([&](float dt)
+    // Game logic on the sim thread: keep the inline spinner animating — advance its layer and
+    // push it onto the registered image (stable id, same size -> no re-warm). Runs before `ui`
+    // each commit, so the frame the markdown draws is current.
+    auto update = [&](float dt)
     {
-        // Keep the inline spinner animating: advance its layer and push it onto the
-        // registered image (stable id, same size -> no re-warm).
         elapsedMs += dt;
         const std::size_t frame = static_cast<std::size_t>(elapsedMs / 150.0f) % kSpinFrames;
         Nothofagus::Visual spinVisual{spinTexId};
         spinVisual.currentLayer() = frame;
         canvas.updateImguiImage(spinImageId, spinVisual);
+    };
 
+    // ImGui / markdown on the sim thread (drawn into the sim-UI context, cloned to render).
+    auto ui = [&](float)
+    {
         ImGui::SetNextWindowPos(ImVec2(20.0f, 20.0f), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(520.0f, 680.0f), ImGuiCond_FirstUseEver);
         ImGui::Begin("Readme");
@@ -221,7 +226,9 @@ wider than the window, so it overflows — drag the horizontal scrollbar to pan:
         ImGui::Begin("Oversized image (horizontal scroll)", nullptr, ImGuiWindowFlags_HorizontalScrollbar);
         markdown.print(kOverflowSample);
         ImGui::End();
-    });
+    };
+
+    canvas.run(update, ui);
 
     return 0;
 }

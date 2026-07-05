@@ -121,19 +121,19 @@ Canvas::~Canvas()
 // Window / display — forward to FrameRunner
 // ---------------------------------------------------------------------------
 
-std::size_t Canvas::getCurrentMonitor() const                   { return mImplPtr->frameRunner.getCurrentMonitor(); }
-bool Canvas::isFullscreen() const                               { return mImplPtr->frameRunner.isFullscreen(); }
-void Canvas::setFullScreenOnMonitor(std::size_t monitor)        { mImplPtr->frameRunner.setFullScreenOnMonitor(monitor); }
-void Canvas::setWindowed()                                       { mImplPtr->frameRunner.setWindowed(); }
-const ScreenSize& Canvas::screenSize() const                    { return mImplPtr->frameRunner.screenSize(); }
+std::size_t Canvas::getCurrentMonitor() const                   { mImplPtr->frameRunner.debugCheckRenderThread("getCurrentMonitor"); return mImplPtr->frameRunner.getCurrentMonitor(); }
+bool Canvas::isFullscreen() const                               { mImplPtr->frameRunner.debugCheckRenderThread("isFullscreen"); return mImplPtr->frameRunner.isFullscreen(); }
+void Canvas::setFullScreenOnMonitor(std::size_t monitor)        { mImplPtr->frameRunner.debugCheckRenderThread("setFullScreenOnMonitor"); mImplPtr->frameRunner.setFullScreenOnMonitor(monitor); }
+void Canvas::setWindowed()                                       { mImplPtr->frameRunner.debugCheckRenderThread("setWindowed"); mImplPtr->frameRunner.setWindowed(); }
+ScreenSize Canvas::screenSize() const                           { return mImplPtr->frameRunner.screenSize(); }
 void Canvas::setScreenSize(const ScreenSize& screenSize)        { mImplPtr->frameRunner.setScreenSize(screenSize); }
 void Canvas::setClearColor(glm::vec3 clearColor)                { mImplPtr->frameRunner.setClearColor(clearColor); }
 void Canvas::setTargetFps(std::optional<float> targetFps)       { mImplPtr->frameRunner.setTargetFps(targetFps); }
 std::optional<float> Canvas::targetFps() const                  { return mImplPtr->frameRunner.targetFps(); }
 void Canvas::setAutoRemoveUnusedTextures(bool enabled)          { mImplPtr->frameRunner.setAutoRemoveUnusedTextures(enabled); }
 void Canvas::setAutoRemoveUnusedMeshes(bool enabled)            { mImplPtr->frameRunner.setAutoRemoveUnusedMeshes(enabled); }
-void Canvas::setWindowTitle(const std::string& title)           { mImplPtr->frameRunner.setWindowTitle(title); }
-ScreenSize Canvas::windowSize() const                            { return mImplPtr->frameRunner.windowSize(); }
+void Canvas::setWindowTitle(const std::string& title)           { mImplPtr->frameRunner.debugCheckRenderThread("setWindowTitle"); mImplPtr->frameRunner.setWindowTitle(title); }
+ScreenSize Canvas::windowSize() const                            { mImplPtr->frameRunner.debugCheckRenderThread("windowSize"); return mImplPtr->frameRunner.windowSize(); }
 ViewportRect Canvas::gameViewport() const                       { return mImplPtr->frameRunner.gameViewport(); }
 
 ImguiOverlayRect Canvas::imguiOverlayViewport() const
@@ -155,17 +155,17 @@ void Canvas::setContentScaleOverride(std::optional<float> scale) { mImplPtr->fra
 // Bellotas — forward to AssetRegistry; remove gates against DenseLandExplorer pool
 // ---------------------------------------------------------------------------
 
-BellotaId Canvas::addBellota(const Bellota& bellota)            { return mImplPtr->assets.addBellota(bellota); }
+BellotaId Canvas::addBellota(const Bellota& bellota)            { return mImplPtr->frameRunner.addBellota(mImplPtr->assets, bellota); }
 
 void Canvas::removeBellota(const BellotaId bellotaId)
 {
     debugCheck(!mImplPtr->frameRunner.isExplorerManagedBellota(bellotaId.id),
         "Bellota is owned by an explorer pool — use canvas.removeDenseLandExplorer() / canvas.removeSparseLandExplorer() instead of removing slot bellotas directly.");
-    mImplPtr->assets.removeBellota(bellotaId);
+    mImplPtr->frameRunner.removeBellota(mImplPtr->assets, bellotaId);
 }
 
-Bellota& Canvas::bellota(BellotaId bellotaId)                   { return mImplPtr->assets.bellota(bellotaId); }
-const Bellota& Canvas::bellota(BellotaId bellotaId) const       { return mImplPtr->assets.bellota(bellotaId); }
+Bellota& Canvas::bellota(BellotaId bellotaId)                   { mImplPtr->frameRunner.debugCheckSimThread("bellota"); return mImplPtr->assets.bellota(bellotaId); }
+const Bellota& Canvas::bellota(BellotaId bellotaId) const       { mImplPtr->frameRunner.debugCheckSimThread("bellota"); return mImplPtr->assets.bellota(bellotaId); }
 void Canvas::setTint(const BellotaId bellotaId, const Tint& tint) { mImplPtr->assets.setTint(bellotaId, tint); }
 void Canvas::removeTint(const BellotaId bellotaId)              { mImplPtr->assets.removeTint(bellotaId); }
 
@@ -173,19 +173,19 @@ void Canvas::removeTint(const BellotaId bellotaId)              { mImplPtr->asse
 // Textures — forward to AssetRegistry; remove gates against DenseLandExplorer pool
 // ---------------------------------------------------------------------------
 
-TextureId Canvas::addTexture(const Texture& texture)            { return mImplPtr->assets.addTexture(texture); }
+TextureId Canvas::addTexture(const Texture& texture)            { return mImplPtr->frameRunner.addTexture(mImplPtr->assets, texture); }
 
 void Canvas::removeTexture(const TextureId textureId)
 {
     debugCheck(!mImplPtr->frameRunner.isExplorerManagedTexture(textureId.id),
         "Texture is owned by an explorer pool — use canvas.removeDenseLandExplorer() / canvas.removeSparseLandExplorer() instead of removing slot textures directly.");
-    mImplPtr->assets.removeTexture(textureId);
+    mImplPtr->frameRunner.removeTexture(mImplPtr->assets, textureId);
 }
 
-void Canvas::setTexture(const BellotaId bellotaId, const TextureId textureId)            { mImplPtr->assets.setTexture(bellotaId, textureId); }
-void Canvas::markTextureAsDirty(const TextureId textureId)                                { mImplPtr->assets.markTextureAsDirty(textureId); }
-void Canvas::setTextureMinFilter(const TextureId textureId, TextureSampleMode mode)       { mImplPtr->assets.setTextureMinFilter(textureId, mode); }
-void Canvas::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)       { mImplPtr->assets.setTextureMagFilter(textureId, mode); }
+void Canvas::setTexture(const BellotaId bellotaId, const TextureId textureId)            { mImplPtr->frameRunner.setTexture(mImplPtr->assets, bellotaId, textureId); }
+void Canvas::markTextureAsDirty(const TextureId textureId)                                { mImplPtr->frameRunner.markTextureAsDirty(mImplPtr->assets, textureId); }
+void Canvas::setTextureMinFilter(const TextureId textureId, TextureSampleMode mode)       { mImplPtr->frameRunner.setTextureMinFilter(mImplPtr->assets, textureId, mode); }
+void Canvas::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)       { mImplPtr->frameRunner.setTextureMagFilter(mImplPtr->assets, textureId, mode); }
 Texture& Canvas::texture(TextureId textureId)                                             { return mImplPtr->assets.texture(textureId); }
 const Texture& Canvas::texture(TextureId textureId) const                                 { return mImplPtr->assets.texture(textureId); }
 
@@ -193,10 +193,10 @@ const Texture& Canvas::texture(TextureId textureId) const                       
 // Meshes — forward to AssetRegistry
 // ---------------------------------------------------------------------------
 
-MeshId Canvas::addMesh(const Mesh& mesh)                                                  { return mImplPtr->assets.addMesh(mesh); }
-MeshId Canvas::addMesh(Mesh&& mesh)                                                       { return mImplPtr->assets.addMesh(std::move(mesh)); }
-void Canvas::removeMesh(MeshId meshId)                                                    { mImplPtr->assets.removeMesh(meshId); }
-void Canvas::setMesh(const BellotaId bellotaId, const MeshId meshId)                      { mImplPtr->assets.setMesh(bellotaId, meshId); }
+MeshId Canvas::addMesh(const Mesh& mesh)                                                  { return mImplPtr->frameRunner.addMesh(mImplPtr->assets, mesh); }
+MeshId Canvas::addMesh(Mesh&& mesh)                                                       { return mImplPtr->frameRunner.addMesh(mImplPtr->assets, std::move(mesh)); }
+void Canvas::removeMesh(MeshId meshId)                                                    { mImplPtr->frameRunner.removeMesh(mImplPtr->assets, meshId); }
+void Canvas::setMesh(const BellotaId bellotaId, const MeshId meshId)                      { mImplPtr->frameRunner.setMesh(mImplPtr->assets, bellotaId, meshId); }
 const Mesh& Canvas::mesh(MeshId meshId) const                                             { return mImplPtr->assets.mesh(meshId); }
 const Mesh& Canvas::mesh(BellotaId bellotaId) const                                       { return mImplPtr->assets.mesh(bellotaId); }
 
@@ -206,16 +206,24 @@ const Mesh& Canvas::mesh(BellotaId bellotaId) const                             
 // render pass / FBO that the registry is about to free).
 // ---------------------------------------------------------------------------
 
-RenderTargetId Canvas::addRenderTarget(ScreenSize size)                                   { return mImplPtr->assets.addRenderTarget(size); }
+RenderTargetId Canvas::addRenderTarget(ScreenSize size)                                   { return mImplPtr->frameRunner.addRenderTarget(mImplPtr->assets, size); }
 
 void Canvas::removeRenderTarget(RenderTargetId renderTargetId)
 {
+    // During a live threaded session the GPU free AND the per-RTT ImGui-context
+    // teardown are deferred to the render thread (drainPendingFrees handles both);
+    // single-threaded they happen immediately here.
+    if (mImplPtr->frameRunner.threadedRunning())
+    {
+        mImplPtr->frameRunner.removeRenderTarget(mImplPtr->assets, renderTargetId);
+        return;
+    }
     mImplPtr->imguiRtt.releaseContext(renderTargetId);
     mImplPtr->assets.removeRenderTarget(renderTargetId);
 }
 
 TextureId Canvas::renderTargetTexture(RenderTargetId renderTargetId) const                { return mImplPtr->assets.renderTargetTexture(renderTargetId); }
-void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor) { mImplPtr->assets.setRenderTargetClearColor(renderTargetId, clearColor); }
+void Canvas::setRenderTargetClearColor(RenderTargetId renderTargetId, glm::vec4 clearColor) { mImplPtr->frameRunner.setRenderTargetClearColor(mImplPtr->assets, renderTargetId, clearColor); }
 
 // ---------------------------------------------------------------------------
 // DenseLands — forward to FrameRunner (ExplorerManager<DenseLand> lives there)
@@ -273,38 +281,49 @@ void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, Im
         });
 }
 
+// The ImguiImageManager shares the AssetRegistry (RTT alloc/free, texture/mesh pins) and the
+// registered-entry map with the render thread's resolveImages(). Serialize every sim-side call
+// under the same asset mutex that guards renderSnapshotContents, so a threaded session's
+// register/update/unregister/draw can't race the render side (a no-op lock single-threaded).
 ImguiImageId Canvas::registerImguiImage(const Visual& visual, const ImguiImageSize::Spec& sizeSpec)
 {
+    auto lock = mImplPtr->frameRunner.lockAssetsIfThreaded();
     return mImplPtr->imguiImages.registerImage(visual, sizeSpec, mImplPtr->frameRunner.contentScale());
 }
 
 void Canvas::updateImguiImage(ImguiImageId imageId, const Visual& visual)
 {
+    auto lock = mImplPtr->frameRunner.lockAssetsIfThreaded();
     mImplPtr->imguiImages.updateImage(imageId, visual, mImplPtr->frameRunner.contentScale());
 }
 
 void Canvas::unregisterImguiImage(ImguiImageId imageId)
 {
+    auto lock = mImplPtr->frameRunner.lockAssetsIfThreaded();
     mImplPtr->imguiImages.unregisterImage(imageId);
 }
 
 void Canvas::imguiImage(ImguiImageId imageId, std::optional<glm::vec2> drawSize)
 {
+    auto lock = mImplPtr->frameRunner.lockAssetsIfThreaded();
     mImplPtr->imguiImages.drawImage(imageId, drawSize);
 }
 
 std::uint64_t Canvas::imguiImageHandle(ImguiImageId imageId) const
 {
+    auto lock = mImplPtr->frameRunner.lockAssetsIfThreaded();
     return mImplPtr->imguiImages.handleOf(imageId);
 }
 
 glm::vec2 Canvas::imguiImageSize(ImguiImageId imageId) const
 {
+    auto lock = mImplPtr->frameRunner.lockAssetsIfThreaded();
     return mImplPtr->imguiImages.sizeOf(imageId);
 }
 
 bool Canvas::isImguiImageReady(ImguiImageId imageId) const
 {
+    auto lock = mImplPtr->frameRunner.lockAssetsIfThreaded();
     return mImplPtr->imguiImages.isReady(imageId);
 }
 
@@ -386,20 +405,39 @@ const bool& Canvas::stats() const                                { return mImplP
 
 void Canvas::run()
 {
-    auto update = [](float){};
-    Controller controller;
-    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, update, controller);
+    // Threaded: empty update + ui, forwarded to the sim/render split like run(update, ui).
+    run([](float){}, [](float){});
 }
 
 void Canvas::run(std::function<void(float deltaTime)> update)
 {
-    Controller controller;
-    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, update, controller);
+    // Threaded: run `update` on the sim thread with an empty ui. (ImGui belongs in the
+    // run(update, ui[, ...]) overloads — see the header note.)
+    run(std::move(update), [](float){});
 }
 
 void Canvas::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
+    // Deprecated single-threaded path (kept for demos not yet ported to the threaded
+    // sim/render split). Suppress the self-deprecation warning on this definition.
     mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, update, controller);
+}
+
+void Canvas::run(std::function<void(float)> update, std::function<void(float)> uiCallback,
+                 Controller& simController, Controller& renderController)
+{
+    mImplPtr->frameRunner.runThreaded(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages,
+                                      std::move(update), std::move(uiCallback), simController, renderController);
+}
+
+void Canvas::run(std::function<void(float)> update, std::function<void(float)> uiCallback)
+{
+    // Distinct empty controllers: the sim controller is fed on the sim thread and the
+    // render controller pumped on the main thread, so they must not be the same object.
+    Controller simController;
+    Controller renderController;
+    mImplPtr->frameRunner.runThreaded(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages,
+                                      std::move(update), std::move(uiCallback), simController, renderController);
 }
 
 void Canvas::tick(float deltaTime, std::function<void(float)> update, Controller& controller)
@@ -422,6 +460,56 @@ void Canvas::tick(float deltaTime)
 void Canvas::close()
 {
     mImplPtr->frameRunner.close();
+}
+
+// ---------------------------------------------------------------------------
+// Threaded driver (two-thread sim/render split) — forward to FrameRunner
+// ---------------------------------------------------------------------------
+
+void Canvas::beginThreadedSession(Controller& controller)
+{
+    mImplPtr->frameRunner.beginThreadedSession(*this, controller);
+}
+
+bool Canvas::isThreadedRunning() const
+{
+    return mImplPtr->frameRunner.threadedRunning();
+}
+
+void Canvas::commit(float deltaTime, std::function<void(float)> update)
+{
+    mImplPtr->frameRunner.commitFrame(mImplPtr->assets, deltaTime, std::move(update), {});
+}
+
+void Canvas::commit(float deltaTime, std::function<void(float)> update, std::function<void(float)> uiCallback)
+{
+    mImplPtr->frameRunner.commitFrame(mImplPtr->assets, deltaTime, std::move(update), std::move(uiCallback));
+}
+
+void Canvas::commit(float deltaTime, std::function<void(float)> update, Controller& simController)
+{
+    mImplPtr->frameRunner.commitFrame(mImplPtr->assets, deltaTime, std::move(update), simController);
+}
+
+void Canvas::commit(float deltaTime, std::function<void(float)> update,
+                    std::function<void(float)> uiCallback, Controller& simController)
+{
+    mImplPtr->frameRunner.commitFrame(mImplPtr->assets, deltaTime, std::move(update), std::move(uiCallback), simController);
+}
+
+void Canvas::renderFrame(Controller& controller)
+{
+    mImplPtr->frameRunner.renderFrameThreaded(mImplPtr->assets, mImplPtr->imguiRtt, controller);
+}
+
+bool Canvas::imguiWantsMouse() const
+{
+    return mImplPtr->frameRunner.threadedWantsMouse();
+}
+
+bool Canvas::imguiWantsKeyboard() const
+{
+    return mImplPtr->frameRunner.threadedWantsKeyboard();
 }
 
 void Canvas::requestScreenshot()

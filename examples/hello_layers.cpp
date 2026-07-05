@@ -86,25 +86,27 @@ int main()
     // Initialize layer index variable
     int layer = 0;
 
-    // Create a controller for handling user inputs
-    Nothofagus::Controller controller;
+    // Game input — dispatched on the sim thread; mutates the live scene.
+    Nothofagus::Controller simController;
 
     // Register a keybinding for "W" to increment the current layer
-    controller.registerAction({Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Press}, [&]()
+    simController.registerAction({Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
         layer = (layer + 1) % 5;  // Cycle to the next layer (0-4)
         animatedbellota.currentLayer() = layer;  // Update the visible layer
     });
 
     // Register a keybinding for "S" to decrement the current layer
-    controller.registerAction({Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Press}, [&]()
+    simController.registerAction({Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
         layer = (layer + 4) % 5;  // Cycle to the previous layer (0-4)
         animatedbellota.currentLayer() = layer;  // Update the visible layer
     });
 
-    // Run the canvas with the update function and controller logic
-    canvas.run(update, controller);
+    // Multithreaded convenience: sim thread runs update + simController; the main thread
+    // runs the render loop. No ImGui and no window input, so ui + renderController are empty.
+    Nothofagus::Controller renderController;
+    canvas.run(update, [](float){}, simController, renderController);
 
     return 0;
 }

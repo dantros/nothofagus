@@ -42,6 +42,7 @@ int main()
     bool leftKeyPressed = false;
     bool rightKeyPressed = false;
 
+    // Game logic — runs on the sim thread (no ImGui here).
     auto update = [&](float dt)
     {
         time += dt;
@@ -49,14 +50,6 @@ int main()
         Nothofagus::Bellota& bellota = canvas.bellota(bellotaId);
         float scale = 2.0f + 0.5f * std::sin(0.005f * time);
         bellota.transform().scale() = glm::vec2(scale, scale);
-
-        ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
-        ImGui::Begin("Hello there!");
-        ImGui::Text("Discrete control keys: W, S, ESCAPE");
-        ImGui::Text("Continuous control keys: A, D");
-        ImGui::Text("Show/hide performance stats: Q");
-        ImGui::Text("Toggle fullscreen/windowed in the current monitor: F");
-        ImGui::End();
 
         if (rotate)
             bellota.transform().angle() += angularSpeed * dt;
@@ -70,36 +63,56 @@ int main()
         bellota.transform().location().x = std::clamp<float>(bellota.transform().location().x, 10, screenSize.width-10);
     };
 
-    Nothofagus::Controller controller;
-    controller.registerAction({Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Press}, [&]()
+    // ImGui — runs on the sim-UI context (sim thread), cloned to the render thread.
+    auto ui = [&](float)
+    {
+        ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
+        ImGui::Begin("Hello there!");
+        ImGui::Text("Discrete control keys: W, S, ESCAPE");
+        ImGui::Text("Continuous control keys: A, D");
+        ImGui::Text("Show/hide performance stats: Q");
+        ImGui::Text("Toggle fullscreen/windowed in the current monitor: F");
+        ImGui::End();
+    };
+
+    // Game input — dispatched on the sim thread; mutates the live scene / sim state.
+    Nothofagus::Controller simController;
+    simController.registerAction({Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
         canvas.bellota(bellotaId).transform().location().y += 10.0f;
     });
-    controller.registerAction({Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Press}, [&]()
+    simController.registerAction({Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
         canvas.bellota(bellotaId).transform().location().y -= 10.0f;
     });
-    controller.registerAction({Nothofagus::Key::A, Nothofagus::DiscreteTrigger::Press}, [&]()
+    simController.registerAction({Nothofagus::Key::A, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
         leftKeyPressed = true;
     });
-    controller.registerAction({Nothofagus::Key::A, Nothofagus::DiscreteTrigger::Release}, [&]()
+    simController.registerAction({Nothofagus::Key::A, Nothofagus::DiscreteTrigger::Release}, [&]()
     {
         leftKeyPressed = false;
     });
-    controller.registerAction({Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Press}, [&]()
+    simController.registerAction({Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
         rightKeyPressed = true;
     });
-    controller.registerAction({Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Release}, [&]()
+    simController.registerAction({Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Release}, [&]()
     {
         rightKeyPressed = false;
     });
-    controller.registerAction({ Nothofagus::Key::Q, Nothofagus::DiscreteTrigger::Press }, [&]()
+    simController.registerAction({ Nothofagus::Key::Q, Nothofagus::DiscreteTrigger::Press }, [&]()
     {
         canvas.stats() = not canvas.stats();
     });
-    controller.registerAction({ Nothofagus::Key::F, Nothofagus::DiscreteTrigger::Press }, [&]()
+    simController.registerAction({Nothofagus::Key::SPACE, Nothofagus::DiscreteTrigger::Press}, [&]()
+    {
+        rotate = not rotate;
+    });
+
+    // Window input — dispatched on the main thread; window/monitor ops + close.
+    Nothofagus::Controller renderController;
+    renderController.registerAction({ Nothofagus::Key::F, Nothofagus::DiscreteTrigger::Press }, [&]()
     {
         if (canvas.isFullscreen())
         {
@@ -111,13 +124,11 @@ int main()
             canvas.setFullScreenOnMonitor(monitor);
         }
     });
-    controller.registerAction({Nothofagus::Key::SPACE, Nothofagus::DiscreteTrigger::Press}, [&]()
-    {
-        rotate = not rotate;
-    });
-    controller.registerAction({Nothofagus::Key::ESCAPE, Nothofagus::DiscreteTrigger::Press}, [&]() { canvas.close(); });
-    
-    canvas.run(update, controller);
-    
+    renderController.registerAction({Nothofagus::Key::ESCAPE, Nothofagus::DiscreteTrigger::Press}, [&]() { canvas.close(); });
+
+    // Multithreaded convenience: sim thread runs update + ui + simController; the
+    // main thread runs the render loop + renderController.
+    canvas.run(update, ui, simController, renderController);
+
     return 0;
 }

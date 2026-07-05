@@ -338,6 +338,17 @@ void GlfwBackend::setWindowTitle(const std::string& title)
     glfwSetWindowTitle(mGlfwWindow, title.c_str());
 }
 
+std::string GlfwBackend::getClipboardText() const
+{
+    const char* text = glfwGetClipboardString(mGlfwWindow);
+    return text != nullptr ? std::string(text) : std::string();
+}
+
+void GlfwBackend::setClipboardText(const std::string& text)
+{
+    glfwSetClipboardString(mGlfwWindow, text.c_str());
+}
+
 ScreenSize GlfwBackend::getPrimaryMonitorSize()
 {
     glfwInit();  // idempotent — safe if Canvas has already initialised it

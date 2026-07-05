@@ -25,11 +25,23 @@ void TexturePack::syncToGpu(ActiveBackend& backend)
         mode == TextureMode::Indirect ||
         mode == TextureMode::TileMap;
 
+    // markTextureAsDirty() deferral: free the GPU handles here (render thread) so the
+    // first-upload branch below re-uploads from the retained CPU texture. clear() (in
+    // freeGpuResources) only resets the GPU optionals, so `texture` survives.
+    if (mContentDirty && !isProxy())
+    {
+        if (dtextureOpt.has_value())
+            freeGpuResources(backend);
+        mContentDirty = false;
+        mFilterDirty = false; // a re-upload bakes the current filters
+    }
+
     if (isDirty() && !isProxy())
     {
         // First upload — bring atlas, palette, and (for tilemaps) map online,
         // then wire them together via the backend's link* binding ops.
         dtextureOpt = backend.uploadTexture(texture.value(), minFilter, magFilter);
+        mFilterDirty = false; // uploadTexture baked the current filters
 
         if (isIndirectOrTileMap)
         {
@@ -84,6 +96,16 @@ void TexturePack::syncToGpu(ActiveBackend& backend)
             backend.updatePaletteTexture(*dpaletteTextureOpt, indirectTexture.generatePaletteData());
             indirectTexture.clearPaletteDirty();
         }
+    }
+
+    // setTextureMin|MagFilter() deferral: apply filters to the live GPU texture here
+    // (render thread). Skipped for Indirect (the setters never flag those — they need
+    // GL_NEAREST) and when no GPU texture exists yet (the first upload bakes filters).
+    if (mFilterDirty && dtextureOpt.has_value() && !isProxy())
+    {
+        backend.setTextureMinFilter(*dtextureOpt, minFilter);
+        backend.setTextureMagFilter(*dtextureOpt, magFilter);
+        mFilterDirty = false;
     }
 }
 

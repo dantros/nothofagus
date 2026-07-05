@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 #include <chrono>
+#include <atomic>
 
 namespace Nothofagus
 {
@@ -53,6 +54,9 @@ public:
 
     void setWindowTitle(const std::string& title);
 
+    std::string getClipboardText() const;
+    void setClipboardText(const std::string& text);
+
     static ScreenSize getPrimaryMonitorSize();
     static float getPrimaryMonitorContentScale();
 
@@ -60,7 +64,9 @@ private:
     int mWidth;
     int mHeight;
     std::chrono::steady_clock::time_point mStartTime;
-    bool mRunning = true;
+    // Written by requestClose() (which close() may invoke from the sim thread) and read by
+    // isRunning() on the render thread in the threaded run loop — atomic to avoid a data race.
+    std::atomic<bool> mRunning{true};
 };
 
 } // namespace Nothofagus

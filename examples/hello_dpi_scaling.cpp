@@ -48,10 +48,17 @@ int main()
     char   nameBuf[64]   = "Nothofagus";
     float  time          = 0.0f;
 
-    canvas.run([&](float deltaTimeMS)
+    // Game logic on the sim thread: advance time, rotate the diegetic display bellota.
+    auto update = [&](float deltaTimeMS)
     {
         time += deltaTimeMS;
+        canvas.bellota(diegeticBellotaId).transform().angle() = 0.0003f * time;
+    };
 
+    // Standard-UI + diegetic ImGui on the sim thread (sim-UI context, cloned to render). The
+    // diegetic renderImguiTo callback also runs sim-side and is cloned per RTT.
+    auto ui = [&](float)
+    {
         // Apply the chosen scale knobs to the main (standard-UI) context.
         canvas.setContentScaleOverride(useOsScale ? std::optional<float>{} : std::optional<float>{overrideScale});
         ImGui::GetStyle().FontScaleMain = fontZoom;
@@ -138,7 +145,6 @@ int main()
         ImGui::End();
 
         // ----- The diegetic panel: game-resolution, NOT DPI-scaled ------------
-        canvas.bellota(diegeticBellotaId).transform().angle() = 0.0003f * time;
         canvas.renderImguiTo(renderTargetId, diegeticId, [&]
         {
             ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
@@ -154,7 +160,9 @@ int main()
             ImGui::ProgressBar(0.5f + 0.5f * std::sin(0.003f * time));
             ImGui::End();
         });
-    });
+    };
+
+    canvas.run(update, ui);
 
     return 0;
 }

@@ -3,12 +3,16 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <cstdint>
+#include <memory>
 #include "texture_id.h"
 #include "mesh.h"           // MeshId
 #include "render_target.h"  // RenderTargetId
+#include "screen_size.h"    // ScreenSize
 
 namespace Nothofagus
 {
+
+class ClonedImDrawData; // fwd-decl keeps imgui.h out of this header
 
 /**
  * @file render_snapshot.h
@@ -20,10 +24,10 @@ namespace Nothofagus
  * `RenderSnapshot` — a flat, trivially-copyable display list. The render side
  * draws only from the snapshot and never touches a `Bellota`.
  *
- * In Milestone 1 the snapshot is built and consumed back-to-back on the same
- * thread (`FrameRunner::buildSnapshot` → `renderSnapshot`), so it carries no
- * concurrency cost yet; it exists to establish the POD data boundary. At the
- * thread-flip milestone the snapshot becomes the double-buffered hand-off.
+ * In Single mode the snapshot is built and consumed back-to-back on the same
+ * thread (`FrameRunner::produce(Single)` → `consume(Single)`), so it carries no
+ * concurrency cost; it exists to establish the POD data boundary. In Threaded
+ * mode the same POD becomes the triple-buffered sim→render hand-off.
  *
  * Resources are referenced by id (`TextureId`/`MeshId`/`RenderTargetId`), never
  * by GPU handle (`DTexture`/`DMesh`): a freshly created texture has no GPU
@@ -55,13 +59,44 @@ struct RttPass
     std::vector<DrawItem> draws;
 };
 
+/// One diegetic-ImGui pass: the sim thread ran the user's renderImguiTo callback on a
+/// per-RTT secondary ImGui context and deep-cloned its draw data here (analogous to
+/// `RenderSnapshot::mainUi`). The render thread replays the clone into `target` — it never
+/// runs a user callback or a secondary NewFrame. `ui` is owned; storage is reused per slot.
+struct RttImguiClone
+{
+    RenderTargetId                    target;
+    std::unique_ptr<ClonedImDrawData> ui;
+
+    RttImguiClone();
+    ~RttImguiClone();                                   // out-of-line: ClonedImDrawData incomplete here
+    RttImguiClone(RttImguiClone&&) noexcept;
+    RttImguiClone& operator=(RttImguiClone&&) noexcept;
+    RttImguiClone(const RttImguiClone&) = delete;
+    RttImguiClone& operator=(const RttImguiClone&) = delete;
+};
+
 /// The full per-frame display list the render side consumes.
 struct RenderSnapshot
 {
     std::uint64_t         commitSeq{0};   ///< monotonic commit counter; the deferred-free clock
     std::vector<DrawItem> draws;          ///< main pass, depth-sorted at commit
     std::vector<RttPass>  rttPasses;      ///< insertion order preserved (nested-RTT dependency)
+    std::vector<RttImguiClone> rttUi;     ///< diegetic-ImGui clones (one per renderImguiTo pass this commit)
     glm::vec3             clearColor{0.0f};
+    /// Logical canvas size captured at commit. The render side uses this (not the
+    /// live atomic) so the viewport / world transform match the pool this snapshot
+    /// was built for — removes the 1-frame letterbox transient on a threaded
+    /// setScreenSize (roadmap C10).
+    ScreenSize            screenSize{};
+    /// Cloned main-context ImGui draw data produced on the sim thread (M3),
+    /// null until ImGui has been committed. Lazily allocated by the producer.
+    std::unique_ptr<ClonedImDrawData> mainUi;
+
+    RenderSnapshot();
+    ~RenderSnapshot();                                // out-of-line: ClonedImDrawData is incomplete here
+    RenderSnapshot(const RenderSnapshot&) = delete;   // owns unique_ptr; never copied
+    RenderSnapshot& operator=(const RenderSnapshot&) = delete;
 };
 
 }

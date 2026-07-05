@@ -74,6 +74,18 @@ public:
     /// already done by collectUnusedTextures().
     void freeRetiredTexture(TextureId textureId);
 
+    /// Threaded explicit-remove counterpart to removeTexture(): does only the
+    /// usage-monitor bookkeeping (removes the texture from the unused set) and
+    /// leaves GPU free + container erase to a later freeRetiredTexture() once no
+    /// in-flight snapshot references it. Returns true if the texture was in the
+    /// unused set (and so should be queued for deferred free); false if it was
+    /// already retired/swept (e.g. a prior removeBellota's collectUnusedTextures
+    /// already collected it) or is still referenced — in both cases the caller
+    /// must NOT queue it (avoids a double free). Tolerant by design, so the
+    /// removeBellota-sweep + explicit-removeTexture ordering (explorer teardown)
+    /// is safe.
+    bool retireTexture(TextureId textureId);
+
     // ---------- Meshes ----------
     MeshId addMesh(const Mesh& mesh);
     MeshId addMesh(Mesh&& mesh);
@@ -93,6 +105,14 @@ public:
     /// Free GPU resources for a mesh returned by collectUnusedMeshes() and erase
     /// it from the container. Does not touch the usage monitor.
     void freeRetiredMesh(MeshId meshId);
+
+    /// Threaded explicit-remove counterpart to removeMesh(): keeps the removeMesh
+    /// asserts (known MeshId, not an auto-quad) but does only the usage-monitor
+    /// bookkeeping, leaving GPU free + container erase to a later freeRetiredMesh().
+    /// Returns true if the mesh was in the unused set (queue it for deferred free);
+    /// false if already retired/swept or still referenced (do NOT queue). Tolerant,
+    /// mirroring retireTexture().
+    bool retireMesh(MeshId meshId);
 
     // ---------- Render targets ----------
     RenderTargetId addRenderTarget(ScreenSize size);

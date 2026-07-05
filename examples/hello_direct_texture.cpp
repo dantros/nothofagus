@@ -67,8 +67,9 @@ int main()
         bellota2.transform().location().x = 75.0f + 60.0f * std::sin(0.0005f * time);
     };
     
-    Nothofagus::Controller controller;
-    controller.registerAction({Nothofagus::Key::SPACE, Nothofagus::DiscreteTrigger::Press}, [&]()
+    // Game input — dispatched on the sim thread; mutates external texture memory + marks it dirty.
+    Nothofagus::Controller simController;
+    simController.registerAction({Nothofagus::Key::SPACE, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
         // rotating selection of new color
         const std::uint8_t newR = static_cast<std::uint8_t>(255.f * textureColors.at(colorIndex).r);
@@ -94,7 +95,11 @@ int main()
 
         spdlog::info("Texture modified during runtime. Current color: ({}, {}, {}, {})", newR, newG, newB, newA);
     });
-    canvas.run(update, controller);
+
+    // Multithreaded convenience: sim thread runs update + simController; the main thread
+    // runs the render loop. No ImGui and no window input, so ui + renderController are empty.
+    Nothofagus::Controller renderController;
+    canvas.run(update, [](float){}, simController, renderController);
 
     return 0;
 }

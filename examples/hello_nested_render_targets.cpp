@@ -100,7 +100,9 @@ int main()
     float time = 0.0f;
     constexpr float pi = std::numbers::pi_v<float>;
 
-    canvas.run([&](float deltaTime)
+    // Sim thread runs update (scene + nested renderTo); the main thread renders. The RTT
+    // passes ride the frame snapshot, so nesting works on the threaded path.
+    auto update = [&](float deltaTime)
     {
         time += deltaTime;
 
@@ -131,7 +133,9 @@ int main()
         // before the next level samples it as a texture.
         canvas.renderTo(innerRenderTargetId, {redBellotaId, yellowBellotaId});
         canvas.renderTo(middleRenderTargetId, {innerDisplayBellotaId, blueBellotaId});
-    });
+    };
+
+    canvas.run(update, [](float){});
 
     return 0;
 }

@@ -1,0 +1,22 @@
+# ThreadSanitizer suppressions for nothofagus sanitizer runs against SwiftShader (headless
+# Vulkan). These target KNOWN-BENIGN noise from the software Vulkan ICD / validation layer /
+# the ImGui Vulkan backend's single-threaded init & shutdown — NOT nothofagus's own sim/render
+# synchronization (mImguiMutex, mThreadedAssetMutex, the scheduled-screenshot channel, etc.).
+#
+# Keep this list tight: only third-party / init-teardown noise belongs here. A race in
+# nothofagus code must be fixed, never suppressed.
+
+# SwiftShader / Vulkan ICD internals (its own JIT'd worker-thread pool).
+called_from_lib:libvk_swiftshader.so
+deadlock:libvk_swiftshader.so
+race:libvk_swiftshader.so
+
+# Khronos validation layer (own worker thread + shared_mutex), if it is ever enabled.
+called_from_lib:libVkLayer_khronos_validation.so
+deadlock:libVkLayer_khronos_validation.so
+race:libVkLayer_khronos_validation.so
+
+# ImGui Vulkan backend create/destroy: locks taken inside vkCreate*/vkDestroy* during the
+# single-threaded Canvas construction/teardown (cannot deadlock — never run concurrently).
+deadlock:ImGui_ImplVulkan_Init
+deadlock:ImGui_ImplVulkan_Shutdown

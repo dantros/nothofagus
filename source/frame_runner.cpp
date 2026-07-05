@@ -15,6 +15,7 @@
 #include <glm/gtx/matrix_transform_2d.hpp>
 #include <glm/ext.hpp>
 #include <imgui.h>
+#include "imgui_draw_clone.h"
 #include "imgui_overlay.h"
 #include "backends/window_backend.h"
 #include <cmath>
@@ -29,6 +30,34 @@
 
 namespace Nothofagus
 {
+
+// Sim-UI ImGui clipboard callbacks (B7). They run on the SIM thread and so can't
+// call the main-thread-only window clipboard API; instead they read/write the
+// FrameRunner's marshal buffers, which the render thread syncs with the OS clipboard.
+// Plain function pointers (ImGui's callback type), so they reach the live instance
+// via the static sThreadedClipboardOwner set in beginThreadedSession.
+FrameRunner* FrameRunner::sThreadedClipboardOwner = nullptr;
+
+const char* FrameRunner::threadedGetClipboardText(ImGuiContext*)
+{
+    // ImGui requires the returned pointer to stay valid until the next call; a
+    // thread_local buffer (this only runs on the sim thread) satisfies that.
+    thread_local std::string buffer;
+    if (sThreadedClipboardOwner != nullptr)
+    {
+        std::lock_guard<std::mutex> lock(sThreadedClipboardOwner->mClipboardMutex);
+        buffer = sThreadedClipboardOwner->mClipboardFromOs;
+    }
+    return buffer.c_str();
+}
+
+void FrameRunner::threadedSetClipboardText(ImGuiContext*, const char* text)
+{
+    if (sThreadedClipboardOwner == nullptr)
+        return;
+    std::lock_guard<std::mutex> lock(sThreadedClipboardOwner->mClipboardMutex);
+    sThreadedClipboardOwner->mClipboardToOs = (text != nullptr) ? std::string(text) : std::string();
+}
 
 // Window is the selected backend type. Forward declared in frame_runner.h;
 // defined here so the backend headers are only included from this translation unit.
@@ -56,13 +85,18 @@ FrameRunner::FrameRunner(
     mHeadless(headless),
     mGameViewport{0, 0, 0, 0}
 {
+    // The constructing thread is the render/main thread: the window lives here and
+    // GLFW/SDL require window + monitor ops on it, in every mode. Anchor the
+    // render-thread guard to it so window ops are checked even single-threaded.
+    mRenderThreadId = std::this_thread::get_id();
+
     // Initialize the window backend (creates window, GL/Vulkan context, loads GLAD for OpenGL).
     // The GL swap interval (derived from the present mode) is applied here, while the GL
     // context is being made current; it is a no-op in Vulkan builds.
     mWindow = std::make_unique<Window>(
         mTitle,
-        static_cast<int>(mScreenSize.width  * mPixelSize),
-        static_cast<int>(mScreenSize.height * mPixelSize),
+        static_cast<int>(screenSize.width  * mPixelSize),
+        static_cast<int>(screenSize.height * mPixelSize),
         !mHeadless, // visible
         presentModeToSwapInterval(mPresentMode)
     );
@@ -86,9 +120,10 @@ FrameRunner::FrameRunner(
     // image from this size); the windowed policy ignores it and sizes the swapchain from
     // the surface. Passing the unscaled logical size sized the headless offscreen image
     // smaller than the device-sized capture region -> out-of-bounds copy at pixelSize > 1.
+    // (mScreenSize is atomic on this branch, so use the ctor's local screenSize param.)
     mBackend.initialize(mWindow->nativeHandle(),
-        {static_cast<int>(mScreenSize.width  * mPixelSize),
-         static_cast<int>(mScreenSize.height * mPixelSize)}, mPresentMode);
+        {static_cast<int>(screenSize.width  * mPixelSize),
+         static_cast<int>(screenSize.height * mPixelSize)}, mPresentMode);
     mBackend.initImGuiRenderer();
 
     // Font setup happens after construction at the Canvas level — once `mAssets`
@@ -101,6 +136,22 @@ FrameRunner::~FrameRunner()
     // working. Canvas's dtor is responsible for draining `mImguiRtt` and
     // `mAssets` GPU resources BEFORE destroying FrameRunner — by the time this
     // body runs they're already torn down, leaving us to shut the backend.
+    // Destroy the sim-UI context (M3) first — it shares (does not own) the main
+    // context's font atlas, so it must go before the main context is destroyed.
+    // It has no platform/renderer backend attached, so no backend teardown is
+    // needed. The caller has already joined the sim thread, so it is not current
+    // on any thread.
+    if (mSimUiContext != nullptr)
+    {
+        ImGui::DestroyContext(mSimUiContext);
+        mSimUiContext = nullptr;
+    }
+
+    // Drop the clipboard-callback back-pointer if it targets this instance, so a
+    // later stray callback can't dereference a destroyed FrameRunner.
+    if (sThreadedClipboardOwner == this)
+        sThreadedClipboardOwner = nullptr;
+
     mBackend.shutdown(); // detaches the ImGui renderer backend (ImGui_Impl*_Shutdown).
 
     // Tear the window backend down now (instead of waiting for member destruction)
@@ -152,6 +203,14 @@ void FrameRunner::applyMainContextScale()
     mAppliedScale = scale;
 }
 
+void FrameRunner::beginMainImguiFrame()
+{
+    mBackend.imguiNewFrame();
+    mWindow->newImGuiFrame();
+    applyMainContextScale(); // DPI-scale the main (standard-UI) context before NewFrame.
+    ImGui::NewFrame();
+}
+
 std::size_t FrameRunner::getCurrentMonitor() const
 {
     return mWindow->getCurrentMonitor();
@@ -190,20 +249,59 @@ ScreenSize FrameRunner::windowSize() const
     return mWindow->getWindowSize();
 }
 
+void FrameRunner::debugCheckRenderThread(const char* op) const
+{
+#ifndef NDEBUG
+    // Ungated: window/monitor ops require the main thread in every mode, and the
+    // render-thread id is anchored at construction, so this holds before/after a
+    // session and in single-thread run()/tick() too (all on the construction thread).
+    if (mRenderThreadId != std::thread::id{})
+        debugCheck(std::this_thread::get_id() == mRenderThreadId,
+                   std::string("Canvas::") + op + " must be called on the render (main) thread "
+                   "(it touches the window/monitor).");
+#else
+    (void)op;
+#endif
+}
+
+void FrameRunner::debugCheckSimThread(const char* op) const
+{
+#ifndef NDEBUG
+    if (mThreadedRunning.load(std::memory_order_acquire) && mSimThreadId != std::thread::id{})
+        debugCheck(std::this_thread::get_id() == mSimThreadId,
+                   std::string("Canvas::") + op + " must be called on the sim thread during a "
+                   "threaded session (it accesses the live scene).");
+#else
+    (void)op;
+#endif
+}
+
 void FrameRunner::requestScreenshot()
 {
-    mScreenshotArmed = true;
+    // Threaded: the backend is render-thread-owned, so we can't arm it from the sim
+    // thread. Raise a flag; the render thread observes it in consume(Threaded) and arms
+    // there (mirrors the mThreadedCursor sim->render channel).
+    if (mThreadedRunning.load(std::memory_order_acquire))
+    {
+        mScreenshotRequested.store(true, std::memory_order_release);
+        return;
+    }
+
+    // Single-threaded: eager arm, unchanged (same thread finishes the capture).
     // Capture at the device resolution (screenSize * pixelSize), preserving the pixelSize
     // amplification and any sub-pixel bellota positioning it affords. Only the OS content
     // scale (DPI) is normalized out: the windowed capture downsamples the framebuffer
     // (device * osScale) to this device size, and headless runs at osScale == 1.
-    const glm::ivec2 gameSize{static_cast<int>(mScreenSize.width  * mPixelSize),
-                              static_cast<int>(mScreenSize.height * mPixelSize)};
+    mScreenshotArmed = true;
+    const ScreenSize screen = mScreenSize.load(std::memory_order_acquire);
+    const glm::ivec2 gameSize{static_cast<int>(screen.width  * mPixelSize),
+                              static_cast<int>(screen.height * mPixelSize)};
     mBackend.armScreenshot(gameSize);
 }
 
 std::optional<DirectTexture> FrameRunner::retrieveScreenshot()
 {
+    std::lock_guard<std::mutex> lock(mScreenshotResultMutex);
     return std::exchange(mScreenshotResult, std::nullopt);
 }
 
@@ -313,8 +411,10 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
 {
     ZoneScopedN("runOneFrame");
 
-    const RenderSnapshot& snapshot = buildSnapshot(canvas, assets, imguiRtt, imguiImages, deltaTimeMS, update, controller);
-    renderSnapshot(assets, imguiRtt, imguiImages, snapshot, deltaTimeMS, controller);
+    // Single-threaded frame: producer and consumer back-to-back on this thread.
+    const RenderSnapshot& snapshot = produce(FrameMode::Single, &canvas, assets, &imguiRtt, &imguiImages,
+                                             deltaTimeMS, std::move(update), {}, &controller);
+    consume(FrameMode::Single, assets, imguiRtt, &imguiImages, snapshot, deltaTimeMS, controller);
 
     // Deferred screenshot: the backend recorded/read the capture during this frame's
     // endFrame; finish it (read back after the fence) and hold the result for retrieval.
@@ -325,7 +425,10 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
         {
             TextureData textureData(pixels->width, pixels->height, 1);
             std::copy(pixels->data.begin(), pixels->data.end(), textureData.getDataSpan().begin());
-            mScreenshotResult = DirectTexture(std::move(textureData));
+            {
+                std::lock_guard<std::mutex> lock(mScreenshotResultMutex);
+                mScreenshotResult = DirectTexture(std::move(textureData));
+            }
             mScreenshotArmed = false;
         }
     }
@@ -333,45 +436,247 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
     FrameMark;
 }
 
-const RenderSnapshot& FrameRunner::buildSnapshot(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
-                                                 ImguiImageManager& imguiImages,
-                                                 float deltaTimeMS, std::function<void(float)> update, Controller& controller)
+// The ImGui gamepad keys that carry an analog 0..1 value (sticks + triggers), as
+// opposed to digital buttons/d-pad. These need AddKeyAnalogEvent on replay so the
+// sim-UI gets ImGui's smooth gamepad nav; everything else replays digitally (C11).
+static bool isAnalogNavKey(int key)
 {
+    return key == ImGuiKey_GamepadL2 || key == ImGuiKey_GamepadR2
+        || (key >= ImGuiKey_GamepadLStickLeft && key <= ImGuiKey_GamepadRStickDown);
+}
+
+const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, AssetRegistry& assets,
+                                           ImguiRttManager* imguiRtt, ImguiImageManager* imguiImages,
+                                           float deltaTimeMS,
+                                           std::function<void(float)> update,
+                                           std::function<void(float)> uiCallback,
+                                           Controller* controller)
+{
+    if (mode == FrameMode::Threaded)
+    {
+        // Sim thread: CPU only, no GL.
+        ZoneScopedN("commitFrame");
+
+        // Thread-affinity guards: capture the sim thread on the first commit of the
+        // session (before `update`/explorers touch the live scene), and assert every
+        // later commit is the same thread. Debug-only.
+#ifndef NDEBUG
+        const std::thread::id thisThread = std::this_thread::get_id();
+        if (mSimThreadId == std::thread::id{})
+            mSimThreadId = thisThread;
+        else
+            debugCheck(mSimThreadId == thisThread, "commit() called from more than one thread");
+#endif
+
+        // Stamp the commit seq BEFORE `update` so spawn/despawn can tag retired
+        // resources with the commit at which they leave the scene.
+        const std::uint64_t commitSeq = ++mCommitSeq;
+
+        // Feed the sim controller from the latest input snapshots (harvested
+        // render-side after the window poll) so the game `update` sees gamepad,
+        // keyboard, and mouse.
+        if (controller != nullptr)
+        {
+            ZoneScopedN("FeedInput");
+            feedGamepadInput(*controller);
+            feedGameInput(*controller);
+        }
+
+        // Advance the registered-image frame clock before update/ui so drawImage()
+        // (called from the ui callback) stamps lastUsedFrame against this commit and
+        // appendInternalPasses() below emits the "displayed this frame" targets.
+        if (imguiImages != nullptr)
+            imguiImages->beginFrame();
+
+        // 1) Game logic — lock-free, so it overlaps the render thread's sprite work.
+        //    (spawn/despawn take the asset mutex internally; bellota value writes are
+        //    sim-exclusive.)
+        {
+            ZoneScopedN("UserUpdate");
+            update(deltaTimeMS);
+        }
+
+        // 1b) Explorer pre-pass (Dense/Sparse land). It rewrites pool textures'
+        //     cell maps (setMapBulk → mMapDirty) and repositions pool bellotas, all
+        //     from the camera the user set in `update`. The map writes race the
+        //     render thread's syncToGpu upload, so hold the asset mutex around it;
+        //     the resize path re-enters via the self-locking add/remove wrappers
+        //     (mThreadedAssetMutex is recursive). canvas is null only if a malformed
+        //     session skipped beginThreadedSession.
+        if (canvas != nullptr)
+        {
+            ZoneScopedN("Explorers");
+            std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
+            mDenseLandManager.updateExplorers(*canvas);
+            mSparseLandManager.updateExplorers(*canvas);
+        }
+
+        RenderSnapshot& snapshot = mTripleBuffer.writeSlot();
+        snapshot.commitSeq = commitSeq;
+        snapshot.clearColor = mClearColor;
+        // Capture the logical canvas size so the render side draws this snapshot's
+        // pool in its own viewport/world transform (C10: no resize letterbox transient).
+        snapshot.screenSize = mScreenSize.load(std::memory_order_acquire);
+
+        // 2) ImGui frame on the sim-UI context — under the ImGui mutex so it never
+        //    touches the shared font atlas concurrently with the render thread.
+        {
+            ZoneScopedN("SimImgui");
+            std::lock_guard<std::mutex> imguiLock(mImguiMutex);
+
+            ImGui::SetCurrentContext(mSimUiContext); // thread-local current context (sim thread)
+            ImGuiIO& io = ImGui::GetIO();
+            io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures; // must match the atlas owner
+
+            ThreadedImguiInput input;
+            {
+                std::lock_guard<std::mutex> inputLock(mThreadedImguiInputMutex);
+                input = mThreadedImguiInput;
+                mThreadedImguiInput.wheelX = 0.0f; // consume accumulated wheel
+                mThreadedImguiInput.wheelY = 0.0f;
+                mThreadedImguiInput.textCharCount = 0; // consume typed characters
+            }
+            const ScreenSize screen   = mScreenSize.load(std::memory_order_acquire);
+            const float displayWidth  = input.displayWidth  > 0.0f ? input.displayWidth  : static_cast<float>(screen.width);
+            const float displayHeight = input.displayHeight > 0.0f ? input.displayHeight : static_cast<float>(screen.height);
+            io.DisplaySize = ImVec2(displayWidth, displayHeight);
+            io.DisplayFramebufferScale = ImVec2(input.framebufferScaleX, input.framebufferScaleY);
+
+            // Focus first: a loss releases held keys/mouse, avoiding stuck input.
+            io.AddFocusEvent(input.focused);
+
+            io.AddMousePosEvent(input.mouseX, input.mouseY);
+            io.AddMouseButtonEvent(0, input.mouseDown[0]);
+            io.AddMouseButtonEvent(1, input.mouseDown[1]);
+            io.AddMouseButtonEvent(2, input.mouseDown[2]);
+            if (input.wheelX != 0.0f || input.wheelY != 0.0f)
+                io.AddMouseWheelEvent(input.wheelX, input.wheelY);
+
+            // Keyboard: replay key state (ImGui dedups to changes), modifiers, text.
+            // Gamepad stick/trigger keys go through AddKeyAnalogEvent so smooth nav
+            // (continuous scroll/tween) survives the marshal, not just on/off (C11).
+            for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_MouseLeft; ++key)
+            {
+                const int index = key - ImGuiKey_NamedKey_BEGIN;
+                if (isAnalogNavKey(key))
+                    io.AddKeyAnalogEvent(static_cast<ImGuiKey>(key), input.keyDown[index], input.keyAnalog[index]);
+                else
+                    io.AddKeyEvent(static_cast<ImGuiKey>(key), input.keyDown[index]);
+            }
+            io.AddKeyEvent(ImGuiMod_Ctrl,  input.keyCtrl);
+            io.AddKeyEvent(ImGuiMod_Shift, input.keyShift);
+            io.AddKeyEvent(ImGuiMod_Alt,   input.keyAlt);
+            io.AddKeyEvent(ImGuiMod_Super, input.keySuper);
+            for (int i = 0; i < input.textCharCount; ++i)
+                io.AddInputCharacter(input.textChars[i]);
+
+            io.DeltaTime = std::max(deltaTimeMS * 0.001f, 1e-6f);
+
+            // Advance the sim commit-rate monitor off an accumulated clock (the sim
+            // thread has no window clock); smoothed like the render-side monitor (C8).
+            mSimClockMs += deltaTimeMS;
+            mSimPerfMonitor->update(mSimClockMs * 0.001f);
+
+            ImGui::NewFrame();
+            if (uiCallback)
+                uiCallback(deltaTimeMS); // user ImGui widgets, on the sim thread
+            // Stats overlay is drawn HERE (into the sim-UI frame) rather than on the
+            // render-thread main context, so it ends up in the cloned draw data that
+            // gets presented even when the app commits its own ImGui. Shows the
+            // render cadence (marshalled) next to the sim commit rate (C8).
+            if (mStats)
+            {
+                ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Appearing);
+                ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+                ImGui::Begin("stats", NULL, ImGuiWindowFlags_NoTitleBar);
+                ImGui::Text("%.2f fps (render)", mRenderFps.load(std::memory_order_acquire));
+                ImGui::Text("%.2f ms (render)",  mRenderMs.load(std::memory_order_acquire));
+                ImGui::Text("%.2f fps (sim)",    mSimPerfMonitor->getFPS());
+                ImGui::End();
+            }
+            ImGui::Render();
+
+            // Publish what the UI captured this frame so the host's game update (which
+            // runs before this section) can ignore that input next frame.
+            mImguiWantsMouse.store(io.WantCaptureMouse, std::memory_order_release);
+            mImguiWantsKeyboard.store(io.WantCaptureKeyboard, std::memory_order_release);
+
+            // Marshal the sim UI's desired cursor shape to the render thread, which
+            // applies it via the platform backend. Valid here (post-Render, before
+            // the next NewFrame resets it). int storage keeps imgui.h out of the header.
+            mThreadedCursor.store(static_cast<int>(ImGui::GetMouseCursor()), std::memory_order_release);
+
+            if (!snapshot.mainUi)
+                snapshot.mainUi = std::make_unique<ClonedImDrawData>();
+            snapshot.mainUi->cloneFrom(ImGui::GetDrawData());
+
+            // Diegetic ImGui: run each renderImguiTo callback on its secondary context here
+            // (sim thread, still under the ImGui mutex — shared atlas) and clone its draw data
+            // into the snapshot. The render thread only replays the clones. Restores mSimUiContext.
+            if (imguiRtt != nullptr)
+                imguiRtt->produceClones(deltaTimeMS, ImGui::GetIO().Fonts, snapshot.rttUi);
+        }
+
+        // 3) Project the scene (POD) — lock-free; the write slot is producer-owned.
+        {
+            ZoneScopedN("DepthSort");
+            buildMainDraws(assets.bellotas(), snapshot.draws);
+        }
+        {
+            ZoneScopedN("RttGather");
+            buildRttPasses(assets, snapshot.rttPasses);
+            // Internal RTT passes for registered ImGui images that need (re)rendering
+            // this frame, appended after the user-scheduled passes (mirrors the Single arm).
+            // Under the asset mutex: appendInternalPasses writes each entry's
+            // renderedThisFrame, which the render thread reads in resolveImages().
+            if (imguiImages != nullptr)
+            {
+                std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
+                imguiImages->appendInternalPasses(snapshot.rttPasses);
+            }
+        }
+
+        mTripleBuffer.publish();
+        return snapshot;
+    }
+
+    // FrameMode::Single — one thread; ImGui runs on the main context inside `update`
+    // and the consumer renders the live draw data, so the GPU + main ImGui frame are
+    // opened here (before `update`). canvas/imguiRtt/controller are non-null here.
     ZoneScopedN("buildSnapshot");
 
     {
         ZoneScopedN("Input");
-        controller.processInputs();
+        controller->processInputs();
     }
 
-    // Advance the ImGui-image clock before the user update issues imguiImage() draws.
-    imguiImages.beginFrame();
+    // Advance the ImGui-image clock before the user update issues ImGui-image draws.
+    // (Single arm — imguiImages is non-null here.)
+    imguiImages->beginFrame();
 
     // Drain any deferred ImGui font ops (bake-on-miss / remove) accumulated
     // since the previous frame. Atlas is guaranteed unlocked here — between
     // the previous frame's ImGui::Render() and this frame's ImGui::NewFrame().
     // Must run BEFORE mBackend.imguiNewFrame() so ImGui_Impl*_NewFrame()'s
     // lazy font-texture re-upload picks up the rebuilt atlas.
-    imguiRtt.drainPendingFontOps();
+    imguiRtt->drainPendingFontOps();
 
     // Get current framebuffer size and compute letterboxed viewport. Stored so
-    // renderSnapshot can reuse the exact same values (one getFramebufferSize per
+    // the consumer can reuse the exact same values (one getFramebufferSize per
     // frame). gameViewport() is read by user code during update (overlay
     // positioning), so it must be set before update().
     auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
     mFramebufferWidth = framebufferWidth;
     mFramebufferHeight = framebufferHeight;
-    mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, mScreenSize.width, mScreenSize.height);
+    const ScreenSize singleScreen = mScreenSize.load(std::memory_order_acquire);
+    mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, singleScreen.width, singleScreen.height);
 
     // M1: GPU-frame setup + ImGui NewFrame stay inline here (the user update
     // issues ImGui calls). These migrate to the render side at the thread flip.
     mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
 
     // Start the Dear ImGui frame
-    mBackend.imguiNewFrame();
-    mWindow->newImGuiFrame();
-    applyMainContextScale(); // DPI-scale the main (standard-UI) context before NewFrame.
-    ImGui::NewFrame();
+    beginMainImguiFrame();
 
     {
         ZoneScopedN("UserUpdate");
@@ -380,19 +685,20 @@ const RenderSnapshot& FrameRunner::buildSnapshot(Canvas& canvas, AssetRegistry& 
 
     {
         ZoneScopedN("DenseLandExplorers");
-        mDenseLandManager.updateExplorers(canvas);
+        mDenseLandManager.updateExplorers(*canvas);
     }
 
     {
         ZoneScopedN("SparseLandExplorers");
-        mSparseLandManager.updateExplorers(canvas);
+        mSparseLandManager.updateExplorers(*canvas);
     }
 
     // Stamp this frame's commit number, then detect unused resources and enqueue
-    // them for deferred free (the actual GPU free happens in renderSnapshot, once
+    // them for deferred free (the actual GPU free happens in the consumer, once
     // no in-flight snapshot references them). At depth-0 this is the same frame.
     mSnapshot.commitSeq = ++mCommitSeq;
     mSnapshot.clearColor = mClearColor;
+    mSnapshot.screenSize = singleScreen;
 
     if (mAutoTextureGC)
         for (TextureId textureId : assets.collectUnusedTextures())
@@ -411,8 +717,13 @@ const RenderSnapshot& FrameRunner::buildSnapshot(Canvas& canvas, AssetRegistry& 
         ZoneScopedN("RttGather");
         buildRttPasses(assets, mSnapshot.rttPasses);
         // Internal RTT passes for registered ImGui images that need (re)rendering this frame.
-        imguiImages.appendInternalPasses(mSnapshot.rttPasses);
+        imguiImages->appendInternalPasses(mSnapshot.rttPasses);
     }
+
+    // Diegetic ImGui: drain renderImguiTo passes into per-RTT draw-data clones (the render
+    // side replays them). Same path as the threaded arm; here producer + consumer are the
+    // same thread. The user's callbacks ran during update() above and enqueued the passes.
+    imguiRtt->produceClones(deltaTimeMS, ImGui::GetIO().Fonts, mSnapshot.rttUi);
 
     return mSnapshot;
 }
@@ -442,7 +753,7 @@ void FrameRunner::buildRttPasses(AssetRegistry& assets, std::vector<RttPass>& ou
     mPendingRttPasses.clear();
 }
 
-void FrameRunner::drainPendingFrees(AssetRegistry& assets, std::uint64_t lastRenderedSeq)
+void FrameRunner::drainPendingFrees(AssetRegistry& assets, ImguiRttManager& imguiRtt, std::uint64_t lastRenderedSeq)
 {
     std::erase_if(mPendingTextureFrees, [&](const PendingTextureFree& pending)
     {
@@ -462,21 +773,41 @@ void FrameRunner::drainPendingFrees(AssetRegistry& assets, std::uint64_t lastRen
         }
         return false;
     });
+    std::erase_if(mPendingRenderTargetFrees, [&](const PendingRenderTargetFree& pending)
+    {
+        if (pending.retireSeq <= lastRenderedSeq)
+        {
+            // Tear down the per-RTT ImGui secondary context (GPU + render-thread
+            // affine) first, then free the FBO/VkImage + proxy texture and erase
+            // both containers. Safe here on the render thread under the asset mutex.
+            imguiRtt.releaseContext(pending.id);
+            assets.removeRenderTarget(pending.id);
+            return true;
+        }
+        return false;
+    });
 }
 
-void FrameRunner::renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRtt,
-                                 ImguiImageManager& imguiImages,
-                                 const RenderSnapshot& snapshot, float deltaTimeMS, Controller& controller)
+void FrameRunner::renderSnapshotContents(AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                                         ImguiImageManager* imguiImages,
+                                         const RenderSnapshot& snapshot)
 {
-    ZoneScopedN("renderSnapshot");
-
-    // Deferred free: release resources retired no later than the last fully
-    // rendered snapshot. At depth-0 (single thread) the snapshot we are about to
-    // render IS the latest commit, so frees happen this frame, before upload —
-    // identical timing to the old clearUnused* path.
+    // Single-mode orchestrator: producer + consumer are the same thread, so run the
+    // phases back-to-back with no locks. The threaded consume drives these same phases
+    // itself, locking each at the right granularity (see consume(FrameMode::Threaded)).
     mLastRenderedSeq = snapshot.commitSeq;
-    drainPendingFrees(assets, mLastRenderedSeq);
+    drainPendingFrees(assets, imguiRtt, mLastRenderedSeq);
+    renderSnapshotPreMain(assets, imguiImages, snapshot);
+    imguiRtt.replayClones(snapshot.rttUi);
+    renderSnapshotMain(assets, snapshot);
+}
 
+void FrameRunner::renderSnapshotPreMain(AssetRegistry& assets, ImguiImageManager* imguiImages,
+                                        const RenderSnapshot& snapshot)
+{
+    // Asset-only: GPU uploads + sprite RTT passes + registered-image resolve. None of this
+    // touches the shared font atlas, so on the threaded path it needs only the asset mutex
+    // and overlaps the sim's UI-build. (The vsync swap is done by the caller, unlocked.)
     {
         ZoneScopedN("TextureUpload");
         for (auto& [textureIndex, texturePack] : assets.textures())
@@ -494,8 +825,6 @@ void FrameRunner::renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRt
         for (auto& [meshIndex, meshPack] : assets.meshes())
             meshPack.syncToGpu(mBackend);
     }
-
-    const glm::mat3 worldTransformMat = computeWorldTransformMat(mScreenSize);
 
     {
         ZoneScopedN("RttPasses");
@@ -528,15 +857,26 @@ void FrameRunner::renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRt
 
         // The internal RTTs for registered ImGui images were just drawn (they are ordinary
         // RTT passes); refresh their flat-2D and create the ImGui handles the main UI samples.
-        // Runs before the main ImGui render below.
-        imguiImages.resolveImages();
-
-        // ImGui-to-RTT passes — each uses a secondary ImGuiContext owned by the
-        // render target, rendered with a pipeline compiled against the RTT render
-        // pass (Vulkan) or into the RTT FBO (OpenGL). Lazy context creation on
-        // first use; destroyed in removeRenderTarget() and the destructor.
-        imguiRtt.flushPending(deltaTimeMS, ImGui::GetIO().Fonts);
+        // Creates an ImGui-image descriptor set / GL view of the RTT color image — NOT the
+        // shared font atlas — so this stays on the asset-only path. Non-null in both modes now.
+        if (imguiImages)
+            imguiImages->resolveImages();
     }
+
+    // NB: diegetic ImGui replay (imguiRtt.replayClones) happens AFTER this phase — it touches
+    // the shared atlas, so the threaded consume runs it under the ImGui mutex; here it is left
+    // to the caller so the atlas-free work above can stay asset-only.
+}
+
+void FrameRunner::renderSnapshotMain(AssetRegistry& assets, const RenderSnapshot& snapshot)
+{
+    // Asset-only: the main framebuffer sprite draw. Snapshot size, falling back to the live
+    // atomic for un-stamped priming slots (default {0,0} would make the world transform
+    // degenerate). Single mode always stamps a valid size, so the fallback is a no-op there.
+    const ScreenSize renderScreen = (snapshot.screenSize.width != 0 && snapshot.screenSize.height != 0)
+        ? snapshot.screenSize
+        : mScreenSize.load(std::memory_order_acquire);
+    const glm::mat3 worldTransformMat = computeWorldTransformMat(renderScreen);
 
     mBackend.beginMainPass(mGameViewport);
 
@@ -544,6 +884,180 @@ void FrameRunner::renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRt
         ZoneScopedN("MainDraw");
         drawItems(snapshot.draws, assets.textures(), assets.meshes(), worldTransformMat, mBackend);
     }
+}
+
+void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                          ImguiImageManager* imguiImages,
+                          const RenderSnapshot& snapshot, float deltaTimeMS, Controller& controller)
+{
+    if (mode == FrameMode::Threaded)
+    {
+        // Main thread: owns the GL/window context and does all GPU work. The caller
+        // has already acquired the freshest published snapshot into `snapshot`.
+
+        // Dispatch input events queued by the previous frame's poll (main thread, so
+        // any action callback — e.g. Escape → close() — runs here safely).
+        {
+            ZoneScopedN("Input");
+            controller.processInputs();
+        }
+
+        // OS clipboard marshal (B7): flush any sim→OS write, then refresh the OS→sim
+        // cache. The OS read is throttled (it's a synchronous X11/Wayland round-trip
+        // on GLFW) — our own writes are reflected into the cache immediately so
+        // app-internal copy/paste is instant; cross-app paste lands within ~0.25 s.
+        {
+            ZoneScopedN("Clipboard");
+            std::lock_guard<std::mutex> lock(mClipboardMutex);
+            if (mClipboardToOs.has_value())
+            {
+                mWindow->setClipboardText(*mClipboardToOs);
+                mClipboardFromOs = *mClipboardToOs;
+                mClipboardToOs.reset();
+            }
+            else
+            {
+                const float now = mWindow->getTime();
+                if (mLastClipboardPollTime < 0.0f || (now - mLastClipboardPollTime) >= 0.25f)
+                {
+                    mClipboardFromOs = mWindow->getClipboardText();
+                    mLastClipboardPollTime = now;
+                }
+            }
+        }
+
+        auto [framebufferWidth, framebufferHeight] = mWindow->getFramebufferSize();
+        mFramebufferWidth = framebufferWidth;
+        mFramebufferHeight = framebufferHeight;
+        // Use the snapshot's captured size (not the live atomic) so the viewport
+        // matches the pool this snapshot was built for — no resize letterbox transient (C10).
+        // Fall back to the live size for priming frames whose slot was never produced
+        // (default-constructed snapshot → {0,0}; a zero size would divide by a 0 aspect).
+        const ScreenSize threadedScreen = (snapshot.screenSize.width != 0 && snapshot.screenSize.height != 0)
+            ? snapshot.screenSize
+            : mScreenSize.load(std::memory_order_acquire);
+        mGameViewport = computeLetterboxViewport(framebufferWidth, framebufferHeight, threadedScreen.width, threadedScreen.height);
+
+        mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
+
+        // Threaded screenshot: the sim raised mScreenshotRequested (requestScreenshot can't
+        // touch the render-owned backend). Arm here — on the render thread, before endFrame
+        // records the capture. Capture at the device resolution (snapshot.screenSize *
+        // pixelSize), matching the single-threaded requestScreenshot() path (#114): the
+        // headless offscreen image is device-sized, so a logical size here would drive an
+        // out-of-bounds copy / crash at pixelSize > 1. mScreenshotArmed stays
+        // render-thread-local; the finish block below writes the result under its mutex.
+        if (mScreenshotRequested.load(std::memory_order_acquire) && not mScreenshotArmed)
+        {
+            mScreenshotRequested.store(false, std::memory_order_release);
+            mScreenshotArmed = true;
+            mBackend.armScreenshot({static_cast<int>(threadedScreen.width  * mPixelSize),
+                                    static_cast<int>(threadedScreen.height * mPixelSize)});
+        }
+
+        // Smoothed render-thread frame time via the same PerformanceMonitor recipe
+        // run() uses single-threaded (averaged over its period). Computed before the
+        // ImGui frame so the stats overlay can show it; also fed to RTT ImGui timing.
+        mThreadedPerfMonitor->update(mWindow->getTime());
+        deltaTimeMS = mThreadedPerfMonitor->getMS();
+        // Marshal the render cadence to the sim thread, which draws the stats overlay
+        // into its UI frame so it survives in the cloned draw data (C8).
+        mRenderFps.store(mThreadedPerfMonitor->getFPS(), std::memory_order_release);
+        mRenderMs.store(deltaTimeMS, std::memory_order_release);
+
+        // Main-context ImGui frame on the render thread (under the ImGui mutex, so it
+        // never touches the shared font atlas concurrently with the sim-UI context).
+        // It does NOT draw user UI (that arrives as a clone) — it (a) drains pending
+        // font ops + lets ImGui_ImplGlfw process window input so we can harvest it for
+        // the sim, and (b) provides valid empty draw data for the frames before the
+        // first UI commit. The stats overlay is NOT drawn here: it lives in the sim-UI
+        // frame (produce) so it survives in the cloned draw data presented for apps
+        // that commit their own ImGui (C8).
+        {
+            ZoneScopedN("RenderImguiNewFrame");
+            std::lock_guard<std::mutex> imguiLock(mImguiMutex);
+            imguiRtt.drainPendingFontOps();
+            // Deferred frees run here, under imgui⊃asset: the render-target branch tears down
+            // secondary ImGui contexts (releaseContext → ImGui::DestroyContext), which mutates
+            // ImGui's global context list and can race the sim's produceClones (CreateContext /
+            // NewFrame), so it must hold the ImGui mutex — not just the asset mutex. Kept out of
+            // the asset-only render phases below (which must NOT touch ImGui globals).
+            {
+                std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
+                mLastRenderedSeq = snapshot.commitSeq;
+                drainPendingFrees(assets, imguiRtt, mLastRenderedSeq);
+            }
+            // Apply the sim UI's marshalled cursor shape before newImGuiFrame (inside
+            // beginMainImguiFrame) runs the platform backend's UpdateMouseCursor, which
+            // reads the main context's GetMouseCursor() and drives glfwSetCursor/SDL.
+            ImGui::SetMouseCursor(static_cast<ImGuiMouseCursor>(mThreadedCursor.load(std::memory_order_acquire)));
+            beginMainImguiFrame();
+            harvestImguiInput(); // io.MousePos/Down/Wheel + DisplaySize are valid post-NewFrame
+            ImGui::Render();
+        }
+
+        // Main-context clone RenderDrawData — always needs the ImGui mutex (touches the shared
+        // font atlas). Render the sim's cloned UI if present; otherwise the main empty frame.
+        auto drawMainUi = [&]
+        {
+            ZoneScopedN("ImGuiRender");
+            ImDrawData* uiData = (snapshot.mainUi && snapshot.mainUi->hasData())
+                ? snapshot.mainUi->drawData()
+                : ImGui::GetDrawData();
+            uiData->Textures = &ImGui::GetPlatformIO().Textures;
+            mBackend.endFrame(uiData, mFramebufferWidth, mFramebufferHeight);
+        };
+
+        // Container-touching render, split into phases so only the steps that actually touch the
+        // shared font atlas hold the ImGui mutex — the sprite/upload work stays asset-only and
+        // overlaps the sim's UI-build (like the non-ImGui renderTo path). Every phase locks in
+        // imgui⊃asset order or asset-only — NEVER asset⊃imgui — matching the sim, so it can't
+        // deadlock. Releasing the asset mutex between phases is safe because GPU frees are deferred
+        // (a sim remove in a gap only enqueues; the resource stays alive) and each phase re-looks
+        // up resources by id, holding no iterators across a gap. The asset lock is released before
+        // the vsync swap so a slow present never stalls the sim.
+        {
+            ZoneScopedN("PreMain");                             // uploads + sprite RTT + resolve
+            std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
+            renderSnapshotPreMain(assets, imguiImages, snapshot);
+        }
+        if (not snapshot.rttUi.empty())                         // diegetic RTT: atlas draw
+        {
+            ZoneScopedN("DiegeticReplay");
+            std::lock_guard<std::mutex> imguiLock(mImguiMutex);                   // outer
+            std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex); // inner
+            imguiRtt.replayClones(snapshot.rttUi);
+        }
+        {
+            ZoneScopedN("MainPass");                            // main framebuffer sprite draw
+            std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
+            renderSnapshotMain(assets, snapshot);
+        }
+        {
+            std::lock_guard<std::mutex> imguiLock(mImguiMutex); // main-context ImGui: atlas draw
+            drawMainUi();
+        }
+
+        {
+            ZoneScopedN("SwapBuffers");
+            mWindow->endFrame(controller, threadedScreen);
+        }
+
+        // Snapshot the render controller's freshly-polled input (gamepad + keyboard
+        // + mouse) for the sim thread to replay onto its own controller next commit.
+        {
+            ZoneScopedN("HarvestInput");
+            harvestGamepadInput(controller);
+            harvestGameInput(controller);
+        }
+
+        mThreadedRunning.store(mWindow->isRunning(), std::memory_order_release);
+        return;
+    }
+
+    // FrameMode::Single — the producer (buildSnapshot) already opened the GPU frame
+    // and the main-context ImGui frame, so the consumer just renders + presents.
+    renderSnapshotContents(assets, imguiRtt, imguiImages, snapshot);
 
     if (mStats)
     {
@@ -566,6 +1080,7 @@ void FrameRunner::renderSnapshot(AssetRegistry& assets, ImguiRttManager& imguiRt
         mWindow->endFrame(controller, mScreenSize);
     }
 }
+
 
 void FrameRunner::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
                              ImguiImageManager& imguiImages,
@@ -594,6 +1109,47 @@ void FrameRunner::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& im
         runOneFrame(canvas, assets, imguiRtt, imguiImages, performanceMonitor.getMS(), update, controller);
         limitFrameRate(nextDeadline);
     }
+}
+
+void FrameRunner::runThreaded(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                              ImguiImageManager& imguiImages,
+                              std::function<void(float)> update, std::function<void(float)> uiCallback,
+                              Controller& simController, Controller& renderController)
+{
+    beginThreadedSession(canvas, renderController);
+    // Bind the image + RTT managers so the threaded commit primitives thread them through
+    // produce (registered ImGui images; diegetic renderImguiTo clones). Cleared after join.
+    mThreadedImguiImages = &imguiImages;
+    mThreadedImguiRtt    = &imguiRtt;
+
+    std::thread simThread([&]()
+    {
+        // Sim cadence off a monotonic steady_clock — the window clock belongs to the
+        // render thread, so keep this thread off it. Smoothed dt like run()'s.
+        const auto simEpoch = std::chrono::steady_clock::now();
+        auto simSeconds = [&]{ return std::chrono::duration<float>(std::chrono::steady_clock::now() - simEpoch).count(); };
+        PerformanceMonitor performanceMonitor(simSeconds(), 0.5f);
+        auto nextDeadline = std::chrono::steady_clock::now();
+        while (mThreadedRunning.load(std::memory_order_acquire))
+        {
+            performanceMonitor.update(simSeconds());
+            commitFrame(assets, performanceMonitor.getMS(), update, uiCallback, simController);
+            limitFrameRate(nextDeadline); // honors setTargetFps; free-runs otherwise
+        }
+    });
+
+    // Render loop on the main thread (window/input/present); vsync-governed, plus the
+    // same optional targetFps cap as run().
+    auto nextDeadline = std::chrono::steady_clock::now();
+    while (mThreadedRunning.load(std::memory_order_acquire))
+    {
+        renderFrameThreaded(assets, imguiRtt, renderController);
+        limitFrameRate(nextDeadline);
+    }
+
+    simThread.join();
+    mThreadedImguiImages = nullptr;
+    mThreadedImguiRtt    = nullptr;
 }
 
 void FrameRunner::limitFrameRate(std::chrono::steady_clock::time_point& nextDeadline)
@@ -640,6 +1196,504 @@ void FrameRunner::tick(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& i
 void FrameRunner::close()
 {
     mWindow->requestClose();
+}
+
+// ---------------------------------------------------------------------------
+// Threaded driver (M2 Phase A: snapshot hand-off; Phase B: runtime resource
+// mutation guarded by mThreadedAssetMutex)
+// ---------------------------------------------------------------------------
+
+void FrameRunner::beginThreadedSession(Canvas& canvas, Controller& controller)
+{
+    // Remember the canvas so produce(Threaded) can drive the explorer pre-pass.
+    mThreadedCanvas = &canvas;
+
+    // Thread-affinity guards: the render-thread id is anchored at construction. Reset
+    // the sim id so the first produce(Threaded) of this session re-captures it (the
+    // sim guard is session-scoped — a distinct sim thread only exists while live).
+    mSimThreadId = std::thread::id{};
+
+    // Bind input callbacks + reset the close flag (same as run()'s session start).
+    mWindow->beginSession(controller);
+    if (!mSessionStarted)
+    {
+        mSnapshot.draws.reserve(64);
+        mSessionStarted = true;
+    }
+    // Start the render-loop frame-time monitor (same period as run()'s).
+    mThreadedPerfMonitor.emplace(mWindow->getTime(), 0.5f);
+    // Sim-thread commit-rate monitor, fed by an accumulated commit clock in
+    // produce(Threaded) (the sim thread can't use the window clock) (C8).
+    mSimClockMs = 0.0f;
+    mSimPerfMonitor.emplace(0.0f, 0.5f);
+
+    // M3: create the sim-thread UI context, sharing the main font atlas, so the
+    // user's ImGui widgets can run on the sim thread. It has no platform/renderer
+    // backend (the sim issues no GL); textures are flagged backend-managed and are
+    // actually uploaded on the render thread when the cloned draw data is rendered.
+    if (mSimUiContext == nullptr)
+    {
+        ImGuiContext* mainContext = ImGui::GetCurrentContext();
+        ImFontAtlas* sharedAtlas = ImGui::GetIO().Fonts;
+
+        mSimUiContext = ImGui::CreateContext(sharedAtlas);
+        // CreateContext restores the previous (main) context on return, so make
+        // the sim-UI context current explicitly before configuring its IO.
+        ImGui::SetCurrentContext(mSimUiContext);
+        const ScreenSize primingScreen = mScreenSize.load(std::memory_order_acquire);
+        ImGuiIO& simIo = ImGui::GetIO();
+        simIo.IniFilename             = nullptr;
+        simIo.BackendPlatformName     = "nothofagus_sim_ui";
+        simIo.BackendFlags           |= ImGuiBackendFlags_RendererHasTextures; // atlas uploaded render-side
+        // HasGamepad + NavEnableGamepad let the sim-UI process the gamepad nav keys
+        // the render thread harvests from the main context and replays here (B6).
+        simIo.BackendFlags           |= ImGuiBackendFlags_HasGamepad;
+        simIo.DisplaySize             = ImVec2(static_cast<float>(primingScreen.width),
+                                               static_cast<float>(primingScreen.height));
+        // Enable keyboard + gamepad nav and wire an in-process clipboard so InputText
+        // copy/paste works on the sim thread (GLFW clipboard is main-thread-only).
+        simIo.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        simIo.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+        // With keyboard nav on, ImGui would set io.WantCaptureKeyboard true whenever
+        // io.NavActive is true — i.e. merely because a window exists with nav focus,
+        // even when nothing is being typed. That makes imguiWantsKeyboard() stuck at
+        // true and useless for gating game input. Disabling nav keyboard *capture*
+        // keeps nav itself working (arrows/Tab/Enter move focus) but makes
+        // WantCaptureKeyboard reflect real capture only — an active widget (e.g. an
+        // InputText being edited) or an open modal.
+        simIo.ConfigNavCaptureKeyboard = false;
+        // Route the sim-UI clipboard through the OS marshal (B7): the callbacks
+        // touch this instance's buffers; the render thread syncs them with the OS.
+        sThreadedClipboardOwner = this;
+        ImGuiPlatformIO& simPlatformIo = ImGui::GetPlatformIO();
+        simPlatformIo.Platform_GetClipboardTextFn = &FrameRunner::threadedGetClipboardText;
+        simPlatformIo.Platform_SetClipboardTextFn = &FrameRunner::threadedSetClipboardText;
+        ImGui::SetCurrentContext(mainContext); // restore the render thread's context
+
+        // Enable gamepad nav on the MAIN context too (threaded path only): GLFW's
+        // ImGui_ImplGlfw_UpdateGamepads is gated on this flag, so without it the main
+        // context's per-frame NewFrame wouldn't populate the ImGuiKey_Gamepad* keys
+        // that harvestImguiInput captures and the sim replays. (SDL3 populates them
+        // regardless; the flag is harmless there.) Single-threaded run/tick never
+        // calls beginThreadedSession, so its main context is unaffected.
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+
+        // Prime the font atlas on the render thread (uploads the texture) before
+        // any sim commit references it, so the shared atlas is ready and the sim's
+        // NewFrame/layout never races a first-time upload.
+        auto [fbW, fbH] = mWindow->getFramebufferSize();
+        const ViewportRect viewport = computeLetterboxViewport(fbW, fbH, primingScreen.width, primingScreen.height);
+        mBackend.beginFrame(mClearColor, viewport, fbW, fbH);
+        beginMainImguiFrame();
+        ImGui::Render();
+        // Open the main render pass before endFrame closes it. A real frame reaches
+        // beginMainPass via renderSnapshotContents; this priming frame draws nothing
+        // but must still produce a balanced begin/end pass — otherwise the Vulkan
+        // backend's endFrame issues vkCmdEndRenderPass with no active pass (the GL
+        // backend has no render-pass concept, so it was unaffected).
+        mBackend.beginMainPass(viewport);
+        mBackend.endFrame(ImGui::GetDrawData(), fbW, fbH);
+    }
+
+    mThreadedRunning.store(true, std::memory_order_release);
+}
+
+void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
+                             std::function<void(float)> update, std::function<void(float)> uiCallback)
+{
+    // Sim thread: CPU only, no GL. The canvas (bound in beginThreadedSession) drives
+    // the explorer pre-pass; imguiRtt/controller stay null (no font drain or input
+    // poll on the sim thread).
+    produce(FrameMode::Threaded, mThreadedCanvas, assets, mThreadedImguiRtt, mThreadedImguiImages, deltaTimeMS,
+            std::move(update), std::move(uiCallback), nullptr);
+}
+
+void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
+                             std::function<void(float)> update, Controller& simController)
+{
+    // Sim thread (M5): feed the sim controller from the latest gamepad snapshot
+    // (inside produce, before update) so the game `update` sees the gamepad. No ImGui.
+    produce(FrameMode::Threaded, mThreadedCanvas, assets, mThreadedImguiRtt, mThreadedImguiImages, deltaTimeMS,
+            std::move(update), {}, &simController);
+}
+
+void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
+                             std::function<void(float)> update, std::function<void(float)> uiCallback,
+                             Controller& simController)
+{
+    // Sim thread: feed the sim controller AND run the ImGui uiCallback. produce()
+    // already handles both independently (feed before update; ui after update).
+    produce(FrameMode::Threaded, mThreadedCanvas, assets, mThreadedImguiRtt, mThreadedImguiImages, deltaTimeMS,
+            std::move(update), std::move(uiCallback), &simController);
+}
+
+void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& imguiRtt, Controller& controller)
+{
+    ZoneScopedN("renderFrameThreaded");
+
+    // Pick up the freshest published snapshot (keeps the previous one if none new).
+    mTripleBuffer.acquire();
+    const RenderSnapshot& snapshot = mTripleBuffer.readSlot();
+
+    // dt is recomputed from the window clock inside the Threaded arm.
+    consume(FrameMode::Threaded, assets, imguiRtt, mThreadedImguiImages, snapshot, 0.0f, controller);
+
+    // Deferred screenshot: the backend recorded/read the capture during this frame's
+    // endFrame; finish it (read back after the fence) and hold the result for retrieval.
+    // Stays armed if the frame was skipped (e.g. swapchain recreation returned no image).
+    if (mScreenshotArmed)
+    {
+        if (std::optional<ScreenshotPixels> pixels = mBackend.finishScreenshot())
+        {
+            TextureData textureData(pixels->width, pixels->height, 1);
+            std::copy(pixels->data.begin(), pixels->data.end(), textureData.getDataSpan().begin());
+            {
+                std::lock_guard<std::mutex> lock(mScreenshotResultMutex);
+                mScreenshotResult = DirectTexture(std::move(textureData));
+            }
+            mScreenshotArmed = false;
+        }
+    }
+
+    FrameMark;
+}
+
+void FrameRunner::harvestImguiInput()
+{
+    static_assert(ImGuiKey_NamedKey_COUNT <= ThreadedImguiInput::kKeyCount,
+                  "ThreadedImguiInput::kKeyCount too small for ImGuiKey_NamedKey_COUNT");
+
+    ImGuiIO& io = ImGui::GetIO();
+    std::lock_guard<std::mutex> lock(mThreadedImguiInputMutex);
+    mThreadedImguiInput.displayWidth       = io.DisplaySize.x;
+    mThreadedImguiInput.displayHeight      = io.DisplaySize.y;
+    mThreadedImguiInput.framebufferScaleX  = io.DisplayFramebufferScale.x;
+    mThreadedImguiInput.framebufferScaleY  = io.DisplayFramebufferScale.y;
+    mThreadedImguiInput.mouseX             = io.MousePos.x;
+    mThreadedImguiInput.mouseY             = io.MousePos.y;
+    mThreadedImguiInput.mouseDown[0]       = io.MouseDown[0];
+    mThreadedImguiInput.mouseDown[1]       = io.MouseDown[1];
+    mThreadedImguiInput.mouseDown[2]       = io.MouseDown[2];
+    mThreadedImguiInput.wheelX            += io.MouseWheelH; // accumulate; sim consumes + resets
+    mThreadedImguiInput.wheelY            += io.MouseWheel;
+
+    // Keyboard state (M4). Iterate the named-key range, skipping the mouse-button
+    // sub-range (handled above) and the reserved-mod entries — both live at the top
+    // of the range from ImGuiKey_MouseLeft onward. Gamepad keys are below that and
+    // harvested harmlessly (all up without a gamepad).
+    for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; ++key)
+    {
+        const int index = key - ImGuiKey_NamedKey_BEGIN;
+        const bool isRealKey = (key < ImGuiKey_MouseLeft);
+        mThreadedImguiInput.keyDown[index] =
+            isRealKey ? ImGui::IsKeyDown(static_cast<ImGuiKey>(key)) : false;
+        // Analog value (gamepad sticks/triggers); 0 for digital keys. KeysData is the
+        // public per-key state array, indexed by (key - ImGuiKey_NamedKey_BEGIN) (C11).
+        mThreadedImguiInput.keyAnalog[index] =
+            isRealKey ? io.KeysData[index].AnalogValue : 0.0f;
+    }
+    mThreadedImguiInput.keyCtrl  = io.KeyCtrl;
+    mThreadedImguiInput.keyShift = io.KeyShift;
+    mThreadedImguiInput.keyAlt   = io.KeyAlt;
+    mThreadedImguiInput.keySuper = io.KeySuper;
+    mThreadedImguiInput.focused  = (io.AppFocusLost == false);
+
+    // Append this frame's typed characters (consumed + cleared by the sim).
+    for (int i = 0; i < io.InputQueueCharacters.Size; ++i)
+    {
+        if (mThreadedImguiInput.textCharCount >= ThreadedImguiInput::kMaxTextChars)
+            break;
+        mThreadedImguiInput.textChars[mThreadedImguiInput.textCharCount++] =
+            static_cast<unsigned int>(io.InputQueueCharacters[i]);
+    }
+}
+
+void FrameRunner::harvestGamepadInput(Controller& renderController)
+{
+    static_assert(static_cast<int>(GamepadButton::DpadLeft) + 1 == GamepadSnapshot::kButtonCount,
+                  "GamepadSnapshot::kButtonCount out of sync with the GamepadButton enum");
+    static_assert(static_cast<int>(GamepadAxis::RightTrigger) + 1 == GamepadSnapshot::kAxisCount,
+                  "GamepadSnapshot::kAxisCount out of sync with the GamepadAxis enum");
+
+    // Read the render controller's normalized state into a local POD, then publish
+    // it with a single mutexed copy (keeps the critical section tiny).
+    GamepadSnapshot snapshot;
+    for (int id = 0; id < GamepadSnapshot::kMaxGamepads; ++id)
+    {
+        GamepadSnapshot::Pad& pad = snapshot.pads[id];
+        pad.connected = renderController.isGamepadConnected(id);
+        if (!pad.connected)
+            continue;
+        for (int b = 0; b < GamepadSnapshot::kButtonCount; ++b)
+            pad.buttons[b] = renderController.getGamepadButton(id, static_cast<GamepadButton>(b));
+        for (int a = 0; a < GamepadSnapshot::kAxisCount; ++a)
+            pad.axes[a] = renderController.getGamepadAxis(id, static_cast<GamepadAxis>(a));
+    }
+
+    std::lock_guard<std::mutex> lock(mThreadedGamepadMutex);
+    mThreadedGamepadState = snapshot;
+}
+
+void FrameRunner::feedGamepadInput(Controller& simController)
+{
+    GamepadSnapshot snapshot;
+    {
+        std::lock_guard<std::mutex> lock(mThreadedGamepadMutex);
+        snapshot = mThreadedGamepadState;
+    }
+
+    for (int id = 0; id < GamepadSnapshot::kMaxGamepads; ++id)
+    {
+        const GamepadSnapshot::Pad& pad = snapshot.pads[id];
+        const bool wasConnected = simController.isGamepadConnected(id);
+
+        if (pad.connected && !wasConnected)
+            simController.gamepadConnected(id);
+        else if (!pad.connected && wasConnected)
+            simController.gamepadDisconnected(id);
+
+        if (!pad.connected)
+            continue;
+
+        // Buttons: reconstruct press/release edges by diffing the snapshot against
+        // the sim controller's current state (activateGamepadButton sets state + queues
+        // the edge for processInputs() below).
+        for (int b = 0; b < GamepadSnapshot::kButtonCount; ++b)
+        {
+            const GamepadButton button = static_cast<GamepadButton>(b);
+            const bool pressed = pad.buttons[b];
+            if (pressed != simController.getGamepadButton(id, button))
+                simController.activateGamepadButton(
+                    {id, button, pressed ? DiscreteTrigger::Press : DiscreteTrigger::Release});
+        }
+
+        // Axes: set unconditionally — updateGamepadAxis fires the axis callback only
+        // when the value actually changes, so replaying a steady value is a no-op.
+        for (int a = 0; a < GamepadSnapshot::kAxisCount; ++a)
+            simController.updateGamepadAxis(id, static_cast<GamepadAxis>(a), pad.axes[a]);
+    }
+
+    // Dispatch the queued button edges to the game's registered callbacks.
+    simController.processInputs();
+}
+
+void FrameRunner::harvestGameInput(Controller& renderController)
+{
+    // Read the render controller's held keyboard/mouse state + per-frame scroll
+    // into a local, then publish under the mutex. Scroll is a DELTA, so accumulate
+    // it into the shared state (the sim resets it on consume) rather than overwrite.
+    GameInputSnapshot local;
+    for (std::size_t k = 0; k < GameInputSnapshot::kKeyCount; ++k)
+        local.keyDown[k] = renderController.isKeyDown(static_cast<Key>(k));
+    for (std::size_t b = 0; b < 3; ++b)
+        local.mouseDown[b] = renderController.isMouseButtonDown(static_cast<MouseButton>(b));
+    const glm::vec2 mousePos = renderController.getMousePosition();
+    local.mouseX = mousePos.x;
+    local.mouseY = mousePos.y;
+    const glm::vec2 scroll = renderController.consumeScroll();
+
+    std::lock_guard<std::mutex> lock(mThreadedGameInputMutex);
+    std::copy(std::begin(local.keyDown), std::end(local.keyDown), std::begin(mThreadedGameInputState.keyDown));
+    std::copy(std::begin(local.mouseDown), std::end(local.mouseDown), std::begin(mThreadedGameInputState.mouseDown));
+    mThreadedGameInputState.mouseX = local.mouseX;
+    mThreadedGameInputState.mouseY = local.mouseY;
+    mThreadedGameInputState.scrollX += scroll.x;
+    mThreadedGameInputState.scrollY += scroll.y;
+}
+
+void FrameRunner::feedGameInput(Controller& simController)
+{
+    GameInputSnapshot snapshot;
+    {
+        std::lock_guard<std::mutex> lock(mThreadedGameInputMutex);
+        snapshot = mThreadedGameInputState;
+        mThreadedGameInputState.scrollX = 0.0f; // consume accumulated scroll
+        mThreadedGameInputState.scrollY = 0.0f;
+    }
+
+    // Keyboard: reconstruct press/release edges by diffing the snapshot against the
+    // sim controller's held state (activate sets state + queues the edge).
+    for (std::size_t k = 0; k < GameInputSnapshot::kKeyCount; ++k)
+    {
+        const Key key = static_cast<Key>(k);
+        const bool down = snapshot.keyDown[k];
+        if (down != simController.isKeyDown(key))
+            simController.activate({key, down ? DiscreteTrigger::Press : DiscreteTrigger::Release});
+    }
+
+    // Mouse buttons: same edge reconstruction.
+    for (std::size_t b = 0; b < 3; ++b)
+    {
+        const MouseButton button = static_cast<MouseButton>(b);
+        const bool down = snapshot.mouseDown[b];
+        if (down != simController.isMouseButtonDown(button))
+            simController.activateMouseButton({button, down ? DiscreteTrigger::Press : DiscreteTrigger::Release});
+    }
+
+    // Mouse position (already canvas-space): only on change, to match the
+    // single-threaded path (the backend updates it per move event, not per frame).
+    const glm::vec2 newPos(snapshot.mouseX, snapshot.mouseY);
+    if (newPos != simController.getMousePosition())
+        simController.updateMousePosition(newPos);
+
+    // Scroll: forward this frame's accumulated delta (fires the scroll callback).
+    if (snapshot.scrollX != 0.0f || snapshot.scrollY != 0.0f)
+        simController.scrolled(glm::vec2(snapshot.scrollX, snapshot.scrollY));
+
+    // Dispatch the queued key / mouse-button edges to the game's callbacks.
+    simController.processInputs();
+}
+
+Nothofagus::BellotaId FrameRunner::addBellota(AssetRegistry& assets, const Bellota& bellota)
+{
+    // Structural mutation of the asset containers (adds the bellota plus its
+    // auto-quad mesh and registers usage entries). When a threaded session is live
+    // this may run on the sim thread concurrently with the render thread's
+    // container access, so take the asset mutex; single-threaded (run/tick or
+    // setup) there is no other party and we skip the lock entirely.
+    std::unique_lock<std::recursive_mutex> lock;
+    if (mThreadedRunning.load(std::memory_order_acquire))
+        lock = std::unique_lock<std::recursive_mutex>(mThreadedAssetMutex);
+    return assets.addBellota(bellota);
+}
+
+void FrameRunner::removeBellota(AssetRegistry& assets, BellotaId bellotaId)
+{
+    // In a live threaded session: take the asset mutex, remove, then detect any
+    // texture/mesh the bellota orphaned (typically its auto-quad mesh) and queue
+    // them for deferred GPU free — freed render-side once no in-flight snapshot
+    // still references them (retireSeq <= lastRenderedSeq). Tag with the current
+    // commit seq: the snapshot built this commit no longer references the removed
+    // bellota.
+    if (mThreadedRunning.load(std::memory_order_acquire))
+    {
+        std::lock_guard<std::recursive_mutex> lock(mThreadedAssetMutex);
+        assets.removeBellota(bellotaId);
+        for (TextureId textureId : assets.collectUnusedTextures())
+            mPendingTextureFrees.push_back({textureId, mCommitSeq});
+        for (MeshId meshId : assets.collectUnusedMeshes())
+            mPendingMeshFrees.push_back({meshId, mCommitSeq});
+        return;
+    }
+    // Single-threaded: plain remove; orphaned resources are GC'd by the
+    // produce(Single) collectUnused* pass on the next frame (unchanged behavior).
+    assets.removeBellota(bellotaId);
+}
+
+std::unique_lock<std::recursive_mutex> FrameRunner::lockAssetsIfThreaded()
+{
+    if (mThreadedRunning.load(std::memory_order_acquire))
+        return std::unique_lock<std::recursive_mutex>(mThreadedAssetMutex);
+    return std::unique_lock<std::recursive_mutex>();
+}
+
+TextureId FrameRunner::addTexture(AssetRegistry& assets, const Texture& texture)
+{
+    auto lock = lockAssetsIfThreaded();
+    return assets.addTexture(texture); // GPU upload is lazy (syncToGpu), so add is sim-safe.
+}
+
+void FrameRunner::removeTexture(AssetRegistry& assets, TextureId textureId)
+{
+    // Threaded: do only the usage-monitor bookkeeping now and defer the GPU free +
+    // container erase to the render thread (drainPendingFrees -> freeRetiredTexture),
+    // so an in-flight snapshot referencing this id is never freed mid-render.
+    if (mThreadedRunning.load(std::memory_order_acquire))
+    {
+        std::lock_guard<std::recursive_mutex> lock(mThreadedAssetMutex);
+        // Queue only if retire actually removed it from the unused set; a prior
+        // removeBellota sweep may have already collected it (tolerant — no double free).
+        if (assets.retireTexture(textureId))
+            mPendingTextureFrees.push_back({textureId, mCommitSeq});
+        return;
+    }
+    assets.removeTexture(textureId);
+}
+
+void FrameRunner::setTexture(AssetRegistry& assets, BellotaId bellotaId, TextureId textureId)
+{
+    auto lock = lockAssetsIfThreaded();
+    assets.setTexture(bellotaId, textureId);
+}
+
+// markTextureAsDirty / setTextureMin|MagFilter only set CPU flags on the TexturePack
+// (the GPU work is deferred to syncToGpu on the render thread), but those flags are
+// read by the render thread's syncToGpu, so take the asset lock when threaded to
+// serialize the write — same pattern as setTexture.
+void FrameRunner::markTextureAsDirty(AssetRegistry& assets, TextureId textureId)
+{
+    auto lock = lockAssetsIfThreaded();
+    assets.markTextureAsDirty(textureId);
+}
+
+void FrameRunner::setTextureMinFilter(AssetRegistry& assets, TextureId textureId, TextureSampleMode mode)
+{
+    auto lock = lockAssetsIfThreaded();
+    assets.setTextureMinFilter(textureId, mode);
+}
+
+void FrameRunner::setTextureMagFilter(AssetRegistry& assets, TextureId textureId, TextureSampleMode mode)
+{
+    auto lock = lockAssetsIfThreaded();
+    assets.setTextureMagFilter(textureId, mode);
+}
+
+MeshId FrameRunner::addMesh(AssetRegistry& assets, const Mesh& mesh)
+{
+    auto lock = lockAssetsIfThreaded();
+    return assets.addMesh(mesh);
+}
+
+MeshId FrameRunner::addMesh(AssetRegistry& assets, Mesh&& mesh)
+{
+    auto lock = lockAssetsIfThreaded();
+    return assets.addMesh(std::move(mesh));
+}
+
+void FrameRunner::removeMesh(AssetRegistry& assets, MeshId meshId)
+{
+    if (mThreadedRunning.load(std::memory_order_acquire))
+    {
+        std::lock_guard<std::recursive_mutex> lock(mThreadedAssetMutex);
+        if (assets.retireMesh(meshId))
+            mPendingMeshFrees.push_back({meshId, mCommitSeq});
+        return;
+    }
+    assets.removeMesh(meshId);
+}
+
+void FrameRunner::setMesh(AssetRegistry& assets, BellotaId bellotaId, MeshId meshId)
+{
+    auto lock = lockAssetsIfThreaded();
+    assets.setMesh(bellotaId, meshId);
+}
+
+RenderTargetId FrameRunner::addRenderTarget(AssetRegistry& assets, ScreenSize size)
+{
+    auto lock = lockAssetsIfThreaded();
+    return assets.addRenderTarget(size); // GPU creation is lazy (syncToGpu), so add is sim-safe.
+}
+
+void FrameRunner::removeRenderTarget(AssetRegistry& assets, RenderTargetId renderTargetId)
+{
+    // Threaded: defer the whole removeRenderTarget (it frees GPU + erases the RT and
+    // its proxy texture immediately) to the render thread. The RT + proxy stay live
+    // for any in-flight snapshot until drainPendingFrees runs it at a safe seq.
+    if (mThreadedRunning.load(std::memory_order_acquire))
+    {
+        std::lock_guard<std::recursive_mutex> lock(mThreadedAssetMutex);
+        mPendingRenderTargetFrees.push_back({renderTargetId, mCommitSeq});
+        return;
+    }
+    assets.removeRenderTarget(renderTargetId);
+}
+
+void FrameRunner::setRenderTargetClearColor(AssetRegistry& assets, RenderTargetId renderTargetId, glm::vec4 clearColor)
+{
+    // The render thread reads the RT clear color live during the RTT pass (under the
+    // asset mutex), so serialize the write when threaded.
+    auto lock = lockAssetsIfThreaded();
+    assets.setRenderTargetClearColor(renderTargetId, clearColor);
 }
 
 ScreenSize getPrimaryMonitorSize()

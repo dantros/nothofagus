@@ -43,6 +43,23 @@ glm::vec2 Controller::getMousePosition() const
     return mMousePosition;
 }
 
+bool Controller::isKeyDown(Key key) const
+{
+    return mKeyDown.test(static_cast<std::size_t>(key));
+}
+
+bool Controller::isMouseButtonDown(MouseButton button) const
+{
+    return mMouseButtonDown[static_cast<std::size_t>(button)];
+}
+
+glm::vec2 Controller::consumeScroll()
+{
+    const glm::vec2 accumulated = mAccumulatedScroll;
+    mAccumulatedScroll = glm::vec2(0.0f, 0.0f);
+    return accumulated;
+}
+
 void Controller::processInputs()
 {
     // processing all the keyboard inputs since the last update
@@ -87,11 +104,15 @@ void Controller::processInputs()
 
 void Controller::activate(KeyboardTrigger keyboardTrigger)
 {
+    mKeyDown.set(static_cast<std::size_t>(keyboardTrigger.key),
+                 keyboardTrigger.trigger == DiscreteTrigger::Press);
     mActiveActions.push_back(keyboardTrigger);
 }
 
 void Controller::activateMouseButton(MouseButtonTrigger mouseButtonTrigger)
 {
+    mMouseButtonDown[static_cast<std::size_t>(mouseButtonTrigger.button)] =
+        (mouseButtonTrigger.trigger == DiscreteTrigger::Press);
     mActiveMouseActions.push_back(mouseButtonTrigger);
 }
 
@@ -110,6 +131,8 @@ void Controller::registerMouseScroll(std::function<void(glm::vec2)> callback)
 
 void Controller::scrolled(glm::vec2 offset)
 {
+    mAccumulatedScroll += offset;
+
     if (mMouseScrollCallback.has_value())
         (*mMouseScrollCallback)(offset);
 }
@@ -215,6 +238,9 @@ void Controller::clear()
     mActiveMouseActions.clear();
     mMouseMoveCallback.reset();
     mMouseScrollCallback.reset();
+    mKeyDown.reset();
+    mMouseButtonDown[0] = mMouseButtonDown[1] = mMouseButtonDown[2] = false;
+    mAccumulatedScroll = glm::vec2(0.0f, 0.0f);
     mGamepadTriggerActions.clear();
     mActiveGamepadActions.clear();
     mGamepadAxisCallbacks.clear();

@@ -24,7 +24,7 @@ void HeadlessBackend::beginSession(Controller& /*controller*/)
 
 bool HeadlessBackend::isRunning() const
 {
-    return mRunning;
+    return mRunning.load(std::memory_order_acquire);
 }
 
 void HeadlessBackend::newImGuiFrame()
@@ -80,10 +80,19 @@ ScreenSize HeadlessBackend::getWindowSize() const
 
 void HeadlessBackend::requestClose()
 {
-    mRunning = false;
+    mRunning.store(false, std::memory_order_release);
 }
 
 void HeadlessBackend::setWindowTitle(const std::string& /*title*/)
+{
+}
+
+std::string HeadlessBackend::getClipboardText() const
+{
+    return std::string();
+}
+
+void HeadlessBackend::setClipboardText(const std::string& /*text*/)
 {
 }
 

@@ -114,10 +114,14 @@ public:
     void setWindowed();
 
     /**
-     * @brief Returns reference to the screen size.
+     * @brief Returns the logical screen size (by value).
+     *
+     * Returned by value (not by reference) because the size is stored atomically:
+     * on the threaded path the sim thread may `setScreenSize()` from commit's
+     * update while the render thread reads it. Safe to call from any thread.
      * @return The screen size.
      */
-    const ScreenSize& screenSize() const;
+    ScreenSize screenSize() const;
 
     void setScreenSize(const ScreenSize& screenSize);
 
@@ -670,27 +674,132 @@ public:
     const bool& stats() const;
 
     /**
-     * @brief Start the canvas main loop with the default update function.
+     * @brief Start the canvas main loop with no update. Threaded: spins the sim/render
+     *        split with empty update/ui/controllers, closing via the window.
      */
     void run();
 
     /**
-     * @brief Start the canvas main loop with a custom update function.
-     * @param update The custom update function to call each frame.
+     * @brief Start the canvas main loop with a custom update function. Threaded: `update`
+     *        runs on the sim thread with empty ui + controllers. Keep any ImGui in the
+     *        `run(update, ui[, simController, renderController])` overloads — the sim
+     *        thread has no open main-context ImGui frame, so ImGui in `update` won't draw.
+     * @param update The custom update function to call each frame on the sim thread.
      */
     void run(std::function<void(float deltaTime)> update);
 
     /**
-     * @brief Start the canvas main loop with a custom update function and controller.
+     * @brief [DEPRECATED] Single-threaded loop with one controller (ImGui and input share
+     *        the update callback on the main thread). Superseded by the threaded
+     *        run(update, ui, simController, renderController); split ImGui into `ui` and
+     *        input into a sim + render controller. Kept for demos not yet ported to the
+     *        threaded path (diegetic ImGui / registered images / screenshot).
      * @param update The custom update function to call each frame.
      * @param controller The controller object to handle inputs.
      */
+    [[deprecated("Use the threaded run(update, ui, simController, renderController); "
+                 "see THREADED_MODE.md")]]
     void run(std::function<void(float deltaTime)> update, Controller& controller);
+
+    /// Threaded convenience: run the sim/render split as a one-liner. nothofagus owns
+    /// the sim thread and both loops. `update` (game logic) and `uiCallback` (ImGui,
+    /// on the sim-UI context) run on the sim thread against `simController` (game
+    /// input); the render loop pumps window/input/present on this thread against
+    /// `renderController` (window ops + `close`). Returns when the window closes.
+    /// Keep ImGui in `uiCallback`, not `update`. The raw beginThreadedSession/commit/
+    /// renderFrame primitives remain for apps that want to own their threading.
+    void run(std::function<void(float)> update, std::function<void(float)> uiCallback,
+             Controller& simController, Controller& renderController);
+
+    /// Threaded convenience for apps with no game/window input controllers (they close
+    /// via the window). Same as the four-arg overload but nothofagus supplies empty
+    /// controllers internally. Owns the sim thread; keep ImGui in `uiCallback`.
+    void run(std::function<void(float)> update, std::function<void(float)> uiCallback);
 
     /// Execute a single frame with a caller-supplied delta time (in milliseconds).
     void tick(float deltaTime, std::function<void(float)> update, Controller& controller);
     void tick(float deltaTime, std::function<void(float)> update);
     void tick(float deltaTime);
+
+    // ----- Threaded driver (two-thread sim/render split) -----
+    //
+    // Opt-in alternative to run()/tick(). The application owns both loops;
+    // nothofagus spawns no threads. Run `commit()` on a simulation thread and
+    // `renderFrame()` on the main thread:
+    //
+    //   canvas.beginThreadedSession(controller);                 // main thread
+    //   std::thread sim([&]{
+    //       while (canvas.isThreadedRunning())
+    //           canvas.commit(dt, update);                       // sim thread
+    //   });
+    //   while (canvas.isThreadedRunning())
+    //       canvas.renderFrame(controller);                      // main thread
+    //   sim.join();
+    //
+    // The sim thread mutates the scene and commits a snapshot; the main thread
+    // draws the previous snapshot, so render of frame N overlaps sim of N+1.
+    //
+    // From inside `commit()`'s update (sim thread) you may: mutate existing bellota
+    // values (transform, tint, opacity, layer) and add/remove bellotas at runtime
+    // via the regular `addBellota`/`removeBellota` (they serialize against the
+    // renderer and defer GPU frees while a threaded session is live — see those
+    // methods). Interactive ImGui runs via the `commit(dt, update, uiCallback)`
+    // overload (widgets on the sim thread, cloned to the render thread); gamepad
+    // input via `commit(dt, update, simController)`. Explorers (Dense/Sparse land)
+    // and runtime create/destroy of textures/meshes/render targets are also
+    // supported from `commit`'s update (they serialize against the renderer and
+    // defer GPU frees like `addBellota`/`removeBellota`). Still single-threaded-only:
+    // `imguiVisual`/`imguiImages`. `run()`/`tick()` remain the unrestricted
+    // single-threaded path.
+
+    /// Main thread: start a threaded session (binds input, marks it running).
+    void beginThreadedSession(Controller& controller);
+
+    /// Thread-safe: true until the window is closed. Drives both loop conditions.
+    bool isThreadedRunning() const;
+
+    /// Sim thread: run `update(deltaTime)` (game logic) and publish a frame
+    /// snapshot. No ImGui.
+    void commit(float deltaTime, std::function<void(float)> update);
+
+    /// Sim thread: run `update(deltaTime)` (game logic, lock-free) then
+    /// `uiCallback(deltaTime)` as an interactive ImGui frame whose draw data is
+    /// cloned into the snapshot and rendered by the main thread. ImGui widgets in
+    /// `uiCallback` run on the sim thread and respond to the mouse (input is
+    /// marshalled render→sim). Keep ImGui calls in `uiCallback`, not `update`.
+    void commit(float deltaTime, std::function<void(float)> update, std::function<void(float)> uiCallback);
+
+    /// Sim thread: run `update(deltaTime)` (game logic) and publish a frame
+    /// snapshot, feeding `simController` from the gamepad first so the game can
+    /// poll it / receive its callbacks inside `update`. `simController` is the
+    /// game's controller, distinct from the render controller passed to
+    /// `beginThreadedSession`/`renderFrame` (which owns window input + `close`).
+    /// Gamepad state is marshalled render→sim (one frame stale by construction).
+    /// No ImGui.
+    void commit(float deltaTime, std::function<void(float)> update, Controller& simController);
+
+    /// Sim thread: feed `simController` (game input) AND run `uiCallback` as the
+    /// interactive ImGui frame — the combination of the two overloads above. Keep
+    /// ImGui calls in `uiCallback`, not `update`. Used by the `run(update, ui,
+    /// simController, renderController)` convenience.
+    void commit(float deltaTime, std::function<void(float)> update,
+                std::function<void(float)> uiCallback, Controller& simController);
+
+    /// Main thread: render the latest published snapshot and pump window/input.
+    void renderFrame(Controller& controller);
+
+    /// Whether the threaded ImGui UI captured the mouse / keyboard on the most
+    /// recent commit. Read these in the game `update` (which runs before the UI
+    /// frame) to skip world interaction while the UI is using that input.
+    /// Thread-safe; the value is one frame old by construction.
+    ///
+    /// imguiWantsMouse() is true while the cursor is over a UI window or a widget
+    /// is being dragged. imguiWantsKeyboard() is true only while the UI is actively
+    /// capturing keystrokes — a widget being edited (e.g. an InputText) or an open
+    /// modal — NOT merely because a panel is visible (keyboard nav stays enabled
+    /// but does not, on its own, claim the keyboard).
+    bool imguiWantsMouse() const;
+    bool imguiWantsKeyboard() const;
 
     /// Enable or disable automatic removal of unreferenced textures each frame.
     /// Enabled by default. Disable during bulk asset loading to prevent premature removal.

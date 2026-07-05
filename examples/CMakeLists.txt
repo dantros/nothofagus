@@ -154,3 +154,28 @@ add_executable(hello_dpi_scaling
 )
 set_property(TARGET hello_dpi_scaling PROPERTY CXX_STANDARD 20)
 target_link_libraries(hello_dpi_scaling PRIVATE nothofagus)
+
+add_executable(hello_threaded
+    "hello_threaded.cpp"
+)
+set_property(TARGET hello_threaded PROPERTY CXX_STANDARD 20)
+find_package(Threads REQUIRED)
+target_link_libraries(hello_threaded PRIVATE nothofagus Threads::Threads)
+
+add_executable(hello_threaded_imgui
+    "hello_threaded_imgui.cpp"
+)
+set_property(TARGET hello_threaded_imgui PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_threaded_imgui PRIVATE nothofagus Threads::Threads)
+
+add_executable(hello_threaded_gamepad
+    "hello_threaded_gamepad.cpp"
+)
+set_property(TARGET hello_threaded_gamepad PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_threaded_gamepad PRIVATE nothofagus Threads::Threads)
+
+add_executable(hello_threaded_dense_land
+    "hello_threaded_dense_land.cpp"
+)
+set_property(TARGET hello_threaded_dense_land PROPERTY CXX_STANDARD 20)
+target_link_libraries(hello_threaded_dense_land PRIVATE nothofagus Threads::Threads)

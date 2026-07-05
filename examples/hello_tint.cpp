@@ -59,15 +59,14 @@ int main()
     Nothofagus::BellotaId bellotaIdBlue = canvas.addBellota({ {{100.0f, 50.0f}}, textureIdBlue });
 
     float time = 0.0f;
-    bool rotate = true;
     float intensity = 0.0f;
     float tintColor[3] = { 1.0f, 1.0f, 1.0f };
 
+    // Game logic — runs on the sim thread (no ImGui here). Reads intensity/tintColor,
+    // which the ui writes; both callbacks run on the sim thread, so plain floats are safe.
     auto update = [&](float dt)
     {
         time += dt;
-
-        Nothofagus::Bellota& bellotaRed = canvas.bellota(bellotaIdRed);
 
         Nothofagus::Bellota& bellotaGreen = canvas.bellota(bellotaIdGreen);
         bellotaGreen.transform().location() = glm::vec2(100.0f, 50.0f)
@@ -83,18 +82,22 @@ int main()
                 std::sin(0.001f * time + std::numbers::pi/4)
             );
 
+        canvas.setTint(bellotaIdGreen, { intensity, glm::make_vec3(tintColor) });
+
+        canvas.setTint(bellotaIdRed, { std::abs(std::sin(0.005f * time)), {1.0, 1.0, 1.0} });
+    };
+
+    // Interactive ImGui — runs on the sim-UI context (sim thread), cloned to the render thread.
+    auto ui = [&](float)
+    {
         ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
         ImGui::Begin("Green Tint");
         ImGui::SliderFloat("Intensity", &intensity, 0.0f, 1.0f);
         ImGui::ColorPicker3("Color", tintColor);
         ImGui::End();
-
-        canvas.setTint(bellotaIdGreen, { intensity, glm::make_vec3(tintColor) });
-
-        canvas.setTint(bellotaIdRed, { std::abs(std::sin(0.005f * time)), {1.0, 1.0, 1.0} });
     };
-    
-    canvas.run(update);
-    
+
+    canvas.run(update, ui);
+
     return 0;
 }

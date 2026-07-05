@@ -82,6 +82,8 @@ file(GLOB_RECURSE NOTHOFAGUS_PUBLIC_HEADERS "include/*.h")
 add_library(nothofagus
     "source/canvas.cpp"
     "source/frame_runner.cpp"
+    "source/render_snapshot.cpp"
+    "source/imgui_draw_clone.cpp"
     "source/asset_registry.cpp"
     "source/texture_container.cpp"
     "source/mesh_container.cpp"
@@ -375,6 +377,14 @@ option(NOTHOFAGUS_BUILD_TESTS "Build Nothofagus tests?" OFF)
 if (${NOTHOFAGUS_BUILD_TESTS})
     include(CTest)
     add_subdirectory("tests")
+endif()
+
+# Sanitizer fixture: a small threaded workload for running TSan / ASan+UBSan against the
+# SwiftShader Vulkan headless backend (Mesa is buggy under sanitizers). OFF by default;
+# tools/sanitizers/run_sanitizers.sh turns it on with the right sanitizer + SwiftShader flags.
+option(NOTHOFAGUS_BUILD_SANITIZER_FIXTURE "Build the threaded sanitizer smoke fixture?" OFF)
+if (${NOTHOFAGUS_BUILD_SANITIZER_FIXTURE})
+    add_subdirectory("tools/sanitizers")
 endif()
 
 # Visual Tests Explorer: a windowed Nothofagus tool to inspect golden/actual/diff

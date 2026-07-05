@@ -144,23 +144,40 @@ int main()
                 canvas.bellota(*screenshotFrameBellotaId).opacity() = 0.0f;
             }
         }
+    };
 
+    // ImGui — runs on the sim-UI context (sim thread), cloned to the render thread.
+    auto ui = [&](float)
+    {
         ImGui::SetNextWindowPos({4, 4});
         ImGui::Begin("Controls", nullptr,
             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::Text("SPACE: capture screenshot");
+        ImGui::Text("ESC: quit");
         ImGui::End();
     };
 
-    Nothofagus::Controller controller;
-    controller.registerAction({Nothofagus::Key::SPACE, Nothofagus::DiscreteTrigger::Press}, [&]()
+    // Game input on the sim thread: SPACE schedules a screenshot. requestScreenshot() now
+    // marshals across the sim/render boundary (it raises an atomic the render thread arms
+    // from), so it is safe to call from the sim-side controller action.
+    Nothofagus::Controller simController;
+    simController.registerAction({Nothofagus::Key::SPACE, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
         // Schedule a screenshot of the next rendered frame. Capture is deferred:
-        // the pixels arrive via canvas.retrieveScreenshot() on the following frame (see
+        // the pixels arrive via canvas.retrieveScreenshot() on a following frame (see
         // the poll at the top of update()), so it can be requested from inside a callback.
         canvas.requestScreenshot();
     });
 
-    canvas.run(update, controller);
+    // Window/close input on the main thread.
+    Nothofagus::Controller renderController;
+    renderController.registerAction({Nothofagus::Key::ESCAPE, Nothofagus::DiscreteTrigger::Press}, [&]()
+    {
+        canvas.close();
+    });
+
+    // Multithreaded convenience: sim thread runs update + ui + simController; the
+    // main thread runs the render loop + renderController.
+    canvas.run(update, ui, simController, renderController);
     return 0;
 }

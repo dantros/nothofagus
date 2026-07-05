@@ -131,31 +131,32 @@ void AssetRegistry::setTexture(const BellotaId bellotaId, const TextureId textur
     replaceBellota(bellotaId, bellotaWithNewTexture);
 }
 
+// These three setters are pure-CPU: they only flag the TexturePack. The actual GPU
+// work is performed by TexturePack::syncToGpu on the render thread, so the calls are
+// safe from the sim thread (threaded-safety, via the FrameRunner mode-aware wrappers).
 void AssetRegistry::markTextureAsDirty(const TextureId textureId)
 {
     TexturePack& texturePack = mTextures.at(textureId.id);
     debugCheck(not texturePack.isProxy(), "markTextureAsDirty called on a render target proxy texture.");
-    texturePack.freeGpuResources(mBackend);
+    texturePack.mContentDirty = true; // syncToGpu will free + re-upload
 }
 
 void AssetRegistry::setTextureMinFilter(const TextureId textureId, TextureSampleMode mode)
 {
     TexturePack& texturePack = mTextures.at(textureId.id);
     texturePack.minFilter = mode;
-    // Indirect index textures require GL_NEAREST — skip filter updates for them.
+    // Indirect index textures require GL_NEAREST — never apply filters to them.
     if (texturePack.mode == TextureMode::Indirect) return;
-    if (texturePack.dtextureOpt.has_value())
-        mBackend.setTextureMinFilter(texturePack.dtextureOpt.value(), mode);
+    texturePack.mFilterDirty = true; // syncToGpu re-applies once the texture is uploaded
 }
 
 void AssetRegistry::setTextureMagFilter(const TextureId textureId, TextureSampleMode mode)
 {
     TexturePack& texturePack = mTextures.at(textureId.id);
     texturePack.magFilter = mode;
-    // Indirect index textures require GL_NEAREST — skip filter updates for them.
+    // Indirect index textures require GL_NEAREST — never apply filters to them.
     if (texturePack.mode == TextureMode::Indirect) return;
-    if (texturePack.dtextureOpt.has_value())
-        mBackend.setTextureMagFilter(texturePack.dtextureOpt.value(), mode);
+    texturePack.mFilterDirty = true; // syncToGpu re-applies once the texture is uploaded
 }
 
 Texture& AssetRegistry::texture(TextureId textureId)
@@ -203,6 +204,14 @@ void AssetRegistry::freeRetiredTexture(TextureId textureId)
 {
     mTextures.at(textureId.id).freeGpuResources(mBackend);
     mTextures.remove(textureId.id);
+}
+
+bool AssetRegistry::retireTexture(TextureId textureId)
+{
+    // Tolerant: returns false if the texture was already swept (by a prior
+    // removeBellota's collectUnusedTextures) or is still referenced. GPU free +
+    // container erase happen later in freeRetiredTexture() only if true.
+    return mTextureUsageMonitor.removeUnused(textureId);
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +329,15 @@ void AssetRegistry::freeRetiredMesh(MeshId meshId)
 {
     mMeshes.at(meshId.id).freeGpuResources(mBackend);
     mMeshes.remove(meshId.id);
+}
+
+bool AssetRegistry::retireMesh(MeshId meshId)
+{
+    debugCheck(mMeshes.contains(meshId.id), "retireMesh: unknown MeshId");
+    debugCheck(not mMeshes.at(meshId.id).isAutoQuad,
+               "retireMesh: cannot remove an engine-allocated auto-quad — it is owned by the canvas");
+    // Tolerant (see retireTexture): false if already swept or still referenced.
+    return mMeshUsageMonitor.removeUnused(meshId);
 }
 
 // ---------------------------------------------------------------------------

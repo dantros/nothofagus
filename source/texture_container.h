@@ -24,6 +24,14 @@ struct TexturePack
     TextureSampleMode magFilter = TextureSampleMode::Nearest;
     TextureMode mode = TextureMode::Direct; ///< CPU-side texture kind. Proxy entries (no CPU texture) keep Direct since they are RGBA color attachments.
 
+    /// Pure-CPU deferral flags so sim-thread mutations never touch the GPU directly
+    /// (the GPU work is consumed by `syncToGpu` on the render thread). `mContentDirty`
+    /// forces a full free + re-upload (the `markTextureAsDirty` signal, e.g. after the
+    /// caller mutated raw pixels); `mFilterDirty` re-applies min/mag filters to the
+    /// live GPU texture (`setTextureMin|MagFilter`).
+    bool mContentDirty = false;
+    bool mFilterDirty = false;
+
     bool isProxy() const { return not texture.has_value(); }
     bool isDirty() const { return not dtextureOpt.has_value(); }
 

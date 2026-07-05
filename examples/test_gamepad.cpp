@@ -34,6 +34,9 @@ int main()
     Nothofagus::TextureId textureId = canvas.addTexture(texture);
     Nothofagus::BellotaId bellotaId = canvas.addBellota({{{100.0f, 75.0f}}, textureId});
 
+    // Show the built-in FPS/ms overlay.
+    canvas.stats() = true;
+
     float time = 0.0f;
     constexpr float horizontalSpeed = 0.12f;
     constexpr float angularSpeed = 0.1f;
@@ -41,29 +44,33 @@ int main()
     bool rotate = false;
     float pulseTimer = 0.0f;
 
-    Nothofagus::Controller controller;
-
-    // Keyboard: Escape to quit
-    controller.registerAction({Nothofagus::Key::ESCAPE, Nothofagus::DiscreteTrigger::Press},
-        [&]() { canvas.close(); });
+    // Game input — dispatched on the sim thread. Gamepad state is harvested render-side
+    // and fed to the sim controller before update, so gamepad actions + axis polling
+    // (in update and ui) all resolve against simController on the sim thread.
+    Nothofagus::Controller simController;
 
     // Gamepad: A button pulse
-    controller.registerGamepadAction({0, Nothofagus::GamepadButton::A, Nothofagus::DiscreteTrigger::Press},
+    simController.registerGamepadAction({0, Nothofagus::GamepadButton::A, Nothofagus::DiscreteTrigger::Press},
         [&]() { pulseTimer = 500.0f; });
 
     // Gamepad: Start toggles rotation
-    controller.registerGamepadAction({0, Nothofagus::GamepadButton::Start, Nothofagus::DiscreteTrigger::Press},
+    simController.registerGamepadAction({0, Nothofagus::GamepadButton::Start, Nothofagus::DiscreteTrigger::Press},
         [&]() { rotate = not rotate; });
 
     // Gamepad: D-pad discrete movement
-    controller.registerGamepadAction({0, Nothofagus::GamepadButton::DpadUp, Nothofagus::DiscreteTrigger::Press},
+    simController.registerGamepadAction({0, Nothofagus::GamepadButton::DpadUp, Nothofagus::DiscreteTrigger::Press},
         [&]() { canvas.bellota(bellotaId).transform().location().y += discreteStep; });
-    controller.registerGamepadAction({0, Nothofagus::GamepadButton::DpadDown, Nothofagus::DiscreteTrigger::Press},
+    simController.registerGamepadAction({0, Nothofagus::GamepadButton::DpadDown, Nothofagus::DiscreteTrigger::Press},
         [&]() { canvas.bellota(bellotaId).transform().location().y -= discreteStep; });
-    controller.registerGamepadAction({0, Nothofagus::GamepadButton::DpadLeft, Nothofagus::DiscreteTrigger::Press},
+    simController.registerGamepadAction({0, Nothofagus::GamepadButton::DpadLeft, Nothofagus::DiscreteTrigger::Press},
         [&]() { canvas.bellota(bellotaId).transform().location().x -= discreteStep; });
-    controller.registerGamepadAction({0, Nothofagus::GamepadButton::DpadRight, Nothofagus::DiscreteTrigger::Press},
+    simController.registerGamepadAction({0, Nothofagus::GamepadButton::DpadRight, Nothofagus::DiscreteTrigger::Press},
         [&]() { canvas.bellota(bellotaId).transform().location().x += discreteStep; });
+
+    // Window input — dispatched on the main thread; Escape closes the window.
+    Nothofagus::Controller renderController;
+    renderController.registerAction({Nothofagus::Key::ESCAPE, Nothofagus::DiscreteTrigger::Press},
+        [&]() { canvas.close(); });
 
     auto update = [&](float deltaTime)
     {
@@ -72,12 +79,12 @@ int main()
         Nothofagus::Bellota& bellota = canvas.bellota(bellotaId);
 
         // Smooth movement via left stick (polling)
-        std::vector<int> connectedIds = controller.getConnectedGamepadIds();
+        std::vector<int> connectedIds = simController.getConnectedGamepadIds();
         if (not connectedIds.empty())
         {
             int gamepadId = connectedIds[0];
-            float leftX = controller.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::LeftX);
-            float leftY = controller.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::LeftY);
+            float leftX = simController.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::LeftX);
+            float leftY = simController.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::LeftY);
             bellota.transform().location().x += leftX * horizontalSpeed * deltaTime;
             bellota.transform().location().y += leftY * horizontalSpeed * deltaTime;
         }
@@ -101,8 +108,13 @@ int main()
         {
             bellota.transform().scale() = glm::vec2(3.0f, 3.0f);
         }
+    };
 
-        // ImGui status
+    // ImGui status — runs on the sim-UI context (sim thread); polls the same simController.
+    auto ui = [&](float)
+    {
+        std::vector<int> connectedIds = simController.getConnectedGamepadIds();
+
         ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
         ImGui::Begin("Gamepad Test");
         ImGui::Text("Left stick: move sprite");
@@ -126,19 +138,21 @@ int main()
 
             int gamepadId = connectedIds[0];
             ImGui::Text("LX: %.2f  LY: %.2f",
-                controller.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::LeftX),
-                controller.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::LeftY));
+                simController.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::LeftX),
+                simController.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::LeftY));
             ImGui::Text("RX: %.2f  RY: %.2f",
-                controller.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::RightX),
-                controller.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::RightY));
+                simController.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::RightX),
+                simController.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::RightY));
             ImGui::Text("LT: %.2f  RT: %.2f",
-                controller.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::LeftTrigger),
-                controller.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::RightTrigger));
+                simController.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::LeftTrigger),
+                simController.getGamepadAxis(gamepadId, Nothofagus::GamepadAxis::RightTrigger));
         }
         ImGui::End();
     };
 
-    canvas.run(update, controller);
+    // Multithreaded convenience: sim thread runs update + ui + simController (gamepad);
+    // the main thread runs the render loop + renderController (ESC/close).
+    canvas.run(update, ui, simController, renderController);
 
     return 0;
 }

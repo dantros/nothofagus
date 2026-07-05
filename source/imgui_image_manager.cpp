@@ -231,7 +231,7 @@ void ImguiImageManager::updateImage(ImguiImageId id, const Visual& visual, float
         geom.meshId.id != entry.mesh.id)
     {
         // Geometry/source changed enough to need a fresh RTT (this re-warms the handle).
-        freeEntryGpu(entry);
+        retireEntryGpu(entry);
         unpinEntry(entry);
         Entry fresh;
         allocateEntry(fresh, geom);
@@ -255,7 +255,7 @@ void ImguiImageManager::unregisterImage(ImguiImageId id)
     auto it = mRegistered.find(id.id);
     if (it == mRegistered.end())
         return;
-    freeEntryGpu(it->second);
+    retireEntryGpu(it->second);
     unpinEntry(it->second);
     mRegistered.erase(it);
 }
@@ -334,6 +334,10 @@ void ImguiImageManager::appendInternalPasses(std::vector<RttPass>& out)
 
 void ImguiImageManager::resolveImages()
 {
+    // Free entries retired at least one render generation ago before touching handles this
+    // frame (the retired RTTs are no longer referenced by any snapshot being rendered).
+    drainRetiredGpu();
+
     RenderTargetContainer& renderTargets = mAssets.renderTargets();
 
     // For images rendered this frame, refresh the flat-2D and create the ImGui handle if it
@@ -369,6 +373,31 @@ void ImguiImageManager::freeEntryGpu(Entry& entry)
     mAssets.removeRenderTarget(entry.rt);
 }
 
+void ImguiImageManager::retireEntryGpu(Entry& entry)
+{
+    // Hand the GPU handle + RTT to the deferred-free queue; the actual backend release runs
+    // render-side in drainRetiredGpu(). Zero the handle so the entry can't double-free it.
+    mRetirePending.push_back({entry.handle, entry.rt});
+    entry.handle = 0;
+}
+
+void ImguiImageManager::drainRetiredGpu()
+{
+    RenderTargetContainer& renderTargets = mAssets.renderTargets();
+    for (const RetiredGpu& retired : mRetireDraining)
+    {
+        if (retired.handle != 0 && renderTargets.contains(retired.rt.id))
+        {
+            RenderTargetPack& pack = renderTargets.at(retired.rt.id);
+            if (pack.dRenderTargetOpt.has_value())
+                mBackend.releaseFlat2DImguiHandle(pack.dRenderTargetOpt.value(), retired.handle);
+        }
+        mAssets.removeRenderTarget(retired.rt);
+    }
+    mRetireDraining.clear();
+    mRetireDraining.swap(mRetirePending); // this render's retires drain on the next.
+}
+
 void ImguiImageManager::unpinEntry(const Entry& entry)
 {
     mTexturePins.release(entry.texture, [&](TextureId id) { mAssets.releaseTexture(id); });
@@ -385,6 +414,10 @@ void ImguiImageManager::unpinEntry(const Entry& entry)
 
 void ImguiImageManager::releaseAll()
 {
+    // Flush both deferred-free buckets first (render-side teardown; inline backend release
+    // is fine here), then free the still-registered entries directly.
+    drainRetiredGpu(); // frees `draining`, rotates `pending` -> `draining`
+    drainRetiredGpu(); // frees the rotated `pending`; both buckets now empty
     for (auto& [id, entry] : mRegistered)
     {
         freeEntryGpu(entry);

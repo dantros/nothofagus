@@ -14,6 +14,20 @@
 
 #pragma once
 
+//---- [Nothofagus] Thread-local current-context pointer.
+// Nothofagus' threaded canvas drives two ImGui contexts on two threads at once:
+// a UI context on the simulation thread (NewFrame + widgets + Render) and the
+// renderer-bearing context on the render thread (RenderDrawData). Dear ImGui's
+// implicit current-context pointer (GImGui) is a single global, so concurrent
+// use from two threads would race. This is the upstream-documented fix (see the
+// GImGui comment in imgui.cpp): make the pointer thread-local so each thread
+// refers to its own context. The symbol is defined in source/imgui_draw_clone.cpp.
+// Single-threaded use (run()/tick(), RTT secondary contexts) is unaffected — it
+// all happens on one thread, whose TLS holds the current context as before.
+struct ImGuiContext;
+extern thread_local ImGuiContext* GNothofagusImGuiTLS;
+#define GImGui GNothofagusImGuiTLS
+
 //---- Define assertion handler. Defaults to calling assert().
 // - If your macro uses multiple statements, make sure is enclosed in a 'do { .. } while (0)' block so it can be used as a single statement.
 // - Compiling with NDEBUG will usually strip out assert() to nothing, which is NOT recommended because we use asserts to notify of programmer mistakes.

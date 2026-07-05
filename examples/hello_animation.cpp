@@ -101,8 +101,9 @@ int main()
         textureArrayAnimationTree.update(dt);
     };
 
-    // Run the canvas with the update loop
-    canvas.run(update);
+    // Multithreaded convenience: the sim thread runs update; the main thread renders.
+    // No ImGui and no controllers, so the ui callback is empty.
+    canvas.run(update, [](float){});
 
     return 0;
 }

@@ -75,13 +75,16 @@ int main()
     const Nothofagus::TextureId textureId = canvas.addTexture(texture);
     canvas.addBellota({{{100.0f, 75.0f}, 6.0f}, textureId});
 
-    auto update = [&](float)
+    // ImGui overlay — runs on the sim-UI context (sim thread), cloned to the render thread.
+    // imguiOverlayViewport()/imguiScaledFontSize() are render-computed; reading them here
+    // may lag one frame, which is imperceptible for the bars.
+    auto ui = [&](float)
     {
         drawOverlayBars(canvas,
                         "HEADER - resize the window; the bar tracks the canvas",
                         "FOOTER - imguiOverlayViewport() + imguiBaseFontSize()");
     };
 
-    canvas.run(update);
+    canvas.run([](float){}, ui);
     return 0;
 }
