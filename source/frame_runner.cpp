@@ -941,14 +941,43 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
             ImGui::Render();
         }
 
-        // Container-touching section (deferred frees, GPU upload, id→handle resolve + draw
-        // submission) plus the ImGui render. The ImGui mutex is the OUTER lock here because
-        // renderSnapshotContents now replays diegetic-ImGui clones (replayClones) and the main
-        // endFrame below both do RenderDrawData, which touches the shared font atlas. The asset
-        // mutex nests INSIDE it — matching the sim side's imgui⊃asset order (a Canvas ImGui-image
-        // draw in the sim `ui` takes the asset mutex while the ImGui mutex is held), so the two
-        // threads acquire the pair in the same order and can't deadlock. The asset lock is
-        // released before the vsync swap so a slow present never stalls the sim.
+        // Main-context clone RenderDrawData — always needs the ImGui mutex (touches the shared
+        // font atlas). Render the sim's cloned UI if present; otherwise the main empty frame.
+        auto drawMainUi = [&]
+        {
+            ZoneScopedN("ImGuiRender");
+            ImDrawData* uiData = (snapshot.mainUi && snapshot.mainUi->hasData())
+                ? snapshot.mainUi->drawData()
+                : ImGui::GetDrawData();
+            uiData->Textures = &ImGui::GetPlatformIO().Textures;
+            mBackend.endFrame(uiData, mFramebufferWidth, mFramebufferHeight);
+        };
+
+        // Container-touching render (deferred frees, GPU upload, id→handle resolve, sprite +
+        // RTT-sprite draw, main draw). The lock discipline depends on whether this frame carries
+        // diegetic-ImGui clones, so the coarse lock is paid ONLY when renderImguiTo is in use:
+        //  - No clones (the common case): renderSnapshotContents touches only the asset containers
+        //    (registered-image resolve is asset-mutex-covered), so it runs under the asset mutex
+        //    ALONE and keeps overlapping the sim's UI-build; only the short main RenderDrawData
+        //    takes the ImGui mutex — the pre-diegetic behavior.
+        //  - With clones: replayClones inside renderSnapshotContents does RenderDrawData on the RTT
+        //    contexts, touching the shared atlas, so the whole block runs under the ImGui mutex
+        //    OUTER of the asset mutex — matching the sim side's imgui⊃asset order (a Canvas
+        //    ImGui-image draw in `ui` takes the asset mutex while the ImGui mutex is held) so the
+        //    two threads acquire the pair in the same order and can't deadlock. Neither path ever
+        //    takes asset⊃imgui, so the choice is deadlock-safe regardless of which frames use it.
+        // The asset lock is released before the vsync swap so a slow present never stalls the sim.
+        if (snapshot.rttUi.empty())
+        {
+            {
+                ZoneScopedN("AssetLockedRender");
+                std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
+                renderSnapshotContents(assets, imguiRtt, imguiImages, snapshot, deltaTimeMS);
+            }
+            std::lock_guard<std::mutex> imguiLock(mImguiMutex);
+            drawMainUi();
+        }
+        else
         {
             std::lock_guard<std::mutex> imguiLock(mImguiMutex);
             {
@@ -956,14 +985,7 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
                 std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
                 renderSnapshotContents(assets, imguiRtt, imguiImages, snapshot, deltaTimeMS);
             }
-
-            ZoneScopedN("ImGuiRender");
-            // Render the sim's cloned UI if present; otherwise the main empty frame.
-            ImDrawData* uiData = (snapshot.mainUi && snapshot.mainUi->hasData())
-                ? snapshot.mainUi->drawData()
-                : ImGui::GetDrawData();
-            uiData->Textures = &ImGui::GetPlatformIO().Textures;
-            mBackend.endFrame(uiData, mFramebufferWidth, mFramebufferHeight);
+            drawMainUi();
         }
 
         {
