@@ -74,7 +74,9 @@ int main()
 
     std::vector<Nothofagus::BellotaId> bellotaIds;
 
-    auto update = [&](float dt)
+    // ImGui — runs on the sim-UI context (sim thread). Reads bellotaIds, which the
+    // sim-thread controller actions mutate; both are sim-side, so no atomics needed.
+    auto ui = [&](float)
     {
         ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
         ImGui::Begin("Use W to create and S to destroy");
@@ -82,8 +84,9 @@ int main()
         ImGui::End();
     };
 
-    Nothofagus::Controller controller;
-    controller.registerAction({Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Press}, [&]()
+    // Game input — dispatched on the sim thread; creates/destroys bellotas in the live scene.
+    Nothofagus::Controller simController;
+    simController.registerAction({Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
         glm::vec2 randomPosition = generateRandomPosition(screenSize.width, screenSize.height);
         Nothofagus::BellotaId newBellotaId = addBellotaWithWrittenId(canvas, dummyTextureId, pallete, randomPosition);
@@ -91,7 +94,7 @@ int main()
 
         spdlog::info("Bellota {} created!", newBellotaId.id);
     });
-    controller.registerAction({Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Press}, [&]()
+    simController.registerAction({Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
         if (bellotaIds.empty())
             return;
@@ -106,8 +109,11 @@ int main()
 
         spdlog::info("Bellota {} destroyed :(", bellotaIdToDelete.id);
     });
-    
-    canvas.run(update, controller);
-    
+
+    // Multithreaded convenience: sim thread runs ui + simController; the main thread renders.
+    // No window input, so renderController is empty.
+    Nothofagus::Controller renderController;
+    canvas.run([](float){}, ui, simController, renderController);
+
     return 0;
 }

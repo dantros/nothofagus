@@ -153,7 +153,8 @@ int main()
     // Hold a direction to look that way; release recenters the gaze. Arrows and
     // WASD are aliases. (Known demo limitation: holding two direction keys and
     // releasing one recenters even though the other is still down.)
-    Nothofagus::Controller controller;
+    // Game input — dispatched on the sim thread; drives the animation state machine.
+    Nothofagus::Controller simController;
     auto goLeft    = [&]() { machine.goToState("left"); };
     auto goRight   = [&]() { machine.goToState("right"); };
     auto goUp      = [&]() { machine.goToState("up"); };
@@ -163,21 +164,24 @@ int main()
     using Nothofagus::DiscreteTrigger;
     for (Key key : {Key::LEFT, Key::A})
     {
-        controller.registerAction({key, DiscreteTrigger::Press},   goLeft);
+        simController.registerAction({key, DiscreteTrigger::Press},   goLeft);
     }
     for (Key key : {Key::RIGHT, Key::D})
     {
-        controller.registerAction({key, DiscreteTrigger::Press},   goRight);
+        simController.registerAction({key, DiscreteTrigger::Press},   goRight);
     }
     for (Key key : {Key::UP, Key::W})
     {
-        controller.registerAction({key, DiscreteTrigger::Press},   goUp);
-        controller.registerAction({key, DiscreteTrigger::Release}, goIdle);
+        simController.registerAction({key, DiscreteTrigger::Press},   goUp);
+        simController.registerAction({key, DiscreteTrigger::Release}, goIdle);
     }
-    controller.registerAction({Key::DOWN, DiscreteTrigger::Press}, goIdle);
-    controller.registerAction({Key::S,    DiscreteTrigger::Press}, goIdle);
+    simController.registerAction({Key::DOWN, DiscreteTrigger::Press}, goIdle);
+    simController.registerAction({Key::S,    DiscreteTrigger::Press}, goIdle);
 
-    canvas.run(update, controller);
+    // Multithreaded convenience: sim thread runs update + simController; the main thread
+    // runs the render loop. No ImGui and no window input, so ui + renderController are empty.
+    Nothofagus::Controller renderController;
+    canvas.run(update, [](float){}, simController, renderController);
 
     return 0;
 }
