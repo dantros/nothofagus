@@ -108,13 +108,21 @@ renderController])` convenience (split the single `run` lambda into a game-logic
 `ui`, and input into `simController` (game) vs `renderController` (window/`close`)). `run()`/`run(update)`
 are rerouted to the threaded path and `run(update, Controller&)` is `[[deprecated]]`.
 
-Two demos deliberately stay off the threaded path:
-- **hello_headless** uses `tick()` (single-step/headless harness) — a threaded port isn't meaningful;
-  it's the single-threaded/manual-tick reference.
-- **hello_screenshot** stays on the deprecated single-thread `run(update, Controller&)`: the scheduled
-  screenshot request/result handoff crosses the sim/render boundary unsynchronized (`requestScreenshot`
-  arms sim-side, `finishScreenshot` writes render-side). A *separate* gap from the ImGui features — the
-  only remaining deferred demo, and the last caller of the deprecated overload.
+**hello_headless** deliberately stays off the threaded path: it uses `tick()` (single-step/headless
+harness), so a threaded port isn't meaningful — it's the single-threaded/manual-tick reference.
+
+**hello_screenshot** is the one demo still on the deprecated single-thread `run(update, Controller&)`
+because of an unclosed gap (see below), not by design — it's the last caller of the deprecated overload.
+
+## Pending / deferred work
+
+- **Threaded screenshots** (blocks migrating `hello_screenshot`). The scheduled screenshot crosses the
+  sim/render boundary unsynchronized: `requestScreenshot()` arms `mScreenshotArmed` on the sim thread while
+  `finishScreenshot()` writes `mScreenshotResult` on the render thread, with no marshaling. Close it by
+  carrying the request across the boundary and returning the captured pixels via the same
+  `harvest→POD→feed` / atomic-flag channels already used for gamepad/keyboard/mouse/clipboard, then migrate
+  `hello_screenshot` to `run(update, ui, sim, render)` and drop the last `[[deprecated]]` caller. A
+  *separate* gap from the ImGui features (which are done).
 
 ## Out of scope
 
