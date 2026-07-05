@@ -62,7 +62,9 @@ int main()
 
     float time = 0.0f;
 
-    canvas.run([&](float deltaTime)
+    // Sim thread runs update (scene + renderTo); the main thread renders. renderTo rides
+    // the frame snapshot, so it works on the threaded path. No ImGui / controllers here.
+    auto update = [&](float deltaTime)
     {
         time += deltaTime;
 
@@ -75,7 +77,9 @@ int main()
 
         // Schedule both source sprites to be rendered into the render target this frame.
         canvas.renderTo(renderTargetId, {redBellotaId, blueBellotaId});
-    });
+    };
+
+    canvas.run(update, [](float){});
 
     return 0;
 }
