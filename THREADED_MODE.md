@@ -2,7 +2,7 @@
 
 > As-built status of nothofagus's optional two-thread sim/render path. `run()`/`tick()`
 > remain the unchanged single-threaded default; the threaded path is additive and opt-in.
-> Branch: `thread_aware_phase2_unification`.
+> Branch: `thread_aware_phase2_unification` (first commit `71805e8`).
 
 ## What it is
 
