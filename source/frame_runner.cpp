@@ -80,7 +80,15 @@ FrameRunner::FrameRunner(
     mWindow->initImGuiPlatform();
 
     // Render backend init (GPU resources, shader compilation, ImGui renderer binding).
-    mBackend.initialize(mWindow->nativeHandle(), {static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)}, mPresentMode);
+    // Size the presentation target at the device resolution (screenSize * pixelSize),
+    // matching the framebuffer the backend reports (getFramebufferSize). This is
+    // load-bearing only for headless (HeadlessVulkanPresentation creates its offscreen
+    // image from this size); the windowed policy ignores it and sizes the swapchain from
+    // the surface. Passing the unscaled logical size sized the headless offscreen image
+    // smaller than the device-sized capture region -> out-of-bounds copy at pixelSize > 1.
+    mBackend.initialize(mWindow->nativeHandle(),
+        {static_cast<int>(mScreenSize.width  * mPixelSize),
+         static_cast<int>(mScreenSize.height * mPixelSize)}, mPresentMode);
     mBackend.initImGuiRenderer();
 
     // Font setup happens after construction at the Canvas level — once `mAssets`
@@ -185,7 +193,12 @@ ScreenSize FrameRunner::windowSize() const
 void FrameRunner::requestScreenshot()
 {
     mScreenshotArmed = true;
-    const glm::ivec2 gameSize{static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)};
+    // Capture at the device resolution (screenSize * pixelSize), preserving the pixelSize
+    // amplification and any sub-pixel bellota positioning it affords. Only the OS content
+    // scale (DPI) is normalized out: the windowed capture downsamples the framebuffer
+    // (device * osScale) to this device size, and headless runs at osScale == 1.
+    const glm::ivec2 gameSize{static_cast<int>(mScreenSize.width  * mPixelSize),
+                              static_cast<int>(mScreenSize.height * mPixelSize)};
     mBackend.armScreenshot(gameSize);
 }
 
