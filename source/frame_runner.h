@@ -397,7 +397,14 @@ private:
 
     /// Deferred screenshot: armed by requestScreenshot(), finished at the end of the
     /// captured frame; the result is held until retrieveScreenshot() consumes it.
-    bool mScreenshotArmed{false};
+    /// On the threaded path the request/result cross the sim/render boundary: the sim
+    /// raises mScreenshotRequested (like mThreadedCursor), the render thread does the
+    /// backend arm and writes mScreenshotResult under mScreenshotResultMutex (like
+    /// mClipboardFromOs), so mScreenshotArmed stays render-thread-local. Single-threaded
+    /// keeps the eager arm and touches these on one thread.
+    std::atomic<bool> mScreenshotRequested{false}; ///< sim -> render arm request (threaded path).
+    bool mScreenshotArmed{false};                  ///< render-side (threaded) / same-thread (single) armed flag.
+    std::mutex mScreenshotResultMutex;             ///< Guards mScreenshotResult (render write vs sim read).
     std::optional<DirectTexture> mScreenshotResult;
 
     PresentMode mPresentMode{DEFAULT_PRESENT_MODE}; ///< Swapchain / vsync preference (construction-time).

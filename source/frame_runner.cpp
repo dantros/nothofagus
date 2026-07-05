@@ -269,6 +269,16 @@ void FrameRunner::debugCheckSimThread(const char* op) const
 
 void FrameRunner::requestScreenshot()
 {
+    // Threaded: the backend is render-thread-owned, so we can't arm it from the sim
+    // thread. Raise a flag; the render thread observes it in consume(Threaded) and arms
+    // there (mirrors the mThreadedCursor sim->render channel).
+    if (mThreadedRunning.load(std::memory_order_acquire))
+    {
+        mScreenshotRequested.store(true, std::memory_order_release);
+        return;
+    }
+
+    // Single-threaded: eager arm, unchanged (same thread finishes the capture).
     mScreenshotArmed = true;
     const ScreenSize screen = mScreenSize.load(std::memory_order_acquire);
     const glm::ivec2 gameSize{static_cast<int>(screen.width), static_cast<int>(screen.height)};
@@ -277,6 +287,7 @@ void FrameRunner::requestScreenshot()
 
 std::optional<DirectTexture> FrameRunner::retrieveScreenshot()
 {
+    std::lock_guard<std::mutex> lock(mScreenshotResultMutex);
     return std::exchange(mScreenshotResult, std::nullopt);
 }
 
@@ -400,7 +411,10 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
         {
             TextureData textureData(pixels->width, pixels->height, 1);
             std::copy(pixels->data.begin(), pixels->data.end(), textureData.getDataSpan().begin());
-            mScreenshotResult = DirectTexture(std::move(textureData));
+            {
+                std::lock_guard<std::mutex> lock(mScreenshotResultMutex);
+                mScreenshotResult = DirectTexture(std::move(textureData));
+            }
             mScreenshotArmed = false;
         }
     }
@@ -912,6 +926,17 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
 
         mBackend.beginFrame(mClearColor, mGameViewport, framebufferWidth, framebufferHeight);
 
+        // Threaded screenshot: the sim raised mScreenshotRequested (requestScreenshot can't
+        // touch the render-owned backend). Arm here — on the render thread, before endFrame
+        // records the capture — sizing to the snapshot being rendered. mScreenshotArmed then
+        // stays render-thread-local; the finish block below writes the result under its mutex.
+        if (mScreenshotRequested.load(std::memory_order_acquire) && not mScreenshotArmed)
+        {
+            mScreenshotRequested.store(false, std::memory_order_release);
+            mScreenshotArmed = true;
+            mBackend.armScreenshot({static_cast<int>(threadedScreen.width), static_cast<int>(threadedScreen.height)});
+        }
+
         // Smoothed render-thread frame time via the same PerformanceMonitor recipe
         // run() uses single-threaded (averaged over its period). Computed before the
         // ImGui frame so the stats overlay can show it; also fed to RTT ImGui timing.
@@ -1304,7 +1329,10 @@ void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& im
         {
             TextureData textureData(pixels->width, pixels->height, 1);
             std::copy(pixels->data.begin(), pixels->data.end(), textureData.getDataSpan().begin());
-            mScreenshotResult = DirectTexture(std::move(textureData));
+            {
+                std::lock_guard<std::mutex> lock(mScreenshotResultMutex);
+                mScreenshotResult = DirectTexture(std::move(textureData));
+            }
             mScreenshotArmed = false;
         }
     }
