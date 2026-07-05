@@ -991,6 +991,40 @@ void FrameRunner::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& im
     }
 }
 
+void FrameRunner::runThreaded(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                              std::function<void(float)> update, std::function<void(float)> uiCallback,
+                              Controller& simController, Controller& renderController)
+{
+    beginThreadedSession(canvas, renderController);
+
+    std::thread simThread([&]()
+    {
+        // Sim cadence off a monotonic steady_clock — the window clock belongs to the
+        // render thread, so keep this thread off it. Smoothed dt like run()'s.
+        const auto simEpoch = std::chrono::steady_clock::now();
+        auto simSeconds = [&]{ return std::chrono::duration<float>(std::chrono::steady_clock::now() - simEpoch).count(); };
+        PerformanceMonitor performanceMonitor(simSeconds(), 0.5f);
+        auto nextDeadline = std::chrono::steady_clock::now();
+        while (mThreadedRunning.load(std::memory_order_acquire))
+        {
+            performanceMonitor.update(simSeconds());
+            commitFrame(assets, performanceMonitor.getMS(), update, uiCallback, simController);
+            limitFrameRate(nextDeadline); // honors setTargetFps; free-runs otherwise
+        }
+    });
+
+    // Render loop on the main thread (window/input/present); vsync-governed, plus the
+    // same optional targetFps cap as run().
+    auto nextDeadline = std::chrono::steady_clock::now();
+    while (mThreadedRunning.load(std::memory_order_acquire))
+    {
+        renderFrameThreaded(assets, imguiRtt, renderController);
+        limitFrameRate(nextDeadline);
+    }
+
+    simThread.join();
+}
+
 void FrameRunner::limitFrameRate(std::chrono::steady_clock::time_point& nextDeadline)
 {
     using namespace std::chrono;

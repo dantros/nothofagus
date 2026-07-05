@@ -165,6 +165,15 @@ public:
               ImguiImageManager& imguiImages,
               float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
+    /// Convenience over the threaded primitives: owns the sim thread and both loops.
+    /// Runs the commit loop (update + uiCallback + simController) on a spawned thread
+    /// and the renderFrame loop (renderController) on this (main) thread, then joins.
+    /// The raw beginThreadedSession/commitFrame/renderFrameThreaded primitives stay
+    /// for apps that want to own their threading.
+    void runThreaded(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                     std::function<void(float)> update, std::function<void(float)> uiCallback,
+                     Controller& simController, Controller& renderController);
+
     /// Captures the last rendered frame visible to the user as a DirectTexture (RGBA).
     DirectTexture takeScreenshot() const;
 

@@ -691,6 +691,16 @@ public:
      */
     void run(std::function<void(float deltaTime)> update, Controller& controller);
 
+    /// Threaded convenience: run the sim/render split as a one-liner. nothofagus owns
+    /// the sim thread and both loops. `update` (game logic) and `uiCallback` (ImGui,
+    /// on the sim-UI context) run on the sim thread against `simController` (game
+    /// input); the render loop pumps window/input/present on this thread against
+    /// `renderController` (window ops + `close`). Returns when the window closes.
+    /// Keep ImGui in `uiCallback`, not `update`. The raw beginThreadedSession/commit/
+    /// renderFrame primitives remain for apps that want to own their threading.
+    void run(std::function<void(float)> update, std::function<void(float)> uiCallback,
+             Controller& simController, Controller& renderController);
+
     /// Execute a single frame with a caller-supplied delta time (in milliseconds).
     void tick(float deltaTime, std::function<void(float)> update, Controller& controller);
     void tick(float deltaTime, std::function<void(float)> update);
