@@ -114,7 +114,16 @@ FrameRunner::FrameRunner(
     mWindow->initImGuiPlatform();
 
     // Render backend init (GPU resources, shader compilation, ImGui renderer binding).
-    mBackend.initialize(mWindow->nativeHandle(), {static_cast<int>(screenSize.width), static_cast<int>(screenSize.height)}, mPresentMode);
+    // Size the presentation target at the device resolution (screenSize * pixelSize),
+    // matching the framebuffer the backend reports (getFramebufferSize). This is
+    // load-bearing only for headless (HeadlessVulkanPresentation creates its offscreen
+    // image from this size); the windowed policy ignores it and sizes the swapchain from
+    // the surface. Passing the unscaled logical size sized the headless offscreen image
+    // smaller than the device-sized capture region -> out-of-bounds copy at pixelSize > 1.
+    // (mScreenSize is atomic on this branch, so use the ctor's local screenSize param.)
+    mBackend.initialize(mWindow->nativeHandle(),
+        {static_cast<int>(screenSize.width  * mPixelSize),
+         static_cast<int>(screenSize.height * mPixelSize)}, mPresentMode);
     mBackend.initImGuiRenderer();
 
     // Font setup happens after construction at the Canvas level — once `mAssets`
@@ -279,9 +288,14 @@ void FrameRunner::requestScreenshot()
     }
 
     // Single-threaded: eager arm, unchanged (same thread finishes the capture).
+    // Capture at the device resolution (screenSize * pixelSize), preserving the pixelSize
+    // amplification and any sub-pixel bellota positioning it affords. Only the OS content
+    // scale (DPI) is normalized out: the windowed capture downsamples the framebuffer
+    // (device * osScale) to this device size, and headless runs at osScale == 1.
     mScreenshotArmed = true;
     const ScreenSize screen = mScreenSize.load(std::memory_order_acquire);
-    const glm::ivec2 gameSize{static_cast<int>(screen.width), static_cast<int>(screen.height)};
+    const glm::ivec2 gameSize{static_cast<int>(screen.width  * mPixelSize),
+                              static_cast<int>(screen.height * mPixelSize)};
     mBackend.armScreenshot(gameSize);
 }
 
@@ -928,13 +942,17 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
 
         // Threaded screenshot: the sim raised mScreenshotRequested (requestScreenshot can't
         // touch the render-owned backend). Arm here — on the render thread, before endFrame
-        // records the capture — sizing to the snapshot being rendered. mScreenshotArmed then
-        // stays render-thread-local; the finish block below writes the result under its mutex.
+        // records the capture. Capture at the device resolution (snapshot.screenSize *
+        // pixelSize), matching the single-threaded requestScreenshot() path (#114): the
+        // headless offscreen image is device-sized, so a logical size here would drive an
+        // out-of-bounds copy / crash at pixelSize > 1. mScreenshotArmed stays
+        // render-thread-local; the finish block below writes the result under its mutex.
         if (mScreenshotRequested.load(std::memory_order_acquire) && not mScreenshotArmed)
         {
             mScreenshotRequested.store(false, std::memory_order_release);
             mScreenshotArmed = true;
-            mBackend.armScreenshot({static_cast<int>(threadedScreen.width), static_cast<int>(threadedScreen.height)});
+            mBackend.armScreenshot({static_cast<int>(threadedScreen.width  * mPixelSize),
+                                    static_cast<int>(threadedScreen.height * mPixelSize)});
         }
 
         // Smoothed render-thread frame time via the same PerformanceMonitor recipe

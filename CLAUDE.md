@@ -880,6 +880,15 @@ once that frame has rendered — `nullopt` until then, the value exactly once, t
 again (consume-once). The capture is recorded **in-frame before present** (Vulkan windowed),
 so it is WSI-correct — no `WRITE-AFTER-PRESENT` hazard from reading a presented image.
 
+**Capture resolution — `screenSize × pixelSize` (device pixels).** A screenshot is captured at the
+**device resolution**, so the `pixelSize` amplifier is **preserved** — and with it the sub-pixel
+bellota positioning it affords (a bellota at logical `y` vs `y + 1/pixelSize` differs by one captured
+pixel). Only the OS content scale (DPI, `contentScale()`) is normalized out, keeping captures
+deterministic across displays: headless renders at `contentScale == 1` (nothing to normalize) and the
+windowed capture downsamples the framebuffer (`device × osScale`) back to `device`. At `pixelSize == 1`
+device equals logical, so single-scale scenes are unaffected. (`pixelSize` is *not* the OS DPI scale —
+see [DPI / content scaling](#dpi--content-scaling--standard-ui-vs-diegetic-ui); the two are independent.)
+
 ```cpp
 // Manual stepping (tick): schedule, render one frame, then retrieve.
 canvas.requestScreenshot();
@@ -908,7 +917,7 @@ frame or steady-state cost, but it does mean the result is delivered one frame l
 
 **OpenGL note:** reads from `GL_BACK` in the render backend's `endFrame` (after all drawing, before the window buffer swap), point-sampled with `GL_NEAREST`. Reading the back buffer (rather than `GL_FRONT`) is what makes screenshots work in hidden-window/offscreen mode (`headless=true`), where the never-presented front buffer reads back as all-zero.
 
-**Headless render resolution:** hidden windows (`headless=true`) opt out of HiDPI/high-pixel-density, so they render at exactly the logical canvas resolution (`screenSize × pixelSize`) regardless of the display's content scale. This keeps offscreen captures deterministic and pixel-identical across machines (and matches the windowless headless-Vulkan renderer). Visible windows still use the display's pixel density for on-screen crispness.
+**Headless render resolution:** hidden windows (`headless=true`) opt out of HiDPI/high-pixel-density, so they render (and capture) at exactly the device resolution (`screenSize × pixelSize`) regardless of the display's content scale. This keeps offscreen captures deterministic and pixel-identical across machines (and matches the windowless headless-Vulkan renderer). Visible windows still use the display's pixel density for on-screen crispness.
 
 **Vulkan windowed:** the copy is recorded **into the frame's command buffer after the render pass but before present** (while the engine still owns the image — no WSI hazard): the swapchain image is blitted through an intermediate R8G8B8A8 image (handles B8G8R8A8 format conversion) into a CPU-visible staging buffer, then read back after the frame's fence signals (`finishScreenshot`).
 
