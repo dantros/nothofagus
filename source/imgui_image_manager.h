@@ -134,8 +134,17 @@ private:
     /// Draw `handle` at `displaySize` in the current ImGui window, honoring the texture's
     /// magFilter and `opacity`. Caller guarantees `handle != 0`.
     void drawResolvedImage(std::uint64_t handle, glm::vec2 displaySize, TextureId texForFilter, float opacity);
-    void   freeEntryGpu(Entry& entry);   ///< render-side: free handle + RTT.
+    void   freeEntryGpu(Entry& entry);   ///< render-side: free handle + RTT (used by releaseAll teardown).
     void   unpinEntry(const Entry& entry);
+
+    /// Sim-side (threaded) or same-thread (single): hand an entry's GPU handle + RTT to the
+    /// deferred-free queue instead of freeing inline, so the backend release always runs on
+    /// the render thread and never while an in-flight snapshot's pass still references the RTT.
+    void   retireEntryGpu(Entry& entry);
+    /// Render-side: free everything retired at least one render generation ago, then rotate the
+    /// pending bucket in. Two-phase, so a freed RTT is one full render behind its last use
+    /// (the last-using frame has fenced). Called at the top of resolveImages().
+    void   drainRetiredGpu();
 
     ActiveBackend& mBackend;
     AssetRegistry& mAssets;
@@ -143,6 +152,13 @@ private:
     std::map<std::size_t, Entry>         mRegistered;    ///< registered entries (ImguiImageId).
     std::size_t                          mNextImageId = 1;
     std::map<std::pair<int, int>, MeshId> mOwnedQuads;   ///< quad mesh per texture size (shared).
+
+    /// Deferred GPU-free of retired entries (handle + RTT). Two buckets rotated by
+    /// drainRetiredGpu(): `pending` is filled sim-side by retireEntryGpu(); it becomes
+    /// `draining` on the next render, then is freed on the render after that.
+    struct RetiredGpu { std::uint64_t handle; RenderTargetId rt; };
+    std::vector<RetiredGpu> mRetirePending;
+    std::vector<RetiredGpu> mRetireDraining;
 
     // Reference counts for resource pins so a texture/mesh shared by several entries
     // is retained on the AssetRegistry once and released only when the last entry

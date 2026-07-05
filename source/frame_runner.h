@@ -171,6 +171,7 @@ public:
     /// The raw beginThreadedSession/commitFrame/renderFrameThreaded primitives stay
     /// for apps that want to own their threading.
     void runThreaded(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                     ImguiImageManager& imguiImages,
                      std::function<void(float)> update, std::function<void(float)> uiCallback,
                      Controller& simController, Controller& renderController);
 
@@ -261,10 +262,13 @@ public:
     void           removeRenderTarget(AssetRegistry& assets, RenderTargetId renderTargetId);
     void           setRenderTargetClearColor(AssetRegistry& assets, RenderTargetId renderTargetId, glm::vec4 clearColor);
 
-private:
     /// Returns a lock on the asset mutex while a threaded session is live, else an
-    /// empty (unlocked) lock — the single-threaded fast path takes no mutex.
+    /// empty (unlocked) lock — the single-threaded fast path takes no mutex. Public so
+    /// Canvas can serialize the ImguiImageManager's sim-side registry mutations against
+    /// the render thread's resolveImages() (which runs under the same mutex).
     std::unique_lock<std::recursive_mutex> lockAssetsIfThreaded();
+
+private:
 
     /// Selects which orchestration a unified producer/consumer runs. `Single` is
     /// the run()/tick() path (one thread; ImGui on the main context, live draw
@@ -412,6 +416,7 @@ private:
     SnapshotTripleBuffer mTripleBuffer;            ///< sim→render snapshot hand-off (lock-free).
     std::atomic<bool> mThreadedRunning{false};     ///< true while the threaded session is live.
     Canvas* mThreadedCanvas{nullptr};              ///< canvas bound by beginThreadedSession; drives explorers in produce(Threaded).
+    ImguiImageManager* mThreadedImguiImages{nullptr}; ///< image manager bound by runThreaded; null on the raw-primitive path (registered images then unsupported there).
     /// Thread identities for the affinity guards (debug-only). Render id is captured in
     /// beginThreadedSession (main thread); sim id is captured on the first threaded
     /// produce(). Default-constructed (== no id) until then.

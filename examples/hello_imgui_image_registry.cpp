@@ -64,14 +64,11 @@ int main()
     float drawScale = 1.0f;
     bool  registered = true;
 
-    // TODO(threaded): registered-image passes (registerImguiImage / imguiImage) are not
-    // wired for the sim/render split yet (see THREADED_DIEGETIC_IMGUI.md). Parked on the
-    // deprecated single-thread run(update, Controller&) until threaded support lands.
-    Nothofagus::Controller deferredController;
-    canvas.run([&](float dt)
+    // Game logic on the sim thread: advance the animation by re-registering the current
+    // layer onto the big image's id. The id (and its ImTextureID) stays stable across the
+    // update — no re-warm. Runs before `ui` each commit, so the frame `ui` draws is current.
+    auto update = [&](float dt)
     {
-        // Advance the animation by re-registering the current layer onto the big image's id.
-        // The id (and its ImTextureID) stays stable across the update — no re-warm.
         elapsedMs += dt;
         const std::size_t frame = static_cast<std::size_t>(elapsedMs / 180.0f) % kFrames;
         if (registered)
@@ -80,7 +77,11 @@ int main()
             animated.currentLayer() = frame;
             canvas.updateImguiImage(bigId, animated);
         }
+    };
 
+    // ImGui on the sim thread (drawn into the sim-UI context, cloned to the render thread).
+    auto ui = [&](float)
+    {
         ImGui::Begin("Registered images");
 
         ImGui::TextUnformatted("Pre-registered -> no one-frame warm-up.");
@@ -120,7 +121,9 @@ int main()
         }
 
         ImGui::End();
-    }, deferredController);
+    };
+
+    canvas.run(update, ui);
 
     return 0;
 }

@@ -281,38 +281,49 @@ void Canvas::renderImguiTo(RenderTargetId renderTargetId, ImguiFontId fontId, Im
         });
 }
 
+// The ImguiImageManager shares the AssetRegistry (RTT alloc/free, texture/mesh pins) and the
+// registered-entry map with the render thread's resolveImages(). Serialize every sim-side call
+// under the same asset mutex that guards renderSnapshotContents, so a threaded session's
+// register/update/unregister/draw can't race the render side (a no-op lock single-threaded).
 ImguiImageId Canvas::registerImguiImage(const Visual& visual, const ImguiImageSize::Spec& sizeSpec)
 {
+    auto lock = mImplPtr->frameRunner.lockAssetsIfThreaded();
     return mImplPtr->imguiImages.registerImage(visual, sizeSpec, mImplPtr->frameRunner.contentScale());
 }
 
 void Canvas::updateImguiImage(ImguiImageId imageId, const Visual& visual)
 {
+    auto lock = mImplPtr->frameRunner.lockAssetsIfThreaded();
     mImplPtr->imguiImages.updateImage(imageId, visual, mImplPtr->frameRunner.contentScale());
 }
 
 void Canvas::unregisterImguiImage(ImguiImageId imageId)
 {
+    auto lock = mImplPtr->frameRunner.lockAssetsIfThreaded();
     mImplPtr->imguiImages.unregisterImage(imageId);
 }
 
 void Canvas::imguiImage(ImguiImageId imageId, std::optional<glm::vec2> drawSize)
 {
+    auto lock = mImplPtr->frameRunner.lockAssetsIfThreaded();
     mImplPtr->imguiImages.drawImage(imageId, drawSize);
 }
 
 std::uint64_t Canvas::imguiImageHandle(ImguiImageId imageId) const
 {
+    auto lock = mImplPtr->frameRunner.lockAssetsIfThreaded();
     return mImplPtr->imguiImages.handleOf(imageId);
 }
 
 glm::vec2 Canvas::imguiImageSize(ImguiImageId imageId) const
 {
+    auto lock = mImplPtr->frameRunner.lockAssetsIfThreaded();
     return mImplPtr->imguiImages.sizeOf(imageId);
 }
 
 bool Canvas::isImguiImageReady(ImguiImageId imageId) const
 {
+    auto lock = mImplPtr->frameRunner.lockAssetsIfThreaded();
     return mImplPtr->imguiImages.isReady(imageId);
 }
 
@@ -415,7 +426,7 @@ void Canvas::run(std::function<void(float deltaTime)> update, Controller& contro
 void Canvas::run(std::function<void(float)> update, std::function<void(float)> uiCallback,
                  Controller& simController, Controller& renderController)
 {
-    mImplPtr->frameRunner.runThreaded(*this, mImplPtr->assets, mImplPtr->imguiRtt,
+    mImplPtr->frameRunner.runThreaded(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages,
                                       std::move(update), std::move(uiCallback), simController, renderController);
 }
 
@@ -425,7 +436,7 @@ void Canvas::run(std::function<void(float)> update, std::function<void(float)> u
     // render controller pumped on the main thread, so they must not be the same object.
     Controller simController;
     Controller renderController;
-    mImplPtr->frameRunner.runThreaded(*this, mImplPtr->assets, mImplPtr->imguiRtt,
+    mImplPtr->frameRunner.runThreaded(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages,
                                       std::move(update), std::move(uiCallback), simController, renderController);
 }
 

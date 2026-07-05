@@ -128,14 +128,12 @@ int main()
     float scale   = 8.0f;
     float elapsedMs = 0.0f;
 
-    // TODO(threaded): registered-image passes (registerImguiImage / imguiImage) are not
-    // wired for the sim/render split yet (see THREADED_DIEGETIC_IMGUI.md). Parked on the
-    // deprecated single-thread run(update, Controller&) until threaded support lands.
-    Nothofagus::Controller deferredController;
-    canvas.run([&](float dt)
+    // Game logic on the sim thread: advance the animation (current layer) and push it — plus
+    // the live opacity — onto every registered view of the animated visual (same size => no
+    // re-warm), spin the RTT sprite, and schedule its off-screen pass so the registered image
+    // sampling sceneRtTexId has fresh pixels. Runs before `ui`, so the draws below are current.
+    auto update = [&](float dt)
     {
-        // Advance the animation (current layer) and push it — plus the live opacity — onto
-        // every registered view of the animated visual. Same size => no re-warm.
         elapsedMs += dt;
         const std::size_t frame = static_cast<std::size_t>(elapsedMs / 180.0f) % kFrames;
         Nothofagus::Visual animVisual{animTexId};
@@ -144,11 +142,13 @@ int main()
         for (const Nothofagus::ImguiImageId id : animIds)
             canvas.updateImguiImage(id, animVisual);
 
-        // Spin the RTT sprite and schedule it into the off-screen target this frame, so the
-        // registered image sampling sceneRtTexId below has fresh pixels to read.
         canvas.bellota(sceneBellotaId).transform().angle() += dt * 0.05f;
         canvas.renderTo(sceneRtId, {sceneBellotaId});
+    };
 
+    // ImGui on the sim thread (drawn into the sim-UI context, cloned to render).
+    auto ui = [&](float)
+    {
         ImGui::Begin("Visuals in ImGui");
 
         ImGui::SliderFloat("draw scale", &scale, 1.0f, kMaxScale);
@@ -214,7 +214,9 @@ int main()
         canvas.imguiImage(sceneRtImageId);
 
         ImGui::End();
-    }, deferredController);
+    };
+
+    canvas.run(update, ui);
 
     return 0;
 }

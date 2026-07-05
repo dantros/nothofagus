@@ -454,6 +454,12 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
             feedGameInput(*controller);
         }
 
+        // Advance the registered-image frame clock before update/ui so drawImage()
+        // (called from the ui callback) stamps lastUsedFrame against this commit and
+        // appendInternalPasses() below emits the "displayed this frame" targets.
+        if (imguiImages != nullptr)
+            imguiImages->beginFrame();
+
         // 1) Game logic — lock-free, so it overlaps the render thread's sprite work.
         //    (spawn/despawn take the asset mutex internally; bellota value writes are
         //    sim-exclusive.)
@@ -585,6 +591,15 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
         {
             ZoneScopedN("RttGather");
             buildRttPasses(assets, snapshot.rttPasses);
+            // Internal RTT passes for registered ImGui images that need (re)rendering
+            // this frame, appended after the user-scheduled passes (mirrors the Single arm).
+            // Under the asset mutex: appendInternalPasses writes each entry's
+            // renderedThisFrame, which the render thread reads in resolveImages().
+            if (imguiImages != nullptr)
+            {
+                std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
+                imguiImages->appendInternalPasses(snapshot.rttPasses);
+            }
         }
 
         mTripleBuffer.publish();
@@ -1009,10 +1024,14 @@ void FrameRunner::run(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& im
 }
 
 void FrameRunner::runThreaded(Canvas& canvas, AssetRegistry& assets, ImguiRttManager& imguiRtt,
+                              ImguiImageManager& imguiImages,
                               std::function<void(float)> update, std::function<void(float)> uiCallback,
                               Controller& simController, Controller& renderController)
 {
     beginThreadedSession(canvas, renderController);
+    // Bind the image manager so the threaded commit/render primitives thread it through
+    // produce/consume (registered ImGui images). Cleared after the loops join.
+    mThreadedImguiImages = &imguiImages;
 
     std::thread simThread([&]()
     {
@@ -1040,6 +1059,7 @@ void FrameRunner::runThreaded(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
     }
 
     simThread.join();
+    mThreadedImguiImages = nullptr;
 }
 
 void FrameRunner::limitFrameRate(std::chrono::steady_clock::time_point& nextDeadline)
@@ -1194,7 +1214,7 @@ void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
     // Sim thread: CPU only, no GL. The canvas (bound in beginThreadedSession) drives
     // the explorer pre-pass; imguiRtt/controller stay null (no font drain or input
     // poll on the sim thread).
-    produce(FrameMode::Threaded, mThreadedCanvas, assets, nullptr, nullptr, deltaTimeMS,
+    produce(FrameMode::Threaded, mThreadedCanvas, assets, nullptr, mThreadedImguiImages, deltaTimeMS,
             std::move(update), std::move(uiCallback), nullptr);
 }
 
@@ -1203,7 +1223,7 @@ void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
 {
     // Sim thread (M5): feed the sim controller from the latest gamepad snapshot
     // (inside produce, before update) so the game `update` sees the gamepad. No ImGui.
-    produce(FrameMode::Threaded, mThreadedCanvas, assets, nullptr, nullptr, deltaTimeMS,
+    produce(FrameMode::Threaded, mThreadedCanvas, assets, nullptr, mThreadedImguiImages, deltaTimeMS,
             std::move(update), {}, &simController);
 }
 
@@ -1213,7 +1233,7 @@ void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
 {
     // Sim thread: feed the sim controller AND run the ImGui uiCallback. produce()
     // already handles both independently (feed before update; ui after update).
-    produce(FrameMode::Threaded, mThreadedCanvas, assets, nullptr, nullptr, deltaTimeMS,
+    produce(FrameMode::Threaded, mThreadedCanvas, assets, nullptr, mThreadedImguiImages, deltaTimeMS,
             std::move(update), std::move(uiCallback), &simController);
 }
 
@@ -1226,7 +1246,7 @@ void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& im
     const RenderSnapshot& snapshot = mTripleBuffer.readSlot();
 
     // dt is recomputed from the window clock inside the Threaded arm.
-    consume(FrameMode::Threaded, assets, imguiRtt, nullptr, snapshot, 0.0f, controller);
+    consume(FrameMode::Threaded, assets, imguiRtt, mThreadedImguiImages, snapshot, 0.0f, controller);
 
     // Deferred screenshot: the backend recorded/read the capture during this frame's
     // endFrame; finish it (read back after the fence) and hold the result for retrieval.
