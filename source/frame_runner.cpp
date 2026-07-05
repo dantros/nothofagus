@@ -85,6 +85,11 @@ FrameRunner::FrameRunner(
     mHeadless(headless),
     mGameViewport{0, 0, 0, 0}
 {
+    // The constructing thread is the render/main thread: the window lives here and
+    // GLFW/SDL require window + monitor ops on it, in every mode. Anchor the
+    // render-thread guard to it so window ops are checked even single-threaded.
+    mRenderThreadId = std::this_thread::get_id();
+
     // Initialize the window backend (creates window, GL/Vulkan context, loads GLAD for OpenGL).
     // The GL swap interval (derived from the present mode) is applied here, while the GL
     // context is being made current; it is a no-op in Vulkan builds.
@@ -238,10 +243,13 @@ ScreenSize FrameRunner::windowSize() const
 void FrameRunner::debugCheckRenderThread(const char* op) const
 {
 #ifndef NDEBUG
-    if (mThreadedRunning.load(std::memory_order_acquire) && mRenderThreadId != std::thread::id{})
+    // Ungated: window/monitor ops require the main thread in every mode, and the
+    // render-thread id is anchored at construction, so this holds before/after a
+    // session and in single-thread run()/tick() too (all on the construction thread).
+    if (mRenderThreadId != std::thread::id{})
         debugCheck(std::this_thread::get_id() == mRenderThreadId,
                    std::string("Canvas::") + op + " must be called on the render (main) thread "
-                   "during a threaded session (it touches the window/monitor).");
+                   "(it touches the window/monitor).");
 #else
     (void)op;
 #endif
@@ -1039,9 +1047,9 @@ void FrameRunner::beginThreadedSession(Canvas& canvas, Controller& controller)
     // Remember the canvas so produce(Threaded) can drive the explorer pre-pass.
     mThreadedCanvas = &canvas;
 
-    // Thread-affinity guards: this runs on the render (main) thread. Reset the sim id
-    // so the first produce(Threaded) of this session re-captures it.
-    mRenderThreadId = std::this_thread::get_id();
+    // Thread-affinity guards: the render-thread id is anchored at construction. Reset
+    // the sim id so the first produce(Threaded) of this session re-captures it (the
+    // sim guard is session-scoped — a distinct sim thread only exists while live).
     mSimThreadId = std::thread::id{};
 
     // Bind input callbacks + reset the close flag (same as run()'s session start).

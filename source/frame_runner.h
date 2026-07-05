@@ -183,12 +183,14 @@ public:
     /// Thread-safe: true until the window is closed. Read by the sim loop.
     bool threadedRunning() const { return mThreadedRunning.load(std::memory_order_acquire); }
 
-    /// Thread-affinity guards (debug-only). During a live threaded session, assert the
-    /// caller is on the thread that owns the operation: window/monitor ops on the render
-    /// (main) thread, live-scene access on the sim thread. No-op when no session is live
-    /// (single-thread run/tick, setup) or the relevant thread id isn't captured yet, and
-    /// fully compiled out under NDEBUG. Turns a mis-placed Controller action (e.g. a
-    /// window op from a sim action) into an immediate, located failure instead of UB.
+    /// Thread-affinity guards (debug-only, compiled out under NDEBUG). Turn a mis-placed
+    /// Canvas call into an immediate, located failure instead of UB / a data race.
+    /// - Render guard: **always on**. Window/monitor ops require the main thread in every
+    ///   mode; the id is anchored at construction, so it holds single-threaded and outside
+    ///   a session too.
+    /// - Sim guard: **session-scoped**. A distinct sim thread only exists while a threaded
+    ///   session is live, so this no-ops otherwise (single-thread run/tick, setup, and
+    ///   post-session teardown — where the captured sim id would be stale).
     void debugCheckRenderThread(const char* op) const;
     void debugCheckSimThread(const char* op) const;
 
