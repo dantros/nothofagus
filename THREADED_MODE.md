@@ -78,6 +78,16 @@ convenience overloads that own the sim thread for you.
 - **Threaded-safe `markTextureAsDirty` / `setTextureMin|MagFilter`** — now pure-CPU dirty flags
   (`mContentDirty` / `mFilterDirty`) consumed by `syncToGpu` on the render thread.
 
+### Diegetic ImGui + registered ImGui images on the sim thread
+- **Registered ImGui images** (`registerImguiImage`/`imguiImage`/`updateImguiImage`) — the
+  `ImguiImageManager` is threaded through the produce/consume arms; sim-side registry access is
+  serialized under the asset mutex and GPU frees deferred via a two-phase retire queue.
+- **Diegetic `renderImguiTo`** — `ImguiRttManager` split into sim-side `produceClones` (run each
+  callback on its secondary context, deep-clone into `RenderSnapshot::rttUi`) + render-side
+  `replayClones` (backend init + `RenderDrawData`, no user code). Render consume takes the ImGui
+  mutex outer of the asset mutex so the RTT-clone atlas access can't deadlock with the sim.
+  See [THREADED_DIEGETIC_IMGUI.md](THREADED_DIEGETIC_IMGUI.md) for the full as-built.
+
 ## Pending — port all demos to the threaded path (main remaining work)
 
 The threaded core is complete; the outstanding effort is migrating the example demos so the
@@ -98,12 +108,13 @@ hello_text, hello_tilemap, hello_tint, test_create_destroy, test_gamepad.
 Per-demo caveats:
 - **hello_headless** uses `tick()` (deliberate single-step/headless harness) — a threaded port
   may not be meaningful; keep as the single-threaded/manual-tick reference.
-- **hello_imgui_rtt / hello_dpi_scaling** use `renderImguiTo` (diegetic ImGui in an RTT), which is
-  single-threaded-only for now (see [THREADED_DIEGETIC_IMGUI.md](THREADED_DIEGETIC_IMGUI.md)); port
-  only once that path gains threaded support.
-- **hello_imgui_visual / hello_imgui_image_registry / hello_markdown** exercise registered ImGui
-  images (`registerImguiImage`/`imguiImage`), which is **now threaded** (Phase 1) — all three run on
-  `run(update, ui)`.
+- **hello_screenshot** stays on the deprecated single-thread `run(update, Controller&)`: the
+  scheduled screenshot request/result handoff crosses the sim/render boundary unsynchronized
+  (`requestScreenshot` arms sim-side, `finishScreenshot` writes render-side). This is a *separate*
+  gap from the ImGui features and is the only remaining deferred demo.
+- **hello_imgui_rtt / hello_dpi_scaling** (diegetic `renderImguiTo`) and **hello_imgui_visual /
+  hello_imgui_image_registry / hello_markdown** (registered ImGui images) are **now threaded** —
+  all five run on `run(update, ui)` (see [THREADED_DIEGETIC_IMGUI.md](THREADED_DIEGETIC_IMGUI.md)).
 
 ## Out of scope
 

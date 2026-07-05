@@ -1,35 +1,56 @@
-# Threaded mode — the diegetic-ImGui / registered-image gap
+# Threaded mode — diegetic ImGui & registered images (as-built)
 
 > Companion to [THREADED_MODE.md](THREADED_MODE.md). That doc covers the *main-canvas* ImGui
-> path, which is fully threaded (sim-UI context + `ImDrawData` deep-clone in the snapshot).
-> **This doc scopes the two ImGui features that are NOT yet threaded**, so their support can be
-> designed and implemented separately. Until then, examples using them stay on the
-> single-threaded `run(update, Controller&)` path.
+> path (sim-UI context + `ImDrawData` deep-clone in the snapshot). This doc tracked the two
+> ImGui features that were the last to be threaded. **Both are now supported** — it is kept as
+> the as-built record of how they were wired; the historical "why it was blocked" analysis
+> follows the status table.
 
 ## TL;DR — threaded status
 
 | Feature | Public API | Threaded status | Examples |
 |---|---|---|---|
-| **Diegetic ImGui in an RTT** | `Canvas::renderImguiTo(rtId, fontId, callback)` | **Unsupported** | `hello_imgui_rtt`, `hello_dpi_scaling` |
 | **Registered ImGui images** | `Canvas::registerImguiImage` / `imguiImage` / `updateImguiImage` | **Supported** (Phase 1) | `hello_imgui_visual`, `hello_imgui_image_registry`, `hello_markdown` (spinner) |
+| **Diegetic ImGui in an RTT** | `Canvas::renderImguiTo(rtId, fontId, callback)` | **Supported** (Phase 2) | `hello_imgui_rtt`, `hello_dpi_scaling` |
 
-> **Registered images are done.** `ImguiImageManager` is now threaded through
-> `runThreaded`/`commitFrame`/`renderFrameThreaded`; the sim-side `beginFrame` +
-> `appendInternalPasses` run in the `FrameMode::Threaded` produce arm, the registry is
-> serialized under the asset mutex (the same one `resolveImages` holds render-side), and GPU
-> handle/RTT frees are deferred to the render thread via a two-phase retire queue. The three
-> examples above run on `run(update, ui)`. What remains below is the **diegetic `renderImguiTo`**
-> path.
+All five examples now run on `run(update, ui)`. Everything else was already threaded: main-canvas
+ImGui (interactive, input-marshalled), `renderTo` sprite RTT passes, screenshots, explorers, runtime
+asset mutation, `setScreenSize`.
 
-Everything else the examples need is already threaded: main-canvas ImGui (interactive, input-marshalled),
-`renderTo` sprite RTT passes (ride the snapshot's `rttPasses`), screenshots, explorers, runtime asset
-mutation, `setScreenSize`. See THREADED_MODE.md § Done.
+### As-built — registered images (Phase 1)
 
-> Note: THREADED_MODE.md's "Per-demo caveats" currently lists only the `imguiImages` examples.
-> The diegetic `renderImguiTo` demos (`hello_imgui_rtt`, `hello_dpi_scaling`) and
-> `hello_markdown` belong in the same deferred bucket — this doc is the authoritative list.
+`ImguiImageManager` is threaded through `runThreaded`/`commitFrame`/`renderFrameThreaded` (via a
+`mThreadedImguiImages` member). The sim-side `beginFrame` + `appendInternalPasses` run in the
+`FrameMode::Threaded` produce arm; the registry is serialized under the asset mutex (the same one
+`resolveImages` holds render-side, wrapped around the Canvas entry points); GPU handle/RTT frees are
+deferred to the render thread via a two-phase retire queue (`retireEntryGpu` / `drainRetiredGpu`).
 
-## Why it's blocked — the mechanics
+### As-built — diegetic ImGui (Phase 2)
+
+`ImguiRttManager::flushPending` split into **`produceClones`** (sim thread: for each `renderImguiTo`
+pass, run the user callback on its secondary context and deep-clone the draw data into the snapshot's
+new `rttUi` list — the reuse template from `mainUi`) and **`replayClones`** (render thread: lazy
+per-RTT renderer-backend init + `RenderDrawData` of the clones — no user callback, no secondary
+NewFrame). The RTT manager is threaded through the produce arm via `mThreadedImguiRtt`. Because the
+RTT-clone replay touches the shared font atlas, the render consume holds the **ImGui mutex outer of
+the asset mutex** around `renderSnapshotContents`, matching the sim side's `imgui⊃asset` order
+(Phase 1's Canvas image draw takes the asset mutex while the ImGui mutex is held) so the two threads
+acquire the pair in the same order and cannot deadlock. Secondary-context teardown
+(`releaseContext`/`releaseAll`) only shuts down the renderer backend for RTTs that were actually
+replayed (tracked in `mBackendInited`).
+
+**Known v1 limitation (unchanged):** diegetic panels take **no input** — mouse/keyboard reach only the
+main context. This was true single-threaded too; threading is render parity, not new input.
+
+---
+
+## Historical: why it was blocked — the mechanics
+
+*(Retained for context; both gaps below are now closed as described above.)*
+
+Both features were originally driven **exclusively from the `FrameMode::Single` arm** of
+`FrameRunner::produce` (`source/frame_runner.cpp`). The `FrameMode::Threaded` arm (the sim-thread
+commit, ends ~line 592) never touched them, and `commitFrame` passed both managers as `nullptr`.
 
 Both features are driven **exclusively from the `FrameMode::Single` arm** of
 `FrameRunner::produce` (`source/frame_runner.cpp`). The `FrameMode::Threaded` arm (the sim-thread
