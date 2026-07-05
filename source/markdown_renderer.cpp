@@ -6,6 +6,7 @@
 
 #include <imgui.h>
 #include <spdlog/spdlog.h>
+#include <algorithm>
 #include <utility>
 
 namespace Nothofagus
@@ -120,10 +121,10 @@ protected:
     {
         const std::string_view src(m_href.data(), m_href.size());
 
-        std::optional<ImguiImageId> imageId =
+        std::optional<MarkdownImage> image =
             (mImageResolver && mCanvas != nullptr) ? mImageResolver(src) : std::nullopt;
 
-        if (not imageId)
+        if (not image)
         {
             // No resolver / unresolved src: a dimmed placeholder keeps the missing
             // image visible (the parser suppresses the alt text while in an image, so
@@ -133,17 +134,39 @@ protected:
             return false;
         }
 
-        // Fit to the available content width, preserving aspect (downscale only). The
-        // registered size and ImGui's content region are the same layout units, so no
-        // DPI/FontGlobalScale juggling is needed — register at a generous resolution and
-        // this stays a crisp GPU downscale of the fixed-resolution handle.
-        const glm::vec2 natural = mCanvas->imguiImageSize(*imageId);   // logical layout px
-        std::optional<glm::vec2> drawSize;
-        const float availableWidth = ImGui::GetContentRegionAvail().x;
-        if (natural.x > 0.0f && natural.y > 0.0f && natural.x > availableWidth)
-            drawSize = glm::vec2(availableWidth, availableWidth * natural.y / natural.x);
+        // With no bounds, draw at exactly the registered ImguiImageSize (uncapped — may overflow,
+        // which the window clips unless it has a horizontal scrollbar). With bounds present, clamp
+        // the drawn width to fractions of the column (text-wrap) width.
+        //
+        // Each present bound must lie in [0, 1] with min <= max. In release (no assert), min > max
+        // lets the floor win the clamp and max > 1 lets the image overflow the column.
+        debugCheck((not image->minWidthPercentage ||
+                        (*image->minWidthPercentage >= 0.0f && *image->minWidthPercentage <= 1.0f)) &&
+                   (not image->maxWidthPercentage ||
+                        (*image->maxWidthPercentage >= 0.0f && *image->maxWidthPercentage <= 1.0f)) &&
+                   image->minWidthPercentage.value_or(0.0f) <= image->maxWidthPercentage.value_or(1.0f),
+                   "MarkdownImage: width bounds must satisfy 0 <= minWidthPercentage <= maxWidthPercentage <= 1");
 
-        mCanvas->imguiImage(*imageId, drawSize);
+        std::optional<glm::vec2> drawSize;
+        if (image->minWidthPercentage || image->maxWidthPercentage)
+        {
+            const glm::vec2 natural = mCanvas->imguiImageSize(image->id);   // logical layout px
+            // Basis is the full column (text-wrap) width, NOT GetContentRegionAvail().x (the width
+            // *remaining on the current line*). Otherwise an inline image near a line wrap — where
+            // little width is left — collapses to a sliver. GetContentRegionMax/GetCursorStartPos are
+            // window-local, so their difference is the content column width regardless of cursor X.
+            const float columnWidth = ImGui::GetContentRegionMax().x - ImGui::GetCursorStartPos().x;
+            if (natural.x > 0.0f && natural.y > 0.0f && columnWidth > 0.0f)
+            {
+                float width = natural.x;
+                if (image->maxWidthPercentage) width = std::min(width, *image->maxWidthPercentage * columnWidth); // ceiling
+                if (image->minWidthPercentage) width = std::max(width, *image->minWidthPercentage * columnWidth); // floor
+                if (width != natural.x)
+                    drawSize = glm::vec2(width, width * natural.y / natural.x);             // height follows aspect
+            }
+        }
+
+        mCanvas->imguiImage(image->id, drawSize);   // nullopt -> registered ImguiImageSize (raw)
 
         // imgui_md's own hover/click handling is bypassed (we returned false), so
         // re-create it on the image item: tooltip with the src, click fires open_url.

@@ -267,14 +267,17 @@ void FrameRunner::debugCheckSimThread(const char* op) const
 #endif
 }
 
-DirectTexture FrameRunner::takeScreenshot() const
+void FrameRunner::requestScreenshot()
 {
+    mScreenshotArmed = true;
     const ScreenSize screen = mScreenSize.load(std::memory_order_acquire);
     const glm::ivec2 gameSize{static_cast<int>(screen.width), static_cast<int>(screen.height)};
-    ScreenshotPixels pixels = mBackend.takeScreenshot(mGameViewport, gameSize);
-    TextureData textureData(pixels.width, pixels.height, 1);
-    std::copy(pixels.data.begin(), pixels.data.end(), textureData.getDataSpan().begin());
-    return DirectTexture(std::move(textureData));
+    mBackend.armScreenshot(gameSize);
+}
+
+std::optional<DirectTexture> FrameRunner::retrieveScreenshot()
+{
+    return std::exchange(mScreenshotResult, std::nullopt);
 }
 
 // ---------------------------------------------------------------------------
@@ -387,6 +390,20 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
     const RenderSnapshot& snapshot = produce(FrameMode::Single, &canvas, assets, &imguiRtt, &imguiImages,
                                              deltaTimeMS, std::move(update), {}, &controller);
     consume(FrameMode::Single, assets, imguiRtt, &imguiImages, snapshot, deltaTimeMS, controller);
+
+    // Deferred screenshot: the backend recorded/read the capture during this frame's
+    // endFrame; finish it (read back after the fence) and hold the result for retrieval.
+    // Stays armed if the frame was skipped (e.g. swapchain recreation returned no image).
+    if (mScreenshotArmed)
+    {
+        if (std::optional<ScreenshotPixels> pixels = mBackend.finishScreenshot())
+        {
+            TextureData textureData(pixels->width, pixels->height, 1);
+            std::copy(pixels->data.begin(), pixels->data.end(), textureData.getDataSpan().begin());
+            mScreenshotResult = DirectTexture(std::move(textureData));
+            mScreenshotArmed = false;
+        }
+    }
 
     FrameMark;
 }
@@ -1210,6 +1227,20 @@ void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& im
 
     // dt is recomputed from the window clock inside the Threaded arm.
     consume(FrameMode::Threaded, assets, imguiRtt, nullptr, snapshot, 0.0f, controller);
+
+    // Deferred screenshot: the backend recorded/read the capture during this frame's
+    // endFrame; finish it (read back after the fence) and hold the result for retrieval.
+    // Stays armed if the frame was skipped (e.g. swapchain recreation returned no image).
+    if (mScreenshotArmed)
+    {
+        if (std::optional<ScreenshotPixels> pixels = mBackend.finishScreenshot())
+        {
+            TextureData textureData(pixels->width, pixels->height, 1);
+            std::copy(pixels->data.begin(), pixels->data.end(), textureData.getDataSpan().begin());
+            mScreenshotResult = DirectTexture(std::move(textureData));
+            mScreenshotArmed = false;
+        }
+    }
 
     FrameMark;
 }

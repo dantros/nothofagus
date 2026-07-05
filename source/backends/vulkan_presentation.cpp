@@ -125,6 +125,7 @@ void WindowedVulkanPresentation::createPresentationTarget(
         .add_fallback_format({VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
         .set_desired_present_mode(mPresentMode)               // vk-bootstrap falls back to FIFO if unsupported.
         .set_desired_min_image_count(kDesiredSwapchainImageCount)
+        .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_SRC_BIT) // recordCapture() blits from the swapchain image for scheduled screenshots.
         .set_desired_extent(framebufferSize.width, framebufferSize.height)
         .build();
     if (!swapchainResult)
@@ -261,32 +262,65 @@ void WindowedVulkanPresentation::submitAndPresent(
 
 // --- Screenshot ---
 
-ScreenshotPixels WindowedVulkanPresentation::takeScreenshot(
-    VkDevice device, VmaAllocator allocator,
-    VkCommandPool commandPool, VkQueue graphicsQueue,
-    ViewportRect gameViewport, glm::ivec2 gameSize) const
+void WindowedVulkanPresentation::armCapture(glm::ivec2 gameSize)
 {
-    vkDeviceWaitIdle(device);
+    mCapturePending  = true;
+    mCaptureRecorded = false;
+    mCaptureGameSize = gameSize;
+}
 
-    const uint32_t     width  = static_cast<uint32_t>(gameSize.x);
-    const uint32_t     height = static_cast<uint32_t>(gameSize.y);
-    const VkDeviceSize bufSize = VkDeviceSize(width) * height * 4;
+bool WindowedVulkanPresentation::captureReady() const
+{
+    return mCapturePending && mCaptureRecorded;
+}
 
-    // Staging buffer (host-visible, host-coherent)
+void WindowedVulkanPresentation::destroyCaptureResources()
+{
+    if (mCaptureStaging != VK_NULL_HANDLE)
+    {
+        vmaDestroyBuffer(mAllocator, mCaptureStaging, mCaptureStagingAlloc);
+        mCaptureStaging       = VK_NULL_HANDLE;
+        mCaptureStagingAlloc  = VK_NULL_HANDLE;
+        mCaptureStagingMapped = nullptr;
+    }
+    if (mCaptureImage != VK_NULL_HANDLE)
+    {
+        vmaDestroyImage(mAllocator, mCaptureImage, mCaptureImageAlloc);
+        mCaptureImage      = VK_NULL_HANDLE;
+        mCaptureImageAlloc = VK_NULL_HANDLE;
+    }
+}
+
+// Record the pixel copy into the frame command buffer AFTER the render pass but BEFORE
+// present, while we still own the swapchain image — avoids the WRITE-AFTER-PRESENT hazard.
+void WindowedVulkanPresentation::recordCapture(
+    VkCommandBuffer commandBuffer, ViewportRect gameViewport, VkFence frameFence)
+{
+    if (!mCapturePending)
+        return;
+
+    // A previous armed-but-unfinished cycle could leave resources around; reset first.
+    destroyCaptureResources();
+
+    const uint32_t width  = static_cast<uint32_t>(mCaptureGameSize.x);
+    const uint32_t height = static_cast<uint32_t>(mCaptureGameSize.y);
+    mCaptureBufSize       = VkDeviceSize(width) * height * 4;
+
+    // Host-visible staging buffer — persists until finishCapture reads it back.
     VkBufferCreateInfo bufInfo{};
     bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufInfo.size  = bufSize;
+    bufInfo.size  = mCaptureBufSize;
     bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-
     VmaAllocationCreateInfo stagingAllocInfo{};
     stagingAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
     stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
                              VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VmaAllocationInfo stagingMapped{};
+    vmaCreateBuffer(mAllocator, &bufInfo, &stagingAllocInfo,
+                    &mCaptureStaging, &mCaptureStagingAlloc, &stagingMapped);
+    mCaptureStagingMapped = stagingMapped.pMappedData;
 
-    VkBuffer stagingBuffer; VmaAllocation stagingAlloc; VmaAllocationInfo stagingMapped;
-    vmaCreateBuffer(allocator, &bufInfo, &stagingAllocInfo, &stagingBuffer, &stagingAlloc, &stagingMapped);
-
-    // Intermediate R8G8B8A8 image (handles B8G8R8A8 -> R8G8B8A8 format conversion)
+    // Intermediate R8G8B8A8 image (handles B8G8R8A8 -> R8G8B8A8 conversion + crop + flip).
     VkImageCreateInfo intermediateInfo{};
     intermediateInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     intermediateInfo.imageType     = VK_IMAGE_TYPE_2D;
@@ -298,17 +332,15 @@ ScreenshotPixels WindowedVulkanPresentation::takeScreenshot(
     intermediateInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
     intermediateInfo.usage         = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     intermediateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
     VmaAllocationCreateInfo intermediateAllocInfo{};
     intermediateAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    vmaCreateImage(mAllocator, &intermediateInfo, &intermediateAllocInfo,
+                   &mCaptureImage, &mCaptureImageAlloc, nullptr);
 
-    VkImage intermediateImage; VmaAllocation intermediateAlloc;
-    vmaCreateImage(allocator, &intermediateInfo, &intermediateAllocInfo,
-                   &intermediateImage, &intermediateAlloc, nullptr);
+    VkImage swapchainImage = mSwapchainImages[mCurrentImageIndex];
 
-    VkCommandBuffer commandBuffer = beginOneTimeCommand(device, commandPool);
-
-    // Transition swapchain image to TRANSFER_SRC
+    // Swapchain PRESENT_SRC -> TRANSFER_SRC. Source scope is the render pass's color
+    // writes (we captured this frame's output before it is presented).
     {
         VkImageMemoryBarrier barrier{};
         barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -316,16 +348,16 @@ ScreenshotPixels WindowedVulkanPresentation::takeScreenshot(
         barrier.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image               = mSwapchainImages[mCurrentImageIndex];
+        barrier.image               = swapchainImage;
         barrier.subresourceRange    = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        barrier.srcAccessMask       = VK_ACCESS_MEMORY_READ_BIT;
+        barrier.srcAccessMask       = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
         barrier.dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT;
         vkCmdPipelineBarrier(commandBuffer,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
             0, 0, nullptr, 0, nullptr, 1, &barrier);
     }
 
-    // Transition intermediate image to TRANSFER_DST
+    // Intermediate UNDEFINED -> TRANSFER_DST
     {
         VkImageMemoryBarrier barrier{};
         barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -333,7 +365,7 @@ ScreenshotPixels WindowedVulkanPresentation::takeScreenshot(
         barrier.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image               = intermediateImage;
+        barrier.image               = mCaptureImage;
         barrier.subresourceRange    = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         barrier.srcAccessMask       = 0;
         barrier.dstAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -342,7 +374,7 @@ ScreenshotPixels WindowedVulkanPresentation::takeScreenshot(
             0, 0, nullptr, 0, nullptr, 1, &barrier);
     }
 
-    // Blit swapchain -> intermediate (viewport crop + format conversion)
+    // Blit swapchain -> intermediate (viewport crop + Y-flip + format conversion)
     const int framebufferHeight = static_cast<int>(mSwapchainExtent.height);
     const int vulkanGameTop     = framebufferHeight - gameViewport.y - gameViewport.height;
     const int vulkanGameBottom  = framebufferHeight - gameViewport.y;
@@ -355,11 +387,11 @@ ScreenshotPixels WindowedVulkanPresentation::takeScreenshot(
     blit.dstOffsets[0]  = {0, 0, 0};
     blit.dstOffsets[1]  = {static_cast<int32_t>(width), static_cast<int32_t>(height), 1};
     vkCmdBlitImage(commandBuffer,
-        mSwapchainImages[mCurrentImageIndex], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        intermediateImage,                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        swapchainImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        mCaptureImage,  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         1, &blit, VK_FILTER_NEAREST);
 
-    // Transition intermediate to TRANSFER_SRC for copy to buffer
+    // Intermediate TRANSFER_DST -> TRANSFER_SRC for the copy to buffer
     {
         VkImageMemoryBarrier barrier{};
         barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -367,7 +399,7 @@ ScreenshotPixels WindowedVulkanPresentation::takeScreenshot(
         barrier.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image               = intermediateImage;
+        barrier.image               = mCaptureImage;
         barrier.subresourceRange    = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         barrier.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
         barrier.dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT;
@@ -379,23 +411,23 @@ ScreenshotPixels WindowedVulkanPresentation::takeScreenshot(
     VkBufferImageCopy copyRegion{};
     copyRegion.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     copyRegion.imageExtent      = {width, height, 1};
-    vkCmdCopyImageToBuffer(commandBuffer, intermediateImage,
-                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &copyRegion);
+    vkCmdCopyImageToBuffer(commandBuffer, mCaptureImage,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, mCaptureStaging, 1, &copyRegion);
 
-    // Host-read barrier
+    // Host-read barrier on the staging buffer
     {
         VkBufferMemoryBarrier barrier{};
         barrier.sType         = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-        barrier.buffer        = stagingBuffer;
-        barrier.size          = bufSize;
+        barrier.buffer        = mCaptureStaging;
+        barrier.size          = mCaptureBufSize;
         vkCmdPipelineBarrier(commandBuffer,
             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
             0, 0, nullptr, 1, &barrier, 0, nullptr);
     }
 
-    // Restore swapchain image to PRESENT_SRC
+    // Restore swapchain image to PRESENT_SRC for the upcoming present
     {
         VkImageMemoryBarrier barrier{};
         barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -403,26 +435,35 @@ ScreenshotPixels WindowedVulkanPresentation::takeScreenshot(
         barrier.newLayout           = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image               = mSwapchainImages[mCurrentImageIndex];
+        barrier.image               = swapchainImage;
         barrier.subresourceRange    = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         barrier.srcAccessMask       = VK_ACCESS_TRANSFER_READ_BIT;
-        barrier.dstAccessMask       = VK_ACCESS_MEMORY_READ_BIT;
+        barrier.dstAccessMask       = 0;
         vkCmdPipelineBarrier(commandBuffer,
             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
             0, 0, nullptr, 0, nullptr, 1, &barrier);
     }
 
-    endOneTimeCommand(device, commandPool, graphicsQueue, commandBuffer);
+    mCaptureFence    = frameFence;
+    mCaptureRecorded = true;
+}
+
+ScreenshotPixels WindowedVulkanPresentation::finishCapture(
+    VkDevice device, VmaAllocator /*allocator*/, VkCommandPool /*commandPool*/, VkQueue /*graphicsQueue*/)
+{
+    // The GPU copy was recorded into the frame command buffer; wait for that frame to
+    // complete, then read the staging buffer. No extra submit needed.
+    vkWaitForFences(device, 1, &mCaptureFence, VK_TRUE, UINT64_MAX);
 
     ScreenshotPixels result;
-    result.width  = static_cast<int>(width);
-    result.height = static_cast<int>(height);
-    result.data.resize(bufSize);
-    std::memcpy(result.data.data(), stagingMapped.pMappedData, bufSize);
+    result.width  = mCaptureGameSize.x;
+    result.height = mCaptureGameSize.y;
+    result.data.resize(mCaptureBufSize);
+    std::memcpy(result.data.data(), mCaptureStagingMapped, mCaptureBufSize);
 
-    vmaDestroyBuffer(allocator, stagingBuffer, stagingAlloc);
-    vmaDestroyImage(allocator, intermediateImage, intermediateAlloc);
-
+    destroyCaptureResources();
+    mCapturePending  = false;
+    mCaptureRecorded = false;
     return result;
 }
 
@@ -430,6 +471,7 @@ ScreenshotPixels WindowedVulkanPresentation::takeScreenshot(
 
 void WindowedVulkanPresentation::shutdown(VkDevice device, VmaAllocator allocator, VkInstance instance)
 {
+    destroyCaptureResources();
     destroySwapchainResources();
     vkDestroySwapchainKHR(device, mSwapchain, nullptr);
 
@@ -538,6 +580,7 @@ void WindowedVulkanPresentation::recreateSwapchain()
         .add_fallback_format({VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
         .set_desired_present_mode(mPresentMode)               // Preserve the mode chosen at init across recreation.
         .set_desired_min_image_count(kDesiredSwapchainImageCount)
+        .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_SRC_BIT) // recordCapture() blits from the swapchain image for scheduled screenshots.
         .set_desired_extent(framebufferSize.width, framebufferSize.height)
         .set_old_swapchain(mSwapchain)
         .build();
@@ -752,15 +795,38 @@ void HeadlessVulkanPresentation::submitAndPresent(
 
 // --- Screenshot ---
 
-ScreenshotPixels HeadlessVulkanPresentation::takeScreenshot(
+void HeadlessVulkanPresentation::armCapture(glm::ivec2 gameSize)
+{
+    mCapturePending  = true;
+    mCaptureRecorded = false;
+    mCaptureGameSize = gameSize;
+}
+
+void HeadlessVulkanPresentation::recordCapture(
+    VkCommandBuffer /*commandBuffer*/, ViewportRect gameViewport, VkFence /*frameFence*/)
+{
+    // Headless never presents; the owned color image is read out-of-band in
+    // finishCapture. Here we just note a capture is due for this frame's output.
+    if (!mCapturePending)
+        return;
+    mCaptureViewport = gameViewport;
+    mCaptureRecorded = true;
+}
+
+bool HeadlessVulkanPresentation::captureReady() const
+{
+    return mCapturePending && mCaptureRecorded;
+}
+
+ScreenshotPixels HeadlessVulkanPresentation::finishCapture(
     VkDevice device, VmaAllocator allocator,
-    VkCommandPool commandPool, VkQueue graphicsQueue,
-    ViewportRect gameViewport, glm::ivec2 gameSize) const
+    VkCommandPool commandPool, VkQueue graphicsQueue)
 {
     vkDeviceWaitIdle(device);
 
-    const uint32_t     width  = static_cast<uint32_t>(gameSize.x);
-    const uint32_t     height = static_cast<uint32_t>(gameSize.y);
+    const ViewportRect gameViewport = mCaptureViewport;
+    const uint32_t     width  = static_cast<uint32_t>(mCaptureGameSize.x);
+    const uint32_t     height = static_cast<uint32_t>(mCaptureGameSize.y);
     const VkDeviceSize bufSize = VkDeviceSize(width) * height * 4;
 
     // Staging buffer (host-visible, host-coherent)
@@ -851,6 +917,8 @@ ScreenshotPixels HeadlessVulkanPresentation::takeScreenshot(
 
     vmaDestroyBuffer(allocator, stagingBuffer, stagingAlloc);
 
+    mCapturePending  = false;
+    mCaptureRecorded = false;
     return result;
 }
 

@@ -174,8 +174,10 @@ public:
                      std::function<void(float)> update, std::function<void(float)> uiCallback,
                      Controller& simController, Controller& renderController);
 
-    /// Captures the last rendered frame visible to the user as a DirectTexture (RGBA).
-    DirectTexture takeScreenshot() const;
+    /// Arm a screenshot of the next rendered frame (captured in-frame before present).
+    void requestScreenshot();
+    /// Consume the captured frame once it is ready; nullopt until the armed frame renders.
+    std::optional<DirectTexture> retrieveScreenshot();
 
     // ----- Threaded driver (M2 Phase A) -----
     // The app runs two threads: `commitFrame` on a sim thread and
@@ -375,6 +377,11 @@ private:
 
     /// RTT passes queued by renderTo() during the update callback, executed before the main render.
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
+
+    /// Deferred screenshot: armed by requestScreenshot(), finished at the end of the
+    /// captured frame; the result is held until retrieveScreenshot() consumes it.
+    bool mScreenshotArmed{false};
+    std::optional<DirectTexture> mScreenshotResult;
 
     PresentMode mPresentMode{DEFAULT_PRESENT_MODE}; ///< Swapchain / vsync preference (construction-time).
     std::optional<float> mTargetFps; ///< Frame-rate cap for run() (nullopt = unlimited). Runtime-settable.

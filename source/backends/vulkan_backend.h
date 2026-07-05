@@ -19,6 +19,7 @@ using TracyVkCtx = void*;
 #include <array>
 #include <vector>
 #include <span>
+#include <optional>
 #include <cstdint>
 
 // Forward-declare VmaAllocator to avoid including vk_mem_alloc.h in every TU.
@@ -168,7 +169,10 @@ public:
     void imguiNewFrameForRenderTarget(DRenderTarget renderTarget);
     void renderImguiDrawDataToRenderTarget(ImDrawData* imguiData, DRenderTarget renderTarget);
 
-    ScreenshotPixels takeScreenshot(ViewportRect gameViewport, glm::ivec2 gameSize) const;
+    // Scheduled screenshot: armScreenshot() arms a capture of the next rendered frame
+    // (recorded in endFrame before present); finishScreenshot() reads it back after the fence.
+    void armScreenshot(glm::ivec2 gameSize);
+    std::optional<ScreenshotPixels> finishScreenshot();
 
     // Not part of the concept — called by FrameRunner to update filter after upload
     void setTextureMinFilter(DTexture dtexture, TextureSampleMode mode);

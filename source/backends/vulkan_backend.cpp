@@ -420,6 +420,20 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize, 
         dep.srcAccessMask = 0;
         dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
+        // Order this frame's depth access after the previous frame's depth write. The depth
+        // image is shared across frames, so without this the next frame's clear / layout
+        // transition races the prior frame's write (SYNC-HAZARD-WRITE-AFTER-WRITE).
+        VkSubpassDependency depthDep{};
+        depthDep.srcSubpass    = VK_SUBPASS_EXTERNAL;
+        depthDep.dstSubpass    = 0;
+        depthDep.srcStageMask  = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        depthDep.dstStageMask  = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        depthDep.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        depthDep.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                                 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+
+        std::array<VkSubpassDependency, 2> dependencies = {dep, depthDep};
+
         std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
         VkRenderPassCreateInfo rpInfo{};
         rpInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -427,8 +441,8 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize, 
         rpInfo.pAttachments    = attachments.data();
         rpInfo.subpassCount    = 1;
         rpInfo.pSubpasses      = &subpass;
-        rpInfo.dependencyCount = 1;
-        rpInfo.pDependencies   = &dep;
+        rpInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
+        rpInfo.pDependencies   = dependencies.data();
 
         if (vkCreateRenderPass(mDevice, &rpInfo, nullptr, &mMainRenderPass) != VK_SUCCESS)
             throw std::runtime_error("Failed to create main render pass");
@@ -473,6 +487,19 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize, 
         dep.srcAccessMask = 0;
         dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
+        // Order this frame's depth access after the previous frame's depth write: each RTT
+        // reuses its own depth image every frame it is rendered, so the same WAW applies.
+        VkSubpassDependency depthDep{};
+        depthDep.srcSubpass    = VK_SUBPASS_EXTERNAL;
+        depthDep.dstSubpass    = 0;
+        depthDep.srcStageMask  = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        depthDep.dstStageMask  = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        depthDep.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        depthDep.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                                 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+
+        std::array<VkSubpassDependency, 2> dependencies = {dep, depthDep};
+
         std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
         VkRenderPassCreateInfo rpInfo{};
         rpInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -480,8 +507,8 @@ void VulkanBackend::initialize(void* nativeWindowHandle, glm::ivec2 canvasSize, 
         rpInfo.pAttachments    = attachments.data();
         rpInfo.subpassCount    = 1;
         rpInfo.pSubpasses      = &subpass;
-        rpInfo.dependencyCount = 1;
-        rpInfo.pDependencies   = &dep;
+        rpInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
+        rpInfo.pDependencies   = dependencies.data();
 
         if (vkCreateRenderPass(mDevice, &rpInfo, nullptr, &mRttRenderPass) != VK_SUCCESS)
             throw std::runtime_error("Failed to create RTT render pass");
@@ -2166,6 +2193,12 @@ void VulkanBackend::endFrame(
     TracyVkCollect(mTracyVkContext, mActiveCommandBuffer);
 
     vkCmdEndRenderPass(mActiveCommandBuffer);
+
+    // Deferred screenshot: capture this frame's output while we still own the image —
+    // recorded here (before submit/present), read back after the fence. No-op unless armed.
+    mPresentation.recordCapture(mActiveCommandBuffer, mCurrentGameViewport,
+                                mFrames[mCurrentFrame].inFlight);
+
     vkEndCommandBuffer(mActiveCommandBuffer);
 
     FrameData& frame = mFrames[mCurrentFrame];
@@ -2250,13 +2283,19 @@ void VulkanBackend::renderImguiDrawDataToRenderTarget(ImDrawData* imguiData,
 }
 
 // ---------------------------------------------------------------------------
-// takeScreenshot()
+// Screenshot (scheduled) — arm a capture, then finish it at end of frame.
 // ---------------------------------------------------------------------------
 
-ScreenshotPixels VulkanBackend::takeScreenshot(ViewportRect gameViewport, glm::ivec2 gameSize) const
+void VulkanBackend::armScreenshot(glm::ivec2 gameSize)
 {
-    return mPresentation.takeScreenshot(mDevice, mAllocator, mCommandPool, mGraphicsQueue,
-                                        gameViewport, gameSize);
+    mPresentation.armCapture(gameSize);
+}
+
+std::optional<ScreenshotPixels> VulkanBackend::finishScreenshot()
+{
+    if (!mPresentation.captureReady())
+        return std::nullopt;
+    return mPresentation.finishCapture(mDevice, mAllocator, mCommandPool, mGraphicsQueue);
 }
 
 // ---------------------------------------------------------------------------

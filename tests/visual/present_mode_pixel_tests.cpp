@@ -24,7 +24,9 @@ std::vector<std::uint8_t> screenshotBytes(Nothofagus::PresentMode mode)
         {15, 10}, "present_mode_test", {0.0f, 0.0f, 0.0f}, 1, 14,
         /*headless=*/true, mode);
     PresentModeTest::buildSceneAndTick(canvas, /*ticks=*/4);
-    Nothofagus::DirectTexture shot = canvas.takeScreenshot();
+    canvas.requestScreenshot();
+    canvas.tick(16.0f); // render one more frame to capture it
+    Nothofagus::DirectTexture shot = *canvas.retrieveScreenshot();
     Nothofagus::TextureData data = shot.generateTextureData();
     std::span<std::uint8_t> span = data.getDataSpan();
     return std::vector<std::uint8_t>(span.begin(), span.end());

@@ -11,6 +11,7 @@
 #include <glm/glm.hpp>
 #include <concepts>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 struct ImDrawData;
@@ -30,7 +31,7 @@ struct SpriteDrawParams
     DTexture    mapTexture{};       ///< GPU map texture handle (only valid when mode == TextureMode::TileMap).
 };
 
-/// Pixel buffer returned by takeScreenshot(). RGBA, top-to-bottom row order.
+/// Pixel buffer produced by finishScreenshot(). RGBA, top-to-bottom row order.
 struct ScreenshotPixels
 {
     std::vector<std::uint8_t> data;
@@ -116,8 +117,11 @@ concept RenderBackend = requires(
     { backend.imguiNewFrameForRenderTarget(renderTarget)       } -> std::same_as<void>;
     { backend.renderImguiDrawDataToRenderTarget(imguiData, renderTarget) } -> std::same_as<void>;
 
-    // Screenshot: reads from the front buffer, returns RGBA pixels top-to-bottom.
-    { backend.takeScreenshot(viewport, canvasSize)             } -> std::same_as<ScreenshotPixels>;
+    // Screenshot (scheduled): armScreenshot() arms a capture of the next rendered frame
+    // (recorded in-frame before present); finishScreenshot() completes it at end of frame
+    // and returns the pixels (nullopt if none was captured this frame).
+    { backend.armScreenshot(canvasSize)                        } -> std::same_as<void>;
+    { backend.finishScreenshot()                               } -> std::same_as<std::optional<ScreenshotPixels>>;
 };
 
 } // namespace Nothofagus

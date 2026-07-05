@@ -128,7 +128,7 @@ source/backends/
 | `acquireImage()` | `beginFrame()` | vkAcquireNextImageKHR or no-op (always succeeds) |
 | `mainFramebuffer()` / `extent()` | `beginMainPass()` | Return the active framebuffer and render area |
 | `submitAndPresent()` | `endFrame()` | Submit + present with semaphores, or submit with fence only |
-| `takeScreenshot()` | `takeScreenshot()` | Copy pixels from swapchain or offscreen image to CPU |
+| `recordCapture()` / `finishCapture()` | `endFrame()` / `finishScreenshot()` | Record the scheduled screenshot copy in-frame before present, then read it back after the fence |
 | `shutdown()` | `shutdown()` | Destroy surface/swapchain or offscreen resources |
 
 **Initialization order** (critical — render pass depends on format from the presentation target):
@@ -201,8 +201,10 @@ for (int i = 0; i < 10; ++i)
 canvas.tick(16.0f, [&](float dt) { /* update logic */ }, controller);
 canvas.tick(16.0f, [&](float dt) { /* update logic */ });
 
-// Screenshot works in headless mode:
-Nothofagus::DirectTexture screenshot = canvas.takeScreenshot();
+// Screenshot works in headless mode (scheduled: request, render a frame, retrieve):
+canvas.requestScreenshot();
+canvas.tick(16.0f);
+Nothofagus::DirectTexture screenshot = *canvas.retrieveScreenshot();
 ```
 
 GPU resources are cleaned up automatically in the `Canvas` destructor — no need to call `run()` or any explicit shutdown. Call `canvas.close()` from inside an update callback to break out of `run()` early.
@@ -758,21 +760,25 @@ canvas.run([&](float) {
 
 #### Inline images — `setImageResolver` + `MarkdownImageResolver`
 
-Inline images render an engine sprite when an image resolver is installed. The resolver maps an image `src` string to a **pre-registered** `ImguiImageId` (see [`registerImguiImage`](#draw-a-visual-inside-imgui--canvasregisterimguiimage--imguiimage)); the renderer draws it inline via `imguiImage`, **fit to the available content width** (downscale only, preserving aspect — a crisp GPU downscale of the fixed-resolution handle). Because images are pre-registered, declared images have **no warm-up**. Every texture kind works (Direct / Indirect / tile-map / animation); keep an animated source live with `Canvas::updateImguiImage`.
+Inline images render an engine sprite when an image resolver is installed. The resolver maps an image `src` string to a `MarkdownImage` — a **pre-registered** `ImguiImageId` (see [`registerImguiImage`](#draw-a-visual-inside-imgui--canvasregisterimguiimage--imguiimage)) plus **optional** per-image width bounds — and the renderer draws it inline via `imguiImage`. Because images are pre-registered, declared images have **no warm-up**. Every texture kind works (Direct / Indirect / tile-map / animation); keep an animated source live with `Canvas::updateImguiImage`.
 
 ```cpp
-// Register the document's images up front, then map each src token to its id.
+// Register the document's images up front, then map each src token to a MarkdownImage.
 auto logoId = canvas.registerImguiImage(Nothofagus::Visual{logoTexId}, ImguiImageSize::Scaled{glm::vec2(6)});
-markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::ImguiImageId> {
-    if (src == "logo") return logoId;
+markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+    if (src == "logo") return Nothofagus::MarkdownImage{logoId, /*minPct=*/0.0f, /*maxPct=*/0.8f}; // capped to 80%
+    if (src == "icon") return Nothofagus::MarkdownImage{logoId};                                   // raw: registered size
     return std::nullopt;            // unknown src -> a dimmed [src] placeholder
 });
 markdown.print("![the logo](logo)\n");
 ```
 
-- `MarkdownImageResolver = std::function<std::optional<ImguiImageId>(std::string_view src)>` ([include/markdown_renderer.h](include/markdown_renderer.h)). Returning `std::nullopt` (or installing no resolver) draws a dimmed `[src]` placeholder instead of the image.
+- `MarkdownImageResolver = std::function<std::optional<MarkdownImage>(std::string_view src)>` ([include/markdown_renderer.h](include/markdown_renderer.h)). Returning `std::nullopt` (or installing no resolver) draws a dimmed `[src]` placeholder instead of the image.
+- **No bounds** (`MarkdownImage{id}`) draws the image at exactly its registered `ImguiImageSize` — uncapped, so it may be small or overflow the column. An overflowing image is clipped at the window's right edge unless the window has `ImGuiWindowFlags_HorizontalScrollbar` (then you can pan across it).
+- **Optional width bounds** are fractions of the **column width** (the markdown text-wrap width — *not* the width remaining on the current line, so an inline image near a line wrap is sized like any other). Each bound is a `std::optional<float>`; set either independently. `maxWidthPercentage` is a **ceiling** — `width = min(intrinsic, maxPct·column)`, always a lossless downscale. `minWidthPercentage` is a **floor** — `width = max(intrinsic, minPct·column)`; enlarging past the registered rasterization size upscales the handle (crisp for `Nearest`, soft for `Linear` — register larger if a floored-up image must stay crisp). Height follows aspect. Each present bound must satisfy `0 ≤ min ≤ max ≤ 1` (`debugCheck`).
+- **The same registered id can appear in several places with different bounds** — the configuration lives in the per-`src` `MarkdownImage`, not in the registration; the handle/RTT is shared and drawn at each occurrence's size.
 - The renderer draws the image itself and suppresses imgui_md's own `ImGui::Image`, re-creating the standard behaviors on the image item: a tooltip showing the `src`, and click → the `setOpenUrlCallback` callback (with the `src`).
-- **Sizing split:** the `ImguiImageSize::Spec` at registration fixes the rasterization resolution (register at a generous size); markdown's fit-to-width is purely the `imguiImage(id, drawSize)` draw-size override, so the two compose without conflict.
+- **Sizing split:** the `ImguiImageSize::Spec` at registration fixes the rasterization resolution (register at a generous size); markdown's bounds clamp is purely the `imguiImage(id, drawSize)` draw-size override, so the two compose without conflict.
 - **Limitations:** the alt text itself is not shown (the parser suppresses inline text while in an image, so the placeholder uses the `src`); images draw as block items at the cursor (no true mid-sentence text flow).
 
 **Rules:**
@@ -864,11 +870,25 @@ Gamepad button events are dispatched in `processInputs()` (same frame-deferred p
 
 ### Screenshot
 
-`takeScreenshot()` captures the most recently rendered frame and returns a `DirectTexture` with the game viewport's RGBA pixels, flipped to top-to-bottom row order.
+Screenshots are **scheduled** (asynchronous), not synchronous. `requestScreenshot()` arms a
+capture of the **next rendered frame** (including changes made in the current `update`
+callback); `retrieveScreenshot()` returns the pixels as an `std::optional<DirectTexture>`
+once that frame has rendered — `nullopt` until then, the value exactly once, then `nullopt`
+again (consume-once). The capture is recorded **in-frame before present** (Vulkan windowed),
+so it is WSI-correct — no `WRITE-AFTER-PRESENT` hazard from reading a presented image.
 
 ```cpp
-// Call from within the update() callback:
-Nothofagus::DirectTexture screenshot = canvas.takeScreenshot();
+// Manual stepping (tick): schedule, render one frame, then retrieve.
+canvas.requestScreenshot();
+canvas.tick(16.0f);
+Nothofagus::DirectTexture screenshot = *canvas.retrieveScreenshot();
+
+// Inside a run() update callback: request anywhere (e.g. a key handler), then poll.
+canvas.run([&](float){
+    if (std::optional<Nothofagus::DirectTexture> shot = canvas.retrieveScreenshot())
+        use(*shot);          // ready the frame after requestScreenshot() was called
+    // ... canvas.requestScreenshot() from a controller action, etc.
+}, controller);
 
 // Access raw RGBA bytes for saving with an external image library (e.g. stb_image_plus):
 Nothofagus::TextureData data = screenshot.generateTextureData();
@@ -878,13 +898,18 @@ std::span<std::uint8_t> span = data.getDataSpan(); // width * height * 4 bytes, 
 Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 ```
 
-**OpenGL note:** reads from `GL_BACK` (the just-rendered frame, point-sampled with `GL_NEAREST`) — valid only while an OpenGL context is current (i.e. inside `canvas.run()`/`tick()`). Reading the back buffer (rather than `GL_FRONT`) is what makes screenshots work in hidden-window/offscreen mode (`headless=true`), where the never-presented front buffer reads back as all-zero.
+`retrieveScreenshot()` only reads a stored optional (no blocking, no GPU work) so it is safe
+to call anywhere. `requestScreenshot()` must be paired with rendering at least one frame
+before the result appears; because the capture rides an existing frame there is no extra
+frame or steady-state cost, but it does mean the result is delivered one frame later.
+
+**OpenGL note:** reads from `GL_BACK` in the render backend's `endFrame` (after all drawing, before the window buffer swap), point-sampled with `GL_NEAREST`. Reading the back buffer (rather than `GL_FRONT`) is what makes screenshots work in hidden-window/offscreen mode (`headless=true`), where the never-presented front buffer reads back as all-zero.
 
 **Headless render resolution:** hidden windows (`headless=true`) opt out of HiDPI/high-pixel-density, so they render at exactly the logical canvas resolution (`screenSize × pixelSize`) regardless of the display's content scale. This keeps offscreen captures deterministic and pixel-identical across machines (and matches the windowless headless-Vulkan renderer). Visible windows still use the display's pixel density for on-screen crispness.
 
-**Vulkan windowed:** blits from the swapchain image through an intermediate R8G8B8A8 image (handles B8G8R8A8 format conversion) to a CPU-visible staging buffer.
+**Vulkan windowed:** the copy is recorded **into the frame's command buffer after the render pass but before present** (while the engine still owns the image — no WSI hazard): the swapchain image is blitted through an intermediate R8G8B8A8 image (handles B8G8R8A8 format conversion) into a CPU-visible staging buffer, then read back after the frame's fence signals (`finishScreenshot`).
 
-**Vulkan headless:** copies directly from the offscreen R8G8B8A8 image to a staging buffer via `vkCmdCopyImageToBuffer` — no intermediate blit or format conversion needed.
+**Vulkan headless:** no present, so `finishCapture` copies directly from the offscreen R8G8B8A8 image to a staging buffer via `vkCmdCopyImageToBuffer` after the frame — no intermediate blit or format conversion needed.
 
 ## Naming Conventions (C++)
 
@@ -914,7 +939,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `test_keyboard.cpp` | Keyboard input handling |
 | `test_gamepad.cpp` | Gamepad input: stick movement, D-pad, buttons, ImGui status |
 | `test_create_destroy.cpp` | Object lifecycle |
-| `hello_screenshot.cpp` | `takeScreenshot()` — capture frame as DirectTexture, display thumbnail |
+| `hello_screenshot.cpp` | Scheduled screenshot (`requestScreenshot()` + `retrieveScreenshot()`) — capture frame as DirectTexture, display thumbnail |
 | `hello_headless.cpp` | Headless mode + `tick()` — no window, manual frame stepping, screenshot to terminal |
 | `hello_tilemap.cpp` | Tile-map mode of `IndirectTexture` — `setMap` + `setCell` over a layered atlas |
 | `hello_dense_land.cpp` | Dense lands via `DenseLand` + `DenseLandExplorer` pool — WASD camera, teleport, recreate, live memory breakdown, stress controls (auto-pan + edits/frame) |
@@ -927,7 +952,7 @@ Nothofagus::TextureId texId = canvas.addTexture(screenshot);
 | `hello_imgui_image_registry.cpp` | `registerImguiImage` / `ImguiImageId` focused — the stable, warm-up-free ImGui image handle: convenience `imguiImage(id)` draw, raw `ImGui::Image(imguiImageHandle(id), …)`, a draw-size override (GPU downscale of the fixed-res handle), live animation via `updateImguiImage`, and register/unregister lifecycle |
 | `hello_imgui_overlay.cpp` | `imguiOverlayViewport()` + `imguiBaseFontSize()` — header/footer ImGui bars pinned to the canvas, tracking pillarbox/letterbox + DPI on resize |
 | `hello_custom_font.cpp` | User-supplied TTF via `addImguiFontSource` — typeable path field, editable text, integer min/max + slider for size, default-vs-user side-by-side with `TextWrapped`; also demonstrates the `imgui-filebrowser` integration. When built with `-DNOTHOFAGUS_EMBED_CJK*`, adds macro-guarded blocks rendering Chinese/Japanese/Korean sample text via `embeddedCjkFontSource(...)` |
-| `hello_markdown.cpp` | `MarkdownRenderer` — headings, lists, code blocks, tables, blockquotes, strikethrough, link callback; true bold/italic/bold-italic/mono faces via `canvas.defaultMarkdownStyle(...)`; **inline images** via `setImageResolver` → `registerImguiImage` (a static logo, a live animated spinner via `updateImguiImage`, and a dimmed `[src]` placeholder for an unresolved source) |
+| `hello_markdown.cpp` | `MarkdownRenderer` — headings, lists, code blocks, tables, blockquotes, strikethrough, link callback; true bold/italic/bold-italic/mono faces via `canvas.defaultMarkdownStyle(...)`; **inline images** via `setImageResolver` → `MarkdownImage` (capped logo, live animated inline spinner via `updateImguiImage`, a "Width modes" section showing full-width / capped / floored bounds, and a dimmed `[src]` placeholder); plus a second window with `ImGuiWindowFlags_HorizontalScrollbar` showing a raw unbounded image overflowing and panned via the scrollbar |
 | `hello_dpi_scaling.cpp` | OS DPI scaling for standard UI vs game-resolution diegetic UI — `contentScale()` / `setContentScaleOverride()` / `imguiScaledFontSize()` + `style.FontScaleMain`, a broad native-style widget spread, live override/zoom sliders, a diagnostics readout, and a side-by-side diegetic RTT panel |
 
 ## Tests

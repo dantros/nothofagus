@@ -499,9 +499,14 @@ bool Canvas::imguiWantsKeyboard() const
     return mImplPtr->frameRunner.threadedWantsKeyboard();
 }
 
-DirectTexture Canvas::takeScreenshot() const
+void Canvas::requestScreenshot()
 {
-    return mImplPtr->frameRunner.takeScreenshot();
+    mImplPtr->frameRunner.requestScreenshot();
+}
+
+std::optional<DirectTexture> Canvas::retrieveScreenshot()
+{
+    return mImplPtr->frameRunner.retrieveScreenshot();
 }
 
 }

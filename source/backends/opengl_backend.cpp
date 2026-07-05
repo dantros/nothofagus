@@ -8,6 +8,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <stdexcept>
 #include <span>
+#include <utility>
 #ifdef TRACY_ENABLE
 #include <tracy/TracyOpenGL.hpp>
 #else
@@ -546,6 +547,8 @@ void OpenGLBackend::releaseFlat2DImguiHandle(DRenderTarget renderTarget, std::ui
 void OpenGLBackend::beginFrame(glm::vec3 clearColor, ViewportRect gameViewport,
                                 int framebufferWidth, int framebufferHeight)
 {
+    mCurrentGameViewport = gameViewport; // stashed for a deferred screenshot in endFrame
+
     // Clear entire framebuffer to black (fills letterbox/pillarbox bands).
     glViewport(0, 0, framebufferWidth, framebufferHeight);
     glDisable(GL_SCISSOR_TEST);
@@ -711,6 +714,14 @@ void OpenGLBackend::endFrame(ImDrawData* imguiData,
         ImGui_ImplOpenGL3_RenderDrawData(imguiData);
     }
     TracyGpuCollect;
+
+    // Deferred screenshot: read GL_BACK now, after all drawing but BEFORE the window
+    // backend swaps buffers (after swap, GL_BACK no longer holds this frame).
+    if (mScreenshotPending)
+    {
+        mScreenshotResult  = captureBackBuffer(mCurrentGameViewport, mScreenshotGameSize);
+        mScreenshotPending = false;
+    }
     // Buffer swap is performed by the window backend's endFrame().
 }
 
@@ -750,7 +761,18 @@ void OpenGLBackend::renderImguiDrawDataToRenderTarget(ImDrawData* imguiData,
     ImGui_ImplOpenGL3_RenderDrawData(imguiData);
 }
 
-ScreenshotPixels OpenGLBackend::takeScreenshot(ViewportRect gameViewport, glm::ivec2 gameSize) const
+void OpenGLBackend::armScreenshot(glm::ivec2 gameSize)
+{
+    mScreenshotPending  = true;
+    mScreenshotGameSize = gameSize;
+}
+
+std::optional<ScreenshotPixels> OpenGLBackend::finishScreenshot()
+{
+    return std::exchange(mScreenshotResult, std::nullopt);
+}
+
+ScreenshotPixels OpenGLBackend::captureBackBuffer(ViewportRect gameViewport, glm::ivec2 gameSize) const
 {
     const int gameWidth  = gameSize.x;
     const int gameHeight = gameSize.y;

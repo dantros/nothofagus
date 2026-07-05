@@ -202,6 +202,33 @@ static Nothofagus::Canvas makeCanvas(unsigned int width, unsigned int height)
     return Nothofagus::Canvas({width, height}, "test", {0.0f, 0.0f, 0.0f}, 1, 14, true);
 }
 
+// Screenshots are scheduled: arm a capture, render one more frame to capture it, then
+// retrieve. dt=0 so no time-based state advances — the captured frame matches the
+// settled scene the test already rendered. For bellota-only scenes (no per-frame update
+// callback), rendering an extra frame reproduces identical pixels.
+static Nothofagus::DirectTexture capture(Nothofagus::Canvas& canvas)
+{
+    canvas.requestScreenshot();
+    canvas.tick(0.0f);
+    return *canvas.retrieveScreenshot();
+}
+
+// For scenes whose content is submitted by a per-frame draw callback (ImGui / markdown):
+// run `frames` warmup frames with `draw`, arming the capture just before the LAST one so
+// the captured frame carries the callback's content (and, for animated scenes, is the same
+// frame the golden was authored from — no extra frame is rendered past the warmup count).
+template <class Draw>
+static Nothofagus::DirectTexture warmupCapture(Nothofagus::Canvas& canvas, int frames, Draw&& draw)
+{
+    for (int i = 0; i < frames; ++i)
+    {
+        if (i + 1 == frames)
+            canvas.requestScreenshot();
+        canvas.tick(16.0f, draw);
+    }
+    return *canvas.retrieveScreenshot();
+}
+
 // ---------------------------------------------------------------------------
 // Test: single red square on black background
 // ---------------------------------------------------------------------------
@@ -227,7 +254,7 @@ TEST_CASE("Single bellota renders correctly", "[rendering]")
     for (int i = 0; i < 3; ++i)
         canvas.tick(16.0f);
 
-    checkAgainstGolden("single_bellota", canvas.takeScreenshot());
+    checkAgainstGolden("single_bellota", capture(canvas));
 }
 
 // ---------------------------------------------------------------------------
@@ -264,7 +291,7 @@ TEST_CASE("Multiple bellotas at different positions", "[rendering]")
     for (int i = 0; i < 3; ++i)
         canvas.tick(16.0f);
 
-    checkAgainstGolden("multiple_positions", canvas.takeScreenshot());
+    checkAgainstGolden("multiple_positions", capture(canvas));
 }
 
 // ---------------------------------------------------------------------------
@@ -305,7 +332,7 @@ TEST_CASE("Depth ordering occludes correctly", "[rendering]")
     for (int i = 0; i < 3; ++i)
         canvas.tick(16.0f);
 
-    checkAgainstGolden("depth_ordering", canvas.takeScreenshot());
+    checkAgainstGolden("depth_ordering", capture(canvas));
 }
 
 // ---------------------------------------------------------------------------
@@ -337,7 +364,7 @@ TEST_CASE("Invisible bellota is not rendered", "[rendering]")
         canvas.tick(16.0f);
 
     // Should be entirely black
-    checkAgainstGolden("invisible_bellota", canvas.takeScreenshot());
+    checkAgainstGolden("invisible_bellota", capture(canvas));
 }
 
 // ---------------------------------------------------------------------------
@@ -350,7 +377,7 @@ TEST_CASE("Clear color fills background", "[rendering]")
     for (int i = 0; i < 3; ++i)
         canvas.tick(16.0f);
 
-    checkAgainstGolden("clear_color", canvas.takeScreenshot());
+    checkAgainstGolden("clear_color", capture(canvas));
 }
 
 // ---------------------------------------------------------------------------
@@ -379,7 +406,7 @@ TEST_CASE("Semi-transparent bellota blends with background", "[rendering]")
     for (int i = 0; i < 3; ++i)
         canvas.tick(16.0f);
 
-    checkAgainstGolden("opacity_blend", canvas.takeScreenshot());
+    checkAgainstGolden("opacity_blend", capture(canvas));
 }
 
 // ---------------------------------------------------------------------------
@@ -414,7 +441,7 @@ TEST_CASE("Custom mesh renders correctly", "[rendering][mesh]")
     for (int i = 0; i < 3; ++i)
         canvas.tick(16.0f);
 
-    checkAgainstGolden("custom_mesh_triangle", canvas.takeScreenshot());
+    checkAgainstGolden("custom_mesh_triangle", capture(canvas));
 }
 
 // ---------------------------------------------------------------------------
@@ -458,7 +485,7 @@ TEST_CASE("Auto-quad regenerates on setTexture", "[rendering][mesh]")
     for (int i = 0; i < 3; ++i)
         canvas.tick(16.0f);
 
-    checkAgainstGolden("auto_quad_resized_after_setTexture", canvas.takeScreenshot());
+    checkAgainstGolden("auto_quad_resized_after_setTexture", capture(canvas));
 }
 
 // ---------------------------------------------------------------------------
@@ -513,7 +540,7 @@ TEST_CASE("setMesh swaps geometry mid-frame", "[rendering][mesh]")
     for (int i = 0; i < 3; ++i)
         canvas.tick(16.0f);
 
-    checkAgainstGolden("setMesh_swap_geometry", canvas.takeScreenshot());
+    checkAgainstGolden("setMesh_swap_geometry", capture(canvas));
 }
 
 // ---------------------------------------------------------------------------
@@ -588,10 +615,8 @@ TEST_CASE("ImGui overlay bars render centered", "[rendering][imgui]")
 {
     auto canvas = makeCanvas(100, 100);
 
-    for (int i = 0; i < kImguiWarmupFrames; ++i)
-        canvas.tick(16.0f, [&](float) { drawOverlayBars(canvas, "HEADER", "FOOTER"); });
-
-    checkAgainstGolden("imgui_overlay_basic", canvas.takeScreenshot());
+    checkAgainstGolden("imgui_overlay_basic", warmupCapture(canvas, kImguiWarmupFrames,
+        [&](float) { drawOverlayBars(canvas, "HEADER", "FOOTER"); }));
 }
 
 TEST_CASE("ImGui overlay bars track pillarbox offset", "[rendering][imgui]")
@@ -602,10 +627,8 @@ TEST_CASE("ImGui overlay bars track pillarbox offset", "[rendering][imgui]")
     Nothofagus::Canvas canvas({200, 100}, "test", {0.0f, 0.0f, 0.0f}, 1, 14, true);
     canvas.setScreenSize({100, 100});
 
-    for (int i = 0; i < kImguiWarmupFrames; ++i)
-        canvas.tick(16.0f, [&](float) { drawOverlayBars(canvas, "HEADER", "FOOTER"); });
-
-    checkAgainstGolden("imgui_overlay_pillarbox", canvas.takeScreenshot());
+    checkAgainstGolden("imgui_overlay_pillarbox", warmupCapture(canvas, kImguiWarmupFrames,
+        [&](float) { drawOverlayBars(canvas, "HEADER", "FOOTER"); }));
 }
 
 // ---------------------------------------------------------------------------
@@ -627,6 +650,9 @@ TEST_CASE("Markdown tables render with wrapped columns", "[rendering][imgui]")
         "| again | Second long row sharing the column width. |\n";
 
     for (int i = 0; i < kImguiWarmupFrames; ++i)
+    {
+        if (i + 1 == kImguiWarmupFrames)
+            canvas.requestScreenshot();
         canvas.tick(16.0f, [&](float) {
             ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
             ImGui::SetNextWindowSize(ImVec2(220.0f, 160.0f), ImGuiCond_Always);
@@ -635,8 +661,9 @@ TEST_CASE("Markdown tables render with wrapped columns", "[rendering][imgui]")
             markdown.print(kTable);
             ImGui::End();
         });
+    }
 
-    checkAgainstGolden("markdown_tables", canvas.takeScreenshot());
+    checkAgainstGolden("markdown_tables", *canvas.retrieveScreenshot());
 }
 
 // ---------------------------------------------------------------------------
@@ -657,9 +684,9 @@ TEST_CASE("Markdown renders an inline registered image", "[rendering][imgui]")
 
     Nothofagus::MarkdownRenderer markdown(canvas);
     markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));     // bake before ticking
-    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::ImguiImageId> {
-        if (src == "tile") return imageId;
-        return std::nullopt;                                   // unknown -> [src] placeholder
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "tile") return Nothofagus::MarkdownImage{imageId};  // default bounds: fit to width
+        return std::nullopt;                                           // unknown -> [src] placeholder
     });
 
     static constexpr const char* kDoc =
@@ -667,6 +694,9 @@ TEST_CASE("Markdown renders an inline registered image", "[rendering][imgui]")
         "Missing: ![x](nope)\n";
 
     for (int i = 0; i < kImguiWarmupFrames; ++i)
+    {
+        if (i + 1 == kImguiWarmupFrames)
+            canvas.requestScreenshot();
         canvas.tick(16.0f, [&](float) {
             ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
             ImGui::SetNextWindowSize(ImVec2(160.0f, 120.0f), ImGuiCond_Always);
@@ -675,8 +705,210 @@ TEST_CASE("Markdown renders an inline registered image", "[rendering][imgui]")
             markdown.print(kDoc);
             ImGui::End();
         });
+    }
 
-    checkAgainstGolden("markdown_inline_image", canvas.takeScreenshot());
+    checkAgainstGolden("markdown_inline_image", *canvas.retrieveScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// Per-image width bounds (fractions of the content width): the ceiling
+// (maxWidthPercentage) shrinks an oversized image, and the floor
+// (minWidthPercentage) enlarges an undersized one — so a large and a small
+// source both land at bounded widths. This golden locks the clamp in both
+// directions.
+// ---------------------------------------------------------------------------
+TEST_CASE("Markdown inline image respects width bounds", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(160, 140);
+
+    auto texId = canvas.addTexture(makeQuadrantTexture());
+    // A large registration (capped down) and a small one (floored up), same source.
+    const Nothofagus::ImguiImageId bigId   = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(16.0f)}); // 128px
+    const Nothofagus::ImguiImageId smallId = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(1.0f)});  // 8px
+
+    Nothofagus::MarkdownRenderer markdown(canvas);
+    markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "big")   return Nothofagus::MarkdownImage{bigId,   0.0f, 0.6f};  // ceiling: shrink to <=60%
+        if (src == "small") return Nothofagus::MarkdownImage{smallId, 0.3f, 1.0f};  // floor: grow to >=30%
+        return std::nullopt;
+    });
+
+    static constexpr const char* kDoc =
+        "Big: ![big](big)\n\n"
+        "Small: ![small](small)\n";
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+    {
+        if (i + 1 == kImguiWarmupFrames)
+            canvas.requestScreenshot();
+        canvas.tick(16.0f, [&](float) {
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(160.0f, 140.0f), ImGuiCond_Always);
+            ImGui::Begin("md", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            markdown.print(kDoc);
+            ImGui::End();
+        });
+    }
+
+    checkAgainstGolden("markdown_image_bounds", *canvas.retrieveScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// Markdown inline image animated each frame via updateImguiImage and drawn inside
+// a paragraph (the hello_markdown "spinner" scenario). Crucially the paragraph is
+// wide enough that the icon lands near a line wrap — where the *remaining* line
+// width is tiny — so this locks the fix: bounds are fractions of the column width,
+// not the leftover line width, so the icon renders at full size, never a sliver.
+// ---------------------------------------------------------------------------
+TEST_CASE("Markdown animated inline image", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(360, 140);
+
+    // A 16x16, 4-frame filled pinwheel whose quadrant colors rotate per frame.
+    Nothofagus::ColorPallete pal{{0,0,0,0},{1,0.4f,0.4f,1},{0.4f,1,0.5f,1},{0.5f,0.7f,1,1},{1,0.9f,0.4f,1}};
+    Nothofagus::IndirectTexture spin({16,16}, glm::vec4(0.0f), 4);
+    spin.setPallete(pal);
+    for (std::size_t frame = 0; frame < 4; ++frame) {
+        std::vector<std::uint8_t> px(256, 0);
+        for (int y = 0; y < 16; ++y)
+            for (int x = 0; x < 16; ++x) {
+                const int quadrant = (x / 8) + 2 * (y / 8);
+                px[y*16+x] = static_cast<std::uint8_t>(1 + ((quadrant + static_cast<int>(frame)) % 4));
+            }
+        spin.setPixels(px, frame);
+    }
+    auto texId = canvas.addTexture(spin);
+    // A small inline icon (32px), drawn at its natural size (default bounds).
+    const Nothofagus::ImguiImageId spinId = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(2.0f)});
+
+    Nothofagus::MarkdownRenderer markdown(canvas);
+    markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "spinner") return Nothofagus::MarkdownImage{spinId};   // default bounds: natural size
+        return std::nullopt;
+    });
+
+    // Text engineered so the icon falls right at a line wrap (little width remains).
+    static constexpr const char* kDoc =
+        "Some leading words that fill most of the first line before the inline "
+        "![spinner](spinner) icon, which must still render at full size.\n";
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+    {
+        if (i + 1 == kImguiWarmupFrames)
+            canvas.requestScreenshot();
+        canvas.tick(16.0f, [&](float) {
+            Nothofagus::Visual v{texId};
+            v.currentLayer() = static_cast<std::size_t>(i % 4);
+            canvas.updateImguiImage(spinId, v);
+
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(360.0f, 140.0f), ImGuiCond_Always);
+            ImGui::Begin("md", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            markdown.print(kDoc);
+            ImGui::End();
+        });
+    }
+
+    checkAgainstGolden("markdown_animated_inline_image", *canvas.retrieveScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// Markdown image width modes (the hello_markdown "Width modes" section): one wide
+// banner shown at full column width ({1,1}), capped to 40% (the ceiling reducing a
+// large registration), and floored to 30% (the floor enlarging a small registration).
+// Locks all three bound modes, including the full-width case the bounds golden omits.
+// ---------------------------------------------------------------------------
+TEST_CASE("Markdown image width modes", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(640, 520);
+    // A 32x8 banner (4:1) of vertical color bands.
+    Nothofagus::ColorPallete pal{{0,0,0,0},{1,0.4f,0.4f,1},{0.4f,1,0.5f,1},{0.5f,0.7f,1,1},{1,0.9f,0.4f,1}};
+    Nothofagus::IndirectTexture banner({32,8}, glm::vec4(0.0f));
+    banner.setPallete(pal);
+    { std::vector<std::uint8_t> px(256,0);
+      for (int y=0;y<8;++y) for (int x=0;x<32;++x) px[y*32+x]=static_cast<std::uint8_t>(1+(x/8)%4);
+      banner.setPixels(px,0); }
+    auto texId = canvas.addTexture(banner);
+    const Nothofagus::ImguiImageId bigId   = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(20.0f)}); // 640x160
+    const Nothofagus::ImguiImageId smallId = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(2.0f)});  // 64x16
+    Nothofagus::MarkdownRenderer markdown(canvas);
+    markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "mode-full") return Nothofagus::MarkdownImage{bigId,   1.0f, 1.0f};
+        if (src == "mode-max")  return Nothofagus::MarkdownImage{bigId,   0.0f, 0.4f};
+        if (src == "mode-min")  return Nothofagus::MarkdownImage{smallId, 0.3f, 1.0f};
+        return std::nullopt;
+    });
+    static constexpr const char* kDoc =
+        "Full:\n\n![full](mode-full)\n\nMax 40%:\n\n![max](mode-max)\n\nMin 30%:\n\n![min](mode-min)\n";
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+    {
+        if (i + 1 == kImguiWarmupFrames)
+            canvas.requestScreenshot();
+        canvas.tick(16.0f, [&](float) {
+            ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(640,520), ImGuiCond_Always);
+            ImGui::Begin("md", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            markdown.print(kDoc);
+            ImGui::End();
+        });
+    }
+    checkAgainstGolden("markdown_width_modes", *canvas.retrieveScreenshot());
+}
+
+// ---------------------------------------------------------------------------
+// A markdown image with NO width bounds (MarkdownImage{id}) is drawn at its
+// registered size, uncapped. Here the banner (384px) is wider than the window,
+// so it overflows and is clipped at the right edge — locking the "raw" behavior:
+// only the first ~2 of the 4 color bands are visible. (If it were capped to the
+// column, as the old default was, all 4 bands would be visible, shrunk to fit.)
+// ---------------------------------------------------------------------------
+TEST_CASE("Markdown raw image overflows the column uncapped", "[rendering][imgui]")
+{
+    auto canvas = makeCanvas(200, 80);
+    // A 32x8 banner (4:1) of four vertical color bands.
+    Nothofagus::ColorPallete pal{{0,0,0,0},{1,0.4f,0.4f,1},{0.4f,1,0.5f,1},{0.5f,0.7f,1,1},{1,0.9f,0.4f,1}};
+    Nothofagus::IndirectTexture banner({32,8}, glm::vec4(0.0f));
+    banner.setPallete(pal);
+    { std::vector<std::uint8_t> px(256,0);
+      for (int y=0;y<8;++y) for (int x=0;x<32;++x) px[y*32+x]=static_cast<std::uint8_t>(1+(x/8)%4);
+      banner.setPixels(px,0); }
+    auto texId = canvas.addTexture(banner);
+    const Nothofagus::ImguiImageId id = canvas.registerImguiImage(
+        Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(12.0f)}); // 384px wide
+
+    Nothofagus::MarkdownRenderer markdown(canvas);
+    markdown.setStyle(canvas.defaultMarkdownStyle(14.0f));
+    markdown.setImageResolver([&](std::string_view src) -> std::optional<Nothofagus::MarkdownImage> {
+        if (src == "raw") return Nothofagus::MarkdownImage{id};   // no bounds -> registered size, uncapped
+        return std::nullopt;
+    });
+
+    for (int i = 0; i < kImguiWarmupFrames; ++i)
+    {
+        if (i + 1 == kImguiWarmupFrames)
+            canvas.requestScreenshot();
+        canvas.tick(16.0f, [&](float) {
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(200.0f, 80.0f), ImGuiCond_Always);
+            ImGui::Begin("md", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            markdown.print("![raw](raw)\n");
+            ImGui::End();
+        });
+    }
+
+    checkAgainstGolden("markdown_raw_overflow", *canvas.retrieveScreenshot());
 }
 
 // ---------------------------------------------------------------------------
@@ -715,10 +947,8 @@ TEST_CASE("ImGui standard UI at content scale 1x", "[rendering][imgui]")
     auto canvas = makeCanvas(120, 90);
     canvas.setContentScaleOverride(1.0f);
 
-    for (int i = 0; i < kImguiWarmupFrames; ++i)
-        canvas.tick(16.0f, [&](float) { drawStandardUi(canvas); });
-
-    checkAgainstGolden("imgui_dpi_scale_1x", canvas.takeScreenshot());
+    checkAgainstGolden("imgui_dpi_scale_1x", warmupCapture(canvas, kImguiWarmupFrames,
+        [&](float) { drawStandardUi(canvas); }));
 }
 
 TEST_CASE("ImGui standard UI scales font and metrics at 2x", "[rendering][imgui]")
@@ -726,10 +956,8 @@ TEST_CASE("ImGui standard UI scales font and metrics at 2x", "[rendering][imgui]
     auto canvas = makeCanvas(240, 180);
     canvas.setContentScaleOverride(2.0f);
 
-    for (int i = 0; i < kImguiWarmupFrames; ++i)
-        canvas.tick(16.0f, [&](float) { drawStandardUi(canvas); });
-
-    checkAgainstGolden("imgui_dpi_scale_2x", canvas.takeScreenshot());
+    checkAgainstGolden("imgui_dpi_scale_2x", warmupCapture(canvas, kImguiWarmupFrames,
+        [&](float) { drawStandardUi(canvas); }));
 }
 
 TEST_CASE("ImGui overlay bars scale with content scale", "[rendering][imgui]")
@@ -738,10 +966,8 @@ TEST_CASE("ImGui overlay bars scale with content scale", "[rendering][imgui]")
     canvas.setContentScaleOverride(2.0f);
 
     // Header only (empty footer) so the bottom of the viewport stays visible.
-    for (int i = 0; i < kImguiWarmupFrames; ++i)
-        canvas.tick(16.0f, [&](float) { drawOverlayBars(canvas, "HEADER", ""); });
-
-    checkAgainstGolden("imgui_overlay_scaled", canvas.takeScreenshot());
+    checkAgainstGolden("imgui_overlay_scaled", warmupCapture(canvas, kImguiWarmupFrames,
+        [&](float) { drawOverlayBars(canvas, "HEADER", ""); }));
 }
 
 // ---------------------------------------------------------------------------
@@ -761,7 +987,7 @@ TEST_CASE("Tilemap text renders a single line", "[rendering][text]")
     for (int i = 0; i < 3; ++i)
         canvas.tick(16.0f);
 
-    checkAgainstGolden("tilemap_text_single_line", canvas.takeScreenshot());
+    checkAgainstGolden("tilemap_text_single_line", capture(canvas));
 }
 
 // ---------------------------------------------------------------------------
@@ -785,7 +1011,7 @@ TEST_CASE("Tilemap text renders multiple lines", "[rendering][text]")
     for (int i = 0; i < 3; ++i)
         canvas.tick(16.0f);
 
-    checkAgainstGolden("tilemap_text_multi_line", canvas.takeScreenshot());
+    checkAgainstGolden("tilemap_text_multi_line", capture(canvas));
 }
 
 // ---------------------------------------------------------------------------
@@ -856,13 +1082,17 @@ TEST_CASE("imguiImage draws a scaled paletted visual", "[rendering][imgui]")
         Nothofagus::Visual{texId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(6.0f)}); // 8x8 -> 48x48
 
     for (int i = 0; i < kImguiWarmupFrames; ++i)
+    {
+        if (i + 1 == kImguiWarmupFrames)
+            canvas.requestScreenshot();
         canvas.tick(16.0f, [&](float) {
             beginFullViewportWindow(canvas, "##visual_scaled");
             canvas.imguiImage(imageId);
             endFullViewportWindow();
         });
+    }
 
-    checkAgainstGolden("imgui_visual_scaled", canvas.takeScreenshot());
+    checkAgainstGolden("imgui_visual_scaled", *canvas.retrieveScreenshot());
 }
 
 TEST_CASE("imguiImage explicit logical size Fit vs Stretch on a custom mesh", "[rendering][imgui][mesh]")
@@ -890,6 +1120,9 @@ TEST_CASE("imguiImage explicit logical size Fit vs Stretch on a custom mesh", "[
         triVisual, Nothofagus::ImguiImageSize::Explicit{{80.0f, 40.0f}, Nothofagus::ImguiImageFit::Stretch});
 
     for (int i = 0; i < kImguiWarmupFrames; ++i)
+    {
+        if (i + 1 == kImguiWarmupFrames)
+            canvas.requestScreenshot();
         canvas.tick(16.0f, [&](float) {
             beginFullViewportWindow(canvas, "##visual_fit_stretch");
             canvas.imguiImage(fitId);
@@ -897,8 +1130,9 @@ TEST_CASE("imguiImage explicit logical size Fit vs Stretch on a custom mesh", "[
             canvas.imguiImage(stretchId);
             endFullViewportWindow();
         });
+    }
 
-    checkAgainstGolden("imgui_visual_logical_fit_stretch", canvas.takeScreenshot());
+    checkAgainstGolden("imgui_visual_logical_fit_stretch", *canvas.retrieveScreenshot());
 }
 
 TEST_CASE("imguiImage draws a DirectTexture honoring magFilter", "[rendering][imgui]")
@@ -926,6 +1160,9 @@ TEST_CASE("imguiImage draws a DirectTexture honoring magFilter", "[rendering][im
         Nothofagus::Visual{linearTexId}, Nothofagus::ImguiImageSize::Scaled{glm::vec2(20.0f)});  // smooth blend
 
     for (int i = 0; i < kImguiWarmupFrames; ++i)
+    {
+        if (i + 1 == kImguiWarmupFrames)
+            canvas.requestScreenshot();
         canvas.tick(16.0f, [&](float) {
             beginFullViewportWindow(canvas, "##visual_direct_texture");
             canvas.imguiImage(nearestId);
@@ -933,7 +1170,8 @@ TEST_CASE("imguiImage draws a DirectTexture honoring magFilter", "[rendering][im
             canvas.imguiImage(linearId);
             endFullViewportWindow();
         });
+    }
 
-    checkAgainstGolden("imgui_visual_direct_texture", canvas.takeScreenshot());
+    checkAgainstGolden("imgui_visual_direct_texture", *canvas.retrieveScreenshot());
 }
 
