@@ -394,19 +394,21 @@ const bool& Canvas::stats() const                                { return mImplP
 
 void Canvas::run()
 {
-    auto update = [](float){};
-    Controller controller;
-    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, update, controller);
+    // Threaded: empty update + ui, forwarded to the sim/render split like run(update, ui).
+    run([](float){}, [](float){});
 }
 
 void Canvas::run(std::function<void(float deltaTime)> update)
 {
-    Controller controller;
-    mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, update, controller);
+    // Threaded: run `update` on the sim thread with an empty ui. (ImGui belongs in the
+    // run(update, ui[, ...]) overloads — see the header note.)
+    run(std::move(update), [](float){});
 }
 
 void Canvas::run(std::function<void(float deltaTime)> update, Controller& controller)
 {
+    // Deprecated single-threaded path (kept for demos not yet ported to the threaded
+    // sim/render split). Suppress the self-deprecation warning on this definition.
     mImplPtr->frameRunner.run(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, update, controller);
 }
 

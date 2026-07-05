@@ -48,6 +48,11 @@ int main()
     char   nameBuf[64]   = "Nothofagus";
     float  time          = 0.0f;
 
+    // TODO(threaded): the diegetic RTT panel uses renderImguiTo, which runs its user
+    // callback on the render thread and has no per-RTT draw-data clone, so it is not wired
+    // for the sim/render split yet (see THREADED_DIEGETIC_IMGUI.md). Parked on the
+    // deprecated single-thread run(update, Controller&) until threaded support lands.
+    Nothofagus::Controller deferredController;
     canvas.run([&](float deltaTimeMS)
     {
         time += deltaTimeMS;
@@ -154,7 +159,7 @@ int main()
             ImGui::ProgressBar(0.5f + 0.5f * std::sin(0.003f * time));
             ImGui::End();
         });
-    });
+    }, deferredController);
 
     return 0;
 }

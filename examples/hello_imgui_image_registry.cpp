@@ -64,6 +64,10 @@ int main()
     float drawScale = 1.0f;
     bool  registered = true;
 
+    // TODO(threaded): registered-image passes (registerImguiImage / imguiImage) are not
+    // wired for the sim/render split yet (see THREADED_DIEGETIC_IMGUI.md). Parked on the
+    // deprecated single-thread run(update, Controller&) until threaded support lands.
+    Nothofagus::Controller deferredController;
     canvas.run([&](float dt)
     {
         // Advance the animation by re-registering the current layer onto the big image's id.
@@ -116,7 +120,7 @@ int main()
         }
 
         ImGui::End();
-    });
+    }, deferredController);
 
     return 0;
 }

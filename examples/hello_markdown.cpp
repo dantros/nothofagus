@@ -196,6 +196,11 @@ wider than the window, so it overflows — drag the horizontal scrollbar to pan:
 
     float elapsedMs = 0.0f;
 
+    // TODO(threaded): the animated inline spinner uses a registered image
+    // (registerImguiImage / updateImguiImage), which is not wired for the sim/render split
+    // yet (see THREADED_DIEGETIC_IMGUI.md). Parked on the deprecated single-thread
+    // run(update, Controller&) until threaded support lands.
+    Nothofagus::Controller deferredController;
     canvas.run([&](float dt)
     {
         // Keep the inline spinner animating: advance its layer and push it onto the
@@ -221,7 +226,7 @@ wider than the window, so it overflows — drag the horizontal scrollbar to pan:
         ImGui::Begin("Oversized image (horizontal scroll)", nullptr, ImGuiWindowFlags_HorizontalScrollbar);
         markdown.print(kOverflowSample);
         ImGui::End();
-    });
+    }, deferredController);
 
     return 0;
 }

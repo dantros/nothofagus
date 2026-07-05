@@ -128,6 +128,10 @@ int main()
     float scale   = 8.0f;
     float elapsedMs = 0.0f;
 
+    // TODO(threaded): registered-image passes (registerImguiImage / imguiImage) are not
+    // wired for the sim/render split yet (see THREADED_DIEGETIC_IMGUI.md). Parked on the
+    // deprecated single-thread run(update, Controller&) until threaded support lands.
+    Nothofagus::Controller deferredController;
     canvas.run([&](float dt)
     {
         // Advance the animation (current layer) and push it — plus the live opacity — onto
@@ -210,7 +214,7 @@ int main()
         canvas.imguiImage(sceneRtImageId);
 
         ImGui::End();
-    });
+    }, deferredController);
 
     return 0;
 }

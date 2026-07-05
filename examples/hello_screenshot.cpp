@@ -161,6 +161,10 @@ int main()
         canvas.requestScreenshot();
     });
 
+    // TODO(threaded): scheduled screenshots cross the sim/render boundary unsynchronized —
+    // requestScreenshot() arms flags on the sim thread while finishScreenshot() writes
+    // mScreenshotResult on the render thread, with no marshaling. Parked on the deprecated
+    // single-thread run(update, Controller&) until a threaded request/result handoff lands.
     canvas.run(update, controller);
     return 0;
 }

@@ -34,6 +34,11 @@ int main()
     Nothofagus::ImguiFontId small16Id{};
     bool wantSmall16 = false;
 
+    // TODO(threaded): diegetic renderImguiTo runs its user callback on the render thread
+    // and has no per-RTT draw-data clone, so it is not wired for the sim/render split yet
+    // (see THREADED_DIEGETIC_IMGUI.md). Parked on the deprecated single-thread
+    // run(update, Controller&) until threaded support lands.
+    Nothofagus::Controller deferredController;
     canvas.run([&](float deltaTimeMS)
     {
         time += deltaTimeMS;
@@ -108,7 +113,7 @@ int main()
             wantSmall16 = false;
         }
         ImGui::End();
-    });
+    }, deferredController);
 
     return 0;
 }

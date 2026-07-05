@@ -674,21 +674,31 @@ public:
     const bool& stats() const;
 
     /**
-     * @brief Start the canvas main loop with the default update function.
+     * @brief Start the canvas main loop with no update. Threaded: spins the sim/render
+     *        split with empty update/ui/controllers, closing via the window.
      */
     void run();
 
     /**
-     * @brief Start the canvas main loop with a custom update function.
-     * @param update The custom update function to call each frame.
+     * @brief Start the canvas main loop with a custom update function. Threaded: `update`
+     *        runs on the sim thread with empty ui + controllers. Keep any ImGui in the
+     *        `run(update, ui[, simController, renderController])` overloads — the sim
+     *        thread has no open main-context ImGui frame, so ImGui in `update` won't draw.
+     * @param update The custom update function to call each frame on the sim thread.
      */
     void run(std::function<void(float deltaTime)> update);
 
     /**
-     * @brief Start the canvas main loop with a custom update function and controller.
+     * @brief [DEPRECATED] Single-threaded loop with one controller (ImGui and input share
+     *        the update callback on the main thread). Superseded by the threaded
+     *        run(update, ui, simController, renderController); split ImGui into `ui` and
+     *        input into a sim + render controller. Kept for demos not yet ported to the
+     *        threaded path (diegetic ImGui / registered images / screenshot).
      * @param update The custom update function to call each frame.
      * @param controller The controller object to handle inputs.
      */
+    [[deprecated("Use the threaded run(update, ui, simController, renderController); "
+                 "see THREADED_MODE.md")]]
     void run(std::function<void(float deltaTime)> update, Controller& controller);
 
     /// Threaded convenience: run the sim/render split as a one-liner. nothofagus owns
