@@ -153,19 +153,13 @@ int main()
     bool swap = false;
     bool prevSwap = false;
 
+    // Game logic — runs on the sim thread (no ImGui here). Reads `swap`, which the ui
+    // writes; both callbacks run on the sim thread, so a plain bool is safe.
     auto update = [&](float dt)
     {
         time += dt;
         canvas.bellota(triangleId).transform().angle() = 0.05f * time;
         canvas.bellota(pentagonId).transform().angle() = -0.04f * time;
-
-        ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
-        ImGui::Begin("Custom meshes");
-        ImGui::Text("Left: user triangle mesh");
-        ImGui::Text("Right: user pentagon mesh");
-        ImGui::Text("Bottom: user quad mesh");
-        ImGui::Checkbox("Swap triangle <-> pentagon", &swap);
-        ImGui::End();
 
         if (swap != prevSwap)
         {
@@ -175,6 +169,18 @@ int main()
         }
     };
 
-    canvas.run(update);
+    // Interactive ImGui — runs on the sim-UI context (sim thread), cloned to the render thread.
+    auto ui = [&](float)
+    {
+        ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Once);
+        ImGui::Begin("Custom meshes");
+        ImGui::Text("Left: user triangle mesh");
+        ImGui::Text("Right: user pentagon mesh");
+        ImGui::Text("Bottom: user quad mesh");
+        ImGui::Checkbox("Swap triangle <-> pentagon", &swap);
+        ImGui::End();
+    };
+
+    canvas.run(update, ui);
     return 0;
 }

@@ -71,7 +71,10 @@ int main()
     fontDialog.SetTitle("Choose a font file");
     fontDialog.SetTypeFilters({ ".ttf", ".otf" });
 
-    canvas.run([&](float)
+    // Everything here is ImGui + font baking, so it all lives in the ui callback (sim-UI
+    // context, sim thread). Font ops (bake/add/remove/push) drain on the render thread; the
+    // id-stable font API keeps handles valid across the sim/render boundary.
+    auto ui = [&](float)
     {
         bool commitPath = false;
 
@@ -195,7 +198,9 @@ int main()
                 lastError.clear();
             }
         }
-    });
+    };
+
+    canvas.run([](float){}, ui);
 
     return 0;
 }
