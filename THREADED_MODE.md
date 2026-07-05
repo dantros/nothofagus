@@ -77,6 +77,14 @@ convenience overloads that own the sim thread for you.
   for; no 1-frame letterbox transient on a threaded `setScreenSize`.
 - **Threaded-safe `markTextureAsDirty` / `setTextureMin|MagFilter`** — now pure-CPU dirty flags
   (`mContentDirty` / `mFilterDirty`) consumed by `syncToGpu` on the render thread.
+- **Scheduled screenshots across the sim/render boundary** — `requestScreenshot()` can't touch the
+  render-owned backend from the sim thread, so it raises `std::atomic<bool> mScreenshotRequested`
+  (a sim→render channel modeled on `mThreadedCursor`); the render thread observes it at the top of
+  `consume(Threaded)` and does the `armScreenshot` there, sized to the snapshot being rendered — so
+  `mScreenshotArmed` stays render-thread-local. The captured pixels come back render→sim via
+  `mScreenshotResult` guarded by `mScreenshotResultMutex` (a heap-payload channel modeled on
+  `mClipboardFromOs`); `retrieveScreenshot()` consumes it under the same mutex. Single-threaded keeps
+  the eager arm (byte-identical). Demo: `hello_screenshot` (migrated to the 4-arg threaded `run`).
 
 ### Diegetic ImGui + registered ImGui images on the sim thread
 - **Registered ImGui images** (`registerImguiImage`/`imguiImage`/`updateImguiImage`) — the
@@ -109,20 +117,15 @@ renderController])` convenience (split the single `run` lambda into a game-logic
 are rerouted to the threaded path and `run(update, Controller&)` is `[[deprecated]]`.
 
 **hello_headless** deliberately stays off the threaded path: it uses `tick()` (single-step/headless
-harness), so a threaded port isn't meaningful — it's the single-threaded/manual-tick reference.
-
-**hello_screenshot** is the one demo still on the deprecated single-thread `run(update, Controller&)`
-because of an unclosed gap (see below), not by design — it's the last caller of the deprecated overload.
+harness), so a threaded port isn't meaningful — it's the single-threaded/manual-tick reference. It is now
+the **only** by-design single-thread demo; `hello_screenshot` was migrated to `run(update, ui,
+simController, renderController)` once the threaded-screenshot channel landed (see above), so there are no
+in-tree callers of the `[[deprecated]] run(update, Controller&)` overload left.
 
 ## Pending / deferred work
 
-- **Threaded screenshots** (blocks migrating `hello_screenshot`). The scheduled screenshot crosses the
-  sim/render boundary unsynchronized: `requestScreenshot()` arms `mScreenshotArmed` on the sim thread while
-  `finishScreenshot()` writes `mScreenshotResult` on the render thread, with no marshaling. Close it by
-  carrying the request across the boundary and returning the captured pixels via the same
-  `harvest→POD→feed` / atomic-flag channels already used for gamepad/keyboard/mouse/clipboard, then migrate
-  `hello_screenshot` to `run(update, ui, sim, render)` and drop the last `[[deprecated]]` caller. A
-  *separate* gap from the ImGui features (which are done).
+- _(none tracked — the threaded-screenshot gap that previously lived here is closed; see
+  "Scheduled screenshots across the sim/render boundary" under Done.)_
 
 ## Out of scope
 
