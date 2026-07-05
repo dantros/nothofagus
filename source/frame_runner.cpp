@@ -762,21 +762,24 @@ void FrameRunner::drainPendingFrees(AssetRegistry& assets, ImguiRttManager& imgu
 
 void FrameRunner::renderSnapshotContents(AssetRegistry& assets, ImguiRttManager& imguiRtt,
                                          ImguiImageManager* imguiImages,
-                                         const RenderSnapshot& snapshot, float deltaTimeMS)
+                                         const RenderSnapshot& snapshot)
 {
-    // Everything here touches the asset containers (`mTextures`/`mMeshes`,
-    // render targets) and the deferred-free queues. On the threaded path the
-    // caller holds `mThreadedAssetMutex` around this whole method so it cannot
-    // race the sim thread's structural spawns/despawns; on the single-threaded
-    // path there is no contention. The vsync swap is deliberately NOT here — it
-    // is done by the caller after releasing the lock.
-
-    // Deferred free: release resources retired no later than the snapshot we are
-    // about to render. Single-threaded, that snapshot is the latest commit so
-    // frees happen this frame; threaded, the gate genuinely defers (render lags).
+    // Single-mode orchestrator: producer + consumer are the same thread, so run the
+    // phases back-to-back with no locks. The threaded consume drives these same phases
+    // itself, locking each at the right granularity (see consume(FrameMode::Threaded)).
     mLastRenderedSeq = snapshot.commitSeq;
     drainPendingFrees(assets, imguiRtt, mLastRenderedSeq);
+    renderSnapshotPreMain(assets, imguiImages, snapshot);
+    imguiRtt.replayClones(snapshot.rttUi);
+    renderSnapshotMain(assets, snapshot);
+}
 
+void FrameRunner::renderSnapshotPreMain(AssetRegistry& assets, ImguiImageManager* imguiImages,
+                                        const RenderSnapshot& snapshot)
+{
+    // Asset-only: GPU uploads + sprite RTT passes + registered-image resolve. None of this
+    // touches the shared font atlas, so on the threaded path it needs only the asset mutex
+    // and overlaps the sim's UI-build. (The vsync swap is done by the caller, unlocked.)
     {
         ZoneScopedN("TextureUpload");
         for (auto& [textureIndex, texturePack] : assets.textures())
@@ -794,14 +797,6 @@ void FrameRunner::renderSnapshotContents(AssetRegistry& assets, ImguiRttManager&
         for (auto& [meshIndex, meshPack] : assets.meshes())
             meshPack.syncToGpu(mBackend);
     }
-
-    // Snapshot size, falling back to the live atomic for un-stamped priming slots
-    // (default {0,0} would make the world transform degenerate). Single mode always
-    // stamps a valid size, so this is a no-op there.
-    const ScreenSize renderScreen = (snapshot.screenSize.width != 0 && snapshot.screenSize.height != 0)
-        ? snapshot.screenSize
-        : mScreenSize.load(std::memory_order_acquire);
-    const glm::mat3 worldTransformMat = computeWorldTransformMat(renderScreen);
 
     {
         ZoneScopedN("RttPasses");
@@ -834,19 +829,26 @@ void FrameRunner::renderSnapshotContents(AssetRegistry& assets, ImguiRttManager&
 
         // The internal RTTs for registered ImGui images were just drawn (they are ordinary
         // RTT passes); refresh their flat-2D and create the ImGui handles the main UI samples.
-        // Runs before the main ImGui render below. Null on the threaded path (ImGui images
-        // are single-threaded only for now).
+        // Creates an ImGui-image descriptor set / GL view of the RTT color image — NOT the
+        // shared font atlas — so this stays on the asset-only path. Non-null in both modes now.
         if (imguiImages)
             imguiImages->resolveImages();
-
-        // Diegetic ImGui-to-RTT passes — replay the sim's per-RTT draw-data clones into their
-        // render targets (before the main pass samples them). Each uses a secondary ImGuiContext
-        // rendered with a pipeline compiled against the RTT render pass (Vulkan) or into the RTT
-        // FBO (OpenGL); the backend is lazily created render-side on first replay, torn down in
-        // removeRenderTarget() and the destructor. Touches the shared atlas, so the caller holds
-        // the ImGui mutex (see consume()); no-op when there are no clones.
-        imguiRtt.replayClones(snapshot.rttUi);
     }
+
+    // NB: diegetic ImGui replay (imguiRtt.replayClones) happens AFTER this phase — it touches
+    // the shared atlas, so the threaded consume runs it under the ImGui mutex; here it is left
+    // to the caller so the atlas-free work above can stay asset-only.
+}
+
+void FrameRunner::renderSnapshotMain(AssetRegistry& assets, const RenderSnapshot& snapshot)
+{
+    // Asset-only: the main framebuffer sprite draw. Snapshot size, falling back to the live
+    // atomic for un-stamped priming slots (default {0,0} would make the world transform
+    // degenerate). Single mode always stamps a valid size, so the fallback is a no-op there.
+    const ScreenSize renderScreen = (snapshot.screenSize.width != 0 && snapshot.screenSize.height != 0)
+        ? snapshot.screenSize
+        : mScreenSize.load(std::memory_order_acquire);
+    const glm::mat3 worldTransformMat = computeWorldTransformMat(renderScreen);
 
     mBackend.beginMainPass(mGameViewport);
 
@@ -932,6 +934,16 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
             ZoneScopedN("RenderImguiNewFrame");
             std::lock_guard<std::mutex> imguiLock(mImguiMutex);
             imguiRtt.drainPendingFontOps();
+            // Deferred frees run here, under imgui⊃asset: the render-target branch tears down
+            // secondary ImGui contexts (releaseContext → ImGui::DestroyContext), which mutates
+            // ImGui's global context list and can race the sim's produceClones (CreateContext /
+            // NewFrame), so it must hold the ImGui mutex — not just the asset mutex. Kept out of
+            // the asset-only render phases below (which must NOT touch ImGui globals).
+            {
+                std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
+                mLastRenderedSeq = snapshot.commitSeq;
+                drainPendingFrees(assets, imguiRtt, mLastRenderedSeq);
+            }
             // Apply the sim UI's marshalled cursor shape before newImGuiFrame (inside
             // beginMainImguiFrame) runs the platform backend's UpdateMouseCursor, which
             // reads the main context's GetMouseCursor() and drives glfwSetCursor/SDL.
@@ -953,38 +965,33 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
             mBackend.endFrame(uiData, mFramebufferWidth, mFramebufferHeight);
         };
 
-        // Container-touching render (deferred frees, GPU upload, id→handle resolve, sprite +
-        // RTT-sprite draw, main draw). The lock discipline depends on whether this frame carries
-        // diegetic-ImGui clones, so the coarse lock is paid ONLY when renderImguiTo is in use:
-        //  - No clones (the common case): renderSnapshotContents touches only the asset containers
-        //    (registered-image resolve is asset-mutex-covered), so it runs under the asset mutex
-        //    ALONE and keeps overlapping the sim's UI-build; only the short main RenderDrawData
-        //    takes the ImGui mutex — the pre-diegetic behavior.
-        //  - With clones: replayClones inside renderSnapshotContents does RenderDrawData on the RTT
-        //    contexts, touching the shared atlas, so the whole block runs under the ImGui mutex
-        //    OUTER of the asset mutex — matching the sim side's imgui⊃asset order (a Canvas
-        //    ImGui-image draw in `ui` takes the asset mutex while the ImGui mutex is held) so the
-        //    two threads acquire the pair in the same order and can't deadlock. Neither path ever
-        //    takes asset⊃imgui, so the choice is deadlock-safe regardless of which frames use it.
-        // The asset lock is released before the vsync swap so a slow present never stalls the sim.
-        if (snapshot.rttUi.empty())
+        // Container-touching render, split into phases so only the steps that actually touch the
+        // shared font atlas hold the ImGui mutex — the sprite/upload work stays asset-only and
+        // overlaps the sim's UI-build (like the non-ImGui renderTo path). Every phase locks in
+        // imgui⊃asset order or asset-only — NEVER asset⊃imgui — matching the sim, so it can't
+        // deadlock. Releasing the asset mutex between phases is safe because GPU frees are deferred
+        // (a sim remove in a gap only enqueues; the resource stays alive) and each phase re-looks
+        // up resources by id, holding no iterators across a gap. The asset lock is released before
+        // the vsync swap so a slow present never stalls the sim.
         {
-            {
-                ZoneScopedN("AssetLockedRender");
-                std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
-                renderSnapshotContents(assets, imguiRtt, imguiImages, snapshot, deltaTimeMS);
-            }
-            std::lock_guard<std::mutex> imguiLock(mImguiMutex);
-            drawMainUi();
+            ZoneScopedN("PreMain");                             // uploads + sprite RTT + resolve
+            std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
+            renderSnapshotPreMain(assets, imguiImages, snapshot);
         }
-        else
+        if (not snapshot.rttUi.empty())                         // diegetic RTT: atlas draw
         {
-            std::lock_guard<std::mutex> imguiLock(mImguiMutex);
-            {
-                ZoneScopedN("AssetLockedRender");
-                std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
-                renderSnapshotContents(assets, imguiRtt, imguiImages, snapshot, deltaTimeMS);
-            }
+            ZoneScopedN("DiegeticReplay");
+            std::lock_guard<std::mutex> imguiLock(mImguiMutex);                   // outer
+            std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex); // inner
+            imguiRtt.replayClones(snapshot.rttUi);
+        }
+        {
+            ZoneScopedN("MainPass");                            // main framebuffer sprite draw
+            std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
+            renderSnapshotMain(assets, snapshot);
+        }
+        {
+            std::lock_guard<std::mutex> imguiLock(mImguiMutex); // main-context ImGui: atlas draw
             drawMainUi();
         }
 
@@ -1007,7 +1014,7 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
 
     // FrameMode::Single — the producer (buildSnapshot) already opened the GPU frame
     // and the main-context ImGui frame, so the consumer just renders + presents.
-    renderSnapshotContents(assets, imguiRtt, imguiImages, snapshot, deltaTimeMS);
+    renderSnapshotContents(assets, imguiRtt, imguiImages, snapshot);
 
     if (mStats)
     {

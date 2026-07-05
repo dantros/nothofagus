@@ -338,11 +338,24 @@ private:
     /// The container-touching core of a rendered frame: deferred frees, GPU
     /// upload, RTT passes (including imguiVisual's internal RTTs, resolved +
     /// GC'd via `imguiImages` when non-null), and the main draw. Excludes the
-    /// vsync swap and the ImGui render. On the threaded path the caller holds
-    /// `mThreadedAssetMutex` around this; single-threaded there is no contention.
+    /// vsync swap and the ImGui render. Single-mode orchestrator: runs the phases
+    /// below back-to-back with no locks (`drainPendingFrees` → preMain → diegetic
+    /// replay → main). The threaded consume drives the phases itself so it can lock
+    /// each at the right granularity (only the atlas-touching steps take the ImGui
+    /// mutex; the sprite/upload work stays asset-only and overlaps the sim).
     void renderSnapshotContents(AssetRegistry& assets, ImguiRttManager& imguiRtt,
                                 ImguiImageManager* imguiImages,
-                                const RenderSnapshot& snapshot, float deltaTimeMS);
+                                const RenderSnapshot& snapshot);
+
+    /// Asset-only render phase: GPU uploads (textures / RT sync / meshes) + sprite
+    /// RTT passes + registered-image `resolveImages`. Touches only the asset
+    /// containers + the ImGui-image descriptor pool — never the shared font atlas —
+    /// so it needs only `mThreadedAssetMutex` on the threaded path.
+    void renderSnapshotPreMain(AssetRegistry& assets, ImguiImageManager* imguiImages,
+                               const RenderSnapshot& snapshot);
+
+    /// Asset-only render phase: `beginMainPass` + the main framebuffer sprite draw.
+    void renderSnapshotMain(AssetRegistry& assets, const RenderSnapshot& snapshot);
 
     /// Gather the queued RTT passes (`mPendingRttPasses`) into POD draw lists on
     /// `out` and clear the queue. CPU-only — GPU existence of each render target
