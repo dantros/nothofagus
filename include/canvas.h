@@ -703,9 +703,17 @@ public:
     /// Close the canvas and clean up resources.
     void close();
 
-    /// Captures the last rendered frame visible to the user as a DirectTexture (RGBA).
-    /// Must be called from within the update() callback.
-    DirectTexture takeScreenshot() const;
+    /// Schedule a screenshot of the NEXT rendered frame (including changes made in the
+    /// current update callback). Safe to call from inside a run()/tick() update callback.
+    /// The capture is recorded in-frame before present (no WSI hazard); the pixels are
+    /// available via retrieveScreenshot() once that frame has been rendered.
+    void requestScreenshot();
+
+    /// Consume the scheduled screenshot as a DirectTexture (RGBA). Returns nullopt until
+    /// the frame that follows requestScreenshot() has rendered; returns the pixels exactly
+    /// once, then nullopt again. Safe to call anywhere (no blocking). Typical use:
+    ///   canvas.requestScreenshot(); canvas.tick(dt); auto shot = canvas.retrieveScreenshot();
+    std::optional<DirectTexture> retrieveScreenshot();
 
 private:
     struct Implementation;

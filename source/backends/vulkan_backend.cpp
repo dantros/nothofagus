@@ -2193,6 +2193,12 @@ void VulkanBackend::endFrame(
     TracyVkCollect(mTracyVkContext, mActiveCommandBuffer);
 
     vkCmdEndRenderPass(mActiveCommandBuffer);
+
+    // Deferred screenshot: capture this frame's output while we still own the image —
+    // recorded here (before submit/present), read back after the fence. No-op unless armed.
+    mPresentation.recordCapture(mActiveCommandBuffer, mCurrentGameViewport,
+                                mFrames[mCurrentFrame].inFlight);
+
     vkEndCommandBuffer(mActiveCommandBuffer);
 
     FrameData& frame = mFrames[mCurrentFrame];
@@ -2277,13 +2283,19 @@ void VulkanBackend::renderImguiDrawDataToRenderTarget(ImDrawData* imguiData,
 }
 
 // ---------------------------------------------------------------------------
-// takeScreenshot()
+// Screenshot (scheduled) — arm a capture, then finish it at end of frame.
 // ---------------------------------------------------------------------------
 
-ScreenshotPixels VulkanBackend::takeScreenshot(ViewportRect gameViewport, glm::ivec2 gameSize) const
+void VulkanBackend::armScreenshot(glm::ivec2 gameSize)
 {
-    return mPresentation.takeScreenshot(mDevice, mAllocator, mCommandPool, mGraphicsQueue,
-                                        gameViewport, gameSize);
+    mPresentation.armCapture(gameSize);
+}
+
+std::optional<ScreenshotPixels> VulkanBackend::finishScreenshot()
+{
+    if (!mPresentation.captureReady())
+        return std::nullopt;
+    return mPresentation.finishCapture(mDevice, mAllocator, mCommandPool, mGraphicsQueue);
 }
 
 // ---------------------------------------------------------------------------
