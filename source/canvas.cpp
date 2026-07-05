@@ -417,6 +417,16 @@ void Canvas::run(std::function<void(float)> update, std::function<void(float)> u
                                       std::move(update), std::move(uiCallback), simController, renderController);
 }
 
+void Canvas::run(std::function<void(float)> update, std::function<void(float)> uiCallback)
+{
+    // Distinct empty controllers: the sim controller is fed on the sim thread and the
+    // render controller pumped on the main thread, so they must not be the same object.
+    Controller simController;
+    Controller renderController;
+    mImplPtr->frameRunner.runThreaded(*this, mImplPtr->assets, mImplPtr->imguiRtt,
+                                      std::move(update), std::move(uiCallback), simController, renderController);
+}
+
 void Canvas::tick(float deltaTime, std::function<void(float)> update, Controller& controller)
 {
     mImplPtr->frameRunner.tick(*this, mImplPtr->assets, mImplPtr->imguiRtt, mImplPtr->imguiImages, deltaTime, update, controller);

@@ -701,6 +701,11 @@ public:
     void run(std::function<void(float)> update, std::function<void(float)> uiCallback,
              Controller& simController, Controller& renderController);
 
+    /// Threaded convenience for apps with no game/window input controllers (they close
+    /// via the window). Same as the four-arg overload but nothofagus supplies empty
+    /// controllers internally. Owns the sim thread; keep ImGui in `uiCallback`.
+    void run(std::function<void(float)> update, std::function<void(float)> uiCallback);
+
     /// Execute a single frame with a caller-supplied delta time (in milliseconds).
     void tick(float deltaTime, std::function<void(float)> update, Controller& controller);
     void tick(float deltaTime, std::function<void(float)> update);
