@@ -80,7 +80,10 @@ std::set<std::string> validationIdsForMode(Nothofagus::PresentMode mode)
             {15, 10}, "present_mode_test", {0.0f, 0.0f, 0.0f}, 1, 14,
             /*headless=*/true, mode);
         PresentModeTest::buildSceneAndTick(canvas, /*ticks=*/24);
-        (void)canvas.takeScreenshot();
+        // Schedule + render one more frame to exercise the in-frame capture path.
+        canvas.requestScreenshot();
+        canvas.tick(16.0f);
+        (void)canvas.retrieveScreenshot();
     }
 
     Nothofagus::setVulkanValidationCallback(nullptr);
@@ -105,10 +108,13 @@ TEST_CASE("present mode introduces no new validation hazards (Finding 2)", "[pre
     }
 
     if (unionIds.empty())
-        SKIP("No Vulkan validation messages captured — validation layer not loaded. "
-             "Run with the Vulkan SDK on VK_LAYER_PATH.");
+        SKIP("No VUID / SYNC-HAZARD ids captured. Either the validation layer is not loaded "
+             "(run with the Vulkan SDK on VK_LAYER_PATH), or the backend is clean — the "
+             "windowed screenshot/sync hazards this test used to observe are now all fixed, "
+             "so there is nothing to compare across present modes.");
 
-    // The set of distinct validation IDs must be identical across present modes.
+    // If any hazards do occur, the set of distinct validation IDs must be identical across
+    // present modes (a mode-specific hazard would mean the present mode introduced one).
     for (std::size_t i = 1; i < PresentModeTest::kAllModes.size(); ++i)
     {
         INFO("comparing " << PresentModeTest::modeName(PresentModeTest::kAllModes[0])

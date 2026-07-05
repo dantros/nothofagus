@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <span>
 #include <string>
+#include <optional>
 
 namespace Nothofagus
 {
@@ -62,7 +63,10 @@ public:
     void imguiNewFrameForRenderTarget(DRenderTarget renderTarget);
     void renderImguiDrawDataToRenderTarget(ImDrawData* imguiData, DRenderTarget renderTarget);
 
-    ScreenshotPixels takeScreenshot(ViewportRect gameViewport, glm::ivec2 gameSize) const;
+    // Scheduled screenshot: armScreenshot() arms a capture; endFrame() reads GL_BACK
+    // (before the window buffer swap) when armed; finishScreenshot() returns the pixels.
+    void armScreenshot(glm::ivec2 gameSize);
+    std::optional<ScreenshotPixels> finishScreenshot();
 
     /// Allow FrameRunner to update a texture's filter parameters directly after upload.
     void setTextureMinFilter(DTexture texture, TextureSampleMode mode);
@@ -117,6 +121,15 @@ private:
     unsigned int compileShader(unsigned int type, const std::string& source);
     unsigned int createShaderProgram(unsigned int vertexShader, unsigned int fragmentShader);
     void setupVAO(OpenGLMesh& glMesh);
+
+    // Reads the game viewport region of GL_BACK into RGBA pixels (top-to-bottom).
+    ScreenshotPixels captureBackBuffer(ViewportRect gameViewport, glm::ivec2 gameSize) const;
+
+    // Deferred screenshot state.
+    bool         mScreenshotPending  = false;
+    glm::ivec2   mScreenshotGameSize = {};
+    ViewportRect mCurrentGameViewport = {};
+    std::optional<ScreenshotPixels> mScreenshotResult;
 };
 
 static_assert(RenderBackend<OpenGLBackend>,

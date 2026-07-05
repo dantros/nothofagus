@@ -75,8 +75,10 @@ int main()
     for (int i = 0; i < 3; ++i)
         canvas.tick(16.0f);
 
-    // Capture screenshot
-    Nothofagus::DirectTexture screenshot = canvas.takeScreenshot();
+    // Capture screenshot: schedule it, render one more frame, then retrieve the pixels.
+    canvas.requestScreenshot();
+    canvas.tick(16.0f);
+    Nothofagus::DirectTexture screenshot = *canvas.retrieveScreenshot();
     Nothofagus::TextureData textureData = screenshot.generateTextureData();
     std::span<std::uint8_t> pixels = textureData.getDataSpan();
     const int width  = static_cast<int>(textureData.width());

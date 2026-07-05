@@ -155,8 +155,10 @@ public:
               ImguiImageManager& imguiImages,
               float deltaTimeMS, std::function<void(float)> update, Controller& controller);
 
-    /// Captures the last rendered frame visible to the user as a DirectTexture (RGBA).
-    DirectTexture takeScreenshot() const;
+    /// Arm a screenshot of the next rendered frame (captured in-frame before present).
+    void requestScreenshot();
+    /// Consume the captured frame once it is ready; nullopt until the armed frame renders.
+    std::optional<DirectTexture> retrieveScreenshot();
 
 private:
     void ensureSessionStarted(Controller& controller);
@@ -215,6 +217,11 @@ private:
 
     /// RTT passes queued by renderTo() during the update callback, executed before the main render.
     std::vector<std::pair<RenderTargetId, std::vector<BellotaId>>> mPendingRttPasses;
+
+    /// Deferred screenshot: armed by requestScreenshot(), finished at the end of the
+    /// captured frame; the result is held until retrieveScreenshot() consumes it.
+    bool mScreenshotArmed{false};
+    std::optional<DirectTexture> mScreenshotResult;
 
     PresentMode mPresentMode{DEFAULT_PRESENT_MODE}; ///< Swapchain / vsync preference (construction-time).
     std::optional<float> mTargetFps; ///< Frame-rate cap for run() (nullopt = unlimited). Runtime-settable.

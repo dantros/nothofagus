@@ -73,16 +73,19 @@ struct WindowedVulkanPresentation
     void          submitAndPresent(VkDevice device, VkQueue graphicsQueue,
                                    VkCommandBuffer commandBuffer, VkFence frameFence);
 
-    // --- Screenshot ---
-    ScreenshotPixels takeScreenshot(VkDevice device, VmaAllocator allocator,
-                                    VkCommandPool commandPool, VkQueue graphicsQueue,
-                                    ViewportRect gameViewport, glm::ivec2 gameSize) const;
+    // --- Screenshot (scheduled: recorded in-frame before present, read back after fence) ---
+    void armCapture(glm::ivec2 gameSize);
+    void recordCapture(VkCommandBuffer commandBuffer, ViewportRect gameViewport, VkFence frameFence);
+    bool captureReady() const;
+    ScreenshotPixels finishCapture(VkDevice device, VmaAllocator allocator,
+                                   VkCommandPool commandPool, VkQueue graphicsQueue);
 
     // --- Cleanup ---
     void shutdown(VkDevice device, VmaAllocator allocator, VkInstance instance);
 
 private:
     void recreateSwapchain();
+    void destroyCaptureResources();
     ScreenSize queryFramebufferSize() const;
     void createDepthResources();
     void destroyDepthResources();
@@ -122,6 +125,19 @@ private:
     // Store the native window handle for framebuffer size queries during
     // swapchain creation/recreation (Wayland doesn't provide currentExtent).
     void* mNativeWindowHandle = nullptr;
+
+    // Deferred screenshot capture: the copy is recorded into the frame command buffer
+    // before present (while we still own the image), then read back after the fence.
+    bool          mCapturePending       = false;  // armed for the next frame
+    bool          mCaptureRecorded      = false;  // recordCapture ran this cycle
+    glm::ivec2    mCaptureGameSize      = {};
+    VkFence       mCaptureFence         = VK_NULL_HANDLE;
+    VkImage       mCaptureImage         = VK_NULL_HANDLE;  // intermediate R8G8B8A8 (crop+convert+flip)
+    VmaAllocation mCaptureImageAlloc    = VK_NULL_HANDLE;
+    VkBuffer      mCaptureStaging       = VK_NULL_HANDLE;  // host-visible readback buffer
+    VmaAllocation mCaptureStagingAlloc  = VK_NULL_HANDLE;
+    void*         mCaptureStagingMapped = nullptr;
+    VkDeviceSize  mCaptureBufSize       = 0;
 };
 
 using ActiveVulkanPresentation = WindowedVulkanPresentation;
@@ -164,10 +180,12 @@ struct HeadlessVulkanPresentation
     void          submitAndPresent(VkDevice device, VkQueue graphicsQueue,
                                    VkCommandBuffer commandBuffer, VkFence frameFence);
 
-    // --- Screenshot ---
-    ScreenshotPixels takeScreenshot(VkDevice device, VmaAllocator allocator,
-                                    VkCommandPool commandPool, VkQueue graphicsQueue,
-                                    ViewportRect gameViewport, glm::ivec2 gameSize) const;
+    // --- Screenshot (scheduled; headless reads its owned, never-presented image) ---
+    void armCapture(glm::ivec2 gameSize);
+    void recordCapture(VkCommandBuffer commandBuffer, ViewportRect gameViewport, VkFence frameFence);
+    bool captureReady() const;
+    ScreenshotPixels finishCapture(VkDevice device, VmaAllocator allocator,
+                                   VkCommandPool commandPool, VkQueue graphicsQueue);
 
     // --- Cleanup ---
     void shutdown(VkDevice device, VmaAllocator allocator, VkInstance instance);
@@ -187,6 +205,12 @@ private:
 
     VkFramebuffer mFramebuffer = VK_NULL_HANDLE;
     VkExtent2D    mExtent      = {};
+
+    // Deferred screenshot state (headless has no present, so it reads its owned image).
+    bool         mCapturePending  = false;
+    bool         mCaptureRecorded = false;
+    glm::ivec2   mCaptureGameSize = {};
+    ViewportRect mCaptureViewport = {};
 };
 
 using ActiveVulkanPresentation = HeadlessVulkanPresentation;

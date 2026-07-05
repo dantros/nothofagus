@@ -92,6 +92,33 @@ int main()
 
     auto update = [&](float dt)
     {
+        // Pick up a scheduled screenshot once it is ready (the frame after SPACE was
+        // pressed). The returned DirectTexture owns its RGBA pixels (top-to-bottom) and
+        // can be saved with an external image library, e.g.:
+        //   auto data = shot->generateTextureData();
+        //   auto span = data.getDataSpan();
+        //   stb_image_plus::ImageData4 img(
+        //       {reinterpret_cast<stb_image_plus::Pixel4*>(span.data()), span.size() / 4},
+        //       data.width(), data.height());
+        //   img.write("screenshot.png");
+        if (std::optional<Nothofagus::DirectTexture> shot = canvas.retrieveScreenshot())
+        {
+            // Remove any existing screenshot content so its texture is garbage-collected.
+            if (screenshotBellotaId)
+            {
+                canvas.removeBellota(*screenshotBellotaId);
+                screenshotBellotaId.reset();
+            }
+            ensureFrame(); // persistent frame bellota, matched to the current resolution
+
+            spdlog::info("Screenshot captured: {}x{} px", shot->size().x, shot->size().y);
+            auto screenshotTexId = canvas.addTexture(*shot);
+            screenshotBellotaId  = canvas.addBellota({{thumbnailPos, thumbnailScale}, screenshotTexId, 1});
+
+            canvas.bellota(*screenshotFrameBellotaId).opacity() = 1.0f;
+            screenshotTimer = screenshotDisplayDurationMs;
+        }
+
         // Bounce the sprite inside the canvas bounds.
         spritePos += spriteVel * dt;
 
@@ -128,34 +155,10 @@ int main()
     Nothofagus::Controller controller;
     controller.registerAction({Nothofagus::Key::SPACE, Nothofagus::DiscreteTrigger::Press}, [&]()
     {
-        // Remove any existing screenshot content so its texture is garbage-collected.
-        if (screenshotBellotaId)
-        {
-            canvas.removeBellota(*screenshotBellotaId);
-            screenshotBellotaId.reset();
-        }
-
-        // Ensure the persistent frame bellota exists and matches the current resolution.
-        ensureFrame();
-
-        // Capture the current frame at game resolution (canvas.screenSize()).
-        // The returned DirectTexture owns its RGBA pixel data (top-to-bottom row order)
-        // and can be passed to an external image library for saving to disk, e.g.:
-        //
-        //   auto data = screenshot.generateTextureData();
-        //   auto span = data.getDataSpan();
-        //   stb_image_plus::ImageData4 img(
-        //       {reinterpret_cast<stb_image_plus::Pixel4*>(span.data()), span.size() / 4},
-        //       data.width(), data.height());
-        //   img.write("screenshot.png");
-        Nothofagus::DirectTexture screenshot = canvas.takeScreenshot();
-        spdlog::info("Screenshot captured: {}x{} px", screenshot.size().x, screenshot.size().y);
-
-        auto screenshotTexId = canvas.addTexture(screenshot);
-        screenshotBellotaId  = canvas.addBellota({{thumbnailPos, thumbnailScale}, screenshotTexId, 1});
-
-        canvas.bellota(*screenshotFrameBellotaId).opacity() = 1.0f;
-        screenshotTimer = screenshotDisplayDurationMs;
+        // Schedule a screenshot of the next rendered frame. Capture is deferred:
+        // the pixels arrive via canvas.retrieveScreenshot() on the following frame (see
+        // the poll at the top of update()), so it can be requested from inside a callback.
+        canvas.requestScreenshot();
     });
 
     canvas.run(update, controller);

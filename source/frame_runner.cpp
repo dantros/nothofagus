@@ -182,13 +182,16 @@ ScreenSize FrameRunner::windowSize() const
     return mWindow->getWindowSize();
 }
 
-DirectTexture FrameRunner::takeScreenshot() const
+void FrameRunner::requestScreenshot()
 {
+    mScreenshotArmed = true;
     const glm::ivec2 gameSize{static_cast<int>(mScreenSize.width), static_cast<int>(mScreenSize.height)};
-    ScreenshotPixels pixels = mBackend.takeScreenshot(mGameViewport, gameSize);
-    TextureData textureData(pixels.width, pixels.height, 1);
-    std::copy(pixels.data.begin(), pixels.data.end(), textureData.getDataSpan().begin());
-    return DirectTexture(std::move(textureData));
+    mBackend.armScreenshot(gameSize);
+}
+
+std::optional<DirectTexture> FrameRunner::retrieveScreenshot()
+{
+    return std::exchange(mScreenshotResult, std::nullopt);
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +302,20 @@ void FrameRunner::runOneFrame(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
 
     const RenderSnapshot& snapshot = buildSnapshot(canvas, assets, imguiRtt, imguiImages, deltaTimeMS, update, controller);
     renderSnapshot(assets, imguiRtt, imguiImages, snapshot, deltaTimeMS, controller);
+
+    // Deferred screenshot: the backend recorded/read the capture during this frame's
+    // endFrame; finish it (read back after the fence) and hold the result for retrieval.
+    // Stays armed if the frame was skipped (e.g. swapchain recreation returned no image).
+    if (mScreenshotArmed)
+    {
+        if (std::optional<ScreenshotPixels> pixels = mBackend.finishScreenshot())
+        {
+            TextureData textureData(pixels->width, pixels->height, 1);
+            std::copy(pixels->data.begin(), pixels->data.end(), textureData.getDataSpan().begin());
+            mScreenshotResult = DirectTexture(std::move(textureData));
+            mScreenshotArmed = false;
+        }
+    }
 
     FrameMark;
 }
