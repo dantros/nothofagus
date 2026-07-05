@@ -39,26 +39,47 @@
    transient on resize (render uses live size while drawing the previous snapshot's pool); fully
    removing it = carry `screenSize` in `RenderSnapshot` (optional, see C).
 
-## B. ImGui parity on the threaded path — 🔧 OPEN
+## B. ImGui parity on the threaded path — ✅ DONE
 
-5. **Cursor-shape feedback** — marshal sim `ImGui::GetMouseCursor()` → render `glfwSetCursor`/SDL
-   equivalent (I-beam over text, resize handles). Output, sim→render (reverse of the input harvest).
-6. **ImGui gamepad nav** — only `NavEnableKeyboard` is set on the sim-UI context; add
-   `NavEnableGamepad` + marshal the gamepad ImGui-keys into it.
-7. **OS clipboard across the thread boundary** — today the sim-UI context uses an in-process
-   clipboard; bridge to the real OS clipboard (GLFW/SDL, main-thread-only) across the boundary.
+5. **Cursor-shape feedback** — ✅ DONE (`0fabc0f`). Sim `ImGui::GetMouseCursor()` → `mThreadedCursor`
+   (atomic) → render `ImGui::SetMouseCursor` before the main-context `NewFrame`, so the platform
+   backend's existing `UpdateMouseCursor` applies it. No backend changes; render-backend-agnostic.
+6. **ImGui gamepad nav** — ✅ DONE (`5ad2d95`). `NavEnableGamepad` on the main context (so the
+   platform backend populates the `ImGuiKey_Gamepad*` keys already harvested+replayed) + on the
+   sim-UI context (+`HasGamepad`). Threaded-only. Digital D-pad/face-button nav; **analog stick nav
+   not yet marshalled** (bool-only harvest) — follow-up needs a float side-channel.
+7. **OS clipboard across the thread boundary** — ✅ DONE (`43879a7`). New `WindowBackend`
+   `get/setClipboardText` (GLFW/SDL3/headless); sim-UI clipboard callbacks read/write a mutex-guarded
+   marshal that the render thread syncs with the OS (writes immediate, OS reads throttled ~0.25 s).
 
-## C. Polish / stretch — 🔧 OPEN
+## C. Polish / stretch — 🔧 C8/C10/C11 DONE; C9 deferred
 
-8. **Stats overlay when a sim-UI clone IS present** — stats render on the main context, which is only
-   shown when the app commits no `uiCallback` (e.g. the gamepad demo). Apps with sim ImGui need
-   stats injected into the clone (sim side).
-9. **Triple-buffer interpolation** — render could interpolate between the two most recent snapshots
-   by stable id for extra smoothness.
-10. **Carry `screenSize` in `RenderSnapshot`** — removes the 1-frame letterbox transient on a
-    threaded `setScreenSize` (the render would use the snapshot's size, matching its pool, instead of
-    the live size). Stamp it in `produce`; `consume` uses `snapshot.screenSize` for the viewport /
-    world transform / `endFrame`. A4 is already race-safe without this.
+8. **Stats overlay when a sim-UI clone IS present** — ✅ DONE. The stats window is now drawn into the
+   sim-UI frame (in `produce(Threaded)`, after the user `uiCallback`, before `Render`) instead of the
+   render-thread main context, so it ends up in the cloned draw data that gets presented even when
+   the app commits its own ImGui. The render cadence is marshalled to the sim via `mRenderFps`/
+   `mRenderMs` atomics; a sim-side `PerformanceMonitor` (fed by an accumulated commit clock) gives
+   the sim rate. Overlay shows render fps/ms next to the sim fps. Demo: `hello_threaded_imgui` now
+   sets `canvas.stats() = true` (a `uiCallback` app — the case that previously hid stats).
+9. **Triple-buffer interpolation** — ⏸ DEFERRED. Render could interpolate between the two most recent
+   snapshots by stable id for extra smoothness. Larger change: needs per-drawable stable IDs in
+   `DrawItem` (today only `TextureId`/`MeshId`), previous-snapshot retention (consume reads only the
+   latest `readSlot()`), ID-matching, and a render-time alpha. C10's per-snapshot `screenSize` is a
+   prerequisite it can build on.
+10. **Carry `screenSize` in `RenderSnapshot`** — ✅ DONE. `RenderSnapshot` gained a `ScreenSize
+    screenSize` field, stamped in both `produce` arms; `consume(Threaded)`/`renderSnapshotContents`
+    use it for the viewport / world transform / `endFrame`, so the render draws each snapshot's pool
+    in the size it was built for — no 1-frame letterbox transient on a threaded `setScreenSize`.
+    Priming/un-stamped slots ({0,0}) fall back to the live atomic to avoid a 0-aspect divide
+    (a real UBSan bug caught in verification). Single mode always stamps a valid size, so the
+    fallback is a no-op there.
+11. **Analog gamepad nav on the threaded path** — ✅ DONE. `ThreadedImguiInput` gained a
+    `float keyAnalog[]` side-channel alongside `keyDown`; `harvestImguiInput` captures
+    `io.KeysData[index].AnalogValue` (the public per-key array), and the replay routes the analog
+    gamepad keys (`GamepadL2`/`R2`, `GamepadL/RStick*` — via the `isAnalogNavKey` helper) through
+    `AddKeyAnalogEvent` instead of `AddKeyEvent`. ImGui's smooth gamepad nav (continuous
+    scroll/tween) now survives the marshal, matching single-threaded. Render-backend-independent,
+    works on GLFW and SDL3.
 
 ## D. Related — tracked separately (not part of "completing threaded mode")
 
@@ -70,8 +91,12 @@
   planning doc is superseded and was removed.)
 - **Full Option A driver collapse** (`run`/`tick` → only `commit`/`renderFrame`) — deferred by
   choice; would force the ~15 ImGui-in-`update` single-threaded examples onto the threaded ImGui model.
-- **markTextureAsDirty / setTextureMin|MagFilter threaded-safety** — currently single/main-thread-only
-  (immediate GPU work); deferred-GPU versions are a follow-up if needed.
+- **markTextureAsDirty / setTextureMin|MagFilter threaded-safety** — ✅ DONE (`ccc11a3`). The three
+  Canvas mutators no longer do immediate GPU work: two pure-CPU `TexturePack` flags (`mContentDirty`
+  for re-upload, `mFilterDirty` for min/mag filters) are consumed by `syncToGpu` on the render thread;
+  `AssetRegistry` setters became pure-CPU and new `FrameRunner` mode-aware wrappers take the asset
+  lock when threaded (same pattern as `setTexture`). Single-threaded behavior preserved. Demo:
+  `hello_threaded` flips a Direct texture's filter + marks it dirty from the sim update.
 - **alice_engine / PocketPy integration** — wiring the engine's Python loop onto `commit`/`renderFrame`;
   out of nothofagus scope by design.
 
