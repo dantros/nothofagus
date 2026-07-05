@@ -151,9 +151,13 @@ in-tree callers of the `[[deprecated]] run(update, Controller&)` overload left.
 
 ## Verification recipe (every change)
 
-- Cross-backend builds: `linux-release-glfw-opengl-examples`, `-glfw-vulkan-examples`, `-sdl3-vulkan-examples`.
-- SwiftShader goldens unchanged: `linux-release-headless-vulkan-tests` +
-  `NOTHOFAGUS_RENDER_BACKEND=swiftshader .../rendering_tests`.
-- TSan + ASan on the threaded demos under `xvfb-run` — expect only environmental Mesa/glib noise,
-  0 conflicts in our code, 0 ASan/UBSan errors.
-- Any new shared state must be mutex- or atomic-guarded like the existing marshal channels.
+- Cross-backend builds: `linux-release-glfw-opengl-examples`, `-glfw-vulkan-examples`,
+  `-sdl3-opengl-examples`, `-sdl3-vulkan-examples`.
+- Run the threaded demos **directly on the GPU** for each window×render combo (glfw/sdl3 ×
+  opengl/vulkan) and confirm they behave; on the Vulkan builds check the validation output is free of
+  `VUID-` / `SYNC-HAZARD` messages.
+- SwiftShader Vulkan headless goldens unchanged (this is the CI lane): `linux-release-headless-vulkan-tests`
+  + `NOTHOFAGUS_RENDER_BACKEND=swiftshader .../rendering_tests`.
+- Any new cross-thread shared state must be mutex- or atomic-guarded like the existing marshal channels
+  (`mThreadedGamepadState`/`mThreadedGameInputState`, the `mThreadedCursor` atomic, the `mClipboardMutex`
+  payload) — argue race-freedom by mirroring those.
