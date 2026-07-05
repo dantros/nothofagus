@@ -211,6 +211,12 @@ public:
     void commitFrame(AssetRegistry& assets, float deltaTimeMS,
                      std::function<void(float)> update, Controller& simController);
 
+    /// Sim thread: feeds `simController` AND runs `uiCallback` as the ImGui frame —
+    /// the combination the run(update, ui, simController, renderController) convenience needs.
+    void commitFrame(AssetRegistry& assets, float deltaTimeMS,
+                     std::function<void(float)> update, std::function<void(float)> uiCallback,
+                     Controller& simController);
+
     /// Main thread: acquire the latest published snapshot and render it (GPU
     /// upload + draw + present), poll window/input, and refresh the running flag.
     void renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& imguiRtt, Controller& controller);

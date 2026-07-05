@@ -1156,6 +1156,16 @@ void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
             std::move(update), {}, &simController);
 }
 
+void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
+                             std::function<void(float)> update, std::function<void(float)> uiCallback,
+                             Controller& simController)
+{
+    // Sim thread: feed the sim controller AND run the ImGui uiCallback. produce()
+    // already handles both independently (feed before update; ui after update).
+    produce(FrameMode::Threaded, mThreadedCanvas, assets, nullptr, nullptr, deltaTimeMS,
+            std::move(update), std::move(uiCallback), &simController);
+}
+
 void FrameRunner::renderFrameThreaded(AssetRegistry& assets, ImguiRttManager& imguiRtt, Controller& controller)
 {
     ZoneScopedN("renderFrameThreaded");

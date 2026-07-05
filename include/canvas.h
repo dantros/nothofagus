@@ -751,6 +751,13 @@ public:
     /// No ImGui.
     void commit(float deltaTime, std::function<void(float)> update, Controller& simController);
 
+    /// Sim thread: feed `simController` (game input) AND run `uiCallback` as the
+    /// interactive ImGui frame — the combination of the two overloads above. Keep
+    /// ImGui calls in `uiCallback`, not `update`. Used by the `run(update, ui,
+    /// simController, renderController)` convenience.
+    void commit(float deltaTime, std::function<void(float)> update,
+                std::function<void(float)> uiCallback, Controller& simController);
+
     /// Main thread: render the latest published snapshot and pump window/input.
     void renderFrame(Controller& controller);
 
