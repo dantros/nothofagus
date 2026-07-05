@@ -417,6 +417,7 @@ private:
     std::atomic<bool> mThreadedRunning{false};     ///< true while the threaded session is live.
     Canvas* mThreadedCanvas{nullptr};              ///< canvas bound by beginThreadedSession; drives explorers in produce(Threaded).
     ImguiImageManager* mThreadedImguiImages{nullptr}; ///< image manager bound by runThreaded; null on the raw-primitive path (registered images then unsupported there).
+    ImguiRttManager*   mThreadedImguiRtt{nullptr};    ///< RTT manager bound by runThreaded; lets the sim commit produce diegetic-ImGui clones (null on the raw-primitive path).
     /// Thread identities for the affinity guards (debug-only). Render id is captured in
     /// beginThreadedSession (main thread); sim id is captured on the first threaded
     /// produce(). Default-constructed (== no id) until then.

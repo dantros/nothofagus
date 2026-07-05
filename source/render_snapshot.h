@@ -59,12 +59,30 @@ struct RttPass
     std::vector<DrawItem> draws;
 };
 
+/// One diegetic-ImGui pass: the sim thread ran the user's renderImguiTo callback on a
+/// per-RTT secondary ImGui context and deep-cloned its draw data here (analogous to
+/// `RenderSnapshot::mainUi`). The render thread replays the clone into `target` — it never
+/// runs a user callback or a secondary NewFrame. `ui` is owned; storage is reused per slot.
+struct RttImguiClone
+{
+    RenderTargetId                    target;
+    std::unique_ptr<ClonedImDrawData> ui;
+
+    RttImguiClone();
+    ~RttImguiClone();                                   // out-of-line: ClonedImDrawData incomplete here
+    RttImguiClone(RttImguiClone&&) noexcept;
+    RttImguiClone& operator=(RttImguiClone&&) noexcept;
+    RttImguiClone(const RttImguiClone&) = delete;
+    RttImguiClone& operator=(const RttImguiClone&) = delete;
+};
+
 /// The full per-frame display list the render side consumes.
 struct RenderSnapshot
 {
     std::uint64_t         commitSeq{0};   ///< monotonic commit counter; the deferred-free clock
     std::vector<DrawItem> draws;          ///< main pass, depth-sorted at commit
     std::vector<RttPass>  rttPasses;      ///< insertion order preserved (nested-RTT dependency)
+    std::vector<RttImguiClone> rttUi;     ///< diegetic-ImGui clones (one per renderImguiTo pass this commit)
     glm::vec3             clearColor{0.0f};
     /// Logical canvas size captured at commit. The render side uses this (not the
     /// live atomic) so the viewport / world transform match the pool this snapshot

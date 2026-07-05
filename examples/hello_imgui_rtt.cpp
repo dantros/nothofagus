@@ -34,18 +34,19 @@ int main()
     Nothofagus::ImguiFontId small16Id{};
     bool wantSmall16 = false;
 
-    // TODO(threaded): diegetic renderImguiTo runs its user callback on the render thread
-    // and has no per-RTT draw-data clone, so it is not wired for the sim/render split yet
-    // (see THREADED_DIEGETIC_IMGUI.md). Parked on the deprecated single-thread
-    // run(update, Controller&) until threaded support lands.
-    Nothofagus::Controller deferredController;
-    canvas.run([&](float deltaTimeMS)
+    // Game logic on the sim thread: advance time, rotate the display bellota. Runs before
+    // `ui` each commit.
+    auto update = [&](float deltaTimeMS)
     {
         time += deltaTimeMS;
-
-        // Rotate the display bellota around its center.
         canvas.bellota(displayBellotaId).transform().angle() = 0.0005f * time;
+    };
 
+    // ImGui on the sim thread (sim-UI context, cloned to render). The diegetic renderImguiTo
+    // callback also runs here on the sim thread and is deep-cloned into the snapshot per RTT —
+    // the render thread only replays it, never runs user code.
+    auto ui = [&](float)
+    {
         // Queue the ImGui content to be rendered into the RTT this frame.
         // The id-bearing renderImguiTo overload auto-pushes diegeticId for
         // the duration of the callback (no ImFont* in user code, falls back
@@ -113,7 +114,9 @@ int main()
             wantSmall16 = false;
         }
         ImGui::End();
-    }, deferredController);
+    };
+
+    canvas.run(update, ui);
 
     return 0;
 }

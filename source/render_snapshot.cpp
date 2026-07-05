@@ -9,4 +9,11 @@ namespace Nothofagus
 RenderSnapshot::RenderSnapshot() = default;
 RenderSnapshot::~RenderSnapshot() = default;
 
+// Same reason for RttImguiClone: the unique_ptr<ClonedImDrawData> needs the complete
+// type at construction/destruction/move, which only this .cpp has.
+RttImguiClone::RttImguiClone() = default;
+RttImguiClone::~RttImguiClone() = default;
+RttImguiClone::RttImguiClone(RttImguiClone&&) noexcept = default;
+RttImguiClone& RttImguiClone::operator=(RttImguiClone&&) noexcept = default;
+
 }

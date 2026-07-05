@@ -581,6 +581,12 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
             if (!snapshot.mainUi)
                 snapshot.mainUi = std::make_unique<ClonedImDrawData>();
             snapshot.mainUi->cloneFrom(ImGui::GetDrawData());
+
+            // Diegetic ImGui: run each renderImguiTo callback on its secondary context here
+            // (sim thread, still under the ImGui mutex — shared atlas) and clone its draw data
+            // into the snapshot. The render thread only replays the clones. Restores mSimUiContext.
+            if (imguiRtt != nullptr)
+                imguiRtt->produceClones(deltaTimeMS, ImGui::GetIO().Fonts, snapshot.rttUi);
         }
 
         // 3) Project the scene (POD) — lock-free; the write slot is producer-owned.
@@ -685,6 +691,11 @@ const RenderSnapshot& FrameRunner::produce(FrameMode mode, Canvas* canvas, Asset
         // Internal RTT passes for registered ImGui images that need (re)rendering this frame.
         imguiImages->appendInternalPasses(mSnapshot.rttPasses);
     }
+
+    // Diegetic ImGui: drain renderImguiTo passes into per-RTT draw-data clones (the render
+    // side replays them). Same path as the threaded arm; here producer + consumer are the
+    // same thread. The user's callbacks ran during update() above and enqueued the passes.
+    imguiRtt->produceClones(deltaTimeMS, ImGui::GetIO().Fonts, mSnapshot.rttUi);
 
     return mSnapshot;
 }
@@ -828,11 +839,13 @@ void FrameRunner::renderSnapshotContents(AssetRegistry& assets, ImguiRttManager&
         if (imguiImages)
             imguiImages->resolveImages();
 
-        // ImGui-to-RTT passes — each uses a secondary ImGuiContext owned by the
-        // render target, rendered with a pipeline compiled against the RTT render
-        // pass (Vulkan) or into the RTT FBO (OpenGL). Lazy context creation on
-        // first use; destroyed in removeRenderTarget() and the destructor.
-        imguiRtt.flushPending(deltaTimeMS, ImGui::GetIO().Fonts);
+        // Diegetic ImGui-to-RTT passes — replay the sim's per-RTT draw-data clones into their
+        // render targets (before the main pass samples them). Each uses a secondary ImGuiContext
+        // rendered with a pipeline compiled against the RTT render pass (Vulkan) or into the RTT
+        // FBO (OpenGL); the backend is lazily created render-side on first replay, torn down in
+        // removeRenderTarget() and the destructor. Touches the shared atlas, so the caller holds
+        // the ImGui mutex (see consume()); no-op when there are no clones.
+        imguiRtt.replayClones(snapshot.rttUi);
     }
 
     mBackend.beginMainPass(mGameViewport);
@@ -928,21 +941,24 @@ void FrameRunner::consume(FrameMode mode, AssetRegistry& assets, ImguiRttManager
             ImGui::Render();
         }
 
-        // Container-touching section (deferred frees, GPU upload, id→handle resolve +
-        // draw submission). Guarded against the sim thread's spawn/despawn. The lock
-        // is released BEFORE the vsync swap so a slow present never stalls the sim.
+        // Container-touching section (deferred frees, GPU upload, id→handle resolve + draw
+        // submission) plus the ImGui render. The ImGui mutex is the OUTER lock here because
+        // renderSnapshotContents now replays diegetic-ImGui clones (replayClones) and the main
+        // endFrame below both do RenderDrawData, which touches the shared font atlas. The asset
+        // mutex nests INSIDE it — matching the sim side's imgui⊃asset order (a Canvas ImGui-image
+        // draw in the sim `ui` takes the asset mutex while the ImGui mutex is held), so the two
+        // threads acquire the pair in the same order and can't deadlock. The asset lock is
+        // released before the vsync swap so a slow present never stalls the sim.
         {
-            ZoneScopedN("AssetLockedRender");
-            std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
-            renderSnapshotContents(assets, imguiRtt, imguiImages, snapshot, deltaTimeMS);
-        }
+            std::lock_guard<std::mutex> imguiLock(mImguiMutex);
+            {
+                ZoneScopedN("AssetLockedRender");
+                std::lock_guard<std::recursive_mutex> assetLock(mThreadedAssetMutex);
+                renderSnapshotContents(assets, imguiRtt, imguiImages, snapshot, deltaTimeMS);
+            }
 
-        {
             ZoneScopedN("ImGuiRender");
             // Render the sim's cloned UI if present; otherwise the main empty frame.
-            // Under the ImGui mutex: RenderDrawData applies font-atlas texture uploads
-            // (draw_data->Textures) which touch the shared atlas.
-            std::lock_guard<std::mutex> imguiLock(mImguiMutex);
             ImDrawData* uiData = (snapshot.mainUi && snapshot.mainUi->hasData())
                 ? snapshot.mainUi->drawData()
                 : ImGui::GetDrawData();
@@ -1029,9 +1045,10 @@ void FrameRunner::runThreaded(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
                               Controller& simController, Controller& renderController)
 {
     beginThreadedSession(canvas, renderController);
-    // Bind the image manager so the threaded commit/render primitives thread it through
-    // produce/consume (registered ImGui images). Cleared after the loops join.
+    // Bind the image + RTT managers so the threaded commit primitives thread them through
+    // produce (registered ImGui images; diegetic renderImguiTo clones). Cleared after join.
     mThreadedImguiImages = &imguiImages;
+    mThreadedImguiRtt    = &imguiRtt;
 
     std::thread simThread([&]()
     {
@@ -1060,6 +1077,7 @@ void FrameRunner::runThreaded(Canvas& canvas, AssetRegistry& assets, ImguiRttMan
 
     simThread.join();
     mThreadedImguiImages = nullptr;
+    mThreadedImguiRtt    = nullptr;
 }
 
 void FrameRunner::limitFrameRate(std::chrono::steady_clock::time_point& nextDeadline)
@@ -1214,7 +1232,7 @@ void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
     // Sim thread: CPU only, no GL. The canvas (bound in beginThreadedSession) drives
     // the explorer pre-pass; imguiRtt/controller stay null (no font drain or input
     // poll on the sim thread).
-    produce(FrameMode::Threaded, mThreadedCanvas, assets, nullptr, mThreadedImguiImages, deltaTimeMS,
+    produce(FrameMode::Threaded, mThreadedCanvas, assets, mThreadedImguiRtt, mThreadedImguiImages, deltaTimeMS,
             std::move(update), std::move(uiCallback), nullptr);
 }
 
@@ -1223,7 +1241,7 @@ void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
 {
     // Sim thread (M5): feed the sim controller from the latest gamepad snapshot
     // (inside produce, before update) so the game `update` sees the gamepad. No ImGui.
-    produce(FrameMode::Threaded, mThreadedCanvas, assets, nullptr, mThreadedImguiImages, deltaTimeMS,
+    produce(FrameMode::Threaded, mThreadedCanvas, assets, mThreadedImguiRtt, mThreadedImguiImages, deltaTimeMS,
             std::move(update), {}, &simController);
 }
 
@@ -1233,7 +1251,7 @@ void FrameRunner::commitFrame(AssetRegistry& assets, float deltaTimeMS,
 {
     // Sim thread: feed the sim controller AND run the ImGui uiCallback. produce()
     // already handles both independently (feed before update; ui after update).
-    produce(FrameMode::Threaded, mThreadedCanvas, assets, nullptr, mThreadedImguiImages, deltaTimeMS,
+    produce(FrameMode::Threaded, mThreadedCanvas, assets, mThreadedImguiRtt, mThreadedImguiImages, deltaTimeMS,
             std::move(update), std::move(uiCallback), &simController);
 }
 
