@@ -238,20 +238,27 @@ int main()
     // Track WASD as held state via Press/Release actions (Controller is event-driven).
     bool wDown = false, sDown = false, aDown = false, dDown = false;
 
-    Nothofagus::Controller controller;
-    controller.registerAction(
+    // Game input — dispatched on the sim thread; WASD toggles held-pan bools read by update.
+    Nothofagus::Controller simController;
+    simController.registerAction({ Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Press   }, [&]() { wDown = true;  });
+    simController.registerAction({ Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Release }, [&]() { wDown = false; });
+    simController.registerAction({ Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Press   }, [&]() { sDown = true;  });
+    simController.registerAction({ Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Release }, [&]() { sDown = false; });
+    simController.registerAction({ Nothofagus::Key::A, Nothofagus::DiscreteTrigger::Press   }, [&]() { aDown = true;  });
+    simController.registerAction({ Nothofagus::Key::A, Nothofagus::DiscreteTrigger::Release }, [&]() { aDown = false; });
+    simController.registerAction({ Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Press   }, [&]() { dDown = true;  });
+    simController.registerAction({ Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Release }, [&]() { dDown = false; });
+
+    // Window input — dispatched on the main thread; ESC closes the window.
+    Nothofagus::Controller renderController;
+    renderController.registerAction(
         { Nothofagus::Key::ESCAPE, Nothofagus::DiscreteTrigger::Press },
         [&]() { canvas.close(); });
-    controller.registerAction({ Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Press   }, [&]() { wDown = true;  });
-    controller.registerAction({ Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Release }, [&]() { wDown = false; });
-    controller.registerAction({ Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Press   }, [&]() { sDown = true;  });
-    controller.registerAction({ Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Release }, [&]() { sDown = false; });
-    controller.registerAction({ Nothofagus::Key::A, Nothofagus::DiscreteTrigger::Press   }, [&]() { aDown = true;  });
-    controller.registerAction({ Nothofagus::Key::A, Nothofagus::DiscreteTrigger::Release }, [&]() { aDown = false; });
-    controller.registerAction({ Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Press   }, [&]() { dDown = true;  });
-    controller.registerAction({ Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Release }, [&]() { dDown = false; });
 
-    canvas.run([&](float deltaTimeMS)
+    // Game logic — runs on the sim thread (no ImGui here): camera pan + edit storm.
+    // Shared UI state (autoPan, editsPerFrame, camera, mapSize, ...) is written by the
+    // sim-thread ui and read here; both callbacks are sim-side, so no atomics are needed.
+    auto update = [&](float deltaTimeMS)
     {
         // ── Camera pan ──────────────────────────────────────────────────
         const float dt = deltaTimeMS / 1000.0f;
@@ -302,7 +309,13 @@ int main()
                     world.setCell(cellCoord, static_cast<std::uint8_t>(1 + (next() % 4)));
             }
         }
+    };
 
+    // Interactive ImGui — runs on the sim-UI context (sim thread), cloned to the render
+    // thread. Teleport, rebuild (remove/add denseLand + explorer) and setScreenSize issued
+    // here are sim-side, same as update; all are threaded-safe asset ops.
+    auto ui = [&](float)
+    {
         // ── ImGui control panel ─────────────────────────────────────────
         ImGui::Begin("DenseLand");
 
@@ -434,7 +447,11 @@ int main()
         }
 
         ImGui::End();
-    }, controller);
+    };
+
+    // Multithreaded convenience: sim thread runs update + ui + simController (WASD);
+    // the main thread runs the render loop + renderController (ESC/close).
+    canvas.run(update, ui, simController, renderController);
 
     return 0;
 }

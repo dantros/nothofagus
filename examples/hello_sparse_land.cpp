@@ -220,20 +220,27 @@ int main()
     constexpr float panSpeed = 1000.0f;   // world px / s — fast enough to cross ~4 chunks/s at 256-px chunks
     bool wDown = false, sDown = false, aDown = false, dDown = false;
 
-    Nothofagus::Controller controller;
-    controller.registerAction(
+    // Game input — dispatched on the sim thread; WASD toggles held-pan bools read by update.
+    Nothofagus::Controller simController;
+    simController.registerAction({ Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Press   }, [&]() { wDown = true;  });
+    simController.registerAction({ Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Release }, [&]() { wDown = false; });
+    simController.registerAction({ Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Press   }, [&]() { sDown = true;  });
+    simController.registerAction({ Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Release }, [&]() { sDown = false; });
+    simController.registerAction({ Nothofagus::Key::A, Nothofagus::DiscreteTrigger::Press   }, [&]() { aDown = true;  });
+    simController.registerAction({ Nothofagus::Key::A, Nothofagus::DiscreteTrigger::Release }, [&]() { aDown = false; });
+    simController.registerAction({ Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Press   }, [&]() { dDown = true;  });
+    simController.registerAction({ Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Release }, [&]() { dDown = false; });
+
+    // Window input — dispatched on the main thread; ESC closes the window.
+    Nothofagus::Controller renderController;
+    renderController.registerAction(
         { Nothofagus::Key::ESCAPE, Nothofagus::DiscreteTrigger::Press },
         [&]() { canvas.close(); });
-    controller.registerAction({ Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Press   }, [&]() { wDown = true;  });
-    controller.registerAction({ Nothofagus::Key::W, Nothofagus::DiscreteTrigger::Release }, [&]() { wDown = false; });
-    controller.registerAction({ Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Press   }, [&]() { sDown = true;  });
-    controller.registerAction({ Nothofagus::Key::S, Nothofagus::DiscreteTrigger::Release }, [&]() { sDown = false; });
-    controller.registerAction({ Nothofagus::Key::A, Nothofagus::DiscreteTrigger::Press   }, [&]() { aDown = true;  });
-    controller.registerAction({ Nothofagus::Key::A, Nothofagus::DiscreteTrigger::Release }, [&]() { aDown = false; });
-    controller.registerAction({ Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Press   }, [&]() { dDown = true;  });
-    controller.registerAction({ Nothofagus::Key::D, Nothofagus::DiscreteTrigger::Release }, [&]() { dDown = false; });
 
-    canvas.run([&](float deltaTimeMS)
+    // Game logic — runs on the sim thread (no ImGui here): camera pan + chunk streaming.
+    // Shared UI state (streamingOn, density, radii) is written by the sim-thread ui and
+    // read here, so plain values are safe (both callbacks are sim-side).
+    auto update = [&](float deltaTimeMS)
     {
         const float dt = deltaTimeMS / 1000.0f;
 
@@ -294,8 +301,15 @@ int main()
                     world.removeChunk({cameraChunk.x + dx, cameraChunk.y + dy});
                 }
         }
+    };
 
-        // ── UI ──────────────────────────────────────────────────────────
+    // Interactive ImGui — runs on the sim-UI context (sim thread), cloned to the render
+    // thread. World mutations (addChunk/removeChunk/setCell) and setScreenSize issued here
+    // are sim-side, same as update; both are threaded-safe asset ops.
+    auto ui = [&](float)
+    {
+        Nothofagus::SparseLand& world = canvas.sparseLand(sparseLandId);
+
         ImGui::SetNextWindowSize(ImVec2(360, 0), ImGuiCond_FirstUseEver);
         ImGui::Begin("SparseLand");
 
@@ -429,7 +443,11 @@ int main()
             "while the pool stays flat regardless of world extent.");
 
         ImGui::End();
-    }, controller);
+    };
+
+    // Multithreaded convenience: sim thread runs update + ui + simController (WASD);
+    // the main thread runs the render loop + renderController (ESC/close).
+    canvas.run(update, ui, simController, renderController);
 
     return 0;
 }
