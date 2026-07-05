@@ -379,6 +379,14 @@ if (${NOTHOFAGUS_BUILD_TESTS})
     add_subdirectory("tests")
 endif()
 
+# Sanitizer fixture: a small threaded workload for running TSan / ASan+UBSan against the
+# SwiftShader Vulkan headless backend (Mesa is buggy under sanitizers). OFF by default;
+# tools/sanitizers/run_sanitizers.sh turns it on with the right sanitizer + SwiftShader flags.
+option(NOTHOFAGUS_BUILD_SANITIZER_FIXTURE "Build the threaded sanitizer smoke fixture?" OFF)
+if (${NOTHOFAGUS_BUILD_SANITIZER_FIXTURE})
+    add_subdirectory("tools/sanitizers")
+endif()
+
 # Visual Tests Explorer: a windowed Nothofagus tool to inspect golden/actual/diff
 # images and update goldens. Pulls in stb_image_plus for file I/O. OFF by default
 # (interactive tool, not part of the headless CI lane).
