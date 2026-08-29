@@ -1,0 +1,7 @@
+services:
+  app:
+    build: .
+    volumes:
+      - .:/workspace
+    stdin_open: true
+    tty: true

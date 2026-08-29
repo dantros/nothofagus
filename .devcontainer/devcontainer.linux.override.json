@@ -1,0 +1,8 @@
+{
+  "runArgs": [
+    "--device=/dev/dri:/dev/dri",
+    "-e", "XDG_RUNTIME_DIR=/tmp/runtime-vscode",
+    "-e", "WAYLAND_DISPLAY=${env:WAYLAND_DISPLAY}",
+    "-v", "${env:XDG_RUNTIME_DIR}/${env:WAYLAND_DISPLAY}:/tmp/runtime-vscode/${env:WAYLAND_DISPLAY}:ro"
+  ]
+}

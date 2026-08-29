@@ -1,0 +1,9 @@
+services:
+  app:
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      - XDG_RUNTIME_DIR=/tmp/runtime-vscode
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY}
+    volumes:
+      - ${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}:/tmp/runtime-vscode/${WAYLAND_DISPLAY}:ro

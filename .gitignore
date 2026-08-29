@@ -53,3 +53,9 @@ imgui.ini
 # (actual/ plus per-backend lanes like actual_swiftshader/ and actual_gpu/)
 tests/visual/actual/
 tests/visual/actual_*/
+
+# Host-specific Dev Container overrides
+.devcontainer/devcontainer.override.json
+.devcontainer/docker-compose.override.yml
+.devcontainer/local-features/
+.env
