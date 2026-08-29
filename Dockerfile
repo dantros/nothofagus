@@ -47,7 +47,6 @@ ENV SWIFTSHADER_PATH=/opt/swiftshader
 ENV LD_LIBRARY_PATH=/opt/swiftshader:$LD_LIBRARY_PATH
 
 # 5. Non-Root Development User setup
-# 5. Non-Root Development User setup
 ARG USERNAME=developer
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
@@ -55,8 +54,9 @@ ARG USER_GID=$USER_UID
 # Delete default 'ubuntu' user/group (freeing up UID/GID 1000)
 RUN touch /var/mail/ubuntu && chown ubuntu /var/mail/ubuntu && userdel -r ubuntu || true
 
+# Pass -s /bin/bash to set bash as the default shell
 RUN groupadd --gid $USER_GID $USERNAME \
-    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
+    && useradd --uid $USER_UID --gid $USER_GID -m -s /bin/bash $USERNAME \
     && apt-get update \
     && apt-get install -y sudo \
     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \

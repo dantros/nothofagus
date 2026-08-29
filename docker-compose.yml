@@ -1,6 +1,7 @@
 services:
   app:
     build: .
+    command: /bin/bash
     volumes:
       - .:/workspace
     stdin_open: true

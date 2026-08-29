@@ -6,7 +6,7 @@
   "customizations": {
     "vscode": {
       "settings": {
-        "cmake.configureOnOpen": true
+        "terminal.integrated.defaultProfile.linux": "bash"
       },
       "extensions": [
         "ms-vscode.cpptools-extension-pack",
