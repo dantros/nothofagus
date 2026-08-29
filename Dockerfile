@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc g++ clang \
     gdb make ninja-build \
     git curl ca-certificates tar xz-utils unzip openssh-client \
+    pkg-config libxkbcommon-dev \
     # OpenGL & Windowing System Headers
     libgl1-mesa-dev libegl1-mesa-dev libgbm-dev \
     libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
