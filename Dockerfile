@@ -22,18 +22,19 @@ ARG CMAKE_VERSION=3.30.2
 RUN curl -sSL https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz \
     | tar -xz -C /usr/local --strip-components=1
 
-# 3. Pin Vulkan SDK (LunarG Direct Archive Install)
+# 3. Pin Vulkan SDK & Link Loader
 ARG VULKAN_SDK_VERSION=1.4.357.1
 
 RUN mkdir -p /opt/vulkan && \
-    curl -sSL -o /tmp/vulkansdk.tar.xz "https://sdk.lunarg.com/sdk/download/${VULKAN_SDK_VERSION}/linux/vulkansdk-linux-x86_64-${VULKAN_SDK_VERSION}.tar.xz" && \
-    tar -xJf /tmp/vulkansdk.tar.xz -C /opt/vulkan --strip-components=1 && \
-    rm /tmp/vulkansdk.tar.xz
+    curl -sSL "https://sdk.lunarg.com/sdk/download/${VULKAN_SDK_VERSION}/linux/vulkansdk-linux-x86_64-${VULKAN_SDK_VERSION}.tar.xz" \
+    | tar -xJf - -C /opt/vulkan --strip-components=1 && \
+    ln -sf /opt/vulkan/x86_64/lib/VulkanLoader/lib/libvulkan.so* /usr/lib/x86_64-linux-gnu/ && \
+    ldconfig
 
-# Set path environment variables directly to /opt/vulkan
 ENV VULKAN_SDK=/opt/vulkan/x86_64
 ENV PATH=$VULKAN_SDK/bin:$PATH
 ENV LD_LIBRARY_PATH=$VULKAN_SDK/lib:$LD_LIBRARY_PATH
+ENV CPATH=$VULKAN_SDK/include:$CPATH
 ENV VK_LAYER_PATH=$VULKAN_SDK/etc/vulkan/explicit_layer.d
 
 # 4. Prebuilt SwiftShader from GitHub Release URL
