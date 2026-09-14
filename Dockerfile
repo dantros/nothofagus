@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config libxkbcommon-dev \
     # OpenGL & Windowing System Headers
     libgl1-mesa-dev libegl1-mesa-dev libgbm-dev \
+    mesa-vulkan-drivers \
     libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
     libwayland-dev wayland-protocols \
     python3 python3-pip \
