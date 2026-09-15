@@ -3,6 +3,9 @@ FROM ubuntu:26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Set libdecor plugin directory so runtime plugins can be found automatically
+ENV LIBDECOR_PLUGIN_DIR=/usr/lib/x86_64-linux-gnu/libdecor/plugins-1
+
 # 1. Base Toolchain & Rendering Libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -13,8 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # OpenGL & Windowing System Headers
     libgl1-mesa-dev libegl1-mesa-dev libgbm-dev \
     mesa-vulkan-drivers \
-    libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
     libwayland-dev wayland-protocols \
+    libdecor-0-dev libdecor-0-plugin-1-cairo \
     python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
