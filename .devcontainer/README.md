@@ -10,12 +10,10 @@ support — Docker Desktop on Windows always runs these as Linux containers.
 |---|---|
 | [`Dockerfile`](../Dockerfile) (repo root) | Ubuntu 26.04 image: build toolchain, OpenGL/Vulkan/Wayland dev libs, pinned CMake + Vulkan SDK, SwiftShader, non-root `developer` user. Same image for every platform — only the *host* GPU/display passthrough differs. |
 | [`docker-compose.yml`](../docker-compose.yml) (repo root) | Base compose service definition (builds the image above, mounts the repo at `/workspace`). No GPU/display wiring of its own — that comes from an override file. |
-| [`devcontainer.json`](devcontainer.json) | VS Code Dev Containers config: builds directly from the `Dockerfile`, sets up the C++/CMake extensions, bash terminal, `developer` remote user. |
-| [`devcontainer.linux.override.json`](devcontainer.linux.override.json) | **Template.** `runArgs` for Linux hosts: forwards `/dev/dri` and the host Wayland socket. |
-| [`devcontainer.windows.override.json`](devcontainer.windows.override.json) | **Template.** `runArgs` for Windows hosts (Docker Desktop + WSL2/WSLg). |
-| [`docker-compose.linux.override.json`](docker-compose.linux.override.json) | **Template.** Same Linux GPU/Wayland forwarding as above, expressed as a compose service override. |
-| [`docker-compose.windows.override.json`](docker-compose.windows.override.json) | **Template.** Same for Windows/WSLg. |
-| `devcontainer.override.json` / `docker-compose.override.json` | **Not committed.** Your personal, host-specific copy — see below. |
+| [`devcontainer.json`](devcontainer.json) | VS Code Dev Containers config: builds via `docker-compose.yml` + `docker-compose.override.json` (see below), sets up the C++/CMake extensions, bash terminal, `developer` remote user. |
+| [`docker-compose.linux.override.json`](docker-compose.linux.override.json) | **Template.** GPU/Wayland forwarding for Linux hosts: `/dev/dri` + the host Wayland socket. |
+| [`docker-compose.windows.override.json`](docker-compose.windows.override.json) | **Template.** Same for Windows hosts (Docker Desktop + WSL2/WSLg): `/dev/dxg`, `/mnt/wslg`, `/usr/lib/wsl`. |
+| `docker-compose.override.json` | **Not committed.** Your personal, host-specific copy — see below. Drives both the manual `docker compose` commands and `devcontainer.json`'s `dockerComposeFile`. |
 
 ## Activate your platform
 
@@ -24,17 +22,16 @@ matching your host to the non-suffixed name:
 
 ```bash
 # Linux
-cp .devcontainer/devcontainer.linux.override.json .devcontainer/devcontainer.override.json
 cp .devcontainer/docker-compose.linux.override.json .devcontainer/docker-compose.override.json
 
 # Windows (run from inside your WSL2 distro shell, not PowerShell)
-cp .devcontainer/devcontainer.windows.override.json .devcontainer/devcontainer.override.json
 cp .devcontainer/docker-compose.windows.override.json .devcontainer/docker-compose.override.json
 ```
 
-`devcontainer.override.json` and `docker-compose.override.json` are gitignored
-on purpose — **never commit them**. They're your local copy and may need
-host-specific tweaks (see the caveats below).
+`docker-compose.override.json` is gitignored on purpose — **never commit
+it**. It's your local copy and may need host-specific tweaks (see the
+caveats below). Do this **before** opening the folder in VS Code — see
+"Known limitation" below.
 
 ### Windows caveats
 
@@ -80,10 +77,7 @@ often, e.g. `alias dcnf='docker compose -f docker-compose.yml -f .devcontainer/d
 
 ## Known limitation
 
-`devcontainer.json` currently builds directly from the `Dockerfile`
-(`"build": {"dockerfile": "../Dockerfile"}`) and does not reference
-`dockerComposeFile` — it does **not** consume `docker-compose.override.json`
-(or `devcontainer.override.json`) automatically. This means VS Code's
-"Reopen in Container" does not currently get GPU/Wayland passthrough on
-either platform; the `docker compose` commands above are the working path
-today.
+`devcontainer.json` references `docker-compose.override.json` directly via
+`dockerComposeFile`, so it must already exist before you run "Reopen in
+Container" — do the copy step above first, or VS Code fails with a
+missing-file error.

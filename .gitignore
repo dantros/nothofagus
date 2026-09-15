@@ -55,7 +55,6 @@ tests/visual/actual/
 tests/visual/actual_*/
 
 # Host-specific Dev Container overrides
-.devcontainer/devcontainer.override.json
 .devcontainer/docker-compose.override.json
 .devcontainer/local-features/
 .env
