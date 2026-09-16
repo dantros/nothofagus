@@ -1,0 +1,15 @@
+services:
+  app:
+    devices:
+      - /dev/dxg
+      - /dev/dri/card0       # drop this and the line below if your WSL/driver only exposes /dev/dxg
+      - /dev/dri/renderD128
+    volumes:
+      - /usr/lib/wsl:/usr/lib/wsl:ro
+      - /mnt/wslg:/mnt/wslg
+    environment:
+      - WAYLAND_DISPLAY=wayland-0
+      - XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir
+      # Repeats the Dockerfile's Vulkan SDK / SwiftShader paths because this assignment replaces
+      # the image's LD_LIBRARY_PATH rather than appending to it.
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/opt/vulkan/x86_64/lib:/opt/swiftshader

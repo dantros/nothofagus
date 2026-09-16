@@ -1,0 +1,21 @@
+{
+  "name": "C++ Cross-Platform Dev Environment",
+  "dockerComposeFile": [
+    "../docker-compose.yml",
+    "docker-compose.override.json"
+  ],
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      },
+      "extensions": [
+        "ms-vscode.cpptools-extension-pack",
+        "ms-vscode.cmake-tools"
+      ]
+    }
+  },
+  "remoteUser": "developer"
+}
